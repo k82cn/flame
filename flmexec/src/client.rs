@@ -19,7 +19,6 @@ use chrono::Local;
 use clap::Parser;
 use indicatif::HumanCount;
 use serde_derive::{Deserialize, Serialize};
-use serde_json;
 
 use flame_rs as flame;
 use flame_rs::apis::{FlameContext, FlameError};

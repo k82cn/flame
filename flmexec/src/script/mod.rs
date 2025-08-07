@@ -24,8 +24,8 @@ pub trait ScriptEngine {
 
 pub fn new(script: &Script) -> Result<Box<dyn ScriptEngine>, FlameError> {
     match script.language.as_str() {
-        "shell" => Ok(Box::new(ShellScript::new(&script)?)),
-        "python" => Ok(Box::new(PythonScript::new(&script)?)),
+        "shell" => Ok(Box::new(ShellScript::new(script)?)),
+        "python" => Ok(Box::new(PythonScript::new(script)?)),
         _ => Err(FlameError::InvalidConfig(format!(
             "Unsupported language: {}",
             script.language

@@ -50,13 +50,11 @@ const RUST_LOG: &str = "RUST_LOG";
 const DEFAULT_SVC_LOG_LEVEL: &str = "info";
 
 impl GrpcShim {
-    pub async fn new_ptr(
-        app: &ApplicationContext,
-    ) -> Result<ShimPtr, FlameError> {
+    pub async fn new_ptr(app: &ApplicationContext) -> Result<ShimPtr, FlameError> {
         trace_fn!("GrpcShim::new_ptr");
 
         // Spawn child process
-        let mut cmd = tokio::process::Command::new(&app.command.clone().unwrap());
+        let mut cmd = tokio::process::Command::new(app.command.clone().unwrap());
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
 
         let mut child = cmd
@@ -95,11 +93,12 @@ impl GrpcShim {
                         UnixStream::connect(service_addr)
                             .await
                             .map(TokioIo::new)
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                            .map_err(std::io::Error::other)
                     }
                 })
             })
-            .await.map_err(|e| {
+            .await
+            .map_err(|e| {
                 FlameError::Network(format!("failed to connect to service <{service_id}>: {e}"))
             })?;
 

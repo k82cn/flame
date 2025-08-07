@@ -14,7 +14,6 @@ limitations under the License.
 mod api;
 mod script;
 
-use serde_json;
 
 use flame_rs::{
     self as flame,
@@ -44,7 +43,7 @@ impl flame::service::FlameService for FlmexecService {
             .as_ref()
             .ok_or(FlameError::Internal("No task input".to_string()))?;
         let script: Script =
-            serde_json::from_slice(&input).map_err(|e| FlameError::Internal(e.to_string()))?;
+            serde_json::from_slice(input).map_err(|e| FlameError::Internal(e.to_string()))?;
         let engine = script::new(&script)?;
         let output = engine.run()?;
 

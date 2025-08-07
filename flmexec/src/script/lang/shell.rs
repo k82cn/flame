@@ -76,7 +76,7 @@ impl ScriptEngine for ShellScript {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .current_dir(&self.runtime.work_dir)
-            .args(&[&self.runtime.entrypoint])
+            .args([&self.runtime.entrypoint])
             .envs(self.runtime.env.iter().map(|(k, v)| (k.clone(), v.clone())))
             .spawn()
             .map_err(|e| FlameError::Internal(format!("failed to start subprocess: {}", e)))?;
