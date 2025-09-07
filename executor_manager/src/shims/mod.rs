@@ -24,17 +24,17 @@ use tokio::sync::Mutex;
 use self::log_shim::LogShim;
 use self::wasm_shim::WasmShim;
 
+use crate::executor::Executor;
 use common::apis::{ApplicationContext, SessionContext, Shim as ShimType, TaskContext, TaskOutput};
-
 use common::FlameError;
 
 pub type ShimPtr = Arc<Mutex<dyn Shim>>;
 
-pub async fn new(app: &ApplicationContext) -> Result<ShimPtr, FlameError> {
+pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<ShimPtr, FlameError> {
     match app.shim {
-        ShimType::Wasm => Ok(WasmShim::new_ptr(app).await?),
-        ShimType::Grpc => Ok(GrpcShim::new_ptr(app).await?),
-        _ => Ok(LogShim::new_ptr(app)),
+        ShimType::Wasm => Ok(WasmShim::new_ptr(executor, app).await?),
+        ShimType::Grpc => Ok(GrpcShim::new_ptr(executor, app).await?),
+        _ => Ok(LogShim::new_ptr(executor, app)),
     }
 }
 

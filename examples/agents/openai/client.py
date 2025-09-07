@@ -1,12 +1,12 @@
 #! /usr/bin/env python3
 
-import flame
+import flamepy
 import asyncio
 
 OPENAI_APP_NAME = "openai-agent"
 
 async def main():
-    session = await flame.create_session(OPENAI_APP_NAME, b"You are a weather forecaster.")
+    session = await flamepy.create_session(OPENAI_APP_NAME, b"You are a weather forecaster.")
     task = await session.invoke(b"Who are you?")
     print(task.output.decode("utf-8"))
 

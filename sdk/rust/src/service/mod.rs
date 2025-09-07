@@ -22,6 +22,8 @@ use crate::apis::flame as rpc;
 
 use crate::apis::{CommonData, FlameError, TaskInput, TaskOutput};
 
+const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
+
 pub struct ApplicationContext {
     pub name: String,
     pub image: Option<String>,
@@ -104,7 +106,11 @@ pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::E
         service: Arc::new(service),
     };
 
-    let uds = UnixListener::bind("/tmp/flame/shim/fsi.sock")?;
+    let uds = match std::env::var(FLAME_EXECUTOR_ID) {
+        Ok(executor_id) => UnixListener::bind(format!("/tmp/flame/shim/{executor_id}/fsi.sock"))?,
+        Err(_) => UnixListener::bind("/tmp/flame/shim/fsi.sock")?,
+    };
+
     let uds_stream = UnixListenerStream::new(uds);
 
     Server::builder()
