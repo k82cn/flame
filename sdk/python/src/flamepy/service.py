@@ -189,6 +189,11 @@ class GrpcShimServer:
             
             # Listen on Unix socket
             socket_path = f"/tmp/flame/shim/fsi.sock"
+
+            exec_id = os.getenv('FLAME_EXECUTOR_ID', "")
+            if exec_id:
+                socket_path = f"/tmp/flame/shim/{exec_id}/fsi.sock"
+            
             self._server.add_insecure_port(f"unix://{socket_path}")
             
             # Start server

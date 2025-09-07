@@ -16,6 +16,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
+use crate::executor::Executor;
 use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput};
 use common::{trace::TraceFn, trace_fn, FlameError};
@@ -26,7 +27,7 @@ pub struct LogShim {
 }
 
 impl LogShim {
-    pub fn new_ptr(_: &ApplicationContext) -> ShimPtr {
+    pub fn new_ptr(_: &Executor, _: &ApplicationContext) -> ShimPtr {
         trace_fn!("LogShim::new_ptr");
 
         Arc::new(Mutex::new(Self {

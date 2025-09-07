@@ -15,10 +15,10 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use common::apis::ApplicationAttributes;
 use futures::Stream;
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
-use serde_json::Value;
 
 use self::rpc::frontend_server::Frontend;
 use self::rpc::{
@@ -54,28 +54,26 @@ impl Frontend for Flame {
 
         if let Some(ref schema) = spec.schema {
             if let Some(ref input) = schema.input {
-                let input: Value = serde_json::from_str(input).map_err(|e| FlameError::InvalidConfig(
-                    format!("invalid input schema: {e}"),
-                ))?;
-                jsonschema::meta::validate(&input).map_err(|e| FlameError::InvalidConfig(
-                    format!("invalid input schema: {e}"),
-                ))?;
+                let input: Value = serde_json::from_str(input)
+                    .map_err(|e| FlameError::InvalidConfig(format!("invalid input schema: {e}")))?;
+                jsonschema::meta::validate(&input)
+                    .map_err(|e| FlameError::InvalidConfig(format!("invalid input schema: {e}")))?;
             }
             if let Some(ref output) = schema.output {
-                let output: Value = serde_json::from_str(output).map_err(|e| FlameError::InvalidConfig(
-                    format!("invalid output schema: {e}"),
-                ))?;
-                jsonschema::meta::validate(&output).map_err(|e| FlameError::InvalidConfig(
-                    format!("invalid output schema: {e}"),
-                ))?;
+                let output: Value = serde_json::from_str(output).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid output schema: {e}"))
+                })?;
+                jsonschema::meta::validate(&output).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid output schema: {e}"))
+                })?;
             }
             if let Some(ref common_data) = schema.common_data {
-                let common_data: Value = serde_json::from_str(common_data).map_err(|e| FlameError::InvalidConfig(
-                    format!("invalid common data schema: {e}"),
-                ))?;
-                jsonschema::meta::validate(&common_data).map_err(|e| FlameError::InvalidConfig(
-                    format!("invalid common data schema: {e}"),
-                ))?;
+                let common_data: Value = serde_json::from_str(common_data).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid common data schema: {e}"))
+                })?;
+                jsonschema::meta::validate(&common_data).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid common data schema: {e}"))
+                })?;
             }
         }
 

@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, create_dir_all, File};
 use std::future::Future;
 use std::pin::Pin;
 use std::process::{self, Stdio};
@@ -35,6 +35,7 @@ use rpc::grpc_shim_client::GrpcShimClient;
 use rpc::EmptyRequest;
 use uuid::Uuid;
 
+use crate::executor::Executor;
 use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput};
 use common::{trace::TraceFn, trace_fn, FlameError};
@@ -44,20 +45,33 @@ pub struct GrpcShim {
     client: GrpcShimClient<Channel>,
     child: tokio::process::Child,
     service_socket: String,
+    working_directory: String,
 }
 
 const RUST_LOG: &str = "RUST_LOG";
 const DEFAULT_SVC_LOG_LEVEL: &str = "info";
+const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
 
 impl GrpcShim {
-    pub async fn new_ptr(app: &ApplicationContext) -> Result<ShimPtr, FlameError> {
+    pub async fn new_ptr(
+        executor: &Executor,
+        app: &ApplicationContext,
+    ) -> Result<ShimPtr, FlameError> {
         trace_fn!("GrpcShim::new_ptr");
+
+        let working_directory = format!("/tmp/flame/shim/{}", executor.id);
+        let service_socket = format!("{working_directory}/fsi.sock");
+
+        // Create executor working directory for shims.
+        fs::create_dir_all(working_directory.clone())
+            .map_err(|e| FlameError::Internal(format!("failed to create shim directory: {e}")))?;
 
         let command = app.command.clone().unwrap_or_default();
         let args = app.arguments.clone();
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
         let mut envs = app.environments.clone();
         envs.insert(RUST_LOG.to_string(), log_level);
+        envs.insert(FLAME_EXECUTOR_ID.to_string(), executor.id.clone());
 
         log::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"
@@ -78,10 +92,9 @@ impl GrpcShim {
             })?;
 
         let service_id = child.id().unwrap_or_default();
-
         log::debug!("The service <{service_id}> was started, waiting for registering.");
 
-        let service_socket = get_service_socket().await?;
+        WaitForSvcSocketFuture::new(service_socket.clone()).await?;
         log::debug!("Try to connect to service <{service_id}> at <{service_socket}>");
 
         let channel = Endpoint::try_from("http://[::]:50051")
@@ -111,6 +124,7 @@ impl GrpcShim {
             client,
             child,
             service_socket,
+            working_directory,
         })))
     }
 }
@@ -119,6 +133,8 @@ impl Drop for GrpcShim {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = std::fs::remove_file(&self.service_socket);
+        let _ = std::fs::remove_dir_all(&self.working_directory);
+
         log::debug!(
             "The service <{}> was stopped",
             self.child.id().unwrap_or_default()
@@ -161,11 +177,6 @@ impl Shim for GrpcShim {
     }
 }
 
-async fn get_service_socket() -> Result<String, FlameError> {
-    let path = "/tmp/flame/shim/fsi.sock".to_string();
-    WaitForSvcSocketFuture::new(path).await
-}
-
 struct WaitForSvcSocketFuture {
     path: String,
 }
@@ -177,11 +188,11 @@ impl WaitForSvcSocketFuture {
 }
 
 impl Future for WaitForSvcSocketFuture {
-    type Output = Result<String, FlameError>;
+    type Output = Result<(), FlameError>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         if fs::exists(&self.path).unwrap_or(false) {
-            Poll::Ready(Ok(self.path.clone()))
+            Poll::Ready(Ok(()))
         } else {
             ctx.waker().wake_by_ref();
             Poll::Pending

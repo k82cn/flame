@@ -20,6 +20,7 @@ use wasmtime::component::*;
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::preview2::{command, Table, WasiCtx, WasiCtxBuilder, WasiView};
 
+use crate::executor::Executor;
 use crate::shims::wasm_shim::exports::component::flame::service;
 use crate::shims::{Shim, ShimPtr};
 use common::{self, apis, trace::TraceFn, trace_fn, FlameError};
@@ -37,7 +38,10 @@ pub struct WasmShim {
 }
 
 impl WasmShim {
-    pub async fn new_ptr(app: &apis::ApplicationContext) -> Result<ShimPtr, common::FlameError> {
+    pub async fn new_ptr(
+        _: &Executor,
+        app: &apis::ApplicationContext,
+    ) -> Result<ShimPtr, common::FlameError> {
         trace_fn!("WasmShim::new_ptr");
 
         let mut config = Config::default();
