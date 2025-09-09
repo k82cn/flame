@@ -9,7 +9,6 @@
 Example usage of the Flame Python SDK service functionality.
 """
 
-import asyncio
 import flamepy
 
 class ExampleService(flamepy.FlameService):
@@ -62,18 +61,14 @@ class ExampleService(flamepy.FlameService):
         return True
 
 
-async def main():
+if __name__ == "__main__":
     """Example main function."""
     print("🚀 Starting Flame Service Example")
     print("=" * 50)
 
     try:
-        # Run the service
-        await flamepy.run(ExampleService())
+        flamepy.run(ExampleService())
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
     except Exception as e:
         print(f"\n❌ Error: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(main()) 

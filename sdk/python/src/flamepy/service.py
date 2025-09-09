@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
 import logging
+from concurrent import futures
 
 from .types import Shim, FlameError, FlameErrorCode
 from .shim_pb2_grpc import GrpcShimServicer, add_GrpcShimServicer_to_server
@@ -186,21 +187,19 @@ class GrpcShimServer:
             # Add servicer to server
             shim_servicer = GrpcShimServicer(self._service)
             add_GrpcShimServicer_to_server(shim_servicer, self._server)
-            
-            # Listen on Unix socket
+
+             # Listen on Unix socket
             socket_path = f"/tmp/flame/shim/fsi.sock"
 
-            exec_id = os.getenv('FLAME_EXECUTOR_ID', "")
-            if exec_id:
+            exec_id = os.getenv('FLAME_EXECUTOR_ID')
+            if exec_id is not None:
                 socket_path = f"/tmp/flame/shim/{exec_id}/fsi.sock"
-            
+
             self._server.add_insecure_port(f"unix://{socket_path}")
-            
+            logger.info(f"Flame Python service started on Unix socket: {socket_path}")
+
             # Start server
             await self._server.start()
-            
-            print(f"Flame Python service started on Unix socket: {socket_path}")
-
             # Keep server running
             await self._server.wait_for_termination()
             
@@ -214,10 +213,10 @@ class GrpcShimServer:
         """Stop the gRPC server."""
         if self._server:
             await self._server.stop(grace=5)
-            print("gRPC shim server stopped")
+            logger.info("gRPC shim server stopped")
 
 
-async def run(service: FlameService):
+def run(service: FlameService):
     """
     Run a gRPC shim server.
     
@@ -226,5 +225,5 @@ async def run(service: FlameService):
     """
 
     server = GrpcShimServer(service)
-    await server.start()
+    asyncio.run(server.start())
 
