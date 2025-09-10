@@ -11,15 +11,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use futures::future::try_join_all;
+
+use serde_json::json;
 
 use flame_rs as flame;
 
 use flame::{
-    apis::{FlameError, SessionState, TaskState},
-    client::{SessionAttributes, Task, TaskInformer},
+    apis::{FlameError, SessionState, Shim, TaskState},
+    client::{ApplicationAttributes, ApplicationSchema, SessionAttributes, Task, TaskInformer},
     lock_ptr, new_ptr,
 };
 
@@ -168,6 +173,74 @@ async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
 
     ssn_1.close().await?;
     ssn_2.close().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_application_lifecycle() -> Result<(), FlameError> {
+    let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
+
+    let string_schema = json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "string",
+        "description": "The string for testing."
+    });
+
+    let apps = vec![
+        (
+            "my-test-agent-1".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Grpc,
+                image: Some("may-agent".to_string()),
+                description: Some("This is my agent for testing.".to_string()),
+                labels: vec!["test".to_string(), "agent".to_string()],
+                command: Some("my-agent".to_string()),
+                arguments: vec!["--test".to_string(), "--agent".to_string()],
+                environments: HashMap::from([("TEST".to_string(), "true".to_string())]),
+                working_directory: Some("/tmp".to_string()),
+                max_instances: Some(10),
+                delay_release: None,
+                schema: Some(ApplicationSchema {
+                    input: Some(string_schema.to_string()),
+                    output: Some(string_schema.to_string()),
+                    common_data: None,
+                }),
+            },
+        ),
+        (
+            "empty-app".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Grpc,
+                image: None,
+                description: None,
+                labels: vec![],
+                command: None,
+                arguments: vec![],
+                environments: HashMap::new(),
+                working_directory: None,
+                max_instances: None,
+                delay_release: None,
+                schema: None,
+            },
+        ),
+    ];
+
+    for (name, app_attr) in apps {
+        conn.register_application(name.clone(), app_attr)
+            .await
+            .map_err(|e| {
+                FlameError::Internal(format!("failed to register application <{name}>: {e}"))
+            })?;
+    }
+
+    // for (name, _) in apps {
+    //     conn.unregister_application(name.clone())
+    //         .await
+    //         .map_err(|e| {
+    //             FlameError::Internal(format!("failed to unregister application <{}>: {}", name, e))
+    //         })?;
+    // }
 
     Ok(())
 }
