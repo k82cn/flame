@@ -11,15 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use clap::Arg;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{migrate::MigrateDatabase, types::Json, FromRow, Sqlite, SqlitePool};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::FlameError;
 use common::{
@@ -133,6 +133,9 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(format!("failed to begin TX: {e}")))?;
 
+        let schema: Option<Json<AppSchemaDao>> =
+            attr.schema.clone().map(AppSchemaDao::from).map(Json);
+
         let sql = "INSERT INTO applications (name, description, labels, shim, command, arguments, environments, max_instances, delay_release, schema, creation_time, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime ('%s', 'now'), 0) RETURNING *";
         let app: ApplicationDao = sqlx::query_as(sql)
             .bind(name)
@@ -144,7 +147,7 @@ impl Engine for SqliteEngine {
             .bind(Json(attr.environments))
             .bind(attr.max_instances)
             .bind(attr.delay_release.num_seconds())
-            .bind(Json(attr.schema.clone().map(AppSchemaDao::from)))
+            .bind(schema)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
@@ -629,6 +632,76 @@ mod tests {
     use common::apis::ApplicationState;
 
     use super::*;
+
+    #[test]
+    fn test_register_application() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_register_appl_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        let string_schema = json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "string",
+            "description": "The string for testing."
+        });
+
+        let apps = vec![
+            (
+                "my-test-agent-1".to_string(),
+                ApplicationAttributes {
+                    shim: Shim::Grpc,
+                    image: Some("may-agent".to_string()),
+                    description: Some("This is my agent for testing.".to_string()),
+                    labels: vec!["test".to_string(), "agent".to_string()],
+                    command: Some("my-agent".to_string()),
+                    arguments: vec!["--test".to_string(), "--agent".to_string()],
+                    environments: HashMap::from([("TEST".to_string(), "true".to_string())]),
+                    working_directory: "/tmp".to_string(),
+                    max_instances: 10,
+                    delay_release: Duration::seconds(0),
+                    schema: Some(ApplicationSchema {
+                        input: Some(string_schema.to_string()),
+                        output: Some(string_schema.to_string()),
+                        common_data: None,
+                    }),
+                },
+            ),
+            (
+                "empty-app".to_string(),
+                ApplicationAttributes {
+                    shim: Shim::Grpc,
+                    image: None,
+                    description: None,
+                    labels: vec![],
+                    command: None,
+                    arguments: vec![],
+                    environments: HashMap::new(),
+                    working_directory: "/tmp".to_string(),
+                    max_instances: 10,
+                    delay_release: Duration::seconds(0),
+                    schema: None,
+                },
+            ),
+        ];
+        for (name, attr) in apps {
+            tokio_test::block_on(storage.register_application(name.clone(), attr)).map_err(
+                |e| {
+                    FlameError::Storage(format!("failed to register application <{name}>: {e}"))
+                },
+            )?;
+            let app_1 =
+                tokio_test::block_on(storage.get_application(name.clone())).map_err(|e| {
+                    FlameError::Storage(format!("failed to get application <{name}>: {e}"))
+                })?;
+
+            assert_eq!(app_1.name, name);
+            assert_eq!(app_1.state, ApplicationState::Enabled);
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn test_get_application() -> Result<(), FlameError> {
