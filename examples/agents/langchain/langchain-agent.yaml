@@ -1,7 +1,6 @@
 metadata:
   name: langchain-agent
 spec:
-  shim: grpc
   max_instances: 1
   working_directory: /opt/examples/agents/langchain/
   command: /usr/bin/uv

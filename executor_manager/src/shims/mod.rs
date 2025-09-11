@@ -11,17 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-mod grpc_shim;
-mod log_shim;
+mod host_shim;
 mod wasm_shim;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use grpc_shim::GrpcShim;
 use tokio::sync::Mutex;
 
-use self::log_shim::LogShim;
+use self::host_shim::HostShim;
 use self::wasm_shim::WasmShim;
 
 use crate::executor::Executor;
@@ -33,8 +31,8 @@ pub type ShimPtr = Arc<Mutex<dyn Shim>>;
 pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<ShimPtr, FlameError> {
     match app.shim {
         ShimType::Wasm => Ok(WasmShim::new_ptr(executor, app).await?),
-        ShimType::Grpc => Ok(GrpcShim::new_ptr(executor, app).await?),
-        _ => Ok(LogShim::new_ptr(executor, app)),
+        ShimType::Host => Ok(HostShim::new_ptr(executor, app).await?),
+        _ => Ok(HostShim::new_ptr(executor, app).await?),
     }
 }
 

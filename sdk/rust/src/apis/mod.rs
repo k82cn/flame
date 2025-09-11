@@ -92,11 +92,8 @@ pub enum ApplicationState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
 pub enum Shim {
-    Log = 0,
-    Stdio = 1,
-    Wasm = 2,
-    Shell = 3,
-    Grpc = 4,
+    Host = 0,
+    Wasm = 1,
 }
 
 impl From<Status> for FlameError {
@@ -108,11 +105,8 @@ impl From<Status> for FlameError {
 impl From<rpc::Shim> for Shim {
     fn from(shim: rpc::Shim) -> Self {
         match shim {
-            rpc::Shim::Log => Shim::Log,
-            rpc::Shim::Stdio => Shim::Stdio,
+            rpc::Shim::Host => Shim::Host,
             rpc::Shim::Wasm => Shim::Wasm,
-            rpc::Shim::Shell => Shim::Shell,
-            rpc::Shim::Grpc => Shim::Grpc,
         }
     }
 }

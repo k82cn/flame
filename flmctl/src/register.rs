@@ -83,12 +83,13 @@ impl TryFrom<&ApplicationYaml> for ApplicationAttributes {
             .spec
             .shim
             .clone()
-            .unwrap_or(String::from("grpc"))
+            .unwrap_or(String::from("host"))
             .to_lowercase()
             .as_str()
         {
-            "grpc" => Ok(Shim::Grpc),
-            _ => Err(FlameError::InvalidConfig("unsupported shim".to_string())),
+            "host" => Ok(Shim::Host),
+            "wasm" => Ok(Shim::Wasm),
+            _ => Err(FlameError::InvalidConfig("invalid shim".to_string())),
         }?;
 
         Ok(Self {

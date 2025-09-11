@@ -50,11 +50,8 @@ pub enum ApplicationState {
 #[derive(Clone, Debug, Default, Copy)]
 pub enum Shim {
     #[default]
-    Log = 0,
-    Stdio = 1,
-    Wasm = 2,
-    Shell = 3,
-    Grpc = 4,
+    Host = 0,
+    Wasm = 1,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -937,11 +934,8 @@ impl From<TaskState> for i32 {
 impl From<rpc::Shim> for Shim {
     fn from(s: rpc::Shim) -> Self {
         match s {
-            rpc::Shim::Log => Self::Log,
-            rpc::Shim::Stdio => Self::Stdio,
+            rpc::Shim::Host => Self::Host,
             rpc::Shim::Wasm => Self::Wasm,
-            rpc::Shim::Shell => Self::Shell,
-            rpc::Shim::Grpc => Self::Grpc,
         }
     }
 }
@@ -949,11 +943,8 @@ impl From<rpc::Shim> for Shim {
 impl From<Shim> for rpc::Shim {
     fn from(s: Shim) -> Self {
         match s {
-            Shim::Log => Self::Log,
-            Shim::Stdio => Self::Stdio,
+            Shim::Host => Self::Host,
             Shim::Wasm => Self::Wasm,
-            Shim::Shell => Self::Shell,
-            Shim::Grpc => Self::Grpc,
         }
     }
 }
@@ -963,7 +954,7 @@ impl TryFrom<i32> for Shim {
 
     fn try_from(v: i32) -> Result<Self, Self::Error> {
         let s = rpc::Shim::try_from(v)
-            .map_err(|_| FlameError::InvalidState("unknown shim".to_string()))?;
+            .map_err(|_| FlameError::InvalidState("invalid shim".to_string()))?;
         Ok(Self::from(s))
     }
 }
