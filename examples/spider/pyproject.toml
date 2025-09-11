@@ -1,0 +1,12 @@
+[project]
+name = "spider"
+version = "0.1.0"
+description = "Spider agent"
+dependencies = [
+  "markitdown",
+  "flamepy",
+]
+
+[tool.uv.sources]
+# flamepy = { path = "../../../../sdk/python" }
+flamepy = { path = "/usr/local/flame/sdk/python" }

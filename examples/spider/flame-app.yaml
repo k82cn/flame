@@ -1,0 +1,10 @@
+metadata:
+  name: spider-agent
+spec:
+  shim: grpc
+  working_directory: /opt/examples/spider/
+  command: /usr/bin/uv
+  arguments:
+    - run
+    - main.py
+    - api.py

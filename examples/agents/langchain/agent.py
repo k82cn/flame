@@ -12,7 +12,7 @@ import os
 import flamepy
 from langchain_deepseek import ChatDeepSeek
 
-from lctypes import SysPrompt, Question, Answer
+from apis import SysPrompt, Question, Answer
 
 ins = flamepy.FlameInstance()
 

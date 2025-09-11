@@ -28,13 +28,13 @@ debug_service = None
 
 class FlameInstance(FlameService):
     def __init__(self):
-        self._entrypoint = {}
+        self._entrypoint = None
         self._parameter = None
         self._return_type = None
         self._input_schema = None
         self._output_schema = None
 
-        self._context = {}
+        self._context = None
         self._context_schema = None
         self._context_parameter = None
 
@@ -138,11 +138,13 @@ def run_debug_service(instance: FlameInstance):
     debug_service = FastAPI()
     debug_service.state.instance = instance
 
-    context_name = instance._context.__name__
-    entrypoint_name = instance._entrypoint.__name__
+    if instance._context is not None:   
+        context_name = instance._context.__name__
+        debug_service.add_api_route(f"/{context_name}", context_api, methods=["POST"])
 
-    debug_service.add_api_route(f"/{context_name}", context_api, methods=["POST"])
-    debug_service.add_api_route(f"/{entrypoint_name}", entrypoint_api, methods=["POST"])
+    if instance._entrypoint is not None:
+        entrypoint_name = instance._entrypoint.__name__
+        debug_service.add_api_route(f"/{entrypoint_name}", entrypoint_api, methods=["POST"])
 
     uvicorn.run(debug_service, host="0.0.0.0", port=5050)
 

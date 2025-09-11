@@ -9,7 +9,7 @@
 
 import flamepy
 import asyncio
-from lctypes import SysPrompt, Question, Answer
+from apis import SysPrompt, Question, Answer
 
 LANGCHAIN_AGENT_NAME = "langchain-agent"
 
