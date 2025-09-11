@@ -22,7 +22,7 @@ class MyTaskInformer(flamepy.TaskInformer):
 
 async def test_create_session():
     session = await flamepy.create_session(
-        application="flmtest",
+        application="flmping",
         common_data=b"shared data"
     )
 
@@ -34,7 +34,7 @@ async def test_create_session():
 
 async def test_invoke_multiple_tasks():
     session = await flamepy.create_session(
-        application="flmtest",
+        application="flmping",
         common_data=b"shared data"
     )
 
@@ -48,7 +48,7 @@ async def test_invoke_multiple_tasks():
 async def test_invoke_multiple_sessions():
     for i in range(10):
         session = await flamepy.create_session(
-            application="flmtest",
+            application="flmping",
             common_data=b"shared data"
         )
 

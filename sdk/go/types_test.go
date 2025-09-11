@@ -75,11 +75,8 @@ func TestShimString(t *testing.T) {
 		shim Shim
 		want string
 	}{
-		{ShimLog, "Log"},
-		{ShimStdio, "Stdio"},
+		{ShimHost, "Host"},
 		{ShimWasm, "Wasm"},
-		{ShimShell, "Shell"},
-		{ShimGrpc, "Grpc"},
 		{Shim(99), "Unknown"},
 	}
 
