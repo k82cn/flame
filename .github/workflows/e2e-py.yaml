@@ -23,4 +23,4 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Run Python E2E Test
         run: |
-          make sdk-python-test
+          make e2e

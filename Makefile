@@ -15,7 +15,7 @@ FEM_DOCKERFILE = docker/Dockerfile.fem
 CONSOLE_DOCKERFILE = docker/Dockerfile.console
 
 # Default target
-.PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean
+.PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -48,6 +48,9 @@ sdk-python-clean: ## Clean Python SDK build artifacts
 	cd sdk/python && make clean
 
 sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
+
+e2e:
+	cd e2e && uv run pytest .
 
 # Docker build targets
 docker-build-fsm: update_protos ## Build session manager Docker image
