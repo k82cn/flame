@@ -40,7 +40,7 @@ use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput};
 use common::{trace::TraceFn, trace_fn, FlameError};
 
-pub struct GrpcShim {
+pub struct HostShim {
     session_context: Option<SessionContext>,
     client: GrpcShimClient<Channel>,
     child: tokio::process::Child,
@@ -52,12 +52,12 @@ const RUST_LOG: &str = "RUST_LOG";
 const DEFAULT_SVC_LOG_LEVEL: &str = "info";
 const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
 
-impl GrpcShim {
+impl HostShim {
     pub async fn new_ptr(
         executor: &Executor,
         app: &ApplicationContext,
     ) -> Result<ShimPtr, FlameError> {
-        trace_fn!("GrpcShim::new_ptr");
+        trace_fn!("HostShim::new_ptr");
 
         let working_directory = format!("/tmp/flame/shim/{}", executor.id);
         let service_socket = format!("{working_directory}/fsi.sock");
@@ -129,7 +129,7 @@ impl GrpcShim {
     }
 }
 
-impl Drop for GrpcShim {
+impl Drop for HostShim {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = std::fs::remove_file(&self.service_socket);
@@ -143,9 +143,9 @@ impl Drop for GrpcShim {
 }
 
 #[async_trait]
-impl Shim for GrpcShim {
+impl Shim for HostShim {
     async fn on_session_enter(&mut self, ctx: &SessionContext) -> Result<(), FlameError> {
-        trace_fn!("GrpcShim::on_session_enter");
+        trace_fn!("HostShim::on_session_enter");
 
         let req = Request::new(rpc::SessionContext::from(ctx.clone()));
         self.client.on_session_enter(req).await?;
@@ -157,7 +157,7 @@ impl Shim for GrpcShim {
         &mut self,
         ctx: &TaskContext,
     ) -> Result<Option<TaskOutput>, FlameError> {
-        trace_fn!("GrpcShim::on_task_invoke");
+        trace_fn!("HostShim::on_task_invoke");
 
         let req = Request::new(rpc::TaskContext::from(ctx.clone()));
         let resp = self.client.on_task_invoke(req).await?;
@@ -167,7 +167,7 @@ impl Shim for GrpcShim {
     }
 
     async fn on_session_leave(&mut self) -> Result<(), FlameError> {
-        trace_fn!("GrpcShim::on_session_leave");
+        trace_fn!("HostShim::on_session_leave");
 
         self.client
             .on_session_leave(Request::new(EmptyRequest::default()))

@@ -189,7 +189,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         (
             "flmexec".to_string(),
             ApplicationAttributes {
-                shim: Shim::Grpc,
+                shim: Shim::Host,
                 description: Some(
                     "The Flame Executor application, which is used to run scripts.".to_string(),
                 ),
@@ -205,15 +205,8 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         (
             "flmping".to_string(),
             ApplicationAttributes {
-                shim: Shim::Grpc,
+                shim: Shim::Host,
                 command: Some("/usr/local/flame/bin/flmping-service".to_string()),
-                ..ApplicationAttributes::default()
-            },
-        ),
-        (
-            "flmtest".to_string(),
-            ApplicationAttributes {
-                shim: Shim::Log,
                 ..ApplicationAttributes::default()
             },
         ),

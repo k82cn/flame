@@ -19,7 +19,7 @@ async def main():
     conn = await connect("http://localhost:8080")
     # Create a session
     session = await conn.create_session(SessionAttributes(
-        application="flmlog",
+        application="flmping",
         slots=2,
         common_data=b"shared data"
     ))
@@ -97,7 +97,6 @@ Manage distributed applications.
 ```python
 # Register an application
 await conn.register_application("my-app", {
-    "shim": Shim.SHELL,
     "command": "python",
     "arguments": ["script.py"]
 })

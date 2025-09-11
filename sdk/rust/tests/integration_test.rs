@@ -30,7 +30,7 @@ use flame::{
 
 const FLAME_DEFAULT_ADDR: &str = "http://127.0.0.1:8080";
 
-const FLAME_DEFAULT_APP: &str = "flmtest";
+const FLAME_DEFAULT_APP: &str = "flmping";
 
 pub struct DefaultTaskInformer {
     pub succeed: i32,
@@ -191,7 +191,7 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
         (
             "my-test-agent-1".to_string(),
             ApplicationAttributes {
-                shim: Shim::Grpc,
+                shim: Shim::Host,
                 image: Some("may-agent".to_string()),
                 description: Some("This is my agent for testing.".to_string()),
                 labels: vec!["test".to_string(), "agent".to_string()],
@@ -211,7 +211,7 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
         (
             "empty-app".to_string(),
             ApplicationAttributes {
-                shim: Shim::Grpc,
+                shim: Shim::Host,
                 image: None,
                 description: None,
                 labels: vec![],

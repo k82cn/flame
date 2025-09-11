@@ -59,11 +59,8 @@ class ApplicationState(IntEnum):
 
 class Shim(IntEnum):
     """Shim type enumeration."""
-    LOG = 0
-    STDIO = 1
-    WASM = 2
-    SHELL = 3
-    GRPC = 4
+    Host = 0
+    Wasm = 1
 
 
 class FlameErrorCode(IntEnum):

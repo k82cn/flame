@@ -230,11 +230,8 @@ Represents a distributed application.
 - `DISABLED = 1`: Application is disabled
 
 ### Shim
-- `LOG = 0`: Log shim
-- `STDIO = 1`: Stdio shim
-- `WASM = 2`: WebAssembly shim
-- `SHELL = 3`: Shell shim
-- `GRPC = 4`: gRPC shim
+- `Host = 0`: Host shim
+- `WASM = 1`: WebAssembly shim
 
 ### FlameErrorCode
 - `INVALID_CONFIG = 0`: Invalid configuration

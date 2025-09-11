@@ -28,11 +28,6 @@ init: ## Install required tools
 	cargo install cargo-get --force
 
 update_protos: ## Update protobuf files
-	@cp rpc/protos/frontend.proto sdk/go/protos
-	@cp rpc/protos/types.proto sdk/go/protos
-	@cp rpc/protos/shim.proto sdk/go/protos
-	@echo "Copied protobuf files to sdk/go/protos"
-
 	@cp rpc/protos/frontend.proto sdk/rust/protos
 	@cp rpc/protos/types.proto sdk/rust/protos
 	@cp rpc/protos/shim.proto sdk/rust/protos
@@ -53,24 +48,6 @@ sdk-python-clean: ## Clean Python SDK build artifacts
 	cd sdk/python && make clean
 
 sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
-
-# Go SDK targets
-sdk-go-generate: update_protos ## Generate the Go protobuf files
-	@export PATH="$(go env GOPATH)/bin:${PATH}"
-	cd sdk/go && protoc --proto_path=protos \
-		--go_out=./rpc \
-		--go_opt=paths=source_relative \
-		--go-grpc_out=./rpc \
-		--go-grpc_opt=paths=source_relative \
-		protos/*.proto
-
-sdk-go-test: update_protos ## Test the Go SDK
-	cd sdk/go && go test -v ./...
-
-sdk-go-clean: ## Clean Go SDK build artifacts
-	cd sdk/go && go clean -cache -testcache
-
-sdk-go: sdk-go-build sdk-go-test ## Build and test the Go SDK
 
 # Docker build targets
 docker-build-fsm: update_protos ## Build session manager Docker image

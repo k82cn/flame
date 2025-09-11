@@ -33,8 +33,8 @@ def main():
             # Generate Python files
             cmd = [
                 sys.executable, "-m", "grpc_tools.protoc",
-                f"--python_out={script_dir}/src/flame/",
-                f"--grpc_python_out={script_dir}/src/flame/",
+                f"--python_out={script_dir}/src/flamepy/",
+                f"--grpc_python_out={script_dir}/src/flamepy/",
                 f"--proto_path={protos_dir}",
                 str(proto_path)
             ]
