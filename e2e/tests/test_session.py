@@ -1,15 +1,8 @@
-# /// script
-# dependencies = [
-#   "asyncio",
-#   "flamepy",
-# ]
-# [tool.uv.sources]
-# flamepy = { path = ".." }
-# ///
 
-
+import pytest
 import asyncio
-import flamepy 
+import pytest_asyncio
+import flamepy
 
 class MyTaskInformer(flamepy.TaskInformer):
     """Example task informer that prints task updates."""
@@ -20,6 +13,7 @@ class MyTaskInformer(flamepy.TaskInformer):
     def on_error(self, error):
         pass
 
+@pytest.mark.asyncio
 async def test_create_session():
     session = await flamepy.create_session(
         application="flmping",
@@ -28,10 +22,9 @@ async def test_create_session():
 
     await session.invoke(b"task input data", MyTaskInformer())
     await session.close()
-        
-    print("Test create session completed successfully!")
 
 
+@pytest.mark.asyncio
 async def test_invoke_multiple_tasks():
     session = await flamepy.create_session(
         application="flmping",
@@ -42,9 +35,8 @@ async def test_invoke_multiple_tasks():
         await session.invoke(b"task input data", MyTaskInformer())
     await session.close()
 
-    print("Test invoke multiple tasks completed successfully!")
 
-
+@pytest.mark.asyncio
 async def test_invoke_multiple_sessions():
     for i in range(10):
         session = await flamepy.create_session(
@@ -56,12 +48,3 @@ async def test_invoke_multiple_sessions():
             await session.invoke(b"task input data", MyTaskInformer())
         await session.close()
 
-    print("Test invoke multiple sessions completed successfully!")
-
-
-
-
-if __name__ == "__main__":
-    asyncio.run(test_create_session()) 
-    asyncio.run(test_invoke_multiple_tasks()) 
-    asyncio.run(test_invoke_multiple_sessions()) 
