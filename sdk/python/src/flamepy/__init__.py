@@ -13,6 +13,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import logging
+import os
+
+if os.getenv("FLAME_LOG_LEVEL", "INFO") == "DEBUG":
+    logging.basicConfig(level=logging.DEBUG, filename="flamepy.log")
+else:
+    logging.basicConfig(level=logging.INFO, filename="flamepy.log")
+
 from .types import (
     # Type aliases
     TaskID,
@@ -39,6 +47,8 @@ from .types import (
     Application,
     FlameContext,
     TaskInformer,
+    Request,
+    Response,
 )
 
 from .client import Connection, Session, TaskWatcher, connect, create_session
@@ -47,7 +57,7 @@ from .service import (
     ApplicationContext, SessionContext, TaskContext, TaskOutput,
     run
 )
-from .instance import FlameInstance, Request, Response
+from .instance import FlameInstance
 
 __version__ = "0.3.0"
 
@@ -85,6 +95,8 @@ __all__ = [
     "Application",
     "FlameContext",
     "TaskInformer",
+    "Request",
+    "Response",
     
     # Client classes
     "Connection",
@@ -99,6 +111,4 @@ __all__ = [
 
     # Instance classes
     "FlameInstance",
-    "Request",
-    "Response",
 ] 

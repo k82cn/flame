@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
+from pydantic import BaseModel
+from pathlib import Path
+import yaml
+import os
 
 
 # Type aliases
@@ -99,8 +103,6 @@ class ApplicationAttributes:
     working_directory: Optional[str] = None
 
 
-
-
 @dataclass
 class Task:
     """Represents a computing task."""
@@ -157,3 +159,37 @@ class TaskInformer:
     def on_error(self, error: FlameError) -> None:
         """Called when an error occurs."""
         pass 
+
+
+class Request(BaseModel):
+    @classmethod
+    def from_json(cls, json_data):
+        return cls.model_validate_json(json_data.decode("utf-8"))
+
+    def to_json(self) -> bytes:
+        return self.model_dump_json().encode("utf-8")
+
+
+class Response(BaseModel):
+    @classmethod
+    def from_json(cls, json_data):
+        return cls.model_validate_json(json_data.decode("utf-8"))
+
+    def to_json(self) -> bytes:
+        return self.model_dump_json().encode("utf-8")
+
+class FlameContext:
+    """Flame configuration."""
+    _endpoint = None
+
+    def __init__(self):
+        self._endpoint = DEFAULT_FLAME_ENDPOINT
+
+        home = Path.home()
+        config_file = home / ".flame" / DEFAULT_FLAME_CONF
+        if config_file.exists():
+            with open(config_file, "r") as f:
+                config = yaml.safe_load(f)
+                self._endpoint = config.get("endpoint", self._endpoint)
+
+        self._endpoint = os.getenv("FLAME_ENDPOINT", self._endpoint)

@@ -11,20 +11,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import asyncio
 import threading
 from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
 import grpc
 import grpc.aio
-import os
 
 from datetime import datetime
 from .types import (
     Task, Application, SessionAttributes, ApplicationAttributes,
     SessionID, TaskID, ApplicationID, TaskInput, TaskOutput, CommonData,
     SessionState, TaskState, ApplicationState, Shim, FlameError, FlameErrorCode,
-    TaskInformer
+    TaskInformer, Request as FlameRequest, Response as FlameResponse, FlameContext
 )
 
 from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec
@@ -37,19 +35,26 @@ async def connect(addr: str) -> "Connection":
 
 async def create_session(application: str, common_data: Dict[str, Any] = None, slots: int = 1) -> "Session":
     conn = await ConnectionInstance().instance()
+    if isinstance(common_data, FlameRequest):
+        common_data = common_data.to_json()
+    elif not isinstance(common_data, CommonData):
+        raise ValueError("Invalid common data type, must be a Request or CommonData")
+
     session = await conn.create_session(SessionAttributes(application=application, common_data=common_data, slots=slots))
     return session
 
 class ConnectionInstance:
     """Connection instance."""
     _connection = None
+    _context = None
     _lock = threading.Lock()
 
     async def instance(self) -> "Connection":
         """Get the connection instance."""
         with self._lock:
             if not self._connection:
-                self._connection = await connect(os.getenv("FLAME_ENDPOINT", "http://127.0.0.1:8080"))
+                self._context = FlameContext()
+                self._connection = await connect(self._context._endpoint)
             return self._connection
 
 class Connection:
@@ -79,7 +84,7 @@ class Connection:
             
             # Wait for channel to be ready
             await channel.channel_ready()
-            
+
             # Create frontend stub
             frontend = FrontendStub(channel)
             
@@ -106,7 +111,7 @@ class Connection:
         
         app_spec = ApplicationSpec(
             shim=app_attrs.shim,
-            url=app_attrs.url,
+            image=app_attrs.image,
             command=app_attrs.command,
             arguments=app_attrs.arguments or [],
             environments=app_attrs.environments or [],
@@ -153,7 +158,7 @@ class Connection:
                     shim=Shim(app.spec.shim),
                     state=ApplicationState(app.status.state),
                     creation_time=datetime.fromtimestamp(app.status.creation_time),
-                    url=app.spec.url,
+                    image=app.spec.image,
                     command=app.spec.command,
                     arguments=list(app.spec.arguments),
                     environments=list(app.spec.environments),
@@ -386,8 +391,13 @@ class Session:
                 f"failed to watch task: {e.details()}"
             )
     
-    async def invoke(self, input_data: TaskInput, informer: Optional[TaskInformer] = None) -> Task:
+    async def invoke(self, input_data, informer: Optional[TaskInformer] = None) -> Task:
         """Invoke a task with the given input and optional informer."""
+        if isinstance(input_data, FlameRequest):
+            input_data = input_data.to_json()
+        elif not isinstance(input_data, TaskInput):
+            raise ValueError("Invalid input data type, must be a Request or TaskInput")
+            
         task = await self.create_task(input_data)
         watcher = await self.watch_task(task.id)
         

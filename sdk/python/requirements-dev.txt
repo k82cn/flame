@@ -12,3 +12,4 @@ protobuf>=4.21.0
 pydantic>=2.11
 fastapi>=0.115.0
 uvicorn>=0.35.0
+pyyaml>=6.0.0
