@@ -74,7 +74,7 @@ func (x *ApplicationContext) GetShim() Shim {
 	if x != nil {
 		return x.Shim
 	}
-	return Shim_Log
+	return Shim_Host
 }
 
 func (x *ApplicationContext) GetImage() string {

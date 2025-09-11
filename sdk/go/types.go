@@ -100,25 +100,16 @@ func (a ApplicationState) String() string {
 type Shim int
 
 const (
-	ShimLog Shim = iota
-	ShimStdio
+	ShimHost Shim = iota
 	ShimWasm
-	ShimShell
-	ShimGrpc
 )
 
 func (s Shim) String() string {
 	switch s {
-	case ShimLog:
-		return "Log"
-	case ShimStdio:
-		return "Stdio"
+	case ShimHost:
+		return "Host"
 	case ShimWasm:
 		return "Wasm"
-	case ShimShell:
-		return "Shell"
-	case ShimGrpc:
-		return "Grpc"
 	default:
 		return "Unknown"
 	}

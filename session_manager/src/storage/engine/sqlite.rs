@@ -651,7 +651,7 @@ mod tests {
             (
                 "my-test-agent-1".to_string(),
                 ApplicationAttributes {
-                    shim: Shim::Grpc,
+                    shim: Shim::Host,
                     image: Some("may-agent".to_string()),
                     description: Some("This is my agent for testing.".to_string()),
                     labels: vec!["test".to_string(), "agent".to_string()],
@@ -671,7 +671,7 @@ mod tests {
             (
                 "empty-app".to_string(),
                 ApplicationAttributes {
-                    shim: Shim::Grpc,
+                    shim: Shim::Host,
                     image: None,
                     description: None,
                     labels: vec![],
