@@ -3,10 +3,11 @@ metadata:
 spec:
   shim: grpc
   max_instances: 1
+  working_directory: /opt/examples/agents/langchain/
   command: /usr/bin/uv
   arguments:
     - run
-    - /opt/examples/agents/langchain/agent.py
-    - /opt/examples/agents/langchain/lctypes.py
+    - agent.py
+    - apis.py
   environments:
     DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxx

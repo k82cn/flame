@@ -35,7 +35,9 @@ async def connect(addr: str) -> "Connection":
 
 async def create_session(application: str, common_data: Dict[str, Any] = None, slots: int = 1) -> "Session":
     conn = await ConnectionInstance().instance()
-    if isinstance(common_data, FlameRequest):
+    if common_data is None:
+        pass
+    elif isinstance(common_data, FlameRequest):
         common_data = common_data.to_json()
     elif not isinstance(common_data, CommonData):
         raise ValueError("Invalid common data type, must be a Request or CommonData")
@@ -393,6 +395,8 @@ class Session:
     
     async def invoke(self, input_data, informer: Optional[TaskInformer] = None) -> Task:
         """Invoke a task with the given input and optional informer."""
+        if input_data is None:
+            pass
         if isinstance(input_data, FlameRequest):
             input_data = input_data.to_json()
         elif not isinstance(input_data, TaskInput):
