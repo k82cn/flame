@@ -13,7 +13,6 @@ limitations under the License.
 """
 
 import inspect
-import asyncio
 import uvicorn
 import os
 from pydantic import BaseModel
@@ -23,15 +22,9 @@ from .service import FlameService, SessionContext, TaskContext, TaskOutput, run 
 from .types import Shim
 import logging
 
-logger = logging.getLogger(__name__)
+FLAME_EXECUTOR_ID = "FLAME_EXECUTOR_ID"
 
-debug_service = None    
-
-class Request(BaseModel):
-    pass
-
-class Response(BaseModel):
-    pass
+debug_service = None
 
 class FlameInstance(FlameService):
     def __init__(self):
@@ -46,6 +39,9 @@ class FlameInstance(FlameService):
         self._context_parameter = None
 
     def context(self, func):
+        logger = logging.getLogger(__name__)
+        logger.debug(f"context: {func.__name__}")
+
         sig = inspect.signature(func)
         self._context = func
         assert len(sig.parameters) == 1 or len(sig.parameters) == 0, "Context must have exactly zero or one parameter"
@@ -56,6 +52,9 @@ class FlameInstance(FlameService):
             self._context_parameter = param
 
     def entrypoint(self, func):
+        logger = logging.getLogger(__name__)
+        logger.debug(f"entrypoint: {func.__name__}")
+
         sig = inspect.signature(func)
         self._entrypoint = func
         assert len(sig.parameters) == 1 or len(sig.parameters) == 0, "Entrypoint must have exactly zero or one parameter"
@@ -69,49 +68,64 @@ class FlameInstance(FlameService):
             self._return_type = sig.return_annotation
             self._output_schema = self._return_type.model_json_schema()
 
-    def on_session_enter(self, context: SessionContext):
-        logger.info("on_session_enter")
+    async def on_session_enter(self, context: SessionContext):
+        logger = logging.getLogger(__name__)
+        logger.debug("on_session_enter")
         if self._context is None:
+            logger.warning("No context function defined")
             return
-        
-        if self._context_parameter is None:
-            self._context()
-        else:
-            obj = self._context_parameter.annotation.model_validate_json(context.common_data)
-            self._context(obj)
+        try:
+            if self._context_parameter is None:
+                self._context()
+            else:
+                obj = self._context_parameter.annotation.model_validate_json(context.common_data)
+                self._context(obj)
+        except Exception as e:
+            logger.error(f"Error in on_session_enter: {e}")
+            return
 
-    def on_task_invoke(self, context: TaskContext):
-        logger.info("on_task_invoke")
+    async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
+        logger = logging.getLogger(__name__)
+        logger.debug("on_task_invoke")
         if self._entrypoint is None:
+            logger.warning("No entrypoint function defined")
             return
-
-        if self._parameter is not None:
-            obj = self._parameter.annotation.model_validate_json(context.input)
-            res = self._entrypoint(obj)
-        else:
-            res = self._entrypoint()
-
-        res = self._return_type.model_validate(res).model_dump_json()
-        return TaskOutput(data=res)
-
-    def on_session_leave(self):
-        logger.info("on_session_leave")
-        pass
-
-    def run(self):
 
         try:
+            if self._parameter is not None:
+                obj = self._parameter.annotation.model_validate_json(context.input)
+                res = self._entrypoint(obj)
+            else:
+                res = self._entrypoint()
+
+            res = self._return_type.model_validate(res).model_dump_json()
+            logger.debug(f"on_task_invoke: {res}")
+        except Exception as e:
+            logger.error(f"Error in on_task_invoke: {e}")
+            return TaskOutput(data=f"Error in on_task_invoke: {e}".encode("utf-8"))
+
+        return TaskOutput(data=res.encode("utf-8"))
+
+    async def on_session_leave(self):
+        logger = logging.getLogger(__name__)
+        logger.debug("on_session_leave")
+
+    def run(self):
+        logger = logging.getLogger(__name__)
+        try:
             # Run the service
-            flame_mode = os.getenv("FLAME_MODE")
-            if flame_mode is None or flame_mode != 'debug':
+            exec_id = os.getenv(FLAME_EXECUTOR_ID)
+            if exec_id is not None:
+                # If the instance was started by executor, run the service.
                 logger.info("🚀 Starting Flame Instance")
                 logger.info("=" * 50)
 
                 run_service(self)
             else:
+                # If the instance was started manually, run the debug service.
                 logger.info("🚀 Starting Flame Debug Instance")
                 logger.info("=" * 50)
-                
+
                 run_debug_service(self)
         
         except KeyboardInterrupt:
@@ -136,7 +150,7 @@ async def context_api(s: FastAPIRequest):
     instance = s.app.state.instance
     body_str = await s.body()
 
-    instance.on_session_enter(SessionContext(
+    await instance.on_session_enter(SessionContext(
         session_id="0",
         application=ApplicationContext(
             name="test",
@@ -152,7 +166,7 @@ async def entrypoint_api(s: FastAPIRequest):
     instance = s.app.state.instance
     body_str = await s.body()
     
-    output = instance.on_task_invoke(TaskContext(
+    output = await instance.on_task_invoke(TaskContext(
         task_id="0",
         session_id="0",
         input=body_str,

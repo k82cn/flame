@@ -1,16 +1,15 @@
 # /// script
 # dependencies = [
 #   "openai",
-#   "flame",
+#   "flamepy",
 # ]
 # [tool.uv.sources]
 # flame = { path = "/usr/local/flame/sdk/python" }
 # ///
 
 import os
-import asyncio
-import flame
-from flame import FlameService, SessionContext, TaskContext, TaskOutput
+import flamepy
+from flamepy import FlameService, SessionContext, TaskContext, TaskOutput
 from openai import OpenAI
 import logging
 
@@ -43,9 +42,6 @@ class OpenAIAgent(FlameService):
     async def on_session_leave(self):
         pass
 
-async def main():
-    logging.basicConfig(level=logging.DEBUG)
-    await flame.run(OpenAIAgent())
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    logging.basicConfig(level=logging.DEBUG)
+    flamepy.run(OpenAIAgent())

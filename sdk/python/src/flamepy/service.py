@@ -32,7 +32,7 @@ class ApplicationContext:
     """Context for an application."""
     name: str
     shim: Shim
-    url: Optional[str] = None
+    image: Optional[str] = None
     command: Optional[str] = None
 
 
@@ -106,12 +106,13 @@ class GrpcShimServicer(GrpcShimServicer):
     
     async def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
+        logger.debug("OnSessionEnter")
         try:
             # Convert protobuf request to SessionContext
             app_context = ApplicationContext(
                 name=request.application.name,
                 shim=Shim(request.application.shim),
-                url=request.application.url,
+                image=request.application.image,
                 command=request.application.command
             )
             
@@ -122,7 +123,9 @@ class GrpcShimServicer(GrpcShimServicer):
             )
             
             # Call the service implementation
+            logger.debug("Calling on_session_enter")
             await self._service.on_session_enter(session_context)
+            logger.debug("on_session_enter returned")
             
             # Return result
             return Result(
@@ -130,6 +133,7 @@ class GrpcShimServicer(GrpcShimServicer):
             )
             
         except Exception as e:
+            logger.error(f"Error in OnSessionEnter: {e}")
             return Result(
                 return_code=1,
                 message=f"Session enter error: {str(e)}"
@@ -137,6 +141,7 @@ class GrpcShimServicer(GrpcShimServicer):
     
     async def OnTaskInvoke(self, request, context):
         """Handle OnTaskInvoke RPC call."""
+        logger.debug("OnTaskInvoke")
         try:
             # Convert protobuf request to TaskContext
             task_context = TaskContext(
@@ -146,26 +151,32 @@ class GrpcShimServicer(GrpcShimServicer):
             )
             
             # Call the service implementation
+            logger.debug("Calling on_task_invoke")
             output = await self._service.on_task_invoke(task_context)
-            
+            logger.debug("on_task_invoke returned")
+
             # Return task output
             return TaskOutputProto(data=output.data)
             
         except Exception as e:
+            logger.error(f"Error in OnTaskInvoke: {e}")
             return TaskOutputProto(data=None)
     
     async def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
+        logger.debug("OnSessionLeave")
         try:
             # Call the service implementation
+            logger.debug("Calling on_session_leave")
             await self._service.on_session_leave()
-            
+            logger.debug("on_session_leave returned")
             # Return result
             return Result(
                 return_code=0,
             )
             
         except Exception as e:
+            logger.error(f"Error in OnSessionLeave: {e}")
             return Result(
                 return_code=1,
                 message=f"Session leave error: {str(e)}"
@@ -196,7 +207,7 @@ class GrpcShimServer:
                 socket_path = f"/tmp/flame/shim/{exec_id}/fsi.sock"
 
             self._server.add_insecure_port(f"unix://{socket_path}")
-            logger.info(f"Flame Python service started on Unix socket: {socket_path}")
+            logger.debug(f"Flame Python service started on Unix socket: {socket_path}")
 
             # Start server
             await self._server.start()

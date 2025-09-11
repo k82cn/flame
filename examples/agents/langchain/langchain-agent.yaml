@@ -1,0 +1,12 @@
+metadata:
+  name: langchain-agent
+spec:
+  shim: grpc
+  max_instances: 1
+  command: /usr/bin/uv
+  arguments:
+    - run
+    - /opt/examples/agents/langchain/agent.py
+    - /opt/examples/agents/langchain/lctypes.py
+  environments:
+    DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxx

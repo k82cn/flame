@@ -5,11 +5,19 @@ COPY . .
 RUN apt-get update && apt-get install -y protobuf-compiler pkg-config libssl-dev
 RUN cargo install --path ./flmctl
 RUN cargo install --path ./flmping
+RUN cargo install --path ./flmexec
 
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y wget vim iputils-ping ssh
 COPY --from=builder /usr/local/cargo/bin/flmping /usr/local/bin/flmping
 COPY --from=builder /usr/local/cargo/bin/flmctl /usr/local/bin/flmctl
+COPY --from=builder /usr/local/cargo/bin/flmexec /usr/local/bin/flmexec
+
+COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /uvx /bin/
+
+RUN chmod +x /usr/local/bin/*
+
+COPY ./sdk/python /usr/local/flame/sdk/python
 
 CMD ["service", "ssh", "start", "-D"]
