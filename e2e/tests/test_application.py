@@ -25,7 +25,7 @@ async def test_register_application():
     app = await flamepy.get_application("flmtestapp")
     assert app.name == "flmtestapp"
     assert app.shim == flamepy.Shim.Host
-    assert app.state == flamepy.ApplicationState.Enabled
+    assert app.state == flamepy.ApplicationState.ENABLED
 
     await flamepy.unregister_application("flmtestapp")
 
@@ -38,5 +38,5 @@ async def test_list_application():
     for app in apps:
         assert app.name in ["flmexec", "flmping"]
         assert app.shim == flamepy.Shim.Host
-        assert app.state == flamepy.ApplicationState.Enabled
+        assert app.state == flamepy.ApplicationState.ENABLED
 
