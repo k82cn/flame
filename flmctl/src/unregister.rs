@@ -14,7 +14,13 @@ limitations under the License.
 use std::error::Error;
 
 use flame_rs::apis::FlameContext;
+use flame_rs::client;
 
-pub async fn run(_: &FlameContext, _: &String) -> Result<(), Box<dyn Error>> {
-    todo!()
+pub async fn run(ctx: &FlameContext, application: &String) -> Result<(), Box<dyn Error>> {
+    let conn = client::connect(&ctx.endpoint).await?;
+
+    conn.unregister_application(application.clone())
+        .await?;
+
+    Ok(())
 }

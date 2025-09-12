@@ -159,6 +159,43 @@ impl Engine for SqliteEngine {
         Ok(app.try_into()?)
     }
 
+    async fn unregister_application(
+        &self,
+        name: String,
+    ) -> Result<(), FlameError> {
+        trace_fn!("Sqlite::unregister_application");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to begin TX: {e}")))?;
+
+        let sql = "SELECT count(*) FROM sessions WHERE application=?";
+        let ssn: i64 = sqlx::query_scalar(sql)
+            .bind(&name)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+
+        if ssn > 0 {
+            return Err(FlameError::Storage(format!("application is still in use")));
+        }
+
+        let sql = "DELETE FROM applications WHERE name=?";
+        sqlx::query(sql)
+            .bind(&name)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to commit TX: {e}")))?;
+
+        Ok(())
+    }
+
     async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError> {
         let mut tx = self
             .pool
@@ -633,6 +670,25 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn test_unregister_application() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_unregister_application_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        for (name, attr) in common::default_applications() {
+            tokio_test::block_on(storage.register_application(name.clone(), attr))?;
+        }
+
+        tokio_test::block_on(storage.unregister_application("flmexec".to_string()))?;
+
+        let app_1 = tokio_test::block_on(storage.get_application("flmexec".to_string()));
+        assert!(app_1.is_err());
+
+        Ok(())
+    }
     #[test]
     fn test_register_application() -> Result<(), FlameError> {
         let url = format!(

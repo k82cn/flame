@@ -97,7 +97,23 @@ impl Frontend for Flame {
         &self,
         req: Request<UnregisterApplicationRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
-        todo!()
+        trace_fn!("Frontend::unregister_application");
+        let req = req.into_inner();
+        let res = self
+            .controller
+            .unregister_application(req.name)
+            .await;
+        
+        match res {
+            Ok(..) => Ok(Response::new(rpc::Result {
+                return_code: 0,
+                message: None,
+            })),
+            Err(e) => Ok(Response::new(rpc::Result {
+                return_code: -1,
+                message: Some(e.to_string()),
+            })),
+        }   
     }
 
     async fn update_application(

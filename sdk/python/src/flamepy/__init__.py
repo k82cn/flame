@@ -51,7 +51,7 @@ from .types import (
     Response,
 )
 
-from .client import Connection, Session, TaskWatcher, connect, create_session
+from .client import Connection, Session, TaskWatcher, connect, create_session, register_application, unregister_application, list_applications, get_application
 from .service import (
     FlameService,
     ApplicationContext, SessionContext, TaskContext, TaskOutput,
@@ -102,6 +102,10 @@ __all__ = [
     "Connection",
     "connect",
     "create_session",
+    "register_application",
+    "unregister_application",
+    "list_applications",
+    "get_application",
     "TaskWatcher",
     "Session", 
     "Task",

@@ -292,6 +292,15 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
+        self.engine.unregister_application(name.clone()).await?;
+
+        let mut app_map = lock_ptr!(self.applications)?;
+        app_map.remove(&name);
+
+        Ok(())
+    }
+
     pub async fn list_application(&self) -> Result<Vec<Application>, FlameError> {
         self.engine.find_application().await
     }

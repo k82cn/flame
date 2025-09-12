@@ -89,15 +89,27 @@ class SessionAttributes:
 
 
 @dataclass
+class ApplicationSchema:
+    """Attributes for an application schema."""
+    input: Optional[str] = None
+    output: Optional[str] = None
+    common_data: Optional[str] = None
+
+
+@dataclass
 class ApplicationAttributes:
     """Attributes for an application."""
-    name: str
     shim: Shim
-    url: Optional[str] = None
+    image: Optional[str] = None
+    description: Optional[str] = None
+    labels: Optional[List[str]] = None
     command: Optional[str] = None
     arguments: Optional[List[str]] = None
     environments: Optional[List[str]] = None
     working_directory: Optional[str] = None
+    max_instances: Optional[int] = None
+    delay_release: Optional[int] = None
+    schema: Optional[ApplicationSchema] = None
 
 
 @dataclass
@@ -124,11 +136,16 @@ class Application:
     shim: Shim
     state: ApplicationState
     creation_time: datetime
-    url: Optional[str] = None
+    image: Optional[str] = None
+    description: Optional[str] = None
+    labels: Optional[List[str]] = None
     command: Optional[str] = None
     arguments: Optional[List[str]] = None
     environments: Optional[List[str]] = None
     working_directory: Optional[str] = None
+    max_instances: Optional[int] = None
+    delay_release: Optional[int] = None
+    schema: Optional[ApplicationSchema] = None
 
 
 @dataclass
@@ -159,6 +176,9 @@ class TaskInformer:
 
 
 class Request(BaseModel):
+    session_id: SessionID
+    task_id: TaskID
+
     @classmethod
     def from_json(cls, json_data):
         return cls.model_validate_json(json_data.decode("utf-8"))

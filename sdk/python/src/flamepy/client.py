@@ -22,11 +22,11 @@ from .types import (
     Task, Application, SessionAttributes, ApplicationAttributes,
     SessionID, TaskID, ApplicationID, TaskInput, TaskOutput, CommonData,
     SessionState, TaskState, ApplicationState, Shim, FlameError, FlameErrorCode,
-    TaskInformer, Request as FlameRequest, Response as FlameResponse, FlameContext
+    TaskInformer, Request as FlameRequest, Response as FlameResponse, FlameContext, ApplicationSchema
 )
 
 from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec
-from .frontend_pb2 import RegisterApplicationRequest, UnregisterApplicationRequest, ListApplicationRequest, CreateSessionRequest, ListSessionRequest, GetSessionRequest, CloseSessionRequest, CreateTaskRequest, WatchTaskRequest, GetTaskRequest
+from .frontend_pb2 import RegisterApplicationRequest, UnregisterApplicationRequest, ListApplicationRequest, CreateSessionRequest, ListSessionRequest, GetSessionRequest, CloseSessionRequest, CreateTaskRequest, WatchTaskRequest, GetTaskRequest, GetApplicationRequest
 from .frontend_pb2_grpc import FrontendStub
 
 async def connect(addr: str) -> "Connection":
@@ -44,6 +44,22 @@ async def create_session(application: str, common_data: Dict[str, Any] = None, s
 
     session = await conn.create_session(SessionAttributes(application=application, common_data=common_data, slots=slots))
     return session
+
+async def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
+    conn = await ConnectionInstance().instance()
+    await conn.register_application(name, app_attrs)
+
+async def unregister_application(name: str) -> None:
+    conn = await ConnectionInstance().instance()
+    await conn.unregister_application(name)
+
+async def list_applications() -> List[Application]:
+    conn = await ConnectionInstance().instance()
+    return await conn.list_applications()
+
+async def get_application(name: str) -> Application:
+    conn = await ConnectionInstance().instance()
+    return await conn.get_application(name)
 
 class ConnectionInstance:
     """Connection instance."""
@@ -111,13 +127,26 @@ class Connection:
         if isinstance(app_attrs, dict):
             app_attrs = ApplicationAttributes(**app_attrs)
         
+        schema = None
+        if app_attrs.schema is not None:
+            schema = ApplicationSchema(
+                input=app_attrs.schema.input,
+                output=app_attrs.schema.output,
+                common_data=app_attrs.schema.common_data
+            )
+
         app_spec = ApplicationSpec(
             shim=app_attrs.shim,
             image=app_attrs.image,
             command=app_attrs.command,
+            description=app_attrs.description,
+            labels=app_attrs.labels or [],
             arguments=app_attrs.arguments or [],
             environments=app_attrs.environments or [],
-            working_directory=app_attrs.working_directory
+            working_directory=app_attrs.working_directory,
+            max_instances=app_attrs.max_instances,
+            delay_release=app_attrs.delay_release,
+            schema=schema
         )
         
         request = RegisterApplicationRequest(
@@ -154,6 +183,13 @@ class Connection:
             
             applications = []
             for app in response.applications:
+                schema = None
+                if app.spec.schema is not None:
+                    schema = ApplicationSchema(
+                        input=app.spec.schema.input,
+                        output=app.spec.schema.output,
+                        common_data=app.spec.schema.common_data
+                    )
                 applications.append(Application(
                     id=app.metadata.id,
                     name=app.metadata.name,
@@ -164,7 +200,10 @@ class Connection:
                     command=app.spec.command,
                     arguments=list(app.spec.arguments),
                     environments=list(app.spec.environments),
-                    working_directory=app.spec.working_directory
+                    working_directory=app.spec.working_directory,
+                    max_instances=app.spec.max_instances,
+                    delay_release=app.spec.delay_release,
+                    schema=schema
                 ))
             
             return applications
@@ -175,6 +214,42 @@ class Connection:
                 f"failed to list applications: {e.details()}"
             )
     
+    async def get_application(self, name: str) -> Application:
+        """Get an application by name."""
+        request = GetApplicationRequest(name=name)
+        
+        try:
+            response = await self._frontend.GetApplication(request)
+            schema = None
+            if response.spec.schema is not None:
+                schema = ApplicationSchema(
+                    input=response.spec.schema.input,
+                    output=response.spec.schema.output,
+                    common_data=response.spec.schema.common_data
+                )
+            return Application(
+                id=response.metadata.id,
+                name=response.metadata.name,
+                shim=Shim(response.spec.shim),
+                state=ApplicationState(response.status.state),
+                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                image=response.spec.image,
+                command=response.spec.command,
+                arguments=list(response.spec.arguments),
+                environments=list(response.spec.environments),
+                working_directory=response.spec.working_directory,
+                max_instances=response.spec.max_instances,
+                delay_release=response.spec.delay_release,
+                schema=schema
+            )
+                
+            
+        except grpc.RpcError as e:
+            raise FlameError(
+                FlameErrorCode.INTERNAL,
+                f"failed to get application: {e.details()}"
+            )
+
     async def create_session(self, attrs: SessionAttributes) -> "Session":
         """Create a new session."""
         session_spec = SessionSpec(
