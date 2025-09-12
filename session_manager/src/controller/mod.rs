@@ -137,6 +137,10 @@ impl Controller {
         self.storage.register_application(name, attr).await
     }
 
+    pub async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
+        self.storage.unregister_application(name).await
+    }
+
     pub async fn list_application(&self) -> Result<Vec<Application>, FlameError> {
         self.storage.list_application().await
     }

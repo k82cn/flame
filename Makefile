@@ -50,7 +50,7 @@ sdk-python-clean: ## Clean Python SDK build artifacts
 sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
 
 e2e:
-	cd e2e && uv run pytest .
+	cd e2e && uv run -n pytest . -vv
 
 # Docker build targets
 docker-build-fsm: update_protos ## Build session manager Docker image

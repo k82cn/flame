@@ -92,7 +92,7 @@ enum Commands {
     Unregister {
         /// The name of the application
         #[arg(short, long)]
-        name: String,
+        application: String,
     },
 }
 
@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }) => view::run(&ctx, session, application).await?,
         Some(Commands::Migrate { url, sql }) => migrate::run(&ctx, url, sql).await?,
         Some(Commands::Register { file }) => register::run(&ctx, file).await?,
-        Some(Commands::Unregister { name }) => unregister::run(&ctx, name).await?,
+        Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,
         _ => helper::run().await?,
     };
 
