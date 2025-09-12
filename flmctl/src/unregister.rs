@@ -16,11 +16,10 @@ use std::error::Error;
 use flame_rs::apis::FlameContext;
 use flame_rs::client;
 
-pub async fn run(ctx: &FlameContext, application: &String) -> Result<(), Box<dyn Error>> {
+pub async fn run(ctx: &FlameContext, application: &str) -> Result<(), Box<dyn Error>> {
     let conn = client::connect(&ctx.endpoint).await?;
 
-    conn.unregister_application(application.clone())
-        .await?;
+    conn.unregister_application(application.to_owned()).await?;
 
     Ok(())
 }
