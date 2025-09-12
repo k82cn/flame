@@ -32,10 +32,7 @@ pub trait Engine: Send + Sync + 'static {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError>;
-    async fn unregister_application(
-        &self,
-        id: String,
-    ) -> Result<(), FlameError>;
+    async fn unregister_application(&self, id: String) -> Result<(), FlameError>;
     async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError>;
     async fn find_application(&self) -> Result<Vec<Application>, FlameError>;
 

@@ -14,10 +14,9 @@ limitations under the License.
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
-use clap::Arg;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{migrate::MigrateDatabase, types::Json, FromRow, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, types::Json, FromRow, Sqlite, SqliteConnection, SqlitePool};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -116,6 +115,87 @@ impl SqliteEngine {
 
         Ok(Arc::new(SqliteEngine { pool: db }))
     }
+
+    async fn _count_open_tasks(
+        &self,
+        tx: &mut SqliteConnection,
+        ssn_id: SessionID,
+    ) -> Result<i64, FlameError> {
+        let sql = "SELECT count(*) FROM tasks WHERE ssn_id=? AND state NOT IN (?, ?)";
+        let count: i64 = sqlx::query_scalar(sql)
+            .bind(ssn_id)
+            .bind(TaskState::Failed as i32)
+            .bind(TaskState::Succeed as i32)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+        Ok(count)
+    }
+
+    async fn _delete_session(
+        &self,
+        tx: &mut SqliteConnection,
+        id: SessionID,
+    ) -> Result<Session, FlameError> {
+        let sql = "DELETE FROM tasks WHERE ssn_id=?";
+        sqlx::query(sql)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+
+        let sql = "DELETE FROM sessions WHERE id=? AND state=? RETURNING *";
+        let ssn: SessionDao = sqlx::query_as(sql)
+            .bind(id)
+            .bind(SessionState::Closed as i32)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+        ssn.try_into()
+    }
+
+    async fn _count_open_sessions(
+        &self,
+        tx: &mut SqliteConnection,
+        app: String,
+    ) -> Result<i64, FlameError> {
+        let sql = "SELECT count(*) FROM sessions WHERE application=? AND state=?";
+        let count: i64 = sqlx::query_scalar(sql)
+            .bind(app)
+            .bind(SessionState::Open as i32)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+        Ok(count)
+    }
+
+    async fn _list_session_ids(
+        &self,
+        tx: &mut SqliteConnection,
+        app: String,
+    ) -> Result<Vec<SessionID>, FlameError> {
+        let sql = "SELECT id FROM sessions WHERE application=?";
+        let ids: Vec<SessionID> = sqlx::query_scalar(sql)
+            .bind(app)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+        Ok(ids)
+    }
+
+    async fn _delete_application(
+        &self,
+        tx: &mut SqliteConnection,
+        name: String,
+    ) -> Result<(), FlameError> {
+        let sql = "DELETE FROM applications WHERE name=?";
+        sqlx::query(sql)
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -159,10 +239,7 @@ impl Engine for SqliteEngine {
         Ok(app.try_into()?)
     }
 
-    async fn unregister_application(
-        &self,
-        name: String,
-    ) -> Result<(), FlameError> {
+    async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
         trace_fn!("Sqlite::unregister_application");
 
         let mut tx = self
@@ -171,23 +248,19 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(format!("failed to begin TX: {e}")))?;
 
-        let sql = "SELECT count(*) FROM sessions WHERE application=?";
-        let ssn: i64 = sqlx::query_scalar(sql)
-            .bind(&name)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
-
-        if ssn > 0 {
-            return Err(FlameError::Storage(format!("application is still in use")));
+        let count = self._count_open_sessions(&mut tx, name.clone()).await?;
+        if count > 0 {
+            return Err(FlameError::Storage(format!(
+                "{count} open sessions in the application"
+            )));
         }
 
-        let sql = "DELETE FROM applications WHERE name=?";
-        sqlx::query(sql)
-            .bind(&name)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+        let ids = self._list_session_ids(&mut tx, name.clone()).await?;
+        for id in ids {
+            self._delete_session(&mut tx, id).await?;
+        }
+
+        self._delete_application(&mut tx, name).await?;
 
         tx.commit()
             .await
@@ -300,19 +373,20 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let sql = "DELETE FROM sessions WHERE id=? AND state=? RETURNING *";
-        let ssn: SessionDao = sqlx::query_as(sql)
-            .bind(id)
-            .bind(SessionState::Closed as i32)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(e.to_string()))?;
+        let count = self._count_open_tasks(&mut tx, id).await?;
+        if count > 0 {
+            return Err(FlameError::Storage(format!(
+                "{count} open tasks in the session"
+            )));
+        }
+
+        let ssn = self._delete_session(&mut tx, id).await?;
 
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        ssn.try_into()
+        Ok(ssn)
     }
 
     async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
@@ -682,10 +756,37 @@ mod tests {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
 
-        tokio_test::block_on(storage.unregister_application("flmexec".to_string()))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
+        assert_eq!(ssn_1.id, 1);
+        assert_eq!(ssn_1.application, "flmexec");
+        assert_eq!(ssn_1.status.state, SessionState::Open);
+
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        assert_eq!(task_1_1.id, 1);
+        let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
+        assert!(res.is_err());
+
+        let task_1_1 = tokio_test::block_on(storage.get_task(task_1_1.gid()))?;
+        assert_eq!(task_1_1.state, TaskState::Pending);
+
+        let task_1_1 =
+            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+        assert_eq!(task_1_1.state, TaskState::Succeed);
+
+        let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
+        assert!(res.is_err());
+
+        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        assert_eq!(ssn_1.status.state, SessionState::Closed);
+
+        let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
+        assert!(res.is_ok());
 
         let app_1 = tokio_test::block_on(storage.get_application("flmexec".to_string()));
         assert!(app_1.is_err());
+
+        let list_ssn = tokio_test::block_on(storage.find_session())?;
+        assert_eq!(list_ssn.len(), 0);
 
         Ok(())
     }
@@ -743,9 +844,7 @@ mod tests {
         ];
         for (name, attr) in apps {
             tokio_test::block_on(storage.register_application(name.clone(), attr)).map_err(
-                |e| {
-                    FlameError::Storage(format!("failed to register application <{name}>: {e}"))
-                },
+                |e| FlameError::Storage(format!("failed to register application <{name}>: {e}")),
             )?;
             let app_1 =
                 tokio_test::block_on(storage.get_application(name.clone())).map_err(|e| {
@@ -933,6 +1032,49 @@ mod tests {
 
         let res = tokio_test::block_on(storage.create_task(ssn_1.id, None));
         assert!(res.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_session_with_open_tasks() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_delete_session_with_open_tasks_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+        for (name, attr) in common::default_applications() {
+            tokio_test::block_on(storage.register_application(name.clone(), attr))?;
+        }
+        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
+
+        assert_eq!(ssn_1.id, 1);
+        assert_eq!(ssn_1.application, "flmexec");
+        assert_eq!(ssn_1.status.state, SessionState::Open);
+
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        assert_eq!(task_1_1.id, 1);
+
+        // It should be failed because the session is open and there are open tasks
+        let res = tokio_test::block_on(storage.delete_session(1));
+        assert!(res.is_err());
+
+        let task_1_1 = tokio_test::block_on(storage.get_task(task_1_1.gid()))?;
+        assert_eq!(task_1_1.state, TaskState::Pending);
+
+        let task_1_1 =
+            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+        assert_eq!(task_1_1.state, TaskState::Succeed);
+
+        // It should be failed because the session is open
+        let res = tokio_test::block_on(storage.delete_session(1));
+        assert!(res.is_err());
+
+        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        assert_eq!(ssn_1.status.state, SessionState::Closed);
+
+        let ssn_1 = tokio_test::block_on(storage.delete_session(1))?;
+        assert_eq!(ssn_1.status.state, SessionState::Closed);
 
         Ok(())
     }
