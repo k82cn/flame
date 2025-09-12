@@ -17,7 +17,7 @@ jobs:
       - name: Start Flame
         uses: hoverkraft-tech/compose-action@v2.0.1
         with:
-          compose-file: "./compose.yaml"
+          compose-file: "./compose-e2e.yaml"
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh

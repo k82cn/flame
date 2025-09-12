@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::model::ExecutorPtr;
-use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskState};
+use common::apis::{ExecutorState, SessionPtr, SessionState, Task, TaskOutput, TaskPtr, TaskState};
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 use crate::controller::states::States;
@@ -158,8 +158,10 @@ impl Future for WaitForTaskFuture {
         match ssn.pop_pending_task() {
             None => {
                 let now = Utc::now();
-                if now - self.start_time > self.delay_release {
-                    // If the delay release is reached, return None.
+                if now - self.start_time > self.delay_release
+                    || ssn.status.state == SessionState::Closed
+                {
+                    // If the delay release is reached or the session is closed, return None.
                     Poll::Ready(Ok(None))
                 } else {
                     // If the delay release is not reached, wait for the next poll.
