@@ -971,10 +971,10 @@ mod tests {
             tokio_test::block_on(storage.update_task(task_1_2.gid(), TaskState::Succeed, None))?;
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
-        let ssn_2 = tokio_test::block_on(storage.create_session("flmlog".to_string(), 1, None))?;
+        let ssn_2 = tokio_test::block_on(storage.create_session("flmping".to_string(), 1, None))?;
 
         assert_eq!(ssn_2.id, 2);
-        assert_eq!(ssn_2.application, "flmlog");
+        assert_eq!(ssn_2.application, "flmping");
         assert_eq!(ssn_2.status.state, SessionState::Open);
 
         let task_2_1 = tokio_test::block_on(storage.create_task(ssn_2.id, None))?;
