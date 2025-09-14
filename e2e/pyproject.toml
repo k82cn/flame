@@ -25,4 +25,4 @@ dev = [
 ]
 
 [tool.uv.sources]
-flamepy = { path = "../sdk/python" }
+flamepy = { path = "/usr/local/flame/sdk/python" }

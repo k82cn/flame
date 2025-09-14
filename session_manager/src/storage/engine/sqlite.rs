@@ -51,7 +51,7 @@ struct ApplicationDao {
     pub command: Option<String>,
     pub arguments: Option<Json<Vec<String>>>,
     pub environments: Option<Json<HashMap<String, String>>>,
-
+    pub working_directory: Option<String>,
     pub max_instances: i32,
     pub delay_release: i64,
     pub schema: Option<Json<AppSchemaDao>>,
@@ -216,7 +216,23 @@ impl Engine for SqliteEngine {
         let schema: Option<Json<AppSchemaDao>> =
             attr.schema.clone().map(AppSchemaDao::from).map(Json);
 
-        let sql = "INSERT INTO applications (name, description, labels, shim, command, arguments, environments, max_instances, delay_release, schema, creation_time, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime ('%s', 'now'), 0) RETURNING *";
+        let sql = r#"INSERT INTO applications
+            (
+                name, 
+                description, 
+                labels, 
+                shim, 
+                command, 
+                arguments, 
+                environments, 
+                working_directory, 
+                max_instances, 
+                delay_release, 
+                schema, 
+                creation_time, 
+                state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING *"#;
         let app: ApplicationDao = sqlx::query_as(sql)
             .bind(name)
             .bind(attr.description)
@@ -225,9 +241,12 @@ impl Engine for SqliteEngine {
             .bind(attr.command)
             .bind(Json(attr.arguments))
             .bind(Json(attr.environments))
+            .bind(attr.working_directory)
             .bind(attr.max_instances)
             .bind(attr.delay_release.num_seconds())
             .bind(schema)
+            .bind(Utc::now().timestamp())
+            .bind(ApplicationState::Enabled as i32)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
@@ -327,9 +346,18 @@ impl Engine for SqliteEngine {
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
         let common_data: Option<Vec<u8>> = common_data.map(Bytes::into);
-        let sql = "INSERT INTO sessions (application, slots, common_data, creation_time, state) VALUES (?, ?, ?, ?, ?) RETURNING *";
+        let sql = r#"INSERT INTO sessions (application, slots, common_data, creation_time, state)
+            VALUES (
+                (SELECT name FROM applications WHERE name=? AND state=?),
+                ?,
+                ?,
+                ?,
+                ?
+            )
+            RETURNING *"#;
         let ssn: SessionDao = sqlx::query_as(sql)
             .bind(app)
+            .bind(ApplicationState::Enabled as i32)
             .bind(slots)
             .bind(common_data)
             .bind(Utc::now().timestamp())
@@ -701,8 +729,7 @@ impl TryFrom<&ApplicationDao> for Application {
                 .clone()
                 .map(|envs| envs.0)
                 .unwrap_or_default(),
-            // TODO: make application configurable for work_dir.
-            working_directory: String::from("/tmp"),
+            working_directory: app.working_directory.clone().unwrap_or("/tmp".to_string()),
             max_instances: app.max_instances,
             delay_release: Duration::seconds(app.delay_release),
             schema: app.schema.clone().map(|arg| arg.0.into()),
@@ -944,10 +971,10 @@ mod tests {
             tokio_test::block_on(storage.update_task(task_1_2.gid(), TaskState::Succeed, None))?;
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
-        let ssn_2 = tokio_test::block_on(storage.create_session("flmlog".to_string(), 1, None))?;
+        let ssn_2 = tokio_test::block_on(storage.create_session("flmping".to_string(), 1, None))?;
 
         assert_eq!(ssn_2.id, 2);
-        assert_eq!(ssn_2.application, "flmlog");
+        assert_eq!(ssn_2.application, "flmping");
         assert_eq!(ssn_2.status.state, SessionState::Open);
 
         let task_2_1 = tokio_test::block_on(storage.create_task(ssn_2.id, None))?;

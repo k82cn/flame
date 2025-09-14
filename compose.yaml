@@ -29,6 +29,7 @@ services:
     volumes:
       - ./ci/flame-conf.yaml:/root/.flame/flame-conf.yaml
       - ./examples:/opt/examples
+      - ./e2e:/opt/e2e
 
   flame-console:
     image: xflops/flame-console:latest
@@ -40,3 +41,4 @@ services:
     volumes:
       - ./ci/flame-conf.yaml:/root/.flame/flame-conf.yaml
       - ./examples:/opt/examples
+      - ./e2e:/opt/e2e

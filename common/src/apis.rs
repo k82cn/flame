@@ -214,6 +214,7 @@ pub struct ApplicationContext {
     pub image: Option<String>,
     pub command: Option<String>,
     pub arguments: Vec<String>,
+    pub working_directory: Option<String>,
     pub environments: HashMap<String, String>,
 
     pub shim: Shim,
@@ -540,6 +541,7 @@ impl TryFrom<rpc::Application> for ApplicationContext {
             image: spec.image.clone(),
             command: spec.command.clone(),
             arguments: spec.arguments.clone(),
+            working_directory: spec.working_directory.clone(),
             environments: spec
                 .environments
                 .clone()
@@ -579,6 +581,7 @@ impl From<ApplicationContext> for rpc::ApplicationContext {
             image: ctx.image.clone(),
             shim: ctx.shim.into(),
             command: ctx.command.clone(),
+            working_directory: ctx.working_directory.clone(),
         }
     }
 }

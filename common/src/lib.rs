@@ -86,52 +86,8 @@ macro_rules! lock_async_ptr {
     };
 }
 
-// #[macro_export]
-// macro_rules! lock_async_ptr {
-//     ( $mutex_arc:expr ) => {
-//         $mutex_arc
-//             .lock()
-//             .await
-//             .map_err(|_| FlameError::Internal("async mutex ptr".to_string()))
-//     };
-// }
-
-// #[macro_export]
-// macro_rules! lock_cond_ptr {
-//     ( $mutex_arc:expr ) => {
-//         $mutex_arc
-//             .ptr
-//             .lock()
-//             .map_err(|_| FlameError::Internal("cond ptr".to_string()))
-//     };
-// }
-//
-// #[derive(Clone, Debug, Copy, ::prost::Enumeration, Serialize, Deserialize)]
-// pub enum Shim {
-//     Log = 0,
-//     Stdio = 1,
-//     Rpc = 2,
-//     Rest = 3,
-// }
-//
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct Application {
-//     pub name: String,
-//     pub shim: Shim,
-//     pub command_line: String,
-//     pub working_directory: String,
-// }
-//
-// impl Default for Application {
-//     fn default() -> Self {
-//         Application {
-//             name: "flmexec".to_string(),
-//             shim: Shim::Log,
-//             command_line: "/usr/bin/flmexec".to_string(),
-//             working_directory: "/tmp".to_string(),
-//         }
-//     }
-// }
+pub const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
+pub const FLAME_WORKING_DIRECTORY: &str = "/tmp";
 
 pub fn init_logger() {
     // Initialize env_logger with a custom format
