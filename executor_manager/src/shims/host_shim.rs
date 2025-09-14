@@ -38,7 +38,7 @@ use uuid::Uuid;
 use crate::executor::Executor;
 use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput};
-use common::{trace::TraceFn, trace_fn, FlameError};
+use common::{trace::TraceFn, trace_fn, FlameError, FLAME_WORKING_DIRECTORY, FLAME_EXECUTOR_ID};
 
 pub struct HostShim {
     session_context: Option<SessionContext>,
@@ -50,7 +50,6 @@ pub struct HostShim {
 
 const RUST_LOG: &str = "RUST_LOG";
 const DEFAULT_SVC_LOG_LEVEL: &str = "info";
-const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
 
 impl HostShim {
     pub async fn new_ptr(
@@ -72,7 +71,7 @@ impl HostShim {
         let mut envs = app.environments.clone();
         envs.insert(RUST_LOG.to_string(), log_level);
         envs.insert(FLAME_EXECUTOR_ID.to_string(), executor.id.clone());
-
+        
         log::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"
         );
@@ -80,9 +79,14 @@ impl HostShim {
         // Spawn child process
         let mut cmd = tokio::process::Command::new(&command);
 
+        let cur_dir = app.working_directory.clone().unwrap_or(FLAME_WORKING_DIRECTORY.to_string());
+
+        log::debug!("Current directory of application instance: {cur_dir}");
+
         let mut child = cmd
             .envs(envs)
             .args(args)
+            .current_dir(cur_dir)
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| {

@@ -11,6 +11,7 @@ message ApplicationContext {
     Shim shim = 2;
     optional string image = 3;
     optional string command = 4;
+    optional string working_directory = 5;
 }
 
 message SessionContext {
