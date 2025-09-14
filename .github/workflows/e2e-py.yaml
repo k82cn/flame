@@ -18,9 +18,6 @@ jobs:
         uses: hoverkraft-tech/compose-action@v2.0.1
         with:
           compose-file: "./compose.yaml"
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Run Python E2E Test
         run: |
           make e2e-ci
