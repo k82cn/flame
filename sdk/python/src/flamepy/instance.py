@@ -79,7 +79,6 @@ class FlameInstance(FlameService):
                 self._context()
             else:
                 obj = self._context_parameter.annotation.model_validate_json(context.common_data)
-                obj.session_id = context.session_id
                 self._context(obj)
         except Exception as e:
             logger.error(f"Error in on_session_enter: {e}")
@@ -95,8 +94,6 @@ class FlameInstance(FlameService):
         try:
             if self._parameter is not None:
                 obj = self._parameter.annotation.model_validate_json(context.input)
-                obj.session_id = context.session_id
-                obj.task_id = context.task_id
                 res = self._entrypoint(obj)
             else:
                 res = self._entrypoint()
@@ -156,7 +153,6 @@ async def context_api(s: FastAPIRequest):
     body_str = await s.body()
 
     await instance.on_session_enter(SessionContext(
-        session_id="0",
         application=ApplicationContext(
             name="test",
             shim=Shim.GRPC,
@@ -172,8 +168,6 @@ async def entrypoint_api(s: FastAPIRequest):
     body_str = await s.body()
     
     output = await instance.on_task_invoke(TaskContext(
-        task_id="0",
-        session_id="0",
         input=body_str,
     ))
 

@@ -176,9 +176,6 @@ class TaskInformer:
 
 
 class Request(BaseModel):
-    session_id: SessionID
-    task_id: TaskID
-
     @classmethod
     def from_json(cls, json_data):
         return cls.model_validate_json(json_data.decode("utf-8"))
