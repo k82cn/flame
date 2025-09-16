@@ -3,6 +3,10 @@ name = "cri-rs"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "cri-test"
+path = "tests/integration_test.rs"
+
 [dependencies]
 common = { path = "../common" }
 tokio = { workspace = true }

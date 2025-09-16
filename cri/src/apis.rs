@@ -19,10 +19,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::cri_v1::{
-    DnsConfig as CriDnsConfig, LinuxPodSandboxConfig, LinuxSandboxSecurityContext,
-    PodSandboxConfig, PodSandboxMetadata, SupplementalGroupsPolicy, ContainerConfig,
-    LinuxContainerConfig, ImageSpec, KeyValue, ContainerMetadata,
-    Signal,
+    ContainerConfig, ContainerMetadata, DnsConfig as CriDnsConfig, ImageSpec, KeyValue,
+    LinuxContainerConfig, LinuxPodSandboxConfig, LinuxSandboxSecurityContext, PodSandboxConfig,
+    PodSandboxMetadata, Signal,
 };
 
 #[derive(Debug, Clone)]
@@ -189,10 +188,12 @@ impl From<(&Container, &PodRuntime)> for ContainerConfig {
             }
         };
 
-        let envs = container.envs.clone().into_iter().map(|(k, v)| KeyValue {
-            key: k,
-            value: v,
-        }).collect();
+        let envs = container
+            .envs
+            .clone()
+            .into_iter()
+            .map(|(k, v)| KeyValue { key: k, value: v })
+            .collect();
 
         Self {
             metadata: Some(ContainerMetadata {
@@ -215,7 +216,7 @@ impl From<(&Container, &PodRuntime)> for ContainerConfig {
             }),
             labels: HashMap::new(),
             annotations: HashMap::new(),
-            log_path: String::from(format!("{}/{}.log", runtime.log_directory, container.name)),
+            log_path: format!("{}/{}.log", runtime.log_directory, container.name),
             stdin: false,
             stdin_once: false,
             tty: false,

@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use chrono::Utc;
 use hyper_util::rt::TokioIo;
 use log::info;
 use std::collections::HashMap;
@@ -18,17 +19,16 @@ use tokio::net::UnixStream;
 use tonic::transport::Channel;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
-use chrono::{DateTime, Utc};
 
 use common::{FlameError, apis::ApplicationContext, trace::TraceFn, trace_fn};
 
-use crate::apis::{Pod, PodRuntime, Metadata, PodSpec, PodStatus, PodState};
+use crate::apis::{Metadata, Pod, PodRuntime, PodSpec, PodState, PodStatus};
 use crate::cri_v1::image_service_client::ImageServiceClient;
 use crate::cri_v1::runtime_service_client::RuntimeServiceClient;
 use crate::cri_v1::{
-    ContainerConfig, CreateContainerRequest, ImageSpec, LinuxPodSandboxConfig, PodSandboxConfig, PodSandboxStatusRequest, PullImageRequest,
-    RunPodSandboxRequest, VersionRequest, StartContainerRequest, ListPodSandboxRequest, PodSandboxFilter, PodSandboxStateValue, PodSandboxState,
-    StopPodSandboxRequest,
+    ContainerConfig, CreateContainerRequest, ImageSpec, ListPodSandboxRequest, PodSandboxConfig,
+    PodSandboxStatusRequest, PullImageRequest, RunPodSandboxRequest, StartContainerRequest,
+    StopPodSandboxRequest, VersionRequest,
 };
 
 pub struct PodManager {
@@ -138,7 +138,7 @@ impl PodManager {
 
         // Update the pod metadata with the sandbox ID.
         pod.metadata.uid = resp.pod_sandbox_id.clone();
-        
+
         let pod_sandbox_id = resp.pod_sandbox_id.clone();
         // Create the containers.
 
@@ -149,14 +149,21 @@ impl PodManager {
                 config: Some(container_config),
                 sandbox_config: Some(sandbox_config.clone()),
             };
-            let resp = self.rt_client.create_container(request).await.map_err(FlameError::from)?;
+            let resp = self
+                .rt_client
+                .create_container(request)
+                .await
+                .map_err(FlameError::from)?;
             let container_id = resp.into_inner().container_id.clone();
 
             // Start the container.
             let request = StartContainerRequest {
                 container_id: container_id.clone(),
             };
-            self.rt_client.start_container(request).await.map_err(FlameError::from)?;
+            self.rt_client
+                .start_container(request)
+                .await
+                .map_err(FlameError::from)?;
         }
         Ok(pod)
     }
@@ -166,8 +173,11 @@ impl PodManager {
             pod_sandbox_id: id.to_string(),
         };
 
-        self.rt_client.stop_pod_sandbox(request).await.map_err(FlameError::from)?;
-        
+        self.rt_client
+            .stop_pod_sandbox(request)
+            .await
+            .map_err(FlameError::from)?;
+
         Ok(())
     }
 
@@ -206,9 +216,7 @@ impl PodManager {
     }
 
     pub async fn list_pods(&mut self) -> Result<Vec<Pod>, FlameError> {
-        let request = ListPodSandboxRequest {
-            filter: None,
-        };
+        let request = ListPodSandboxRequest { filter: None };
 
         let pods = self
             .rt_client

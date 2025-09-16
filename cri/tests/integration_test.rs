@@ -33,7 +33,7 @@ fn default_test_runtime() -> PodRuntime {
     }
 }
 
-#[tokio::test]
+// #[tokio::test]
 async fn test_new_pod_manager() -> Result<(), FlameError> {
     let pm = PodManager::new("/run/containerd/containerd.sock", &default_test_runtime()).await?;
 
@@ -42,7 +42,7 @@ async fn test_new_pod_manager() -> Result<(), FlameError> {
     Ok(())
 }
 
-#[tokio::test]
+// #[tokio::test]
 async fn test_run_pod() -> Result<(), FlameError> {
     let mut pm =
         PodManager::new("/run/containerd/containerd.sock", &default_test_runtime()).await?;
@@ -63,6 +63,17 @@ async fn test_run_pod() -> Result<(), FlameError> {
     let pod = pm.get_pod(&pod.metadata.uid).await?;
 
     assert_eq!(pod.status.unwrap().state, PodState::Running);
+
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn main() -> Result<(), FlameError> {
+    let res = test_run_pod().await?;
+    println!("test_run_pod result: {:?}", res);
+
+    let res = test_new_pod_manager().await?;
+    println!("test_new_pod_manager result: {:?}", res);
 
     Ok(())
 }
