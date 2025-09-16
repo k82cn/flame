@@ -16,11 +16,11 @@ log = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 prost = { workspace = true }
-tower = "0.5"
-hyper-util = "0.1"
+tower = { workspace = true }
+hyper-util = { workspace = true }
+chrono = { workspace = true }
 
 bytes = "1"
-chrono = "0.4"
 lazy_static = "1.4"
 wasmtime = "16"
 wasmtime-wasi = "16"

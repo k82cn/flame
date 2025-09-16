@@ -17,7 +17,7 @@ serde_json = { workspace = true }
 serde_derive = { workspace = true }
 futures = "0.3"
 clap = { version = "4.1", features = ["derive"] }
-chrono = "0.4"
+chrono = { workspace = true }
 indicatif = {version = "*", features = ["rayon"]}
 tempfile = {version = "*"}
 rand = { workspace = true }

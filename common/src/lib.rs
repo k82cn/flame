@@ -63,7 +63,7 @@ impl From<FlameError> for Status {
 
 impl From<Status> for FlameError {
     fn from(value: Status) -> Self {
-        FlameError::Network(value.code().to_string())
+        FlameError::Network(value.message().to_string())
     }
 }
 
