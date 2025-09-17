@@ -96,7 +96,7 @@ impl From<&Executor> for rpc::Executor {
 
 impl Executor {
     pub fn update(&mut self, next: &Executor) {
-        log::info!(
+        tracing::info!(
             "Update executor <{}> from <{}> to <{}>",
             self.id,
             self.state,
@@ -117,7 +117,7 @@ pub fn start(client: BackendClient, executor: ExecutorPtr) {
                 match exec {
                     Ok(exec) => exec.clone(),
                     Err(e) => {
-                        log::error!("Failed to lock executor: {e}");
+                        tracing::error!("Failed to lock executor: {e}");
                         return;
                     }
                 }
@@ -132,12 +132,12 @@ pub fn start(client: BackendClient, executor: ExecutorPtr) {
                             exec.update(&next_state);
                         }
                         Err(e) => {
-                            log::error!("Failed to lock executor: {e}");
+                            tracing::error!("Failed to lock executor: {e}");
                         }
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to execute: {e}");
+                    tracing::error!("Failed to execute: {e}");
                 }
             }
         }

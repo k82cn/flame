@@ -43,11 +43,11 @@ impl flame::service::FlameService for FlmpingService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    flame::apis::init_logger()?;
 
     flame::service::run(FlmpingService {}).await?;
 
-    log::debug!("FlmpingService was stopped.");
+    tracing::debug!("FlmpingService was stopped.");
 
     Ok(())
 }

@@ -10,8 +10,8 @@ flame-rs = { path = "../sdk/rust" }
 
 tokio = { workspace = true }
 tonic = { workspace = true }
-env_logger = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 sqlx = { workspace = true }
 
 clap = { version = "4.1", features = ["derive"] }

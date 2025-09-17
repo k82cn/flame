@@ -37,21 +37,21 @@ impl flame::service::FlameService for FlmexecService {
     async fn on_task_invoke(&self, ctx: TaskContext) -> Result<Option<TaskOutput>, FlameError> {
         trace_fn!("FlmexecService::on_task_invoke");
 
-        log::debug!("Try to get task input from context");
+        tracing::debug!("Try to get task input from context");
         let input = ctx
             .input
             .as_ref()
             .ok_or(FlameError::Internal("No task input".to_string()))?;
-        log::debug!(
+        tracing::debug!(
             "Try to parse script from input:\n{}",
             String::from_utf8_lossy(input)
         );
         let script: Script = serde_json::from_slice(input)
             .map_err(|e| FlameError::Internal(format!("failed to parse script: {e}")))?;
-        log::debug!("Try to create engine for script: {:?}", script);
+        tracing::debug!("Try to create engine for script: {:?}", script);
         let engine = script::new(&script)?;
-        log::debug!("Created engine for language: {}", script.language);
-        log::debug!("Code:\n{}", script.code);
+        tracing::debug!("Created engine for language: {}", script.language);
+        tracing::debug!("Code:\n{}", script.code);
         let output = engine.run()?;
 
         Ok(output.map(TaskOutput::from))
@@ -66,11 +66,11 @@ impl flame::service::FlameService for FlmexecService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    flame::apis::init_logger()?;
 
     flame::service::run(FlmexecService {}).await?;
 
-    log::debug!("FlmexecService was stopped.");
+    tracing::debug!("FlmexecService was stopped.");
 
     Ok(())
 }

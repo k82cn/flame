@@ -78,7 +78,7 @@ impl Plugin for FairShare {
 
         let apps = ss.find_applications(ALL_APPLICATION)?;
 
-        log::debug!(
+        tracing::debug!(
             "There are {} open sessions, {} applications.",
             open_ssns.len(),
             apps.len()
@@ -105,7 +105,7 @@ impl Plugin for FairShare {
                     },
                 );
             } else {
-                log::warn!(
+                tracing::warn!(
                     "Application <{}> not found for session <{}>.",
                     ssn.application,
                     ssn.id
@@ -148,9 +148,9 @@ impl Plugin for FairShare {
             }
         }
 
-        if log::log_enabled!(log::Level::Debug) {
+        if tracing::enabled!(tracing::Level::DEBUG) {
             for ssn in self.ssn_map.values() {
-                log::debug!(
+                tracing::debug!(
                     "Session <{}>: slots <{}>, desired <{}>, deserved <{}>, allocated <{}>.",
                     ssn.id,
                     ssn.slots,

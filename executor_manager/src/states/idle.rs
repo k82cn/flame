@@ -33,7 +33,7 @@ impl State for IdleState {
 
         let ssn = self.client.bind_executor(&self.executor.clone()).await?;
 
-        log::debug!(
+        tracing::debug!(
             "Try to bind Executor <{}> to <{}>.",
             &self.executor.id.clone(),
             &ssn.session_id.clone()
@@ -44,7 +44,7 @@ impl State for IdleState {
             // TODO(k82cn): if on_session_enter failed, add retry limits.
             let mut shim = shim_ptr.lock().await;
             shim.on_session_enter(&ssn).await?;
-            log::debug!("Shim on_session_enter completed.");
+            tracing::debug!("Shim on_session_enter completed.");
         };
 
         self.client
@@ -56,7 +56,7 @@ impl State for IdleState {
         self.executor.session = Some(ssn.clone());
         self.executor.state = ExecutorState::Bound;
 
-        log::debug!(
+        tracing::debug!(
             "Executor <{}> was bound to <{}>.",
             &self.executor.id.clone(),
             &ssn.session_id.clone()

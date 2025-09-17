@@ -43,7 +43,7 @@ impl ShellScript {
         let work_dir = Path::new(&work_dir_path);
 
         fs::create_dir_all(work_dir).map_err(|e| FlameError::Internal(e.to_string()))?;
-        log::debug!("Created work directory: {work_dir_path}");
+        tracing::debug!("Created work directory: {work_dir_path}");
 
         let entrypoint = DEFAULT_ENTRYPOINT;
 
@@ -69,8 +69,8 @@ impl ScriptEngine for ShellScript {
     fn run(&self) -> Result<Option<Vec<u8>>, FlameError> {
         trace_fn!("ShellScript::run");
 
-        log::debug!("Running script: {}", self.runtime.entrypoint);
-        log::debug!("Work directory: {}", self.runtime.work_dir);
+        tracing::debug!("Running script: {}", self.runtime.entrypoint);
+        tracing::debug!("Work directory: {}", self.runtime.work_dir);
 
         let mut child = Command::new(SHELL_CMD)
             .stdin(Stdio::piped())
@@ -81,7 +81,7 @@ impl ScriptEngine for ShellScript {
             .spawn()
             .map_err(|e| FlameError::Internal(format!("failed to start subprocess: {e}")))?;
 
-        log::debug!("Spawned child process: {}", child.id());
+        tracing::debug!("Spawned child process: {}", child.id());
         let mut stdin = child.stdin.take().unwrap();
         if let Some(input) = &self.runtime.input {
             let input = input.clone();
@@ -89,11 +89,11 @@ impl ScriptEngine for ShellScript {
                 match stdin.write_all(&input) {
                     Ok(_) => {}
                     Err(e) => {
-                        log::error!("Failed to send input into shim instance: {e}.");
+                        tracing::error!("Failed to send input into shim instance: {e}.");
                     }
                 };
             });
-            log::debug!("Sent input into child process.");
+            tracing::debug!("Sent input into child process.");
         }
 
         let mut stdout = child.stdout.take().unwrap();
@@ -102,20 +102,20 @@ impl ScriptEngine for ShellScript {
             .read_to_end(&mut data)
             .map_err(|_| FlameError::Internal("failed to read task output".to_string()))?;
 
-        log::debug!("Read <{n}> data from child process.");
+        tracing::debug!("Read <{n}> data from child process.");
 
         match child.wait() {
             Ok(es) => {
                 if !es.success() {
-                    log::info!("Child process exist with error: {es}");
+                    tracing::info!("Child process exist with error: {es}");
                 }
             }
             Err(e) => {
-                log::error!("Failed to wait child process: {e}")
+                tracing::error!("Failed to wait child process: {e}")
             }
         };
 
-        log::debug!("Child process exited.");
+        tracing::debug!("Child process exited.");
 
         Ok(Some(data))
     }

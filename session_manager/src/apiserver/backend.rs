@@ -127,7 +127,7 @@ impl Backend for Flame {
         let app = self.controller.get_application(ssn.application).await?;
         let application = Some(rpc::Application::from(&app));
 
-        log::debug!(
+        tracing::debug!(
             "Bind executor <{}> to Session <{}:{}>",
             req.executor_id.to_string(),
             app.name,

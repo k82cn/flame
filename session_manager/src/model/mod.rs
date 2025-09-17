@@ -60,7 +60,7 @@ impl SnapShot {
     }
 
     pub fn debug(&self) -> Result<(), FlameError> {
-        if log::log_enabled!(log::Level::Debug) {
+        if tracing::enabled!(tracing::Level::DEBUG) {
             let ssn_num = {
                 let ssns = lock_ptr!(self.sessions)?;
                 ssns.len()
@@ -70,7 +70,7 @@ impl SnapShot {
                 exes.len()
             };
 
-            log::debug!("Session: <{ssn_num}>, Executor: <{exe_num}>");
+            tracing::debug!("Session: <{ssn_num}>, Executor: <{exe_num}>");
         }
 
         Ok(())
@@ -265,7 +265,7 @@ impl SnapShot {
                 if let Some(node) = nodes_list.get(&name) {
                     nodes.insert(name, node.clone());
                 } else {
-                    log::warn!("Node <{name}> not found.");
+                    tracing::warn!("Node <{name}> not found.");
                 }
             }
         }

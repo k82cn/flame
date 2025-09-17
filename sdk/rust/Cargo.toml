@@ -13,7 +13,8 @@ readme = "../../README.md"
 tower = "0.4"
 prost = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 tonic = { workspace = true }

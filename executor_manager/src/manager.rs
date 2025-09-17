@@ -55,18 +55,18 @@ impl ExecutorManager {
 
             for executor in &executors {
                 if self.executors.contains_key(&executor.id) {
-                    // log::debug!("Executor <{}> is already running.", executor.id);
+                    // tracing::debug!("Executor <{}> is already running.", executor.id);
                     continue;
                 }
 
-                log::debug!("Executor <{}> is starting.", executor.id);
+                tracing::debug!("Executor <{}> is starting.", executor.id);
                 let executor_ptr = Arc::new(Mutex::new(executor.clone()));
                 self.executors
                     .insert(executor.id.clone(), executor_ptr.clone());
                 executor::start(self.client.clone(), executor_ptr.clone());
             }
 
-            log::debug!(
+            tracing::debug!(
                 "There are {} executors in node {}",
                 executors.len(),
                 node.name

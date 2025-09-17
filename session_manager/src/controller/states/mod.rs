@@ -31,7 +31,7 @@ mod void;
 
 pub fn from(storage: StoragePtr, exe_ptr: ExecutorPtr) -> Result<Arc<dyn States>, FlameError> {
     let exe = lock_ptr!(exe_ptr)?;
-    log::debug!("Build state <{}> for Executor <{}>.", exe.state, exe.id);
+    tracing::debug!("Build state <{}> for Executor <{}>.", exe.state, exe.id);
 
     match exe.state {
         ExecutorState::Void => Ok(Arc::new(VoidState {

@@ -348,18 +348,18 @@ impl Frontend for Flame {
             loop {
                 match controller.watch_task(gid).await {
                     Ok(task) => {
-                        log::debug!("Task <{}> state is <{}>", task.id, task.state as i32);
+                        tracing::debug!("Task <{}> state is <{}>", task.id, task.state as i32);
                         if let Err(e) = tx.send(Result::<_, Status>::Ok(Task::from(&task))).await {
-                            log::debug!("Failed to send Task <{gid}>: {e}");
+                            tracing::debug!("Failed to send Task <{gid}>: {e}");
                             break;
                         }
                         if task.is_completed() {
-                            log::debug!("Task <{}> is completed, exit.", task.id);
+                            tracing::debug!("Task <{}> is completed, exit.", task.id);
                             break;
                         }
                     }
                     Err(e) => {
-                        log::debug!("Failed to watch Task <{gid}>: {e}");
+                        tracing::debug!("Failed to watch Task <{gid}>: {e}");
                         break;
                     }
                 }

@@ -62,7 +62,7 @@ impl Storage {
 
         {
             let node_map = lock_ptr!(self.nodes)?;
-            log::debug!("There are {} nodes in snapshot.", node_map.len());
+            tracing::debug!("There are {} nodes in snapshot.", node_map.len());
             for node in node_map.deref().values() {
                 let node = lock_ptr!(node)?;
                 let info = NodeInfo::from(&(*node));
@@ -72,7 +72,7 @@ impl Storage {
 
         {
             let ssn_map = lock_ptr!(self.sessions)?;
-            log::debug!("There are {} sessions in snapshot.", ssn_map.len());
+            tracing::debug!("There are {} sessions in snapshot.", ssn_map.len());
             for ssn in ssn_map.deref().values() {
                 let ssn = lock_ptr!(ssn)?;
                 let info = SessionInfo::from(&(*ssn));
@@ -82,7 +82,7 @@ impl Storage {
 
         {
             let exe_map = lock_ptr!(self.executors)?;
-            log::debug!("There are {} executors in snapshot.", exe_map.len());
+            tracing::debug!("There are {} executors in snapshot.", exe_map.len());
             for exe in exe_map.deref().values() {
                 let exe = lock_ptr!(exe)?;
                 let info = ExecutorInfo::from(&(*exe));
@@ -92,7 +92,7 @@ impl Storage {
 
         {
             let app_map = lock_ptr!(self.applications)?;
-            log::debug!("There are {} applications in snapshot.", app_map.len());
+            tracing::debug!("There are {} applications in snapshot.", app_map.len());
             for app in app_map.deref().values() {
                 let app = lock_ptr!(app)?;
                 let info = AppInfo::from(&(*app));
@@ -159,7 +159,7 @@ impl Storage {
             }
         }
 
-        log::debug!("There are {} executors in node {}", res.len(), node.name);
+        tracing::debug!("There are {} executors in node {}", res.len(), node.name);
 
         Ok(res)
     }

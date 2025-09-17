@@ -13,12 +13,12 @@ limitations under the License.
 
 use chrono::Utc;
 use hyper_util::rt::TokioIo;
-use log::info;
 use std::collections::HashMap;
 use tokio::net::UnixStream;
 use tonic::transport::Channel;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
+use tracing::info;
 
 use common::{FlameError, apis::ApplicationContext, trace::TraceFn, trace_fn};
 

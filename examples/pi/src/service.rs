@@ -58,11 +58,11 @@ impl flame::service::FlameService for PiService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    flame::apis::init_logger()?;
 
     flame::service::run(PiService {}).await?;
 
-    log::debug!("PiService was stopped.");
+    tracing::debug!("PiService was stopped.");
 
     Ok(())
 }

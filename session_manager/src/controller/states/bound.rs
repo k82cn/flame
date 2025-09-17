@@ -99,7 +99,7 @@ impl States for BoundState {
             (task.ssn_id, task.id)
         };
 
-        log::debug!("Launching task <{}/{}>", ssn_id.clone(), task_id.clone());
+        tracing::debug!("Launching task <{}/{}>", ssn_id.clone(), task_id.clone());
 
         {
             let mut e = lock_ptr!(self.executor)?;

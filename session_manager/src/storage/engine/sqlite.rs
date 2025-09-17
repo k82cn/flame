@@ -764,7 +764,7 @@ impl TryFrom<&ApplicationDao> for Application {
     type Error = FlameError;
 
     fn try_from(app: &ApplicationDao) -> Result<Self, Self::Error> {
-        log::debug!("Application Shim is {}", app.shim);
+        tracing::debug!("Application Shim is {}", app.shim);
 
         Ok(Self {
             name: app.name.clone(),

@@ -43,12 +43,12 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), FlameError> {
-    common::init_logger();
+    common::init_logger()?;
 
     let cli = Cli::parse();
     let ctx = FlameContext::from_file(cli.flame_conf)?;
 
-    log::info!("flame-session-manager is starting ...");
+    tracing::info!("flame-session-manager is starting ...");
 
     let mut handlers = vec![];
 
@@ -81,7 +81,7 @@ async fn main() -> Result<(), FlameError> {
         handlers.push(handler);
     }
 
-    log::info!("flame-session-manager started.");
+    tracing::info!("flame-session-manager started.");
 
     // Register default applications.
     for (name, attr) in common::default_applications() {
