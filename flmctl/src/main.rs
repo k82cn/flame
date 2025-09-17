@@ -16,12 +16,14 @@ use std::error::Error;
 use clap::{Parser, Subcommand};
 use flame_rs::apis::FlameContext;
 
+mod apis;
 mod create;
 mod helper;
 mod list;
 mod migrate;
 mod register;
 mod unregister;
+mod update;
 mod view;
 
 #[derive(Parser)]
@@ -46,6 +48,12 @@ enum Commands {
         #[arg(short, long)]
         session: Option<String>,
         /// The name of application
+        #[arg(short, long)]
+        application: Option<String>,
+    },
+    /// Update the object of Flame
+    Update {
+        /// The yaml file of the application
         #[arg(short, long)]
         application: Option<String>,
     },
@@ -119,6 +127,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Migrate { url, sql }) => migrate::run(&ctx, url, sql).await?,
         Some(Commands::Register { file }) => register::run(&ctx, file).await?,
         Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,
+        Some(Commands::Update { application }) => update::run(&ctx, application).await?,
         _ => helper::run().await?,
     };
 
