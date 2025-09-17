@@ -121,12 +121,6 @@ pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-impl From<FlameError> for Status {
-    fn from(e: FlameError) -> Self {
-        Status::internal(e.to_string())
-    }
-}
-
 impl From<rpc::ApplicationContext> for ApplicationContext {
     fn from(ctx: rpc::ApplicationContext) -> Self {
         Self {

@@ -26,8 +26,8 @@ use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
     GetApplicationRequest, GetTaskRequest, ListApplicationRequest, ListSessionRequest,
-    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest, UpdateApplicationRequest,
-    WatchTaskRequest,
+    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
+    UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
 use crate::apis::Shim;
@@ -193,7 +193,6 @@ impl Connection {
             Ok(())
         }
     }
-
 
     pub async fn update_application(
         &self,
