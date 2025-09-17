@@ -60,13 +60,13 @@ pub enum FlameError {
     #[error("'{0}' not found")]
     NotFound(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     Internal(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     Network(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     InvalidConfig(String),
 }
 
@@ -96,9 +96,19 @@ pub enum Shim {
     Wasm = 1,
 }
 
+impl From<FlameError> for Status {
+    fn from(value: FlameError) -> Self {
+        match value {
+            FlameError::NotFound(s) => Status::not_found(s),
+            FlameError::Internal(s) => Status::internal(s),
+            _ => Status::unknown(value.to_string()),
+        }
+    }
+}
+
 impl From<Status> for FlameError {
     fn from(value: Status) -> Self {
-        FlameError::Network(value.code().to_string())
+        FlameError::Network(value.message().to_string())
     }
 }
 

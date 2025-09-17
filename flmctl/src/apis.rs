@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use chrono::Duration;
 use flame_rs::apis::Shim;

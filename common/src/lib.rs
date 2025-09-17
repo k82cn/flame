@@ -32,22 +32,22 @@ pub enum FlameError {
     #[error("'{0}' not found")]
     NotFound(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     Internal(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     Network(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     InvalidConfig(String),
 
     #[error("'{0}' is not initialized")]
     Uninitialized(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     InvalidState(String),
 
-    #[error("'{0}'")]
+    #[error("{0}")]
     Storage(String),
 }
 
@@ -56,7 +56,7 @@ impl From<FlameError> for Status {
         match value {
             FlameError::NotFound(s) => Status::not_found(s),
             FlameError::Internal(s) => Status::internal(s),
-            _ => Status::unknown("unknown"),
+            _ => Status::unknown(value.to_string()),
         }
     }
 }
@@ -167,4 +167,28 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
             },
         ),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tonic::Code;
+
+    #[test]
+    fn test_from_flame_error_to_status() {
+        let error = FlameError::NotFound("test".to_string());
+        let status = Status::from(error);
+        assert_eq!(status.code(), Code::NotFound);
+        assert_eq!(status.message(), "test");
+
+        let error = FlameError::Internal("test".to_string());
+        let status = Status::from(error);
+        assert_eq!(status.code(), Code::Internal);
+        assert_eq!(status.message(), "test");
+
+        let error = FlameError::Network("test".to_string());
+        let status = Status::from(error);
+        assert_eq!(status.code(), Code::Unknown);
+        assert_eq!(status.message(), "test");
+    }
 }

@@ -22,11 +22,12 @@ use flame_rs::{
 use crate::apis::ApplicationYaml;
 
 pub async fn run(ctx: &FlameContext, application: &Option<String>) -> Result<(), FlameError> {
-
     match application {
         Some(application) => update_application(ctx, application).await?,
         None => {
-            return Err(FlameError::InvalidConfig("application is required".to_string()));
+            return Err(FlameError::InvalidConfig(
+                "application is required".to_string(),
+            ));
         }
     }
 
@@ -35,7 +36,9 @@ pub async fn run(ctx: &FlameContext, application: &Option<String>) -> Result<(),
 
 async fn update_application(ctx: &FlameContext, application: &str) -> Result<(), FlameError> {
     if !Path::new(&application).is_file() {
-        return Err(FlameError::InvalidConfig(format!("<{application}> is not a file")));
+        return Err(FlameError::InvalidConfig(format!(
+            "<{application}> is not a file"
+        )));
     }
 
     let contents =
@@ -48,6 +51,6 @@ async fn update_application(ctx: &FlameContext, application: &str) -> Result<(),
     let conn = flame::client::connect(&ctx.endpoint).await?;
 
     conn.update_application(app.metadata.name, app_attr).await?;
-    
+
     Ok(())
 }
