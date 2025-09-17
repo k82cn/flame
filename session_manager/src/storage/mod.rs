@@ -301,6 +301,19 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn update_application(
+        &self,
+        name: String,
+        attr: ApplicationAttributes,
+    ) -> Result<(), FlameError> {
+        let app = self.engine.update_application(name.clone(), attr).await?;
+
+        let mut app_map = lock_ptr!(self.applications)?;
+        app_map.insert(name.clone(), ptr::new_ptr(app.clone()));
+
+        Ok(())
+    }
+
     pub async fn list_application(&self) -> Result<Vec<Application>, FlameError> {
         self.engine.find_application().await
     }

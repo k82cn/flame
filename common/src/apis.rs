@@ -47,7 +47,7 @@ pub enum ApplicationState {
     Disabled = 1,
 }
 
-#[derive(Clone, Debug, Default, Copy)]
+#[derive(Clone, Debug, Default, Copy, PartialEq, Eq, Hash)]
 pub enum Shim {
     #[default]
     Host = 0,

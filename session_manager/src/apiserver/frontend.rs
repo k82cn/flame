@@ -117,7 +117,52 @@ impl Frontend for Flame {
         &self,
         req: Request<UpdateApplicationRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
-        todo!()
+        trace_fn!("Frontend::update_application");
+        let req = req.into_inner();
+        let spec = req.application.ok_or(FlameError::InvalidConfig(
+            "applilcation spec is missed".to_string(),
+        ))?;
+
+        if let Some(ref schema) = spec.schema {
+            if let Some(ref input) = schema.input {
+                let input: Value = serde_json::from_str(input)
+                    .map_err(|e| FlameError::InvalidConfig(format!("invalid input schema: {e}")))?;
+                jsonschema::meta::validate(&input)
+                    .map_err(|e| FlameError::InvalidConfig(format!("invalid input schema: {e}")))?;
+            }
+            if let Some(ref output) = schema.output {
+                let output: Value = serde_json::from_str(output).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid output schema: {e}"))
+                })?;
+                jsonschema::meta::validate(&output).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid output schema: {e}"))
+                })?;
+            }
+            if let Some(ref common_data) = schema.common_data {
+                let common_data: Value = serde_json::from_str(common_data).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid common data schema: {e}"))
+                })?;
+                jsonschema::meta::validate(&common_data).map_err(|e| {
+                    FlameError::InvalidConfig(format!("invalid common data schema: {e}"))
+                })?;
+            }
+        }
+
+        let res = self
+            .controller
+            .update_application(req.name, ApplicationAttributes::from(spec))
+            .await;
+
+        match res {
+            Ok(..) => Ok(Response::new(rpc::Result {
+                return_code: 0,
+                message: None,
+            })),
+            Err(e) => Ok(Response::new(rpc::Result {
+                return_code: -1,
+                message: Some(e.to_string()),
+            })),
+        }
     }
 
     async fn get_application(

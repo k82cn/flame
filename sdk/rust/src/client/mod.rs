@@ -26,7 +26,7 @@ use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
     GetApplicationRequest, GetTaskRequest, ListApplicationRequest, ListSessionRequest,
-    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
+    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest, UpdateApplicationRequest,
     WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
@@ -184,6 +184,31 @@ impl Connection {
 
         let res = client
             .register_application(Request::new(req))
+            .await?
+            .into_inner();
+
+        if res.return_code < 0 {
+            Err(FlameError::Network(res.message.unwrap_or_default()))
+        } else {
+            Ok(())
+        }
+    }
+
+
+    pub async fn update_application(
+        &self,
+        name: String,
+        app: ApplicationAttributes,
+    ) -> Result<(), FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+
+        let req = UpdateApplicationRequest {
+            name,
+            application: Some(ApplicationSpec::from(app)),
+        };
+
+        let res = client
+            .update_application(Request::new(req))
             .await?
             .into_inner();
 

@@ -258,6 +258,64 @@ impl Engine for SqliteEngine {
         Ok(app.try_into()?)
     }
 
+    async fn update_application(
+        &self,
+        name: String,
+        attr: ApplicationAttributes,
+    ) -> Result<Application, FlameError> {
+        trace_fn!("Sqlite::update_application");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to begin TX: {e}")))?;
+
+        let count = self._count_open_sessions(&mut tx, name.clone()).await?;
+        if count > 0 {
+            return Err(FlameError::Storage(format!(
+                "{count} open sessions in the application"
+            )));
+        }
+
+        let schema: Option<Json<AppSchemaDao>> =
+            attr.schema.clone().map(AppSchemaDao::from).map(Json);
+
+        let sql = r#"UPDATE applications
+                    SET schema=?,
+                        description=?,
+                        labels=?,
+                        command=?,
+                        arguments=?,
+                        environments=?,
+                        working_directory=?,
+                        max_instances=?,
+                        delay_release=?
+                    WHERE name=?
+                    RETURNING *"#;
+
+        let app: ApplicationDao = sqlx::query_as(sql)
+            .bind(schema)
+            .bind(attr.description)
+            .bind(Json(attr.labels))
+            .bind(attr.command)
+            .bind(Json(attr.arguments))
+            .bind(Json(attr.environments))
+            .bind(attr.working_directory)
+            .bind(attr.max_instances)
+            .bind(attr.delay_release.num_seconds())
+            .bind(name)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to commit TX: {e}")))?;
+
+        Ok(app.try_into()?)
+    }
+
     async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
         trace_fn!("Sqlite::unregister_application");
 
@@ -770,6 +828,61 @@ mod tests {
     use common::apis::ApplicationState;
 
     use super::*;
+
+    #[test]
+    fn test_update_application() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_update_application_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        for (name, attr) in common::default_applications() {
+            tokio_test::block_on(storage.register_application(name.clone(), attr))?;
+        }
+
+        let app_1 = tokio_test::block_on(storage.get_application("flmexec".to_string()))?;
+        assert_eq!(app_1.name, "flmexec");
+        assert_eq!(app_1.state, ApplicationState::Enabled);
+
+        let app_2 = tokio_test::block_on(storage.update_application(
+            "flmexec".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Wasm,
+                description: Some("This is my agent for testing.".to_string()),
+                labels: vec!["test".to_string(), "agent".to_string()],
+                image: Some("may-agent".to_string()),
+                command: Some("run-agent".to_string()),
+                arguments: vec!["--test".to_string(), "--agent".to_string()],
+                environments: HashMap::from([("TEST".to_string(), "true".to_string())]),
+                working_directory: "/tmp".to_string(),
+                max_instances: 10,
+                delay_release: Duration::seconds(0),
+                schema: None,
+            },
+        ))?;
+        assert_eq!(app_2.name, "flmexec");
+        assert_eq!(
+            app_2.description,
+            Some("This is my agent for testing.".to_string())
+        );
+        assert_eq!(app_2.labels, vec!["test".to_string(), "agent".to_string()]);
+        assert_eq!(app_2.command, Some("run-agent".to_string()));
+        assert_eq!(
+            app_2.arguments,
+            vec!["--test".to_string(), "--agent".to_string()]
+        );
+        assert_eq!(
+            app_2.environments,
+            HashMap::from([("TEST".to_string(), "true".to_string())])
+        );
+        assert_eq!(app_2.working_directory, "/tmp".to_string());
+        assert_eq!(app_2.max_instances, 10);
+        assert_eq!(app_2.delay_release, Duration::seconds(0));
+        assert!(app_2.schema.is_none());
+
+        Ok(())
+    }
 
     #[test]
     fn test_unregister_application() -> Result<(), FlameError> {
