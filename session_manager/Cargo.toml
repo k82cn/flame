@@ -22,12 +22,12 @@ sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
+chrono = { workspace = true }
 
 tokio-stream = { version = "0.1"}
 url = { version = "2", features = ["serde"] }
 futures="0.3"
 thiserror = "1"
-chrono = "0.4"
 stdng = "0.1"
 bytes = "1"
 jsonschema = "0.33.0"

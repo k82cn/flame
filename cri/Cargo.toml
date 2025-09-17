@@ -1,0 +1,29 @@
+[package]
+name = "cri-rs"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "cri-test"
+path = "tests/integration_test.rs"
+
+[dependencies]
+common = { path = "../common" }
+tokio = { workspace = true }
+tonic = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+prost = { workspace = true }
+tower = { workspace = true }
+hyper-util = { workspace = true }
+chrono = { workspace = true }
+rand = { workspace = true }
+
+nix = "0.30"
+uuid = { version = "1.18.1", features = ["v4"] }
+
+
+[build-dependencies]
+tonic-build = { workspace = true}
