@@ -60,7 +60,7 @@ impl Action for AllocateAction {
             let ssn = open_ssns.pop().unwrap();
             let node = nodes.pop().unwrap();
 
-            log::debug!(
+            tracing::debug!(
                 "Start to allocate resources for session <{}> on node <{}>",
                 ssn.id,
                 node.name
@@ -84,7 +84,7 @@ impl Action for AllocateAction {
                     open_ssns.push(ssn.clone());
                 }
                 (false, false) => {
-                    log::debug!(
+                    tracing::debug!(
                         "Session <{}> is not underused and node <{}> is not allocatable, skip both.",
                         ssn.id,
                         node.name

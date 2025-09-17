@@ -114,7 +114,7 @@ impl Plugin for FairShare {
 
         let apps = ss.find_applications(ALL_APPLICATION)?;
 
-        log::debug!(
+        tracing::debug!(
             "There are {} open sessions, {} applications.",
             open_ssns.len(),
             apps.len()
@@ -141,7 +141,7 @@ impl Plugin for FairShare {
                     },
                 );
             } else {
-                log::warn!(
+                tracing::warn!(
                     "Application <{}> not found for session <{}>.",
                     ssn.application,
                     ssn.id
@@ -202,9 +202,9 @@ impl Plugin for FairShare {
             }
         }
 
-        if log::log_enabled!(log::Level::Debug) {
+        if tracing::enabled!(tracing::Level::DEBUG) {
             for ssn in self.ssn_map.values() {
-                log::debug!(
+                tracing::debug!(
                     "Allocation: ssn <{}>, slots <{}>, desired <{}>, deserved <{}>, allocated <{}>.",
                     ssn.id,
                     ssn.slots,
@@ -215,7 +215,7 @@ impl Plugin for FairShare {
             }
 
             for node in self.node_map.values() {
-                log::debug!(
+                tracing::debug!(
                     "Allocation: node <{}>, allocatable <{}>, allocated <{}>.",
                     node.name,
                     node.allocatable,
@@ -303,13 +303,13 @@ impl Plugin for FairShare {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated += ssn.slots as f64;
         } else {
-            log::warn!("Session <{}> not found for node <{}>.", ssn.id, node.name);
+            tracing::warn!("Session <{}> not found for node <{}>.", ssn.id, node.name);
         }
 
         if let Some(node) = self.node_map.get_mut(&node.name) {
             node.allocated += ssn.slots as f64;
         } else {
-            log::warn!("Node <{}> not found for session <{}>.", node.name, ssn.id);
+            tracing::warn!("Node <{}> not found for session <{}>.", node.name, ssn.id);
         }
     }
 }

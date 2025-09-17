@@ -16,14 +16,11 @@ pub mod ctx;
 pub mod ptr;
 pub mod trace;
 
-use std::collections::HashMap;
-use std::io::Write;
-use std::process;
-
-use chrono::Local;
 use serde_json::json;
+use std::collections::HashMap;
 use thiserror::Error;
 use tonic::Status;
+use tracing_subscriber::filter::{FromEnvError, ParseError};
 
 use crate::apis::{ApplicationAttributes, ApplicationSchema, Shim};
 
@@ -67,6 +64,18 @@ impl From<Status> for FlameError {
     }
 }
 
+impl From<ParseError> for FlameError {
+    fn from(value: ParseError) -> Self {
+        FlameError::InvalidConfig(value.to_string())
+    }
+}
+
+impl From<FromEnvError> for FlameError {
+    fn from(value: FromEnvError) -> Self {
+        FlameError::InvalidConfig(value.to_string())
+    }
+}
+
 #[macro_export]
 macro_rules! lock_ptr {
     ( $mutex_arc:expr ) => {
@@ -89,23 +98,21 @@ macro_rules! lock_async_ptr {
 pub const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
 pub const FLAME_WORKING_DIRECTORY: &str = "/tmp";
 
-pub fn init_logger() {
-    // Initialize env_logger with a custom format
-    env_logger::Builder::from_default_env()
-        .format(|buf, record| {
-            let now = Local::now();
-            let pid = process::id(); // Get the current process ID
-            writeln!(
-                buf,
-                "{} [{}] {} [{}]: {}",
-                record.level(),
-                now.format("%Y-%m-%d %H:%M:%S%.6f"),
-                pid,
-                record.target(),
-                record.args()
-            )
-        })
+pub fn init_logger() -> Result<(), FlameError> {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()?
+        .add_directive("h2=error".parse()?)
+        .add_directive("hyper_util=error".parse()?)
+        .add_directive("tower=error".parse()?);
+    // Initialize tracing with a custom format
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339())
+        .with_target(true)
+        .with_thread_ids(true)
+        // .with_process_ids(true)
         .init();
+
+    Ok(())
 }
 
 pub fn default_applications() -> HashMap<String, ApplicationAttributes> {

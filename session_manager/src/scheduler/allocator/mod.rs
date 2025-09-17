@@ -66,7 +66,7 @@ impl Allocator {
             .controller
             .create_executor(node.name.clone(), ssn.id)
             .await?;
-        log::debug!(
+        tracing::debug!(
             "Created executor <{}> for session <{}> on node <{}>",
             exec.id,
             ssn.id,

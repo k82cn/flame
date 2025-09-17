@@ -211,7 +211,7 @@ impl Controller {
 
         //
         if let Some(task_id) = task_id {
-            log::warn!(
+            tracing::warn!(
                 "Re-launch the task <{}/{}>",
                 ssn_id.clone(),
                 task_id.clone()

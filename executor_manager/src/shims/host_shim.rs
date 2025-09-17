@@ -72,7 +72,7 @@ impl HostShim {
         envs.insert(RUST_LOG.to_string(), log_level);
         envs.insert(FLAME_EXECUTOR_ID.to_string(), executor.id.clone());
 
-        log::debug!(
+        tracing::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"
         );
 
@@ -84,7 +84,7 @@ impl HostShim {
             .clone()
             .unwrap_or(FLAME_WORKING_DIRECTORY.to_string());
 
-        log::debug!("Current directory of application instance: {cur_dir}");
+        tracing::debug!("Current directory of application instance: {cur_dir}");
 
         let mut child = cmd
             .envs(envs)
@@ -99,10 +99,10 @@ impl HostShim {
             })?;
 
         let service_id = child.id().unwrap_or_default();
-        log::debug!("The service <{service_id}> was started, waiting for registering.");
+        tracing::debug!("The service <{service_id}> was started, waiting for registering.");
 
         WaitForSvcSocketFuture::new(service_socket.clone()).await?;
-        log::debug!("Try to connect to service <{service_id}> at <{service_socket}>");
+        tracing::debug!("Try to connect to service <{service_id}> at <{service_socket}>");
 
         let channel = Endpoint::try_from("http://[::]:50051")
             .unwrap()
@@ -142,7 +142,7 @@ impl Drop for HostShim {
         let _ = std::fs::remove_file(&self.service_socket);
         let _ = std::fs::remove_dir_all(&self.working_directory);
 
-        log::debug!(
+        tracing::debug!(
             "The service <{}> was stopped",
             self.child.id().unwrap_or_default()
         );

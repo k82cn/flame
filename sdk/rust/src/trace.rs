@@ -17,14 +17,14 @@ pub struct TraceFn {
 
 impl TraceFn {
     pub fn new(n: String) -> Self {
-        log::debug!("{n} Enter");
+        tracing::debug!("{n} Enter");
         TraceFn { fn_name: n }
     }
 }
 
 impl Drop for TraceFn {
     fn drop(&mut self) {
-        log::debug!("{} Leaving", self.fn_name);
+        tracing::debug!("{} Leaving", self.fn_name);
     }
 }
 

@@ -50,7 +50,7 @@ impl FlameThread for ApiserverRunner {
 
         // The fsm will bind to all addresses of host directly.
         let address_str = format!("{ALL_HOST_ADDRESS}:{port}");
-        log::info!("Listening apiserver at {}", address_str);
+        tracing::info!("Listening apiserver at {}", address_str);
         let address = address_str
             .parse()
             .map_err(|_| FlameError::InvalidConfig("failed to parse url".to_string()))?;

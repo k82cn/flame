@@ -59,19 +59,19 @@ impl Action for DispatchAction {
             }
 
             let ssn = open_ssns.pop().unwrap();
-            log::debug!("Start resources allocation for session <{}>", &ssn.id);
+            tracing::debug!("Start resources allocation for session <{}>", &ssn.id);
             if !ctx.dispatcher.is_underused(&ssn)? {
                 continue;
             }
 
-            log::debug!(
+            tracing::debug!(
                 "Session <{}> is underused, start to allocate resources.",
                 &ssn.id
             );
 
             let mut pos = None;
             for (i, exec) in idle_execs.iter_mut().enumerate() {
-                log::debug!(
+                tracing::debug!(
                     "Try to allocate executor <{}> for session <{}>",
                     exec.id.clone(),
                     ssn.id.clone()
@@ -86,7 +86,7 @@ impl Action for DispatchAction {
                     .await?;
                 pos = Some(i);
 
-                log::debug!(
+                tracing::debug!(
                     "Executor <{}> was allocated to session <{}>, remove it from idle list.",
                     exec.id.clone(),
                     ssn.id.clone()

@@ -46,7 +46,7 @@ const DEFAULT_TASK_INPUT: u32 = 10000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    flame::apis::init_logger()?;
     let cli = Cli::parse();
 
     let app = cli.app.unwrap_or(DEFAULT_APP.to_string());

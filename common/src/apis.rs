@@ -320,7 +320,7 @@ impl From<&String> for ResourceRequirement {
                 (Some("memory"), Some(value)) => memory = Self::parse_memory(value),
                 (Some("mem"), Some(value)) => memory = Self::parse_memory(value),
                 _ => {
-                    log::error!("Invalid resource requirement: {s}");
+                    tracing::error!("Invalid resource requirement: {s}");
                 }
             }
         }
@@ -494,7 +494,7 @@ impl Clone for Session {
                     ssn.update_task(&t);
                 }
                 Err(_) => {
-                    log::error!("Failed to lock task: <{id}>, ignore it during clone.");
+                    tracing::error!("Failed to lock task: <{id}>, ignore it during clone.");
                 }
             }
         }

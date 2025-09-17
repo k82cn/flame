@@ -86,7 +86,7 @@ impl Action for ShuffleAction {
                 }
 
                 pos = Some(i);
-                log::debug!(
+                tracing::debug!(
                     "Executor <{}> was pipeline to session <{}>, remove it from bound list.",
                     exec.id.clone(),
                     ssn.id.clone()

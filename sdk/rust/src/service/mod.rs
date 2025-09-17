@@ -61,7 +61,7 @@ impl GrpcShim for ShimService {
         &self,
         req: Request<rpc::SessionContext>,
     ) -> Result<Response<rpc::Result>, Status> {
-        log::debug!("ShimService::on_session_enter");
+        tracing::debug!("ShimService::on_session_enter");
 
         let req = req.into_inner();
         self.service
@@ -78,7 +78,7 @@ impl GrpcShim for ShimService {
         &self,
         req: Request<rpc::TaskContext>,
     ) -> Result<Response<rpc::TaskOutput>, Status> {
-        log::debug!("ShimService::on_task_invoke");
+        tracing::debug!("ShimService::on_task_invoke");
         let req = req.into_inner();
         let data = self.service.on_task_invoke(TaskContext::from(req)).await?;
 
@@ -91,7 +91,7 @@ impl GrpcShim for ShimService {
         &self,
         _: Request<rpc::EmptyRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
-        log::debug!("ShimService::on_session_leave");
+        tracing::debug!("ShimService::on_session_leave");
         self.service.on_session_leave().await?;
 
         Ok(Response::new(rpc::Result {

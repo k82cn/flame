@@ -89,7 +89,7 @@ impl FlameContext {
             storage: ctx.storage,
         };
 
-        log::debug!("Load FrameContext from <{fp}>: {ctx}");
+        tracing::debug!("Load FrameContext from <{fp}>: {ctx}");
 
         Ok(ctx)
     }

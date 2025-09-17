@@ -106,7 +106,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    flame_rs::apis::init_logger()?;
 
     let cli = Cli::parse();
     let ctx = FlameContext::from_file(cli.flame_conf)?;

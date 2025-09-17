@@ -52,7 +52,7 @@ impl State for BoundState {
                     let task = &self.executor.task.clone().unwrap();
                     (task.session_id.clone(), task.task_id.clone())
                 };
-                log::debug!("Complete task <{ssn_id}/{task_id}>")
+                tracing::debug!("Complete task <{ssn_id}/{task_id}>")
             }
             None => {
                 self.executor.state = ExecutorState::Unbinding;
