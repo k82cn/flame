@@ -15,7 +15,7 @@ use crate::controller::states::States;
 use crate::storage::StoragePtr;
 
 use crate::model::ExecutorPtr;
-use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskState};
+use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult, TaskState};
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 pub struct UnbindingState {
@@ -81,12 +81,12 @@ impl States for UnbindingState {
         &self,
         ssn_ptr: SessionPtr,
         task_ptr: TaskPtr,
-        task_output: Option<TaskOutput>,
+        task_result: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("UnbindingState::complete_task");
 
         self.storage
-            .update_task(ssn_ptr, task_ptr, TaskState::Succeed, task_output.clone())
+            .update_task_result(ssn_ptr, task_ptr, task_result)
             .await?;
 
         {

@@ -29,7 +29,7 @@ use crate::model::{
     Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr,
     SnapShot, SnapShotPtr,
 };
-use common::apis::{Application, ExecutorState, Node, Session, TaskOutput};
+use common::apis::{Application, ExecutorState, Node, Session, TaskResult};
 use common::{trace::TraceFn, trace_fn, FlameError};
 
 #[async_trait]
@@ -197,11 +197,13 @@ impl Backend for Flame {
     ) -> Result<Response<rpc::Result>, Status> {
         let req = req.into_inner();
 
+        let task_result = req.task_result.ok_or(FlameError::InvalidState(format!(
+            "no task result when completing task in {}",
+            req.executor_id.clone()
+        )))?;
+
         self.controller
-            .complete_task(
-                req.executor_id.clone(),
-                req.task_output.map(TaskOutput::from),
-            )
+            .complete_task(req.executor_id.clone(), TaskResult::from(task_result))
             .await?;
 
         Ok(Response::new(rpc::Result::default()))

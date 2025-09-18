@@ -483,8 +483,18 @@ class Session:
         async for task in watcher:
             if informer:
                 informer.on_update(task)
-            if task.is_completed():
-                return task
+                if task.is_completed():
+                    return task
+            else:
+                if task.is_completed():
+                    # if no informer, raise an error if task is failed
+                    if task.is_failed():
+                        raise FlameError(
+                            FlameErrorCode.INTERNAL,
+                            f"{task.message}"
+                        )
+                    return task
+
 
     async def close(self) -> None:
         """Close the session."""

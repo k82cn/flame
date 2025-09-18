@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "cri-test"
-path = "tests/integration_test.rs"
+name = "cri-e2e"
+path = "src/e2e.rs"
 
 [dependencies]
 common = { path = "../common" }

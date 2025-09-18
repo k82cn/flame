@@ -24,8 +24,8 @@ use bytes::Bytes;
 use prost::Enumeration;
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tonic::Status;
+use tracing_subscriber::filter::{FromEnvError, ParseError};
 
 pub type TaskID = String;
 pub type SessionID = String;

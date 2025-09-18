@@ -17,7 +17,9 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::model::ExecutorPtr;
-use common::apis::{ExecutorState, SessionPtr, SessionState, Task, TaskOutput, TaskPtr, TaskState};
+use common::apis::{
+    ExecutorState, SessionPtr, SessionState, Task, TaskOutput, TaskPtr, TaskResult, TaskState,
+};
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 use crate::controller::states::States;
@@ -79,7 +81,12 @@ impl States for BoundState {
             match task_ptr {
                 Some(task_ptr) => {
                     self.storage
-                        .update_task(ssn_ptr.clone(), task_ptr.clone(), TaskState::Running, None)
+                        .update_task_state(
+                            ssn_ptr.clone(),
+                            task_ptr.clone(),
+                            TaskState::Running,
+                            None,
+                        )
                         .await?;
                     Some(task_ptr)
                 }
@@ -116,12 +123,12 @@ impl States for BoundState {
         &self,
         ssn_ptr: SessionPtr,
         task_ptr: TaskPtr,
-        task_output: Option<TaskOutput>,
+        task_result: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("BoundState::complete_task");
 
         self.storage
-            .update_task(ssn_ptr, task_ptr, TaskState::Succeed, task_output)
+            .update_task_result(ssn_ptr, task_ptr, task_result)
             .await?;
 
         {

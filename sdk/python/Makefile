@@ -16,7 +16,7 @@ clean: ## Clean up generated files
 	find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
 
 build-protos: ## Generate protobuf Python files
-	python build_protos.py
+	uv run -n build_protos.py
 
 format: ## Format code with black and isort
 	black . test/test_flame.py
@@ -30,4 +30,4 @@ lint: ## Run linting checks
 check: format lint test ## Run all checks (format, lint, test)
 
 dist: clean ## Build distribution package
-	python setup.py sdist bdist_wheel
+	uv run -n setup.py sdist bdist_wheel
