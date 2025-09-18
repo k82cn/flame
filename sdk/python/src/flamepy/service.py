@@ -22,8 +22,7 @@ from concurrent import futures
 
 from .types import Shim, FlameError, FlameErrorCode
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
-from .types_pb2 import Result, EmptyRequest
-from .shim_pb2 import TaskResult as TaskResultProto
+from .types_pb2 import Result, EmptyRequest, TaskResult as TaskResultProto
 
 logger = logging.getLogger(__name__)
 
