@@ -73,6 +73,9 @@ async def test_invoke_multiple_sessions():
         )
 
         for i in range(10):
-            await session.invoke(b"task input data", MyTaskInformer())
+            task = await session.invoke(b"task input data", MyTaskInformer())
+            assert task.state == flamepy.TaskState.SUCCEED
+            # assert task.output == b"task output data"
+            assert task.message is None
         await session.close()
 
