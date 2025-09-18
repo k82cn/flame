@@ -962,7 +962,7 @@ mod tests {
         assert_eq!(task_1_1.state, TaskState::Pending);
 
         let task_1_1 =
-            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+            tokio_test::block_on(storage.update_task_state(task_1_1.gid(), TaskState::Succeed, None))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
         let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
