@@ -19,7 +19,7 @@ instance = flamepy.FlameInstance()
 
 @instance.entrypoint
 def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
-    return TestResponse(session_id=req.session_id, task_id=req.task_id)
+    return TestResponse()
 
 # @instance.context
 # def e2e_service_context(req: TestRequest):
