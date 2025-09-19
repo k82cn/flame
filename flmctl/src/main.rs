@@ -44,12 +44,17 @@ struct Cli {
 enum Commands {
     /// View the object of Flame
     View {
-        /// The id of session
-        #[arg(short, long)]
-        session: Option<String>,
         /// The name of application
         #[arg(short, long)]
         application: Option<String>,
+        
+        /// The id of session
+        #[arg(short, long)]
+        session: Option<String>,
+
+        /// The id of task
+        #[arg(short, long)]
+        task: Option<String>,
     },
     /// Update the object of Flame
     Update {
@@ -121,9 +126,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Create { app, slots }) => create::run(&ctx, app, slots).await?,
         Some(Commands::View {
-            session,
             application,
-        }) => view::run(&ctx, session, application).await?,
+            session,
+            task,
+        }) => view::run(&ctx, application, session, task).await?,
         Some(Commands::Migrate { url, sql }) => migrate::run(&ctx, url, sql).await?,
         Some(Commands::Register { file }) => register::run(&ctx, file).await?,
         Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,

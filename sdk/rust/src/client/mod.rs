@@ -25,7 +25,7 @@ use tonic::Request;
 use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
-    GetApplicationRequest, GetTaskRequest, ListApplicationRequest, ListSessionRequest,
+    GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest, ListSessionRequest,
     RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
     UpdateApplicationRequest, WatchTaskRequest,
 };
@@ -49,6 +49,13 @@ pub async fn connect(addr: &str) -> Result<Connection, FlameError> {
         .map_err(|_| FlameError::InvalidConfig("failed to connect".to_string()))?;
 
     Ok(Connection { channel })
+}
+
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub code: i32,
+    pub message: Option<String>,
+    pub creation_time: DateTime<Utc>,
 }
 
 #[derive(Clone)]
@@ -110,6 +117,8 @@ pub struct Session {
     pub running: i32,
     pub succeed: i32,
     pub failed: i32,
+
+    pub events: Vec<Event>,
 }
 
 #[derive(Clone)]
@@ -121,6 +130,8 @@ pub struct Task {
 
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
+
+    pub events: Vec<Event>,
 }
 
 pub type TaskInformerPtr = Arc<Mutex<dyn TaskInformer>>;
@@ -169,6 +180,18 @@ impl Connection {
             .map(Session::from)
             .collect())
     }
+
+    pub async fn get_session(&self, id: &SessionID) -> Result<Session, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        let ssn = client.get_session(GetSessionRequest { session_id: id.to_string() }).await?;
+
+        let ssn = ssn.into_inner();
+        let mut ssn = Session::from(&ssn);
+        ssn.client = Some(client);
+        
+        Ok(ssn)
+    }
+
 
     pub async fn register_application(
         &self,
@@ -280,7 +303,7 @@ impl Session {
         Ok(Task::from(&task))
     }
 
-    pub async fn get_task(&self, id: TaskID) -> Result<Task, FlameError> {
+    pub async fn get_task(&self, id: &TaskID) -> Result<Task, FlameError> {
         trace_fn!("Session::get_task");
         let mut client = self
             .client
@@ -368,6 +391,7 @@ impl From<&rpc::Task> for Task {
             input: spec.input.map(TaskInput::from),
             output: spec.output.map(TaskOutput::from),
             state: TaskState::try_from(status.state).unwrap_or(TaskState::default()),
+            events: status.events.clone().into_iter().map(Event::from).collect(),
         }
     }
 }
@@ -375,7 +399,7 @@ impl From<&rpc::Task> for Task {
 impl From<&rpc::Session> for Session {
     fn from(ssn: &rpc::Session) -> Self {
         let metadata = ssn.metadata.clone().unwrap();
-        let status = ssn.status.unwrap();
+        let status = ssn.status.clone().unwrap();
         let spec = ssn.spec.clone().unwrap();
 
         let naivedatetime_utc =
@@ -393,7 +417,27 @@ impl From<&rpc::Session> for Session {
             running: status.running,
             succeed: status.succeed,
             failed: status.failed,
+            events: status.events.clone().into_iter().map(Event::from).collect(),
         }
+    }
+}
+
+impl From<&rpc::Event> for Event {
+    fn from(event: &rpc::Event) -> Self {
+        let second = event.creation_time / 1000;
+        let nanosecond = ((event.creation_time % 1000)* 1_000_000) as u32;
+
+        Self {
+            code: event.code,
+            message: event.message.clone(),
+            creation_time: DateTime::from_timestamp(second, nanosecond).unwrap(),
+        }
+    }
+}
+
+impl From<rpc::Event> for Event {
+    fn from(event: rpc::Event) -> Self {
+        Event::from(&event)
     }
 }
 

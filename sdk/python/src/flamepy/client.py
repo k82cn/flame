@@ -19,7 +19,7 @@ import grpc.aio
 
 from datetime import datetime
 from .types import (
-    Task, Application, SessionAttributes, ApplicationAttributes,
+    Task, Application, SessionAttributes, ApplicationAttributes, Event,
     SessionID, TaskID, ApplicationID, TaskInput, TaskOutput, CommonData,
     SessionState, TaskState, ApplicationState, Shim, FlameError, FlameErrorCode,
     TaskInformer, Request as FlameRequest, Response as FlameResponse, FlameContext, ApplicationSchema
@@ -417,7 +417,11 @@ class Session:
                 creation_time=datetime.fromtimestamp(response.status.creation_time),
                 input=input_data,
                 completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
-                message = response.status.message
+                events = [Event(
+                    code=event.code,
+                    message=event.message,
+                    creation_time=datetime.fromtimestamp(event.creation_time)
+                ) for event in response.status.events]
             )
 
         except grpc.RpcError as e:
@@ -444,7 +448,11 @@ class Session:
                 input=response.spec.input,
                 output=response.spec.output,
                 completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
-                message = response.status.message
+                events = [Event(
+                    code=event.code,
+                    message=event.message,
+                    creation_time=datetime.fromtimestamp(event.creation_time)
+                ) for event in response.status.events]
             )
             
         except grpc.RpcError as e:
@@ -485,17 +493,10 @@ class Session:
         async for task in watcher:
             if informer is not None:
                 informer.on_update(task)
-                if task.is_completed():
+            
+            if task.is_completed():
                     return task
-            elif task.is_completed():
-                # if no informer, raise an error if task is failed
-                if task.is_failed():
-                    raise FlameError(
-                        FlameErrorCode.INTERNAL,
-                        f"{task.message}"
-                    )
-                return task
-
+            
     async def close(self) -> None:
         """Close the session."""
         await self.connection.close_session(self.id)
@@ -521,7 +522,11 @@ class TaskWatcher:
                 input=response.spec.input,
                 output=response.spec.output,
                 completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
-                message = response.status.message
+                events = [Event(
+                    code=event.code,
+                    message=event.message,
+                    creation_time=datetime.fromtimestamp(event.creation_time)
+                ) for event in response.status.events]
             )
             
         except StopAsyncIteration:
