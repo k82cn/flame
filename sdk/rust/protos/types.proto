@@ -51,6 +51,7 @@ message TaskStatus {
 
   int64 creation_time = 2;
   optional int64 completion_time = 3;
+  optional string message = 4;
 }
 
 message TaskSpec {
@@ -192,6 +193,12 @@ message Node {
 message Result {
   int32 return_code = 1;
   optional string message = 2;
+}
+
+message TaskResult {
+  int32 return_code = 1;
+  optional bytes output = 2;
+  optional string message = 3;
 }
 
 message EmptyRequest {

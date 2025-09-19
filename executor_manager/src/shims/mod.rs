@@ -23,7 +23,9 @@ use self::host_shim::HostShim;
 use self::wasm_shim::WasmShim;
 
 use crate::executor::Executor;
-use common::apis::{ApplicationContext, SessionContext, Shim as ShimType, TaskContext, TaskOutput};
+use common::apis::{
+    ApplicationContext, SessionContext, Shim as ShimType, TaskContext, TaskOutput, TaskResult,
+};
 use common::FlameError;
 
 pub type ShimPtr = Arc<Mutex<dyn Shim>>;
@@ -39,7 +41,6 @@ pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<ShimPt
 #[async_trait]
 pub trait Shim: Send + Sync + 'static {
     async fn on_session_enter(&mut self, ctx: &SessionContext) -> Result<(), FlameError>;
-    async fn on_task_invoke(&mut self, ctx: &TaskContext)
-        -> Result<Option<TaskOutput>, FlameError>;
+    async fn on_task_invoke(&mut self, ctx: &TaskContext) -> Result<TaskResult, FlameError>;
     async fn on_session_leave(&mut self) -> Result<(), FlameError>;
 }

@@ -20,7 +20,7 @@ use uuid::Uuid;
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, ExecutorID,
     ExecutorState, Node, NodePtr, ResourceRequirement, Session, SessionID, SessionPtr,
-    SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskState,
+    SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 use common::ptr::{self, MutexPtr};
 use common::{ctx::FlameContext, lock_ptr, FlameError};
@@ -318,12 +318,12 @@ impl Storage {
         self.engine.find_application().await
     }
 
-    pub async fn update_task(
+    pub async fn update_task_state(
         &self,
         ssn: SessionPtr,
         task: TaskPtr,
-        state: TaskState,
-        output: Option<TaskOutput>,
+        task_state: TaskState,
+        message: Option<String>,
     ) -> Result<(), FlameError> {
         let gid = TaskGID {
             ssn_id: {
@@ -336,7 +336,35 @@ impl Storage {
             },
         };
 
-        let task = self.engine.update_task(gid, state, output).await?;
+        let task = self
+            .engine
+            .update_task_state(gid, task_state, message)
+            .await?;
+
+        let mut ssn_ptr = lock_ptr!(ssn)?;
+        ssn_ptr.update_task(&task);
+
+        Ok(())
+    }
+
+    pub async fn update_task_result(
+        &self,
+        ssn: SessionPtr,
+        task: TaskPtr,
+        task_result: TaskResult,
+    ) -> Result<(), FlameError> {
+        let gid = TaskGID {
+            ssn_id: {
+                let ssn_ptr = lock_ptr!(ssn)?;
+                ssn_ptr.id
+            },
+            task_id: {
+                let task_ptr = lock_ptr!(task)?;
+                task_ptr.id
+            },
+        };
+
+        let task = self.engine.update_task_result(gid, task_result).await?;
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
         ssn_ptr.update_task(&task);

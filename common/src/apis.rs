@@ -40,6 +40,13 @@ pub type TaskInput = Message;
 pub type TaskOutput = Message;
 pub type CommonData = Message;
 
+#[derive(Clone, Debug)]
+pub struct TaskResult {
+    pub state: TaskState,
+    pub output: Option<TaskOutput>,
+    pub message: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
 pub enum ApplicationState {
     #[default]
@@ -159,7 +166,7 @@ pub struct Task {
     pub ssn_id: SessionID,
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
-
+    pub message: Option<String>,
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
 
@@ -197,7 +204,6 @@ pub struct TaskContext {
     pub task_id: String,
     pub session_id: String,
     pub input: Option<TaskInput>,
-    pub output: Option<TaskOutput>,
 }
 
 #[derive(Clone, Debug)]
@@ -519,7 +525,6 @@ impl TryFrom<rpc::Task> for TaskContext {
             task_id: metadata.id.clone(),
             session_id: spec.session_id.to_string(),
             input: spec.input.map(TaskInput::from),
-            output: spec.output.map(TaskOutput::from),
         })
     }
 }
@@ -639,6 +644,7 @@ impl From<&Task> for rpc::Task {
             state: task.state as i32,
             creation_time: task.creation_time.timestamp(),
             completion_time: task.completion_time.map(|s| s.timestamp()),
+            message: task.message.clone(),
         });
         rpc::Task {
             metadata,
@@ -1001,6 +1007,45 @@ impl From<ExecutorState> for rpc::ExecutorState {
             ExecutorState::Released => rpc::ExecutorState::ExecutorReleased,
             _ => rpc::ExecutorState::ExecutorUnknown,
         }
+    }
+}
+
+impl From<rpc::TaskResult> for TaskResult {
+    fn from(result: rpc::TaskResult) -> Self {
+        let state = if result.return_code != 0 {
+            TaskState::Failed
+        } else {
+            TaskState::Succeed
+        };
+
+        Self {
+            state,
+            output: result.output.map(TaskOutput::from),
+            message: result.message,
+        }
+    }
+}
+
+impl TryFrom<TaskResult> for rpc::TaskResult {
+    type Error = FlameError;
+
+    fn try_from(result: TaskResult) -> Result<Self, Self::Error> {
+        let return_code = match result.state {
+            TaskState::Failed => -1,
+            TaskState::Succeed => 0,
+            _ => {
+                return Err(FlameError::InvalidState(format!(
+                    "invalid task state: {:?}",
+                    result.state
+                )))
+            }
+        };
+
+        Ok(Self {
+            return_code,
+            output: result.output.map(TaskOutput::into),
+            message: result.message,
+        })
     }
 }
 

@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use crate::FlameError;
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, CommonData, Session, SessionID, Task,
-    TaskGID, TaskInput, TaskOutput, TaskState,
+    TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
 };
 
 mod sqlite;
@@ -57,15 +57,26 @@ pub trait Engine: Send + Sync + 'static {
         ssn_id: SessionID,
         task_input: Option<TaskInput>,
     ) -> Result<Task, FlameError>;
+
     async fn get_task(&self, gid: TaskGID) -> Result<Task, FlameError>;
+
     async fn retry_task(&self, gid: TaskGID) -> Result<Task, FlameError>;
+
     async fn delete_task(&self, gid: TaskGID) -> Result<Task, FlameError>;
-    async fn update_task(
+
+    async fn update_task_state(
         &self,
         gid: TaskGID,
-        state: TaskState,
-        output: Option<TaskOutput>,
+        task_state: TaskState,
+        message: Option<String>,
     ) -> Result<Task, FlameError>;
+
+    async fn update_task_result(
+        &self,
+        gid: TaskGID,
+        task_result: TaskResult,
+    ) -> Result<Task, FlameError>;
+
     async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError>;
 }
 

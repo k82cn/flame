@@ -361,7 +361,7 @@ impl From<&rpc::Task> for Task {
     fn from(task: &rpc::Task) -> Self {
         let metadata = task.metadata.clone().unwrap();
         let spec = task.spec.clone().unwrap();
-        let status = task.status.unwrap();
+        let status = task.status.clone().unwrap();
         Task {
             id: metadata.id,
             ssn_id: spec.session_id.clone(),

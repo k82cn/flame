@@ -122,11 +122,15 @@ class Task:
     input: Optional[bytes] = None
     output: Optional[bytes] = None
     completion_time: Optional[datetime] = None
+    message: Optional[str] = None
     
     def is_completed(self) -> bool:
         """Check if the task is completed."""
         return self.state in (TaskState.SUCCEED, TaskState.FAILED)
 
+    def is_failed(self) -> bool:
+        """Check if the task is failed."""
+        return self.state == TaskState.FAILED
 
 @dataclass
 class Application:

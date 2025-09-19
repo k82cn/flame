@@ -416,9 +416,10 @@ class Session:
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time),
                 input=input_data,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None
+                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
+                message = response.status.message
             )
-            
+
         except grpc.RpcError as e:
             raise FlameError(
                 FlameErrorCode.INTERNAL,
@@ -442,7 +443,8 @@ class Session:
                 creation_time=datetime.fromtimestamp(response.status.creation_time),
                 input=response.spec.input,
                 output=response.spec.output,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None
+                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
+                message = response.status.message
             )
             
         except grpc.RpcError as e:
@@ -481,9 +483,17 @@ class Session:
         watcher = await self.watch_task(task.id)
         
         async for task in watcher:
-            if informer:
+            if informer is not None:
                 informer.on_update(task)
-            if task.is_completed():
+                if task.is_completed():
+                    return task
+            elif task.is_completed():
+                # if no informer, raise an error if task is failed
+                if task.is_failed():
+                    raise FlameError(
+                        FlameErrorCode.INTERNAL,
+                        f"{task.message}"
+                    )
                 return task
 
     async def close(self) -> None:
@@ -510,7 +520,8 @@ class TaskWatcher:
                 creation_time=datetime.fromtimestamp(response.status.creation_time),
                 input=response.spec.input,
                 output=response.spec.output,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None
+                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
+                message = response.status.message
             )
             
         except StopAsyncIteration:

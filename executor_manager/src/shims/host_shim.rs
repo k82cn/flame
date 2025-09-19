@@ -31,18 +31,18 @@ use tonic::Request;
 use tower::service_fn;
 
 use ::rpc::flame as rpc;
-use rpc::grpc_shim_client::GrpcShimClient;
+use rpc::instance_client::InstanceClient;
 use rpc::EmptyRequest;
 use uuid::Uuid;
 
 use crate::executor::Executor;
 use crate::shims::{Shim, ShimPtr};
-use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput};
+use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
 use common::{trace::TraceFn, trace_fn, FlameError, FLAME_EXECUTOR_ID, FLAME_WORKING_DIRECTORY};
 
 pub struct HostShim {
     session_context: Option<SessionContext>,
-    client: GrpcShimClient<Channel>,
+    client: InstanceClient<Channel>,
     child: tokio::process::Child,
     service_socket: String,
     working_directory: String,
@@ -124,7 +124,7 @@ impl HostShim {
                 FlameError::Network(format!("failed to connect to service <{service_id}>: {e}"))
             })?;
 
-        let client = GrpcShimClient::new(channel);
+        let client = InstanceClient::new(channel);
 
         Ok(Arc::new(Mutex::new(Self {
             session_context: None,
@@ -160,17 +160,14 @@ impl Shim for HostShim {
         Ok(())
     }
 
-    async fn on_task_invoke(
-        &mut self,
-        ctx: &TaskContext,
-    ) -> Result<Option<TaskOutput>, FlameError> {
+    async fn on_task_invoke(&mut self, ctx: &TaskContext) -> Result<TaskResult, FlameError> {
         trace_fn!("HostShim::on_task_invoke");
 
         let req = Request::new(rpc::TaskContext::from(ctx.clone()));
         let resp = self.client.on_task_invoke(req).await?;
         let output = resp.into_inner();
 
-        Ok(output.data.map(|d| d.into()))
+        Ok(output.into())
     }
 
     async fn on_session_leave(&mut self) -> Result<(), FlameError> {

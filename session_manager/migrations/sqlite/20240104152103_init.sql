@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
     input           BLOB,
     output          BLOB,
+    message         TEXT,
 
     creation_time   INTEGER NOT NULL,
     completion_time INTEGER,

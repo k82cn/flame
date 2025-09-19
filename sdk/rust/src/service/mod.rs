@@ -17,7 +17,7 @@ use tokio::net::UnixListener;
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-use self::rpc::grpc_shim_server::{GrpcShim, GrpcShimServer};
+use self::rpc::instance_server::{Instance, InstanceServer};
 use crate::apis::flame as rpc;
 
 use crate::apis::{CommonData, FlameError, TaskInput, TaskOutput};
@@ -56,7 +56,7 @@ struct ShimService {
 }
 
 #[tonic::async_trait]
-impl GrpcShim for ShimService {
+impl Instance for ShimService {
     async fn on_session_enter(
         &self,
         req: Request<rpc::SessionContext>,
@@ -64,27 +64,43 @@ impl GrpcShim for ShimService {
         tracing::debug!("ShimService::on_session_enter");
 
         let req = req.into_inner();
-        self.service
+        let resp = self
+            .service
             .on_session_enter(SessionContext::from(req))
-            .await?;
+            .await;
 
-        Ok(Response::new(rpc::Result {
-            return_code: 0,
-            message: None,
-        }))
+        match resp {
+            Ok(_) => Ok(Response::new(rpc::Result {
+                return_code: 0,
+                message: None,
+            })),
+            Err(e) => Ok(Response::new(rpc::Result {
+                return_code: -1,
+                message: Some(e.to_string()),
+            })),
+        }
     }
 
     async fn on_task_invoke(
         &self,
         req: Request<rpc::TaskContext>,
-    ) -> Result<Response<rpc::TaskOutput>, Status> {
+    ) -> Result<Response<rpc::TaskResult>, Status> {
         tracing::debug!("ShimService::on_task_invoke");
         let req = req.into_inner();
-        let data = self.service.on_task_invoke(TaskContext::from(req)).await?;
+        let resp = self.service.on_task_invoke(TaskContext::from(req)).await;
 
-        Ok(Response::new(rpc::TaskOutput {
-            data: data.map(|d| d.into()),
-        }))
+        match resp {
+            Ok(data) => Ok(Response::new(rpc::TaskResult {
+                return_code: 0,
+                output: data.map(|d| d.into()),
+                message: None,
+            })),
+            Err(e) => Ok(Response::new(rpc::TaskResult {
+                return_code: -1,
+                output: None,
+                message: Some(e.to_string()),
+            })),
+        }
     }
 
     async fn on_session_leave(
@@ -92,12 +108,18 @@ impl GrpcShim for ShimService {
         _: Request<rpc::EmptyRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
         tracing::debug!("ShimService::on_session_leave");
-        self.service.on_session_leave().await?;
+        let resp = self.service.on_session_leave().await;
 
-        Ok(Response::new(rpc::Result {
-            return_code: 0,
-            message: None,
-        }))
+        match resp {
+            Ok(_) => Ok(Response::new(rpc::Result {
+                return_code: 0,
+                message: None,
+            })),
+            Err(e) => Ok(Response::new(rpc::Result {
+                return_code: -1,
+                message: Some(e.to_string()),
+            })),
+        }
     }
 }
 
@@ -114,7 +136,7 @@ pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::E
     let uds_stream = UnixListenerStream::new(uds);
 
     Server::builder()
-        .add_service(GrpcShimServer::new(shim_service))
+        .add_service(InstanceServer::new(shim_service))
         .serve_with_incoming(uds_stream)
         .await?;
 

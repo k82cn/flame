@@ -16,6 +16,7 @@ import pytest
 import asyncio
 import pytest_asyncio
 import flamepy
+from e2e.api import TestRequest
 
 FLM_TEST_APP = "flme2e"
 
@@ -45,10 +46,10 @@ def setup_test_env():
 async def test_create_session():
     session = await flamepy.create_session(
         application=FLM_TEST_APP,
-        common_data=b"shared data"
+        common_data=TestRequest()
     )
 
-    await session.invoke(b"task input data", MyTaskInformer())
+    await session.invoke(TestRequest(), MyTaskInformer())
     await session.close()
 
 
@@ -56,11 +57,11 @@ async def test_create_session():
 async def test_invoke_multiple_tasks():
     session = await flamepy.create_session(
         application=FLM_TEST_APP,
-        common_data=b"shared data"
+        common_data=TestRequest()
     )
 
     for i in range(10):
-        await session.invoke(b"task input data", MyTaskInformer())
+        await session.invoke(TestRequest(), MyTaskInformer())
     await session.close()
 
 
@@ -69,10 +70,12 @@ async def test_invoke_multiple_sessions():
     for i in range(10):
         session = await flamepy.create_session(
             application=FLM_TEST_APP,
-            common_data=b"shared data"
+            common_data=TestRequest()
         )
 
         for i in range(10):
-            await session.invoke(b"task input data", MyTaskInformer())
+            task = await session.invoke(TestRequest(), MyTaskInformer())
+            assert task.state == flamepy.TaskState.SUCCEED
+
         await session.close()
 

@@ -107,7 +107,7 @@ impl Shim for WasmShim {
     async fn on_task_invoke(
         &mut self,
         ctx: &apis::TaskContext,
-    ) -> Result<Option<apis::TaskOutput>, common::FlameError> {
+    ) -> Result<apis::TaskResult, common::FlameError> {
         trace_fn!("WasmShim::on_task_invoke");
 
         let task_ctx = service::TaskContext {
@@ -127,7 +127,13 @@ impl Shim for WasmShim {
             .map_err(|e| common::FlameError::Internal(e.to_string()))?
             .map_err(|e| common::FlameError::Internal(e.to_string()))?;
 
-        Ok(output.map(apis::TaskOutput::from))
+        // TODO: Handle task failure
+        let output = output.map(apis::TaskOutput::from);
+        Ok(apis::TaskResult {
+            state: apis::TaskState::Succeed,
+            output,
+            message: None,
+        })
     }
 
     async fn on_session_leave(&mut self) -> Result<(), common::FlameError> {

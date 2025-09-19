@@ -21,9 +21,8 @@ import logging
 from concurrent import futures
 
 from .types import Shim, FlameError, FlameErrorCode
-from .shim_pb2_grpc import GrpcShimServicer, add_GrpcShimServicer_to_server
-from .types_pb2 import Result, EmptyRequest
-from .shim_pb2 import TaskOutput as TaskOutputProto
+from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
+from .types_pb2 import Result, EmptyRequest, TaskResult as TaskResultProto
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,7 @@ class FlameService:
         pass
 
 
-class GrpcShimServicer(GrpcShimServicer):
+class FlmInstanceServicer(InstanceServicer):
     """gRPC servicer implementation for GrpcShim service."""
     
     def __init__(self, service: FlameService):
@@ -136,7 +135,7 @@ class GrpcShimServicer(GrpcShimServicer):
             logger.error(f"Error in OnSessionEnter: {e}")
             return Result(
                 return_code=1,
-                message=f"Session enter error: {str(e)}"
+                message=f"{str(e)}"
             )
     
     async def OnTaskInvoke(self, request, context):
@@ -156,11 +155,19 @@ class GrpcShimServicer(GrpcShimServicer):
             logger.debug("on_task_invoke returned")
 
             # Return task output
-            return TaskOutputProto(data=output.data)
+            return TaskResultProto(
+                return_code=0,
+                output=output.data,
+                message=None
+            )
             
         except Exception as e:
             logger.error(f"Error in OnTaskInvoke: {e}")
-            return TaskOutputProto(data=None)
+            return TaskResultProto(
+                return_code=-1,
+                output=None,
+                message=f"{str(e)}"
+            )
     
     async def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
@@ -179,10 +186,10 @@ class GrpcShimServicer(GrpcShimServicer):
             logger.error(f"Error in OnSessionLeave: {e}")
             return Result(
                 return_code=1,
-                message=f"Session leave error: {str(e)}"
+                message=f"{str(e)}"
             )
 
-class GrpcShimServer:
+class FlmInstanceServer:
     """Server for gRPC shim services."""
     
     def __init__(self, service: FlameService):
@@ -196,8 +203,8 @@ class GrpcShimServer:
             self._server = grpc.aio.server()
             
             # Add servicer to server
-            shim_servicer = GrpcShimServicer(self._service)
-            add_GrpcShimServicer_to_server(shim_servicer, self._server)
+            shim_servicer = FlmInstanceServicer(self._service)
+            add_InstanceServicer_to_server(shim_servicer, self._server)
 
              # Listen on Unix socket
             socket_path = f"/tmp/flame/shim/fsi.sock"
@@ -207,7 +214,7 @@ class GrpcShimServer:
                 socket_path = f"/tmp/flame/shim/{exec_id}/fsi.sock"
 
             self._server.add_insecure_port(f"unix://{socket_path}")
-            logger.debug(f"Flame Python service started on Unix socket: {socket_path}")
+            logger.debug(f"Flame Python instance service started on Unix socket: {socket_path}")
 
             # Start server
             await self._server.start()
@@ -217,14 +224,14 @@ class GrpcShimServer:
         except Exception as e:
             raise FlameError(
                 FlameErrorCode.INTERNAL,
-                f"Failed to start gRPC server: {str(e)}"
+                f"Failed to start gRPC instance server: {str(e)}"
             )
     
     async def stop(self):
         """Stop the gRPC server."""
         if self._server:
             await self._server.stop(grace=5)
-            logger.info("gRPC shim server stopped")
+            logger.info("gRPC instance server stopped")
 
 
 def run(service: FlameService):
@@ -235,6 +242,6 @@ def run(service: FlameService):
         service: The shim service implementation
     """
 
-    server = GrpcShimServer(service)
+    server = FlmInstanceServer(service)
     asyncio.run(server.start())
 

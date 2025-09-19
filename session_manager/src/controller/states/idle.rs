@@ -15,7 +15,7 @@ use crate::controller::states::States;
 use crate::model::ExecutorPtr;
 use crate::storage::StoragePtr;
 
-use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr};
+use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult};
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 pub struct IdleState {
@@ -74,7 +74,7 @@ impl States for IdleState {
         &self,
         _ssn: SessionPtr,
         _task: TaskPtr,
-        _: Option<TaskOutput>,
+        _: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("IdleState::complete_task");
 

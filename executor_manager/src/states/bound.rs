@@ -38,15 +38,14 @@ impl State for BoundState {
                 let shim_ptr = &mut self.executor.shim.clone().ok_or(FlameError::InvalidState(
                     "no shim in bound state".to_string(),
                 ))?;
-                {
+                let task_result = {
                     let mut shim = shim_ptr.lock().await;
-                    let output = shim.on_task_invoke(&task_ctx).await?;
-                    if let Some(task_ctx) = &mut self.executor.task {
-                        task_ctx.output = output;
-                    }
+                    shim.on_task_invoke(&task_ctx).await?
                 };
 
-                self.client.complete_task(&self.executor.clone()).await?;
+                self.client
+                    .complete_task(&self.executor.clone(), &task_result)
+                    .await?;
 
                 let (ssn_id, task_id) = {
                     let task = &self.executor.task.clone().unwrap();

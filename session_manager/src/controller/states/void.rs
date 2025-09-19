@@ -15,7 +15,7 @@ use crate::controller::states::States;
 use crate::storage::StoragePtr;
 
 use crate::model::ExecutorPtr;
-use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskState};
+use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult};
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 pub struct VoidState {
@@ -74,7 +74,7 @@ impl States for VoidState {
         &self,
         ssn_ptr: SessionPtr,
         task_ptr: TaskPtr,
-        task_output: Option<TaskOutput>,
+        task_result: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("VoidState::complete_task");
 

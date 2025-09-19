@@ -11,22 +11,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-
-use lazy_static::lazy_static;
 use tonic::transport::Channel;
 
-use self::rpc::backend_client::BackendClient as FlameBackendClient;
-use self::rpc::{
+use rpc::backend_client::BackendClient as FlameBackendClient;
+use rpc::flame as rpc;
+use rpc::{
     BindExecutorCompletedRequest, BindExecutorRequest, CompleteTaskRequest, LaunchTaskRequest,
     RegisterExecutorRequest, RegisterNodeRequest, ReleaseNodeRequest, SyncNodeRequest,
     UnbindExecutorCompletedRequest, UnbindExecutorRequest,
 };
-use ::rpc::flame as rpc;
 
 use crate::executor::Executor;
-use common::apis::{self, Node, ResourceRequirement, SessionContext, TaskContext};
+use common::apis::{Node, ResourceRequirement, SessionContext, TaskContext, TaskResult};
 use common::ctx::FlameContext;
 use common::{lock_ptr, FlameError};
 
@@ -185,15 +181,14 @@ impl BackendClient {
         Ok(None)
     }
 
-    pub async fn complete_task(&mut self, exe: &Executor) -> Result<(), FlameError> {
-        let task = exe
-            .task
-            .clone()
-            .ok_or(FlameError::InvalidState("no task in executor".to_string()))?;
-
+    pub async fn complete_task(
+        &mut self,
+        exe: &Executor,
+        task_result: &TaskResult,
+    ) -> Result<(), FlameError> {
         let req = CompleteTaskRequest {
             executor_id: exe.id.clone(),
-            task_output: task.output.map(apis::TaskOutput::into),
+            task_result: Some(task_result.clone().try_into()?),
         };
 
         self.client
@@ -204,7 +199,3 @@ impl BackendClient {
         Ok(())
     }
 }
-// rpc UnbindExecutor (UnbindExecutorRequest) returns (Result) {}
-//
-// rpc LaunchTask (LaunchTaskRequest) returns (Task) {}
-// rpc CompleteTask(CompleteTaskRequest) returns (Result) {}

@@ -26,7 +26,7 @@ if _version_not_supported:
     )
 
 
-class GrpcShimStub(object):
+class InstanceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -36,23 +36,23 @@ class GrpcShimStub(object):
             channel: A grpc.Channel.
         """
         self.OnSessionEnter = channel.unary_unary(
-                '/flame.GrpcShim/OnSessionEnter',
+                '/flame.Instance/OnSessionEnter',
                 request_serializer=shim__pb2.SessionContext.SerializeToString,
                 response_deserializer=types__pb2.Result.FromString,
                 _registered_method=True)
         self.OnTaskInvoke = channel.unary_unary(
-                '/flame.GrpcShim/OnTaskInvoke',
+                '/flame.Instance/OnTaskInvoke',
                 request_serializer=shim__pb2.TaskContext.SerializeToString,
-                response_deserializer=shim__pb2.TaskOutput.FromString,
+                response_deserializer=types__pb2.TaskResult.FromString,
                 _registered_method=True)
         self.OnSessionLeave = channel.unary_unary(
-                '/flame.GrpcShim/OnSessionLeave',
+                '/flame.Instance/OnSessionLeave',
                 request_serializer=types__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=types__pb2.Result.FromString,
                 _registered_method=True)
 
 
-class GrpcShimServicer(object):
+class InstanceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def OnSessionEnter(self, request, context):
@@ -74,7 +74,7 @@ class GrpcShimServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_GrpcShimServicer_to_server(servicer, server):
+def add_InstanceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'OnSessionEnter': grpc.unary_unary_rpc_method_handler(
                     servicer.OnSessionEnter,
@@ -84,7 +84,7 @@ def add_GrpcShimServicer_to_server(servicer, server):
             'OnTaskInvoke': grpc.unary_unary_rpc_method_handler(
                     servicer.OnTaskInvoke,
                     request_deserializer=shim__pb2.TaskContext.FromString,
-                    response_serializer=shim__pb2.TaskOutput.SerializeToString,
+                    response_serializer=types__pb2.TaskResult.SerializeToString,
             ),
             'OnSessionLeave': grpc.unary_unary_rpc_method_handler(
                     servicer.OnSessionLeave,
@@ -93,13 +93,13 @@ def add_GrpcShimServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'flame.GrpcShim', rpc_method_handlers)
+            'flame.Instance', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('flame.GrpcShim', rpc_method_handlers)
+    server.add_registered_method_handlers('flame.Instance', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class GrpcShim(object):
+class Instance(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
@@ -116,7 +116,7 @@ class GrpcShim(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.GrpcShim/OnSessionEnter',
+            '/flame.Instance/OnSessionEnter',
             shim__pb2.SessionContext.SerializeToString,
             types__pb2.Result.FromString,
             options,
@@ -143,9 +143,9 @@ class GrpcShim(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.GrpcShim/OnTaskInvoke',
+            '/flame.Instance/OnTaskInvoke',
             shim__pb2.TaskContext.SerializeToString,
-            shim__pb2.TaskOutput.FromString,
+            types__pb2.TaskResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -170,7 +170,7 @@ class GrpcShim(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.GrpcShim/OnSessionLeave',
+            '/flame.Instance/OnSessionLeave',
             types__pb2.EmptyRequest.SerializeToString,
             types__pb2.Result.FromString,
             options,

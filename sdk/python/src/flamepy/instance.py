@@ -74,15 +74,11 @@ class FlameInstance(FlameService):
         if self._context is None:
             logger.warning("No context function defined")
             return
-        try:
-            if self._context_parameter is None:
-                self._context()
-            else:
-                obj = self._context_parameter.annotation.model_validate_json(context.common_data)
-                self._context(obj)
-        except Exception as e:
-            logger.error(f"Error in on_session_enter: {e}")
-            return
+        if self._context_parameter is None:
+            self._context()
+        else:
+            obj = self._context_parameter.annotation.model_validate_json(context.common_data)
+            self._context(obj)
 
     async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         logger = logging.getLogger(__name__)
@@ -91,18 +87,14 @@ class FlameInstance(FlameService):
             logger.warning("No entrypoint function defined")
             return
 
-        try:
-            if self._parameter is not None:
-                obj = self._parameter.annotation.model_validate_json(context.input)
-                res = self._entrypoint(obj)
-            else:
-                res = self._entrypoint()
+        if self._parameter is not None:
+            obj = self._parameter.annotation.model_validate_json(context.input)
+            res = self._entrypoint(obj)
+        else:
+            res = self._entrypoint()
 
-            res = self._return_type.model_validate(res).model_dump_json()
-            logger.debug(f"on_task_invoke: {res}")
-        except Exception as e:
-            logger.error(f"Error in on_task_invoke: {e}")
-            return TaskOutput(data=f"Error in on_task_invoke: {e}".encode("utf-8"))
+        res = self._return_type.model_validate(res).model_dump_json()
+        logger.debug(f"on_task_invoke: {res}")
 
         return TaskOutput(data=res.encode("utf-8"))
 

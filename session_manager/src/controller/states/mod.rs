@@ -20,7 +20,7 @@ use crate::controller::states::{
 use crate::storage::StoragePtr;
 
 use crate::model::ExecutorPtr;
-use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr};
+use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult};
 use common::{lock_ptr, FlameError};
 
 mod binding;
@@ -79,6 +79,6 @@ pub trait States: Send + Sync + 'static {
         &self,
         ssn: SessionPtr,
         task: TaskPtr,
-        task_output: Option<TaskOutput>,
+        task_result: TaskResult,
     ) -> Result<(), FlameError>;
 }

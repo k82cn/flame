@@ -19,7 +19,7 @@ use std::task::{Context, Poll};
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, CommonData, ExecutorID, Node, NodeState,
     Session, SessionID, SessionPtr, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr,
-    TaskState,
+    TaskResult, TaskState,
 };
 
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
@@ -93,14 +93,27 @@ impl Controller {
         self.storage.get_task(ssn_id, id)
     }
 
-    pub async fn update_task(
+    pub async fn update_task_result(
         &self,
         ssn: SessionPtr,
         task: TaskPtr,
-        state: TaskState,
-        output: Option<TaskOutput>,
+        task_result: TaskResult,
     ) -> Result<(), FlameError> {
-        self.storage.update_task(ssn, task, state, output).await
+        self.storage
+            .update_task_result(ssn, task, task_result)
+            .await
+    }
+
+    pub async fn update_task_state(
+        &self,
+        ssn: SessionPtr,
+        task: TaskPtr,
+        task_state: TaskState,
+        message: Option<String>,
+    ) -> Result<(), FlameError> {
+        self.storage
+            .update_task_state(ssn, task, task_state, message)
+            .await
     }
 
     pub async fn create_executor(
@@ -229,7 +242,7 @@ impl Controller {
     pub async fn complete_task(
         &self,
         id: ExecutorID,
-        task_output: Option<TaskOutput>,
+        task_result: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("Storage::complete_task");
         let exe_ptr = self.storage.get_executor_ptr(id)?;
@@ -248,7 +261,7 @@ impl Controller {
         let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
 
         let state = states::from(self.storage.clone(), exe_ptr)?;
-        state.complete_task(ssn_ptr, task_ptr, task_output).await?;
+        state.complete_task(ssn_ptr, task_ptr, task_result).await?;
 
         Ok(())
     }

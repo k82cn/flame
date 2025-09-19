@@ -26,12 +26,8 @@ message TaskContext {
     optional bytes input = 4;
 }
 
-message TaskOutput {
-    optional bytes data = 1;
-}
-
-service GrpcShim{
+service Instance {
     rpc OnSessionEnter(SessionContext) returns (Result) {}
-    rpc OnTaskInvoke(TaskContext) returns (TaskOutput) {}
+    rpc OnTaskInvoke(TaskContext) returns (TaskResult) {}
     rpc OnSessionLeave(EmptyRequest) returns (Result) {}
 }

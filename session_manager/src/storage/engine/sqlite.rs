@@ -25,7 +25,7 @@ use common::{
     apis::{
         Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
         CommonData, Session, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID, TaskID,
-        TaskInput, TaskOutput, TaskState, DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
+        TaskInput, TaskOutput, TaskResult, TaskState, DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
     },
     trace::TraceFn,
     trace_fn,
@@ -82,6 +82,7 @@ struct TaskDao {
     pub input: Option<Vec<u8>>,
     pub output: Option<Vec<u8>>,
 
+    pub message: Option<String>,
     pub creation_time: i64,
     pub completion_time: Option<i64>,
 
@@ -631,11 +632,11 @@ impl Engine for SqliteEngine {
         task.try_into()
     }
 
-    async fn update_task(
+    async fn update_task_state(
         &self,
         gid: TaskGID,
-        state: TaskState,
-        output: Option<TaskOutput>,
+        task_state: TaskState,
+        message: Option<String>,
     ) -> Result<Task, FlameError> {
         let mut tx = self
             .pool
@@ -643,16 +644,66 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let completion_time = match state {
-            TaskState::Failed | TaskState::Succeed => Some(Utc::now().timestamp()),
+        let completion_time = match task_state {
+            TaskState::Failed | TaskState::Succeed => {
+                tracing::warn!(
+                    "Invalid task state <{:?}> for task <{}> when updating task state",
+                    task_state,
+                    gid
+                );
+                Some(Utc::now().timestamp())
+            }
             _ => None,
         };
-        let output: Option<Vec<u8>> = output.map(Bytes::into);
-        let sql = r#"UPDATE tasks SET state=?, completion_time=?, output=? WHERE id=? AND ssn_id=? RETURNING *"#;
+
+        let sql = r#"UPDATE tasks SET state=?, completion_time=?, message=? WHERE id=? AND ssn_id=? RETURNING *"#;
         let task: TaskDao = sqlx::query_as(sql)
-            .bind::<i32>(state.into())
+            .bind::<i32>(task_state.into())
             .bind(completion_time)
-            .bind(output)
+            .bind(message)
+            .bind(gid.task_id)
+            .bind(gid.ssn_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        task.try_into()
+    }
+
+    async fn update_task_result(
+        &self,
+        gid: TaskGID,
+        task_result: TaskResult,
+    ) -> Result<Task, FlameError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let completion_time = match task_result.state {
+            TaskState::Failed | TaskState::Succeed => Some(Utc::now().timestamp()),
+            _ => {
+                tracing::warn!(
+                    "Invalid task state <{:?}> for task <{}> when updating task result",
+                    task_result.state,
+                    gid
+                );
+                None
+            }
+        };
+
+        let sql = r#"UPDATE tasks SET state=?, completion_time=?, output=?, message=? WHERE id=? AND ssn_id=? RETURNING *"#;
+
+        let task: TaskDao = sqlx::query_as(sql)
+            .bind::<i32>(task_result.state.into())
+            .bind(completion_time)
+            .bind::<Option<Vec<u8>>>(task_result.output.map(Bytes::into))
+            .bind(task_result.message)
             .bind(gid.task_id)
             .bind(gid.ssn_id)
             .fetch_one(&mut *tx)
@@ -748,6 +799,7 @@ impl TryFrom<&TaskDao> for Task {
                 .transpose()?,
 
             state: task.state.try_into()?,
+            message: task.message.clone(),
         })
     }
 }
@@ -910,7 +962,7 @@ mod tests {
         assert_eq!(task_1_1.state, TaskState::Pending);
 
         let task_1_1 =
-            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+            tokio_test::block_on(storage.update_task_state(task_1_1.gid(), TaskState::Succeed, None))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
         let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
@@ -1040,12 +1092,18 @@ mod tests {
         let task_list = tokio_test::block_on(storage.find_tasks(ssn_1.id))?;
         assert_eq!(task_list.len(), 2);
 
-        let task_1_1 =
-            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+        let task_1_1 = tokio_test::block_on(storage.update_task_state(
+            task_1_1.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
-        let task_1_2 =
-            tokio_test::block_on(storage.update_task(task_1_2.gid(), TaskState::Succeed, None))?;
+        let task_1_2 = tokio_test::block_on(storage.update_task_state(
+            task_1_2.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
         let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
@@ -1076,12 +1134,18 @@ mod tests {
         let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
         assert_eq!(task_1_2.id, 2);
 
-        let task_1_1 =
-            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+        let task_1_1 = tokio_test::block_on(storage.update_task_state(
+            task_1_1.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
-        let task_1_2 =
-            tokio_test::block_on(storage.update_task(task_1_2.gid(), TaskState::Succeed, None))?;
+        let task_1_2 = tokio_test::block_on(storage.update_task_state(
+            task_1_2.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
         let ssn_2 = tokio_test::block_on(storage.create_session("flmping".to_string(), 1, None))?;
@@ -1096,12 +1160,18 @@ mod tests {
         let task_2_2 = tokio_test::block_on(storage.create_task(ssn_2.id, None))?;
         assert_eq!(task_2_2.id, 2);
 
-        let task_2_1 =
-            tokio_test::block_on(storage.update_task(task_2_1.gid(), TaskState::Succeed, None))?;
+        let task_2_1 = tokio_test::block_on(storage.update_task_state(
+            task_2_1.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_2_1.state, TaskState::Succeed);
 
-        let task_2_2 =
-            tokio_test::block_on(storage.update_task(task_2_2.gid(), TaskState::Succeed, None))?;
+        let task_2_2 = tokio_test::block_on(storage.update_task_state(
+            task_2_2.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_2_2.state, TaskState::Succeed);
 
         let ssn_list = tokio_test::block_on(storage.find_session())?;
@@ -1163,8 +1233,11 @@ mod tests {
         let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
         assert_eq!(task_1_1.id, 1);
 
-        let task_1_1 =
-            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+        let task_1_1 = tokio_test::block_on(storage.update_task_state(
+            task_1_1.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
         let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
@@ -1202,8 +1275,11 @@ mod tests {
         let task_1_1 = tokio_test::block_on(storage.get_task(task_1_1.gid()))?;
         assert_eq!(task_1_1.state, TaskState::Pending);
 
-        let task_1_1 =
-            tokio_test::block_on(storage.update_task(task_1_1.gid(), TaskState::Succeed, None))?;
+        let task_1_1 = tokio_test::block_on(storage.update_task_state(
+            task_1_1.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
         // It should be failed because the session is open

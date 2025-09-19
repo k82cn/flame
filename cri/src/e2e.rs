@@ -69,11 +69,11 @@ async fn test_run_pod() -> Result<(), FlameError> {
 
 #[tokio::main]
 pub async fn main() -> Result<(), FlameError> {
-    let res = test_run_pod().await?;
-    println!("test_run_pod result: {:?}", res);
+    test_run_pod().await?;
+    println!("test_run_pod result: Done");
 
-    let res = test_new_pod_manager().await?;
-    println!("test_new_pod_manager result: {:?}", res);
+    test_new_pod_manager().await?;
+    println!("test_new_pod_manager result: Done");
 
     Ok(())
 }
