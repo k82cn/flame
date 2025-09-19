@@ -47,7 +47,7 @@ enum Commands {
         /// The name of application
         #[arg(short, long)]
         application: Option<String>,
-        
+
         /// The id of session
         #[arg(short, long)]
         session: Option<String>,

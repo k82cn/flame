@@ -785,7 +785,7 @@ impl Engine for SqliteEngine {
             .await?;
 
         let events = self._all_events_by_owner(&mut tx, &gid).await?;
-   
+
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
@@ -874,7 +874,7 @@ impl Engine for SqliteEngine {
         for event in events {
             let owner = event.owner.clone();
             match Event::try_from(event) {
-                Ok(event) => event_map.entry(owner).or_insert_with(Vec::new).push(event),
+                Ok(event) => event_map.entry(owner).or_default().push(event),
                 Err(e) => tracing::error!("failed to convert event: {e}"),
             }
         }
@@ -1092,7 +1092,10 @@ mod tests {
         assert_eq!(tasks[0].state, TaskState::Succeed);
         assert_eq!(tasks[0].events.len(), 1);
         assert_eq!(tasks[0].events[0].code, 2);
-        assert_eq!(tasks[0].events[0].message, Some("Task succeeded".to_string()));
+        assert_eq!(
+            tasks[0].events[0].message,
+            Some("Task succeeded".to_string())
+        );
 
         Ok(())
     }

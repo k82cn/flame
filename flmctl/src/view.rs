@@ -35,7 +35,11 @@ pub async fn run(
     }
 }
 
-async fn view_task(conn: client::Connection, ssn_id: &String, task_id: &String) -> Result<(), Box<dyn Error>> {
+async fn view_task(
+    conn: client::Connection,
+    ssn_id: &String,
+    task_id: &String,
+) -> Result<(), Box<dyn Error>> {
     let session = conn.get_session(ssn_id).await?;
     let task = session.get_task(task_id).await?;
 
@@ -44,9 +48,14 @@ async fn view_task(conn: client::Connection, ssn_id: &String, task_id: &String) 
     println!("{:<15}{}", "Application:", session.application);
     println!("{:<15}{}", "State:", task.state);
     println!("{:<15}", "Events:");
-    
+
     for event in task.events {
-        println!("  {}: {} ({})", event.creation_time.format("%H:%M:%S%.3f"), event.message.unwrap_or_default(), event.code);
+        println!(
+            "  {}: {} ({})",
+            event.creation_time.format("%H:%M:%S%.3f"),
+            event.message.unwrap_or_default(),
+            event.code
+        );
     }
 
     Ok(())
@@ -61,7 +70,12 @@ async fn view_session(conn: client::Connection, ssn_id: &String) -> Result<(), B
     println!("{:<15}{}", "Creation Time:", session.creation_time);
     println!("{:<15}", "Events:");
     for event in session.events {
-        println!("  {}: {} ({})", event.creation_time.format("%H:%M:%S%.3f"), event.message.unwrap_or_default(), event.code);
+        println!(
+            "  {}: {} ({})",
+            event.creation_time.format("%H:%M:%S%.3f"),
+            event.message.unwrap_or_default(),
+            event.code
+        );
     }
 
     Ok(())

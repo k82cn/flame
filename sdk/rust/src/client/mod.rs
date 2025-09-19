@@ -25,9 +25,9 @@ use tonic::Request;
 use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
-    GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest, ListSessionRequest,
-    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
-    UpdateApplicationRequest, WatchTaskRequest,
+    GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest,
+    ListSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
+    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
 use crate::apis::Shim;
@@ -183,15 +183,18 @@ impl Connection {
 
     pub async fn get_session(&self, id: &SessionID) -> Result<Session, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
-        let ssn = client.get_session(GetSessionRequest { session_id: id.to_string() }).await?;
+        let ssn = client
+            .get_session(GetSessionRequest {
+                session_id: id.to_string(),
+            })
+            .await?;
 
         let ssn = ssn.into_inner();
         let mut ssn = Session::from(&ssn);
         ssn.client = Some(client);
-        
+
         Ok(ssn)
     }
-
 
     pub async fn register_application(
         &self,
@@ -425,7 +428,7 @@ impl From<&rpc::Session> for Session {
 impl From<&rpc::Event> for Event {
     fn from(event: &rpc::Event) -> Self {
         let second = event.creation_time / 1000;
-        let nanosecond = ((event.creation_time % 1000)* 1_000_000) as u32;
+        let nanosecond = ((event.creation_time % 1000) * 1_000_000) as u32;
 
         Self {
             code: event.code,

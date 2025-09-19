@@ -1089,27 +1089,6 @@ impl TryFrom<TaskResult> for rpc::TaskResult {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_resreq_from_string() {
-        let cases = vec![
-            ("cpu=1,mem=256", (1, 256)),
-            ("cpu=1,mem=1k", (1, 1024)),
-            ("cpu=1,memory=1m", (1, 1024 * 1024)),
-            ("cpu=1,memory=1g", (1, 1024 * 1024 * 1024)),
-        ];
-
-        for (input, expected) in cases {
-            let resreq = ResourceRequirement::from(input);
-            assert_eq!(resreq.cpu, expected.0);
-            assert_eq!(resreq.memory, expected.1);
-        }
-    }
-}
-
 impl Ownership for Task {
     fn uid(&self) -> String {
         format!("task/{}/{}", self.ssn_id, self.id)
@@ -1142,7 +1121,7 @@ impl Ownership for Session {
 
 impl Ownership for SessionID {
     fn uid(&self) -> String {
-        format!("ssn/{}", self)
+        format!("ssn/{self}")
     }
 
     fn owner(&self) -> Option<String> {
@@ -1162,7 +1141,7 @@ impl Ownership for Application {
 
 impl Ownership for ApplicationID {
     fn uid(&self) -> String {
-        format!("app/{}", self)
+        format!("app/{self}")
     }
 
     fn owner(&self) -> Option<String> {
@@ -1177,5 +1156,26 @@ impl Ownership for Node {
 
     fn owner(&self) -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resreq_from_string() {
+        let cases = vec![
+            ("cpu=1,mem=256", (1, 256)),
+            ("cpu=1,mem=1k", (1, 1024)),
+            ("cpu=1,memory=1m", (1, 1024 * 1024)),
+            ("cpu=1,memory=1g", (1, 1024 * 1024 * 1024)),
+        ];
+
+        for (input, expected) in cases {
+            let resreq = ResourceRequirement::from(input);
+            assert_eq!(resreq.cpu, expected.0);
+            assert_eq!(resreq.memory, expected.1);
+        }
     }
 }
