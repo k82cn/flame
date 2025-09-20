@@ -24,8 +24,9 @@ use crate::FlameError;
 use common::{
     apis::{
         Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
-        CommonData, Session, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID, TaskID,
-        TaskInput, TaskOutput, TaskResult, TaskState, DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
+        CommonData, Event, Ownership, Session, SessionID, SessionState, SessionStatus, Shim, Task,
+        TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState, DEFAULT_DELAY_RELEASE,
+        DEFAULT_MAX_INSTANCES,
     },
     trace::TraceFn,
     trace_fn,
@@ -34,6 +35,15 @@ use common::{
 use crate::storage::engine::{Engine, EnginePtr};
 
 const SQLITE_SQL: &str = "migrations/sqlite";
+
+#[derive(Clone, FromRow, Debug)]
+struct EventDao {
+    pub owner: String,
+    pub parent: Option<String>,
+    pub code: i32,
+    pub message: Option<String>,
+    pub creation_time: i64,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct AppSchemaDao {
@@ -82,7 +92,6 @@ struct TaskDao {
     pub input: Option<Vec<u8>>,
     pub output: Option<Vec<u8>>,
 
-    pub message: Option<String>,
     pub creation_time: i64,
     pub completion_time: Option<i64>,
 
@@ -117,6 +126,85 @@ impl SqliteEngine {
         Ok(Arc::new(SqliteEngine { pool: db }))
     }
 
+    async fn _record_event(
+        &self,
+        tx: &mut SqliteConnection,
+        owner: &dyn Ownership,
+        code: i32,
+        message: Option<String>,
+    ) -> Result<Event, FlameError> {
+        let sql = r#"INSERT INTO events (owner, parent, code, message, creation_time)
+                    VALUES (?, ?, ?, ?, ?)
+                    RETURNING *"#;
+        let event: EventDao = sqlx::query_as(sql)
+            .bind(owner.uid())
+            .bind(owner.owner())
+            .bind(code)
+            .bind(message)
+            .bind(Utc::now().timestamp_millis())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to record event: {e}")))?;
+
+        event.try_into()
+    }
+
+    async fn _delete_event_by_owner(
+        &self,
+        tx: &mut SqliteConnection,
+        owner: String,
+    ) -> Result<Vec<EventDao>, FlameError> {
+        let sql = "DELETE FROM events WHERE owner=? RETURNING * ";
+        let events: Vec<EventDao> = sqlx::query_as(sql)
+            .bind(owner)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to delete event: {e}")))?;
+        Ok(events)
+    }
+
+    async fn _delete_event_by_parent(
+        &self,
+        tx: &mut SqliteConnection,
+        parent: String,
+    ) -> Result<Vec<EventDao>, FlameError> {
+        let sql = "DELETE FROM events WHERE parent=? RETURNING *";
+        let events: Vec<EventDao> = sqlx::query_as(sql)
+            .bind(parent)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to delete event: {e}")))?;
+        Ok(events)
+    }
+
+    async fn _all_events_by_owner(
+        &self,
+        tx: &mut SqliteConnection,
+        owner: &dyn Ownership,
+    ) -> Result<Vec<EventDao>, FlameError> {
+        let sql = "SELECT * FROM events WHERE owner=?";
+        let events: Vec<EventDao> = sqlx::query_as(sql)
+            .bind(owner.uid())
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to get all events by owner: {e}")))?;
+        Ok(events)
+    }
+
+    async fn _all_events_by_parent(
+        &self,
+        tx: &mut SqliteConnection,
+        parent: String,
+    ) -> Result<Vec<EventDao>, FlameError> {
+        let sql = "SELECT * FROM events WHERE parent=?";
+        let events: Vec<EventDao> = sqlx::query_as(sql)
+            .bind(parent)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to get all events by parent: {e}")))?;
+        Ok(events)
+    }
+
     async fn _count_open_tasks(
         &self,
         tx: &mut SqliteConnection,
@@ -129,7 +217,7 @@ impl SqliteEngine {
             .bind(TaskState::Succeed as i32)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to count open tasks: {e}")))?;
         Ok(count)
     }
 
@@ -143,7 +231,7 @@ impl SqliteEngine {
             .bind(id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to delete session: {e}")))?;
 
         let sql = "DELETE FROM sessions WHERE id=? AND state=? RETURNING *";
         let ssn: SessionDao = sqlx::query_as(sql)
@@ -151,8 +239,15 @@ impl SqliteEngine {
             .bind(SessionState::Closed as i32)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
-        ssn.try_into()
+            .map_err(|e| FlameError::Storage(format!("failed to close session: {e}")))?;
+
+        let ssn: Session = ssn.try_into()?;
+
+        // Delete events
+        self._delete_event_by_parent(tx, ssn.uid()).await?;
+        self._delete_event_by_owner(tx, ssn.uid()).await?;
+
+        Ok(ssn)
     }
 
     async fn _count_open_sessions(
@@ -166,7 +261,7 @@ impl SqliteEngine {
             .bind(SessionState::Open as i32)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to count open sessions: {e}")))?;
         Ok(count)
     }
 
@@ -180,7 +275,7 @@ impl SqliteEngine {
             .bind(app)
             .fetch_all(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to list session ids: {e}")))?;
         Ok(ids)
     }
 
@@ -194,7 +289,7 @@ impl SqliteEngine {
             .bind(name)
             .execute(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to delete application: {e}")))?;
         Ok(())
     }
 }
@@ -250,7 +345,7 @@ impl Engine for SqliteEngine {
             .bind(ApplicationState::Enabled as i32)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to register application: {e}")))?;
 
         tx.commit()
             .await
@@ -308,7 +403,7 @@ impl Engine for SqliteEngine {
             .bind(name)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to execute SQL: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to update application: {e}")))?;
 
         tx.commit()
             .await
@@ -342,7 +437,7 @@ impl Engine for SqliteEngine {
 
         tx.commit()
             .await
-            .map_err(|e| FlameError::Storage(format!("failed to commit TX: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("failed to unregister application: {e}")))?;
 
         Ok(())
     }
@@ -363,7 +458,7 @@ impl Engine for SqliteEngine {
 
         tx.commit()
             .await
-            .map_err(|e| FlameError::Storage(e.to_string()))?;
+            .map_err(|e| FlameError::Storage(format!("failed to get application: {e}")))?;
 
         app.try_into()
     }
@@ -581,12 +676,22 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
+        let events = self._all_events_by_owner(&mut tx, &gid).await?;
+
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        task.try_into()
+        let mut task: Task = task.try_into()?;
+        task.events = events
+            .into_iter()
+            .map(Event::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        Ok(task)
     }
+
     async fn delete_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
         let mut tx = self
             .pool
@@ -602,11 +707,20 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
+        let events = self._delete_event_by_owner(&mut tx, gid.uid()).await?;
+
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        task.try_into()
+        let mut task: Task = task.try_into()?;
+        task.events = events
+            .into_iter()
+            .map(Event::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        Ok(task)
     }
 
     async fn retry_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
@@ -656,22 +770,34 @@ impl Engine for SqliteEngine {
             _ => None,
         };
 
-        let sql = r#"UPDATE tasks SET state=?, completion_time=?, message=? WHERE id=? AND ssn_id=? RETURNING *"#;
+        let sql =
+            r#"UPDATE tasks SET state=?, completion_time=? WHERE id=? AND ssn_id=? RETURNING *"#;
         let task: TaskDao = sqlx::query_as(sql)
             .bind::<i32>(task_state.into())
             .bind(completion_time)
-            .bind(message)
             .bind(gid.task_id)
             .bind(gid.ssn_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
+        self._record_event(&mut tx, &gid, task_state.into(), message)
+            .await?;
+
+        let events = self._all_events_by_owner(&mut tx, &gid).await?;
+
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        task.try_into()
+        let mut task: Task = task.try_into()?;
+        task.events = events
+            .into_iter()
+            .map(Event::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        Ok(task)
     }
 
     async fn update_task_result(
@@ -697,24 +823,35 @@ impl Engine for SqliteEngine {
             }
         };
 
-        let sql = r#"UPDATE tasks SET state=?, completion_time=?, output=?, message=? WHERE id=? AND ssn_id=? RETURNING *"#;
+        let sql = r#"UPDATE tasks SET state=?, completion_time=?, output=? WHERE id=? AND ssn_id=? RETURNING *"#;
 
         let task: TaskDao = sqlx::query_as(sql)
             .bind::<i32>(task_result.state.into())
             .bind(completion_time)
             .bind::<Option<Vec<u8>>>(task_result.output.map(Bytes::into))
-            .bind(task_result.message)
             .bind(gid.task_id)
             .bind(gid.ssn_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
+        self._record_event(&mut tx, &gid, task_result.state.into(), task_result.message)
+            .await?;
+
+        let events = self._all_events_by_owner(&mut tx, &gid).await?;
+
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        task.try_into()
+        let mut task: Task = task.try_into()?;
+        task.events = events
+            .into_iter()
+            .map(Event::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        Ok(task)
     }
 
     async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
@@ -731,15 +868,34 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
+        let events = self._all_events_by_parent(&mut tx, ssn_id.uid()).await?;
+        let mut event_map = HashMap::<String, Vec<Event>>::new();
+
+        for event in events {
+            let owner = event.owner.clone();
+            match Event::try_from(event) {
+                Ok(event) => event_map.entry(owner).or_default().push(event),
+                Err(e) => tracing::error!("failed to convert event: {e}"),
+            }
+        }
+
+        let mut tasks: Vec<Task> = task_list
+            .iter()
+            .map(Task::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        for task in &mut tasks {
+            if let Some(events) = event_map.get(&task.uid()) {
+                task.events = events.clone();
+            }
+        }
+
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        Ok(task_list
-            .iter()
-            .map(Task::try_from)
-            .filter_map(Result::ok)
-            .collect())
+        Ok(tasks)
     }
 }
 
@@ -766,6 +922,7 @@ impl TryFrom<&SessionDao> for Session {
             status: SessionStatus {
                 state: ssn.state.try_into()?,
             },
+            events: vec![],
         })
     }
 }
@@ -799,7 +956,7 @@ impl TryFrom<&TaskDao> for Task {
                 .transpose()?,
 
             state: task.state.try_into()?,
-            message: task.message.clone(),
+            events: vec![],
         })
     }
 }
@@ -875,11 +1032,73 @@ impl From<AppSchemaDao> for ApplicationSchema {
     }
 }
 
+impl TryFrom<EventDao> for Event {
+    type Error = FlameError;
+
+    fn try_from(event: EventDao) -> Result<Self, Self::Error> {
+        Ok(Self {
+            code: event.code,
+            message: event.message.clone(),
+            creation_time: DateTime::<Utc>::from_timestamp(event.creation_time, 0)
+                .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common::apis::ApplicationState;
 
     use super::*;
+
+    fn test_get_task_with_events() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_get_task_with_events_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        for (name, attr) in common::default_applications() {
+            tokio_test::block_on(storage.register_application(name.clone(), attr))?;
+        }
+
+        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
+        assert_eq!(ssn_1.id, 1);
+        assert_eq!(ssn_1.application, "flmexec");
+        assert_eq!(ssn_1.status.state, SessionState::Open);
+
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        assert_eq!(task_1_1.id, 1);
+        let tasks = tokio_test::block_on(storage.find_tasks(ssn_1.id))?;
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, 1);
+        assert_eq!(tasks[0].ssn_id, ssn_1.id);
+        assert_eq!(tasks[0].state, TaskState::Pending);
+        assert_eq!(tasks[0].events.len(), 0);
+        assert_eq!(tasks[0].input, None);
+        assert_eq!(tasks[0].output, None);
+
+        let task_1_1 = tokio_test::block_on(storage.update_task_state(
+            task_1_1.gid(),
+            TaskState::Succeed,
+            Some("Task succeeded".to_string()),
+        ))?;
+        assert_eq!(task_1_1.state, TaskState::Succeed);
+        let tasks = tokio_test::block_on(storage.find_tasks(ssn_1.id))?;
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, 1);
+        assert_eq!(tasks[0].ssn_id, ssn_1.id);
+        assert_eq!(tasks[0].state, TaskState::Succeed);
+        assert_eq!(tasks[0].events.len(), 1);
+        assert_eq!(tasks[0].events[0].code, 2);
+        assert_eq!(
+            tasks[0].events[0].message,
+            Some("Task succeeded".to_string())
+        );
+
+        Ok(())
+    }
 
     #[test]
     fn test_update_application() -> Result<(), FlameError> {
@@ -961,8 +1180,11 @@ mod tests {
         let task_1_1 = tokio_test::block_on(storage.get_task(task_1_1.gid()))?;
         assert_eq!(task_1_1.state, TaskState::Pending);
 
-        let task_1_1 =
-            tokio_test::block_on(storage.update_task_state(task_1_1.gid(), TaskState::Succeed, None))?;
+        let task_1_1 = tokio_test::block_on(storage.update_task_state(
+            task_1_1.gid(),
+            TaskState::Succeed,
+            None,
+        ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
         let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));

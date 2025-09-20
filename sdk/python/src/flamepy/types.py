@@ -79,6 +79,13 @@ class FlameError(Exception):
         self.message = message
         super().__init__(f"{message} (code: {code})")
 
+@dataclass
+class Event:
+    """Event for a task."""
+    code: int
+    message: Optional[str] = None
+    creation_time: datetime = None
+
 
 @dataclass
 class SessionAttributes:
@@ -122,7 +129,7 @@ class Task:
     input: Optional[bytes] = None
     output: Optional[bytes] = None
     completion_time: Optional[datetime] = None
-    message: Optional[str] = None
+    events: Optional[List[Event]] = None
     
     def is_completed(self) -> bool:
         """Check if the task is completed."""

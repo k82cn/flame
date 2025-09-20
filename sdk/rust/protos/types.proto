@@ -25,6 +25,8 @@ message SessionStatus {
   int32 running = 5;
   int32 succeed = 6;
   int32 failed = 7;
+
+  repeated Event events = 8;
 }
 
 message SessionSpec {
@@ -51,7 +53,7 @@ message TaskStatus {
 
   int64 creation_time = 2;
   optional int64 completion_time = 3;
-  optional string message = 4;
+  repeated Event events = 4;
 }
 
 message TaskSpec {
@@ -204,3 +206,8 @@ message TaskResult {
 message EmptyRequest {
 }
 
+message Event {
+  int32 code = 1;
+  optional string message = 2;
+  int64 creation_time = 3;
+}

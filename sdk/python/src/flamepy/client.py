@@ -17,9 +17,9 @@ from urllib.parse import urlparse
 import grpc
 import grpc.aio
 
-from datetime import datetime
+from datetime import datetime, timezone
 from .types import (
-    Task, Application, SessionAttributes, ApplicationAttributes,
+    Task, Application, SessionAttributes, ApplicationAttributes, Event,
     SessionID, TaskID, ApplicationID, TaskInput, TaskOutput, CommonData,
     SessionState, TaskState, ApplicationState, Shim, FlameError, FlameErrorCode,
     TaskInformer, Request as FlameRequest, Response as FlameResponse, FlameContext, ApplicationSchema
@@ -195,7 +195,7 @@ class Connection:
                     name=app.metadata.name,
                     shim=Shim(app.spec.shim),
                     state=ApplicationState(app.status.state),
-                    creation_time=datetime.fromtimestamp(app.status.creation_time),
+                    creation_time=datetime.fromtimestamp(app.status.creation_time / 1000, tz=timezone.utc),
                     image=app.spec.image,
                     command=app.spec.command,
                     arguments=list(app.spec.arguments),
@@ -232,7 +232,7 @@ class Connection:
                 name=response.metadata.name,
                 shim=Shim(response.spec.shim),
                 state=ApplicationState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 image=response.spec.image,
                 command=response.spec.command,
                 arguments=list(response.spec.arguments),
@@ -269,12 +269,12 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None
             )
             return session
         except grpc.RpcError as e:
@@ -298,12 +298,12 @@ class Connection:
                     application=session.spec.application,
                     slots=session.spec.slots,
                     state=SessionState(session.status.state),
-                    creation_time=datetime.fromtimestamp(session.status.creation_time),
+                    creation_time=datetime.fromtimestamp(session.status.creation_time / 1000, tz=timezone.utc),
                     pending=session.status.pending,
                     running=session.status.running,
                     succeed=session.status.succeed,
                     failed=session.status.failed,
-                    completion_time=datetime.fromtimestamp(session.status.completion_time) if session.status.HasField('completion_time') else None
+                    completion_time=datetime.fromtimestamp(session.status.completion_time / 1000, tz=timezone.utc) if session.status.HasField('completion_time') else None
                 ))
             
             return sessions
@@ -327,12 +327,12 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None
             )
             
         except grpc.RpcError as e:
@@ -354,12 +354,12 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None
             )
             
         except grpc.RpcError as e:
@@ -414,10 +414,14 @@ class Session:
                 id=response.metadata.id,
                 session_id=self.id,
                 state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 input=input_data,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
-                message = response.status.message
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None,
+                events = [Event(
+                    code=event.code,
+                    message=event.message,
+                    creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc)
+                ) for event in response.status.events]
             )
 
         except grpc.RpcError as e:
@@ -440,11 +444,15 @@ class Session:
                 id=response.metadata.id,
                 session_id=self.id,
                 state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 input=response.spec.input,
                 output=response.spec.output,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
-                message = response.status.message
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None,
+                events = [Event(
+                    code=event.code,
+                    message=event.message,
+                    creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc)
+                ) for event in response.status.events]
             )
             
         except grpc.RpcError as e:
@@ -485,17 +493,10 @@ class Session:
         async for task in watcher:
             if informer is not None:
                 informer.on_update(task)
-                if task.is_completed():
+            
+            if task.is_completed():
                     return task
-            elif task.is_completed():
-                # if no informer, raise an error if task is failed
-                if task.is_failed():
-                    raise FlameError(
-                        FlameErrorCode.INTERNAL,
-                        f"{task.message}"
-                    )
-                return task
-
+            
     async def close(self) -> None:
         """Close the session."""
         await self.connection.close_session(self.id)
@@ -517,11 +518,15 @@ class TaskWatcher:
                 id=response.metadata.id,
                 session_id=response.spec.session_id,
                 state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 input=response.spec.input,
                 output=response.spec.output,
-                completion_time=datetime.fromtimestamp(response.status.completion_time) if response.status.HasField('completion_time') else None,
-                message = response.status.message
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None,
+                events = [Event(
+                    code=event.code,
+                    message=event.message,
+                    creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc)
+                ) for event in response.status.events]
             )
             
         except StopAsyncIteration:

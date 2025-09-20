@@ -40,6 +40,19 @@ pub type TaskInput = Message;
 pub type TaskOutput = Message;
 pub type CommonData = Message;
 
+// This trait is used to get the owner and parent of the object in Flame.
+pub trait Ownership: Send + Sync + 'static {
+    fn uid(&self) -> String;
+    fn owner(&self) -> Option<String>;
+}
+
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub code: i32,
+    pub message: Option<String>,
+    pub creation_time: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug)]
 pub struct TaskResult {
     pub state: TaskState,
@@ -142,6 +155,8 @@ pub struct Session {
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
 
+    pub events: Vec<Event>,
+
     pub status: SessionStatus,
 }
 
@@ -164,11 +179,14 @@ pub struct TaskGID {
 pub struct Task {
     pub id: TaskID,
     pub ssn_id: SessionID,
+
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
-    pub message: Option<String>,
+
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
+
+    pub events: Vec<Event>,
 
     pub state: TaskState,
 }
@@ -491,6 +509,7 @@ impl Clone for Session {
             tasks_index: HashMap::new(),
             creation_time: self.creation_time,
             completion_time: self.completion_time,
+            events: self.events.clone(),
             status: self.status.clone(),
         };
 
@@ -506,6 +525,26 @@ impl Clone for Session {
         }
 
         ssn
+    }
+}
+
+impl From<Event> for rpc::Event {
+    fn from(event: Event) -> Self {
+        Self {
+            code: event.code,
+            message: event.message,
+            creation_time: event.creation_time.timestamp(),
+        }
+    }
+}
+
+impl From<rpc::Event> for Event {
+    fn from(event: rpc::Event) -> Self {
+        Self {
+            code: event.code,
+            message: event.message,
+            creation_time: DateTime::from_timestamp(event.creation_time, 0).unwrap(),
+        }
     }
 }
 
@@ -644,7 +683,7 @@ impl From<&Task> for rpc::Task {
             state: task.state as i32,
             creation_time: task.creation_time.timestamp(),
             completion_time: task.completion_time.map(|s| s.timestamp()),
-            message: task.message.clone(),
+            events: task.events.clone().into_iter().map(Event::into).collect(),
         });
         rpc::Task {
             metadata,
@@ -670,6 +709,7 @@ impl From<&Session> for rpc::Session {
             pending: 0,
             running: 0,
             succeed: 0,
+            events: ssn.events.clone().into_iter().map(Event::into).collect(),
         };
         for (s, v) in &ssn.tasks_index {
             match s {
@@ -1046,6 +1086,76 @@ impl TryFrom<TaskResult> for rpc::TaskResult {
             output: result.output.map(TaskOutput::into),
             message: result.message,
         })
+    }
+}
+
+impl Ownership for Task {
+    fn uid(&self) -> String {
+        format!("task/{}/{}", self.ssn_id, self.id)
+    }
+
+    fn owner(&self) -> Option<String> {
+        Some(self.ssn_id.uid())
+    }
+}
+
+impl Ownership for TaskGID {
+    fn uid(&self) -> String {
+        format!("task/{}/{}", self.ssn_id, self.task_id)
+    }
+
+    fn owner(&self) -> Option<String> {
+        Some(self.ssn_id.uid())
+    }
+}
+
+impl Ownership for Session {
+    fn uid(&self) -> String {
+        format!("ssn/{}/{}", self.application, self.id)
+    }
+
+    fn owner(&self) -> Option<String> {
+        Some(format!("app/{}", self.application))
+    }
+}
+
+impl Ownership for SessionID {
+    fn uid(&self) -> String {
+        format!("ssn/{self}")
+    }
+
+    fn owner(&self) -> Option<String> {
+        unreachable!()
+    }
+}
+
+impl Ownership for Application {
+    fn uid(&self) -> String {
+        format!("app/{}", self.name)
+    }
+
+    fn owner(&self) -> Option<String> {
+        None
+    }
+}
+
+impl Ownership for ApplicationID {
+    fn uid(&self) -> String {
+        format!("app/{self}")
+    }
+
+    fn owner(&self) -> Option<String> {
+        None
+    }
+}
+
+impl Ownership for Node {
+    fn uid(&self) -> String {
+        format!("node/{}", self.name)
+    }
+
+    fn owner(&self) -> Option<String> {
+        None
     }
 }
 
