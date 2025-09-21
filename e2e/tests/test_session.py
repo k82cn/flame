@@ -26,14 +26,25 @@ FLM_TEST_APP = "flme2e"
 def random_string(size=8, chars=string.ascii_uppercase + string.digits) -> str:
     return ''.join(random.choice(chars) for _ in range(size))
 
-class MyTaskInformer(flamepy.TaskInformer):
-    """Example task informer that prints task updates."""
-    
+class TestTaskInformer(flamepy.TaskInformer):
+    expected_output = None
+    latest_state = None
+
+    def __init__(self, expected_output):
+        self.expected_output = expected_output
+
     def on_update(self, task):
-        pass
-    
+        self.latest_state = task.state
+        if task.state == flamepy.TaskState.SUCCEED:
+            resp = TestResponse.from_json(task.output)
+            assert resp.output == self.expected_output
+        elif task.state == flamepy.TaskState.FAILED:
+            for event in task.events:
+                if event.code == flamepy.TaskState.FAILED:
+                    raise flamepy.FlameError(flamepy.FlameErrorCode.INTERNAL, f"{event.message}")
+
     def on_error(self, error):
-        pass
+        assert False, f"Task failed: {error}"
 
 @pytest.fixture(autouse=True)
 def setup_test_env():
@@ -120,7 +131,7 @@ async def test_invoke_task_with_common_data():
 
 
 @pytest.mark.asyncio
-async def test_invoke_multiple_tasks():
+async def test_invoke_multiple_tasks_without_common_data():
 
     session = await flamepy.create_session(
         application = FLM_TEST_APP,
@@ -133,8 +144,19 @@ async def test_invoke_multiple_tasks():
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
-    for i in range(10):
-        await session.invoke(TestRequest(), MyTaskInformer())
+    tasks = []
+    informers = []
+
+    for _ in range(10):
+        input = random_string()
+        informer = TestTaskInformer(input)
+        informers.append(informer)
+        tasks.append(session.invoke(TestRequest(input=input), informer))
+
+    await asyncio.gather(*tasks)
+
+    for informer in informers:
+        assert informer.latest_state == flamepy.TaskState.SUCCEED
 
     await session.close()
 
