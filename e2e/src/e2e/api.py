@@ -12,9 +12,14 @@ limitations under the License.
 """
 
 import flamepy
+from typing import Optional
+
+class TestContext(flamepy.Request):
+    common_data: Optional[str] = None
 
 class TestRequest(flamepy.Request):
-    pass
+    input: Optional[str] = None
 
 class TestResponse(flamepy.Response):
-    pass
+    output: Optional[str] = None
+    common_data: Optional[str] = None

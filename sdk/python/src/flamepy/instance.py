@@ -77,7 +77,7 @@ class FlameInstance(FlameService):
         if self._context_parameter is None:
             self._context()
         else:
-            obj = self._context_parameter.annotation.model_validate_json(context.common_data)
+            obj = self._context_parameter.annotation.model_validate_json(context.common_data) if context.common_data is not None else None
             self._context(obj)
 
     async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
@@ -88,7 +88,7 @@ class FlameInstance(FlameService):
             return
 
         if self._parameter is not None:
-            obj = self._parameter.annotation.model_validate_json(context.input)
+            obj = self._parameter.annotation.model_validate_json(context.input) if context.input is not None else None
             res = self._entrypoint(obj)
         else:
             res = self._entrypoint()

@@ -295,8 +295,21 @@ impl Storage {
     pub async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
         self.engine.unregister_application(name.clone()).await?;
 
-        let mut app_map = lock_ptr!(self.applications)?;
-        app_map.remove(&name);
+        {
+            let mut app_map = lock_ptr!(self.applications)?;
+            app_map.remove(&name);
+        }
+
+        {
+            let mut ssn_map = lock_ptr!(self.sessions)?;
+            ssn_map.retain(|_, ssn| {
+                let ssn_ptr = lock_ptr!(ssn);
+                match ssn_ptr {
+                    Ok(ssn) => ssn.application != name,
+                    Err(_) => true,
+                }
+            });
+        }
 
         Ok(())
     }
