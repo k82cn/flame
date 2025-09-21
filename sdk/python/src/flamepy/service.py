@@ -107,19 +107,26 @@ class FlmInstanceServicer(InstanceServicer):
         """Handle OnSessionEnter RPC call."""
         logger.debug("OnSessionEnter")
         try:
+
+            logger.debug(f"OnSessionEnter request: {request}")
+
             # Convert protobuf request to SessionContext
             app_context = ApplicationContext(
                 name=request.application.name,
                 shim=Shim(request.application.shim),
-                image=request.application.image,
-                command=request.application.command
+                image=request.application.image if request.application.HasField("image") else None,
+                command=request.application.command if request.application.HasField("command") else None
             )
             
+            logger.debug(f"app_context: {app_context}")
+
             session_context = SessionContext(
                 session_id=request.session_id,
                 application=app_context,
-                common_data=request.common_data
+                common_data=request.common_data if request.HasField("common_data") else None
             )
+
+            logger.debug(f"session_context: {session_context}")
             
             # Call the service implementation
             logger.debug("Calling on_session_enter")
@@ -134,7 +141,7 @@ class FlmInstanceServicer(InstanceServicer):
         except Exception as e:
             logger.error(f"Error in OnSessionEnter: {e}")
             return Result(
-                return_code=1,
+                return_code=-1,
                 message=f"{str(e)}"
             )
     
@@ -146,8 +153,10 @@ class FlmInstanceServicer(InstanceServicer):
             task_context = TaskContext(
                 task_id=request.task_id,
                 session_id=request.session_id,
-                input=request.input
+                input=request.input if request.HasField("input") else None
             )
+
+            logger.debug(f"task_context: {task_context}")
             
             # Call the service implementation
             logger.debug("Calling on_task_invoke")
@@ -185,7 +194,7 @@ class FlmInstanceServicer(InstanceServicer):
         except Exception as e:
             logger.error(f"Error in OnSessionLeave: {e}")
             return Result(
-                return_code=1,
+                return_code=-1,
                 message=f"{str(e)}"
             )
 

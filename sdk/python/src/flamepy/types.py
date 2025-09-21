@@ -112,7 +112,7 @@ class ApplicationAttributes:
     labels: Optional[List[str]] = None
     command: Optional[str] = None
     arguments: Optional[List[str]] = None
-    environments: Optional[List[str]] = None
+    environments: Optional[Dict[str, str]] = None
     working_directory: Optional[str] = None
     max_instances: Optional[int] = None
     delay_release: Optional[int] = None
@@ -152,7 +152,7 @@ class Application:
     labels: Optional[List[str]] = None
     command: Optional[str] = None
     arguments: Optional[List[str]] = None
-    environments: Optional[List[str]] = None
+    environments: Optional[Dict[str, str]] = None
     working_directory: Optional[str] = None
     max_instances: Optional[int] = None
     delay_release: Optional[int] = None

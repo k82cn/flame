@@ -245,8 +245,8 @@ impl Controller {
         task_result: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("Storage::complete_task");
-        let exe_ptr = self.storage.get_executor_ptr(id)?;
-        let (ssn_id, task_id) = {
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let (ssn_id, task_id, host) = {
             let exe = lock_ptr!(exe_ptr)?;
             (
                 exe.ssn_id.ok_or(FlameError::InvalidState(
@@ -254,11 +254,32 @@ impl Controller {
                 ))?,
                 exe.task_id
                     .ok_or(FlameError::InvalidState("no task in executor".to_string()))?,
+                exe.node.clone(),
             )
         };
 
         let task_ptr = self.storage.get_task_ptr(TaskGID { ssn_id, task_id })?;
         let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
+
+        let msg = match task_result.state {
+            TaskState::Failed => task_result.message,
+            TaskState::Succeed => Some(format!("Task completed successfully on host <{host}>.")),
+            _ => {
+                tracing::warn!(
+                    "Invalid task state <{:?}> for task <{}/{}> on host <{}> when completing task",
+                    task_result.state,
+                    ssn_id,
+                    task_id,
+                    host
+                );
+                None
+            }
+        };
+
+        let task_result = TaskResult {
+            message: msg,
+            ..task_result
+        };
 
         let state = states::from(self.storage.clone(), exe_ptr)?;
         state.complete_task(ssn_ptr, task_ptr, task_result).await?;

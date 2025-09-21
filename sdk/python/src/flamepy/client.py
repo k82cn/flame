@@ -25,7 +25,7 @@ from .types import (
     TaskInformer, Request as FlameRequest, Response as FlameResponse, FlameContext, ApplicationSchema
 )
 
-from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec
+from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment
 from .frontend_pb2 import RegisterApplicationRequest, UnregisterApplicationRequest, ListApplicationRequest, CreateSessionRequest, ListSessionRequest, GetSessionRequest, CloseSessionRequest, CreateTaskRequest, WatchTaskRequest, GetTaskRequest, GetApplicationRequest
 from .frontend_pb2_grpc import FrontendStub
 
@@ -60,6 +60,19 @@ async def list_applications() -> List[Application]:
 async def get_application(name: str) -> Application:
     conn = await ConnectionInstance().instance()
     return await conn.get_application(name)
+
+async def list_sessions() -> List["Session"]:
+    conn = await ConnectionInstance().instance()
+    return await conn.list_sessions()
+
+async def get_session(session_id: SessionID) -> "Session":
+    conn = await ConnectionInstance().instance()
+    return await conn.get_session(session_id)
+
+async def close_session(session_id: SessionID) -> "Session":
+    conn = await ConnectionInstance().instance()
+    return await conn.close_session(session_id)
+
 
 class ConnectionInstance:
     """Connection instance."""
@@ -135,6 +148,11 @@ class Connection:
                 common_data=app_attrs.schema.common_data
             )
 
+        environments = []
+        if app_attrs.environments is not None:
+            for k, v in app_attrs.environments.items():
+                environments.append(Environment(name=k, value=v))
+
         app_spec = ApplicationSpec(
             shim=app_attrs.shim,
             image=app_attrs.image,
@@ -142,7 +160,7 @@ class Connection:
             description=app_attrs.description,
             labels=app_attrs.labels or [],
             arguments=app_attrs.arguments or [],
-            environments=app_attrs.environments or [],
+            environments=environments,
             working_directory=app_attrs.working_directory,
             max_instances=app_attrs.max_instances,
             delay_release=app_attrs.delay_release,
@@ -190,6 +208,11 @@ class Connection:
                         output=app.spec.schema.output,
                         common_data=app.spec.schema.common_data
                     )
+                environments = {}
+                if app.spec.environments is not None:
+                    for env in app.spec.environments:
+                        environments[env.name] = env.value
+
                 applications.append(Application(
                     id=app.metadata.id,
                     name=app.metadata.name,
@@ -199,7 +222,7 @@ class Connection:
                     image=app.spec.image,
                     command=app.spec.command,
                     arguments=list(app.spec.arguments),
-                    environments=list(app.spec.environments),
+                    environments=environments,
                     working_directory=app.spec.working_directory,
                     max_instances=app.spec.max_instances,
                     delay_release=app.spec.delay_release,
@@ -227,6 +250,12 @@ class Connection:
                     output=response.spec.schema.output,
                     common_data=response.spec.schema.common_data
                 )
+
+            environments = {}
+            if response.spec.environments is not None:
+                for env in response.spec.environments:
+                    environments[env.name] = env.value
+
             return Application(
                 id=response.metadata.id,
                 name=response.metadata.name,
@@ -236,7 +265,7 @@ class Connection:
                 image=response.spec.image,
                 command=response.spec.command,
                 arguments=list(response.spec.arguments),
-                environments=list(response.spec.environments),
+                environments=environments,
                 working_directory=response.spec.working_directory,
                 max_instances=response.spec.max_instances,
                 delay_release=response.spec.delay_release,
@@ -478,7 +507,7 @@ class Session:
                 f"failed to watch task: {e.details()}"
             )
     
-    async def invoke(self, input_data, informer: Optional[TaskInformer] = None) -> Task:
+    async def invoke(self, input_data, informer: Optional[TaskInformer] = None) -> TaskOutput:
         """Invoke a task with the given input and optional informer."""
         if input_data is None:
             pass
@@ -493,9 +522,17 @@ class Session:
         async for task in watcher:
             if informer is not None:
                 informer.on_update(task)
-            
-            if task.is_completed():
-                    return task
+
+            if task.is_failed():
+                for event in task.events:
+                    if event.code == TaskState.FAILED:
+                        raise FlameError(
+                            FlameErrorCode.INTERNAL,
+                            f"{event.message}"
+                        )
+            elif task.is_completed():
+                return task.output
+
             
     async def close(self) -> None:
         """Close the session."""

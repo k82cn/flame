@@ -77,15 +77,21 @@ impl States for BoundState {
 
         let task_ptr = WaitForTaskFuture::new(&ssn_ptr, app_ptr.delay_release).await?;
 
+        let (exec_id, host) = {
+            let e = lock_ptr!(self.executor)?;
+            (e.id.clone(), e.node.clone())
+        };
+
         let task_ptr = {
             match task_ptr {
                 Some(task_ptr) => {
+                    let msg = format!("Running task on host <{}>.", host.clone());
                     self.storage
                         .update_task_state(
                             ssn_ptr.clone(),
                             task_ptr.clone(),
                             TaskState::Running,
-                            None,
+                            Some(msg),
                         )
                         .await?;
                     Some(task_ptr)
@@ -106,7 +112,13 @@ impl States for BoundState {
             (task.ssn_id, task.id)
         };
 
-        tracing::debug!("Launching task <{}/{}>", ssn_id.clone(), task_id.clone());
+        tracing::debug!(
+            "Launching task <{}/{}> on host <{}> by executor {}",
+            ssn_id.clone(),
+            task_id.clone(),
+            host.clone(),
+            exec_id
+        );
 
         {
             let mut e = lock_ptr!(self.executor)?;

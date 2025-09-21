@@ -155,7 +155,12 @@ impl Shim for HostShim {
         trace_fn!("HostShim::on_session_enter");
 
         let req = Request::new(rpc::SessionContext::from(ctx.clone()));
-        self.client.on_session_enter(req).await?;
+        tracing::debug!("req: {:?}", req);
+        let resp = self.client.on_session_enter(req).await?;
+        let output = resp.into_inner();
+        if output.return_code != 0 {
+            return Err(FlameError::Internal(output.message.unwrap_or_default()));
+        }
 
         Ok(())
     }
@@ -164,6 +169,7 @@ impl Shim for HostShim {
         trace_fn!("HostShim::on_task_invoke");
 
         let req = Request::new(rpc::TaskContext::from(ctx.clone()));
+        tracing::debug!("req: {:?}", req);
         let resp = self.client.on_task_invoke(req).await?;
         let output = resp.into_inner();
 
@@ -173,9 +179,15 @@ impl Shim for HostShim {
     async fn on_session_leave(&mut self) -> Result<(), FlameError> {
         trace_fn!("HostShim::on_session_leave");
 
-        self.client
+        let resp = self
+            .client
             .on_session_leave(Request::new(EmptyRequest::default()))
             .await?;
+
+        let output = resp.into_inner();
+        if output.return_code != 0 {
+            return Err(FlameError::Internal(output.message.unwrap_or_default()));
+        }
 
         Ok(())
     }

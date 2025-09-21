@@ -13,17 +13,21 @@ limitations under the License.
 
 import flamepy
 
-from e2e import TestRequest, TestResponse
+from e2e import TestRequest, TestResponse, TestContext
 
 instance = flamepy.FlameInstance()
 
+sys_context = None
+
 @instance.entrypoint
 def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
-    return TestResponse()
+    return TestResponse(output=req.input, common_data=sys_context)
 
-# @instance.context
-# def e2e_service_context(req: TestRequest):
-#     pass
+@instance.context
+def e2e_service_context(ctx: TestContext = None):
+    global sys_context
+    if ctx is not None:
+        sys_context = ctx.common_data
 
 if __name__ == "__main__":
     instance.run()

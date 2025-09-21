@@ -16,6 +16,7 @@ limitations under the License.
 from .api import (
     TestRequest,
     TestResponse,
+    TestContext,
 )
 
 __version__ = "0.4.0"
@@ -23,4 +24,5 @@ __version__ = "0.4.0"
 __all__ = [
     "TestRequest",
     "TestResponse",
+    "TestContext",
 ]

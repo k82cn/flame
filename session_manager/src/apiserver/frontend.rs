@@ -205,13 +205,15 @@ impl Frontend for Flame {
             .session
             .ok_or(Status::invalid_argument("session spec"))?;
 
+        let common_data = ssn_spec.common_data.map(apis::CommonData::from);
+
+        tracing::debug!("common_data: {:?}", common_data);
+        tracing::debug!("application: {:?}", ssn_spec.application);
+        tracing::debug!("slots: {:?}", ssn_spec.slots);
+
         let ssn = self
             .controller
-            .create_session(
-                ssn_spec.application,
-                ssn_spec.slots,
-                ssn_spec.common_data.map(apis::CommonData::from),
-            )
+            .create_session(ssn_spec.application, ssn_spec.slots, common_data)
             .await
             .map(Session::from)
             .map_err(Status::from)?;
