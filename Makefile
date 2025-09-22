@@ -50,7 +50,7 @@ sdk-python-clean: ## Clean Python SDK build artifacts
 sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
 
 e2e-ci:
-	docker compose exec -w /opt/e2e flame-console uv run -n pytest . -vv
+	docker compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .
 
 # Docker build targets
 docker-build-fsm: update_protos ## Build session manager Docker image
