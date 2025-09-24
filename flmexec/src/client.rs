@@ -34,7 +34,7 @@ struct Script {
 #[derive(Parser)]
 #[command(name = "flmexec")]
 #[command(author = "Klaus Ma <klaus1982.cn@gmail.com>")]
-#[command(version = "0.2.0")]
+#[command(version = "0.5.0")]
 #[command(about = "Flame Executor CLI", long_about = None)]
 struct Cli {
     #[arg(long)]

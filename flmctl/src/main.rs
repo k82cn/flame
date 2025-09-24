@@ -29,7 +29,7 @@ mod view;
 #[derive(Parser)]
 #[command(name = "flmctl")]
 #[command(author = "Klaus Ma <klaus1982.cn@gmail.com>")]
-#[command(version = "0.3.0")]
+#[command(version = "0.5.0")]
 #[command(about = "Flame command line", long_about = None)]
 struct Cli {
     /// The configuration of flmctl

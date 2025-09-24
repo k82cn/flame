@@ -34,7 +34,7 @@ mod storage;
 #[derive(Parser)]
 #[command(name = "flame-session-manager")]
 #[command(author = "Klaus Ma <klaus@xflops.cn>")]
-#[command(version = "0.1.0")]
+#[command(version = "0.5.0")]
 #[command(about = "Flame Session Manager", long_about = None)]
 struct Cli {
     #[arg(long)]
