@@ -27,7 +27,7 @@ use flame_rs::{self as flame, new_ptr};
 #[derive(Parser)]
 #[command(name = "flmping")]
 #[command(author = "Klaus Ma <klaus1982.cn@gmail.com>")]
-#[command(version = "0.1.0")]
+#[command(version = "0.5.0")]
 #[command(about = "Flame Ping", long_about = None)]
 struct Cli {
     #[arg(long)]
