@@ -44,40 +44,46 @@ Future enhancements to the `Session Scheduler` will include features to improve 
 
 ## Quick Start Guide
 
-This guide uses [minikube](https://minikube.sigs.k8s.io/docs/) and [skaffold](https://skaffold.dev/) to start a local Kubernetes cluster with Flame. After installing minikube and skaffold, you can start a local Flame cluster with the following steps:
+This guide uses [Docker Compose](https://docs.docker.com/compose/) to start a local Flame cluster. After installing docker compose, you can start a local Flame cluster with the following steps:
 
 ```shell
-$ minikube start --driver=docker
-$ skaffold run
+$ docker compose up -d
 ```
 
 After the Flame cluster is launched, use the following steps to log into the `flame-console` pod, which serves as a debug tool for both developers and SREs:
 
 ```shell
-$ CONSOLE_POD=`kubectl get pod -n flame-system | grep flame-console | cut -d" " -f1`
-$ kubectl exec -it ${CONSOLE_POD} -n flame-system -- /bin/bash
+$ docker compose exec flame-console /bin/bash
 ```
 
 Then, verify the installation with `flmping` in the pod. Additionally, you can explore more meaningful examples [here](examples):
 
 ```shell
-# flmping -t 10000
-Session <4> was created in <0 ms>, start to run <10,000> tasks in the session:
+root@560624b037c9:/# flmping
+Session <1> was created in <3 ms>, start to run <10> tasks in the session:
 
-[100%] =============================================   10000/10000
+Session   Task      State          Output
+1         5         Succeed        b"Task <1/5> is executed on <\"97b4fe83409e\">"
+1         3         Succeed        b"Task <1/3> is executed on <\"97b4fe83409e\">"
+1         10        Succeed        b"Task <1/10> is executed on <\"97b4fe83409e\">"
+1         1         Succeed        b"Task <1/1> is executed on <\"97b4fe83409e\">"
+1         2         Succeed        b"Task <1/2> is executed on <\"97b4fe83409e\">"
+1         6         Succeed        b"Task <1/6> is executed on <\"97b4fe83409e\">"
+1         7         Succeed        b"Task <1/7> is executed on <\"97b4fe83409e\">"
+1         4         Succeed        b"Task <1/4> is executed on <\"97b4fe83409e\">"
+1         8         Succeed        b"Task <1/8> is executed on <\"97b4fe83409e\">"
+1         9         Succeed        b"Task <1/9> is executed on <\"97b4fe83409e\">"
 
-<10,000> tasks was completed in <1,603 ms>.
+
+<10> tasks was completed in <473 ms>.
 ```
 
-You can check session status using `flmctl` as follows. It also includes several sub-commands, such as `view`:
+You can check session status using `flmctl` as follows. It also includes several sub-commands, such as `list`:
 
 ```shell
-# flmctl list
+root@560624b037c9:/# flmctl list -s
 ID        State     App            Slots     Pending   Running   Succeed   Failed    Created
-1         Closed    pi             1         0         0         100       0         07:33:58
-2         Closed    flmexec        1         0         0         10        0         07:34:12
-3         Closed    flmexec        1         0         0         10000     0         07:34:17
-4         Closed    flmexec        1         0         0         10000     0         08:34:20
+1         Closed    flmping        1         0         0         10        0         01:07:16
 ```
 
 ## Documentation
