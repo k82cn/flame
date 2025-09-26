@@ -1,0 +1,9 @@
+metadata:
+  name: crawler-app
+spec:
+  working_directory: /opt/examples/crawler/
+  command: /usr/bin/uv
+  arguments:
+    - run
+    - crawler.py
+    - api.py

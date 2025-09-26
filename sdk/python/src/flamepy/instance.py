@@ -132,19 +132,20 @@ def run_debug_service(instance: FlameInstance):
 
     if instance._context is not None:   
         context_name = instance._context.__name__
-        debug_service.add_api_route(f"/{context_name}", context_api, methods=["POST"])
+        debug_service.add_api_route(f"/{context_name}", context_local_api, methods=["POST"])
 
     if instance._entrypoint is not None:
         entrypoint_name = instance._entrypoint.__name__
-        debug_service.add_api_route(f"/{entrypoint_name}", entrypoint_api, methods=["POST"])
+        debug_service.add_api_route(f"/{entrypoint_name}", entrypoint_local_api, methods=["POST"])
 
     uvicorn.run(debug_service, host="0.0.0.0", port=5050)
 
-async def context_api(s: FastAPIRequest):
+async def context_local_api(s: FastAPIRequest):
     instance = s.app.state.instance
     body_str = await s.body()
 
     await instance.on_session_enter(SessionContext(
+        session_id = s.query_params.get("session_id") or "0",
         application=ApplicationContext(
             name="test",
             shim=Shim.GRPC,
@@ -155,11 +156,13 @@ async def context_api(s: FastAPIRequest):
     ))
     return FastAPIResponse(status_code=200, content="OK")
 
-async def entrypoint_api(s: FastAPIRequest):
+async def entrypoint_local_api(s: FastAPIRequest):
     instance = s.app.state.instance
     body_str = await s.body()
     
     output = await instance.on_task_invoke(TaskContext(
+        task_id = s.query_params.get("task_id") or "0",
+        session_id = s.query_params.get("session_id") or "0",
         input=body_str,
     ))
 
