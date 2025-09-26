@@ -1,9 +1,11 @@
 [project]
-name = "spider"
+name = "crawler"
 version = "0.1.0"
-description = "Spider agent"
+description = "Crawler Application"
 dependencies = [
+  "requests",
   "markitdown",
+  "beautifulsoup4",
   "flamepy",
 ]
 

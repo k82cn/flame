@@ -4,5 +4,5 @@ class WebPage(flamepy.Request):
     url: str
 
 class Summary(flamepy.Response):
-    url: str
-    summary: str
+    links: list[str]
+    content: str
