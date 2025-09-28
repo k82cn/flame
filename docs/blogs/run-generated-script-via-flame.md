@@ -164,7 +164,7 @@ scripts = [
 
 ### Interactive Code Execution
 Create an interactive environment where users can iteratively refine generated code.
-As the session keep open, there also zero startup time for the Agent which gets a better performance.
+As the session keep open, there is also zero startup time for the Agent which gets a better performance.
 
 ```python
 # Allow users to modify generated code
