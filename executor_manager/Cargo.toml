@@ -19,6 +19,7 @@ prost = { workspace = true }
 tower = { workspace = true }
 hyper-util = { workspace = true }
 chrono = { workspace = true }
+nix = { workspace = true }
 
 bytes = "1"
 lazy_static = "1.4"

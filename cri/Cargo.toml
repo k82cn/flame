@@ -20,8 +20,8 @@ tower = { workspace = true }
 hyper-util = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
+nix = { workspace = true }
 
-nix = "0.30"
 uuid = { version = "1.18.1", features = ["v4"] }
 
 

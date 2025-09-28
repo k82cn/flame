@@ -45,7 +45,7 @@ async def crawl_web_pages():
 
     await asyncio.gather(*tasks)
 
-    crawler.close()
+    await crawler.close()
 
 if __name__ == "__main__":
     asyncio.run(crawl_web_pages())
