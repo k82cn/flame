@@ -27,6 +27,7 @@ pub struct Executor {
     pub id: String,
     pub resreq: ResourceRequirement,
     pub node: String,
+    pub slots: u32,
     pub session: Option<SessionContext>,
     pub task: Option<TaskContext>,
 
@@ -55,6 +56,7 @@ impl From<&rpc::Executor> for Executor {
             id: metadata.id.clone(),
             resreq: spec.resreq.unwrap().into(),
             node: spec.node.clone(),
+            slots: spec.slots,
             session: None,
             task: None,
             shim: None,
@@ -79,6 +81,7 @@ impl From<&Executor> for rpc::Executor {
 
         let spec = Some(ExecutorSpec {
             resreq: Some(e.resreq.clone().into()),
+            slots: e.slots,
             node: e.node.clone(),
         });
 

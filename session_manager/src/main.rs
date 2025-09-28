@@ -28,7 +28,7 @@ use common::FlameError;
 mod apiserver;
 mod controller;
 mod model;
-mod scheduler;
+pub mod scheduler;
 mod storage;
 
 #[derive(Parser)]

@@ -26,7 +26,7 @@ use common::FlameError;
 #[derive(Default, Clone)]
 struct SSNInfo {
     pub id: SessionID,
-    pub slots: i32,
+    pub slots: u32,
     pub desired: f64,
     pub deserved: f64,
     pub allocated: f64,
@@ -34,7 +34,7 @@ struct SSNInfo {
 
 struct NInfo {
     pub name: String,
-    pub allocatable: i32,
+    pub allocatable: u32,
     pub allocated: f64,
 }
 
@@ -153,7 +153,7 @@ impl Plugin for FairShare {
 
         let nodes = ss.find_nodes(ALL_NODE)?;
         for node in nodes.values() {
-            let allocatable = node.allocatable.to_slots(&ss.unit) as i32;
+            let allocatable = node.allocatable.to_slots(&ss.unit);
             remaining_slots += allocatable as f64;
             self.node_map.insert(
                 node.name.clone(),
@@ -299,6 +299,10 @@ impl Plugin for FairShare {
         }
     }
 
+    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
+        Some(exec.slots == ssn.slots)
+    }
+
     fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated += ssn.slots as f64;
@@ -310,6 +314,12 @@ impl Plugin for FairShare {
             node.allocated += ssn.slots as f64;
         } else {
             tracing::warn!("Node <{}> not found for session <{}>.", node.name, ssn.id);
+        }
+    }
+
+    fn on_allocate_executor(&mut self, _: ExecutorInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
+            ss.allocated += ssn.slots as f64;
         }
     }
 }

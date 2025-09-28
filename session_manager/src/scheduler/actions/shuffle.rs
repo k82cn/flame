@@ -63,7 +63,7 @@ impl Action for ShuffleAction {
 
             let mut pos = None;
             for (i, exec) in bound_execs.iter().enumerate() {
-                if !ctx.dispatcher.filter_one(exec, &ssn) {
+                if !ctx.dispatcher.is_available(exec, &ssn)? {
                     continue;
                 }
 

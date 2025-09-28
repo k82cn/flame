@@ -40,7 +40,7 @@ struct Cli {
     #[arg(long)]
     flame_conf: Option<String>,
     #[arg(short, long)]
-    slots: Option<i32>,
+    slots: Option<u32>,
     #[arg(short, long)]
     task_num: Option<i32>,
     /// The code to execute on worker nodes
@@ -63,7 +63,7 @@ fn parse_language(s: &str) -> Result<String, String> {
 }
 
 const DEFAULT_APP: &str = "flmexec";
-const DEFAULT_SLOTS: i32 = 1;
+const DEFAULT_SLOTS: u32 = 1;
 const DEFAULT_TASK_NUM: i32 = 10;
 
 #[tokio::main]

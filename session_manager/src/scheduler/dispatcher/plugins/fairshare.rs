@@ -20,13 +20,13 @@ use crate::model::{
     OPEN_SESSION,
 };
 use crate::scheduler::dispatcher::plugins::{Plugin, PluginPtr};
-use common::apis::{SessionID, TaskState};
+use common::apis::{ResourceRequirement, SessionID, TaskState};
 use common::FlameError;
 
 #[derive(Default, Clone)]
 struct SSNInfo {
     pub id: SessionID,
-    pub slots: i32,
+    pub slots: u32,
     pub desired: f64,
     pub deserved: f64,
     pub allocated: f64,
@@ -62,18 +62,22 @@ impl Ord for SSNInfo {
 
 pub struct FairShare {
     ssn_map: HashMap<SessionID, SSNInfo>,
+    unit: ResourceRequirement,
 }
 
 impl FairShare {
     pub fn new_ptr() -> PluginPtr {
         Box::new(FairShare {
             ssn_map: HashMap::new(),
+            unit: ResourceRequirement::default(),
         })
     }
 }
 
 impl Plugin for FairShare {
     fn setup(&mut self, ss: &SnapShot) -> Result<(), FlameError> {
+        self.unit = ss.unit.clone();
+
         let open_ssns = ss.find_sessions(OPEN_SESSION)?;
 
         let apps = ss.find_applications(ALL_APPLICATION)?;
@@ -117,7 +121,7 @@ impl Plugin for FairShare {
 
         let executors = ss.find_executors(ALL_EXECUTOR)?;
         for exe in executors.values() {
-            remaining_slots += exe.resreq.to_slots(&ss.unit) as f64;
+            remaining_slots += exe.resreq.to_slots(&self.unit) as f64;
             if let Some(ssn_id) = exe.ssn_id {
                 if let Some(ssn) = self.ssn_map.get_mut(&ssn_id) {
                     ssn.allocated += ssn.slots as f64;
@@ -201,12 +205,8 @@ impl Plugin for FairShare {
             .map(|ssn| ssn.allocated - ssn.slots as f64 >= ssn.deserved)
     }
 
-    fn filter(
-        &self,
-        _exec: &[ExecutorInfoPtr],
-        _ssn: &SessionInfoPtr,
-    ) -> Option<Vec<ExecutorInfoPtr>> {
-        None
+    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
+        Some(ssn.slots == exec.slots)
     }
 
     fn on_session_bind(&mut self, ssn: SessionInfoPtr) {

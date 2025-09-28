@@ -43,20 +43,20 @@ impl Dispatcher {
         })
     }
 
-    pub fn filter(&self, execs: &[ExecutorInfoPtr], ssn: &SessionInfoPtr) -> Vec<ExecutorInfoPtr> {
-        self.plugins.filter(execs, ssn)
-    }
-
-    pub fn filter_one(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> bool {
-        !self.filter(&[exec.clone()], ssn).is_empty()
-    }
-
     pub fn is_underused(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         self.plugins.is_underused(ssn)
     }
 
     pub fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         self.plugins.is_preemptible(ssn)
+    }
+
+    pub fn is_available(
+        &self,
+        exec: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<bool, FlameError> {
+        self.plugins.is_available(exec, ssn)
     }
 
     pub async fn bind_session(

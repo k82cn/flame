@@ -77,7 +77,12 @@ impl Action for DispatchAction {
                     ssn.id.clone()
                 );
 
-                if !ctx.dispatcher.filter_one(exec, &ssn) {
+                if !ctx.dispatcher.is_available(exec, &ssn)? {
+                    tracing::debug!(
+                        "Executor <{}> is not available for session <{}>, skip it.",
+                        exec.id.clone(),
+                        ssn.id.clone()
+                    );
                     continue;
                 }
 

@@ -66,7 +66,7 @@ pub struct Connection {
 #[derive(Clone)]
 pub struct SessionAttributes {
     pub application: String,
-    pub slots: i32,
+    pub slots: u32,
     pub common_data: Option<CommonData>,
 }
 
@@ -88,7 +88,7 @@ pub struct ApplicationAttributes {
     pub arguments: Vec<String>,
     pub environments: HashMap<String, String>,
     pub working_directory: Option<String>,
-    pub max_instances: Option<i32>,
+    pub max_instances: Option<u32>,
     pub delay_release: Option<Duration>,
     pub schema: Option<ApplicationSchema>,
 }
@@ -108,7 +108,7 @@ pub struct Session {
     pub(crate) client: Option<FlameClient>,
 
     pub id: SessionID,
-    pub slots: i32,
+    pub slots: u32,
     pub application: String,
     pub creation_time: DateTime<Utc>,
 

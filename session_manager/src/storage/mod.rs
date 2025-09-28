@@ -151,6 +151,7 @@ impl Storage {
                     id: exec.id.clone(),
                     node: exec.node.clone(),
                     resreq: exec.resreq.clone(),
+                    slots: exec.slots,
                     task_id: exec.task_id,
                     ssn_id: exec.ssn_id,
                     creation_time: exec.creation_time,
@@ -173,7 +174,7 @@ impl Storage {
     pub async fn create_session(
         &self,
         app: String,
-        slots: i32,
+        slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
         let ssn = self.engine.create_session(app, slots, common_data).await?;
@@ -239,10 +240,22 @@ impl Storage {
 
         for ssn in ssn_map.deref().values() {
             let ssn = lock_ptr!(ssn)?;
-            ssn_list.push((*ssn).clone());
+            ssn_list.push(ssn.clone());
         }
 
         Ok(ssn_list)
+    }
+
+    pub fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
+        let mut exe_list = vec![];
+        let exe_map = lock_ptr!(self.executors)?;
+
+        for exe in exe_map.deref().values() {
+            let exe = lock_ptr!(exe)?;
+            exe_list.push(exe.clone());
+        }
+
+        Ok(exe_list)
     }
 
     pub async fn create_task(
@@ -391,15 +404,20 @@ impl Storage {
         ssn_id: SessionID,
     ) -> Result<Executor, FlameError> {
         let ssn = self.get_session_ptr(ssn_id)?;
-        let resreq = {
+
+        let (resreq, slots) = {
             let ssn = lock_ptr!(ssn)?;
-            ResourceRequirement::new(ssn.slots, &self.context.slot)
+            (
+                ResourceRequirement::new(ssn.slots, &self.context.slot),
+                ssn.slots,
+            )
         };
 
         let e = Executor {
             id: Uuid::new_v4().to_string(),
             node: node_name.clone(),
             resreq,
+            slots,
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),

@@ -26,12 +26,6 @@ use common::{lock_ptr, FlameError};
 
 mod fairshare;
 
-// lazy_static! {
-//     static ref INSTANCE: MutexPtr<PluginManager> = Arc::new(Mutex::new(PluginManager {
-//         plugins: HashMap::from([("fairshare".to_string(), FairShare::new_ptr())])
-//     }));
-// }
-
 pub type PluginPtr = Box<dyn Plugin>;
 pub type PluginManagerPtr = Arc<PluginManager>;
 
@@ -47,10 +41,12 @@ pub trait Plugin: Send + Sync + 'static {
     fn is_underused(&self, ssn: &SessionInfoPtr) -> Option<bool>;
 
     fn is_allocatable(&self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Option<bool>;
+    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool>;
     fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Option<bool>;
 
     // Events
     fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr);
+    fn on_allocate_executor(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr);
 }
 
 pub struct PluginManager {
@@ -73,9 +69,15 @@ impl PluginManager {
     pub fn is_underused(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
-        Ok(plugins
-            .values()
-            .all(|plugin| plugin.is_underused(ssn).unwrap_or(false)))
+        for plugin in plugins.values() {
+            if let Some(underused) = plugin.is_underused(ssn) {
+                if !underused {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn is_allocatable(
@@ -85,17 +87,47 @@ impl PluginManager {
     ) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
-        Ok(plugins
-            .values()
-            .all(|plugin| plugin.is_allocatable(node, ssn).unwrap_or(false)))
+        for plugin in plugins.values() {
+            if let Some(allocatable) = plugin.is_allocatable(node, ssn) {
+                if !allocatable {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    pub fn is_available(
+        &self,
+        exec: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<bool, FlameError> {
+        let plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values() {
+            if let Some(available) = plugin.is_available(exec, ssn) {
+                if !available {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
-        Ok(plugins
-            .values()
-            .all(|plugin| plugin.is_reclaimable(exec).unwrap_or(false)))
+        for plugin in plugins.values() {
+            if let Some(reclaimable) = plugin.is_reclaimable(exec) {
+                if !reclaimable {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn on_create_executor(
@@ -107,6 +139,20 @@ impl PluginManager {
 
         for plugin in plugins.values_mut() {
             plugin.on_create_executor(node.clone(), ssn.clone());
+        }
+
+        Ok(())
+    }
+
+    pub fn on_allocate_executor(
+        &self,
+        exec: ExecutorInfoPtr,
+        ssn: SessionInfoPtr,
+    ) -> Result<(), FlameError> {
+        let mut plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values_mut() {
+            plugin.on_allocate_executor(exec.clone(), ssn.clone());
         }
 
         Ok(())

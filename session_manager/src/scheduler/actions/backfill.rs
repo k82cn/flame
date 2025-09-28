@@ -67,7 +67,7 @@ impl Action for BackfillAction {
                     ssn.id.clone()
                 );
 
-                if !ctx.dispatcher.filter_one(exec, &ssn) {
+                if !ctx.dispatcher.is_available(exec, &ssn)? {
                     continue;
                 }
 

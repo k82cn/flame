@@ -18,7 +18,7 @@ use std::sync::Arc;
 use stdng::collections;
 
 use crate::controller::ControllerPtr;
-use crate::model::{NodeInfo, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
+use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
 use crate::scheduler::allocator::plugins::PluginManager;
 use crate::scheduler::allocator::plugins::PluginManagerPtr;
 use crate::scheduler::Context;
@@ -54,10 +54,29 @@ impl Allocator {
         self.plugins.is_allocatable(node, ssn)
     }
 
+    pub fn is_available(
+        &self,
+        exec: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<bool, FlameError> {
+        self.plugins.is_available(exec, ssn)
+    }
+
+    pub async fn allocate_executor(
+        &self,
+        exec: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<(), FlameError> {
+        self.plugins
+            .on_allocate_executor(exec.clone(), ssn.clone())?;
+
+        Ok(())
+    }
+
     pub async fn create_executor(
         &self,
-        node: NodeInfoPtr,
-        ssn: SessionInfoPtr,
+        node: &NodeInfoPtr,
+        ssn: &SessionInfoPtr,
     ) -> Result<(), FlameError> {
         self.plugins.on_create_executor(node.clone(), ssn.clone())?;
 
@@ -66,6 +85,7 @@ impl Allocator {
             .controller
             .create_executor(node.name.clone(), ssn.id)
             .await?;
+
         tracing::debug!(
             "Created executor <{}> for session <{}> on node <{}>",
             exec.id,

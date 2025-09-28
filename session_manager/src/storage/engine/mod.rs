@@ -44,7 +44,7 @@ pub trait Engine: Send + Sync + 'static {
     async fn create_session(
         &self,
         app: String,
-        slots: i32,
+        slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError>;
     async fn get_session(&self, id: SessionID) -> Result<Session, FlameError>;

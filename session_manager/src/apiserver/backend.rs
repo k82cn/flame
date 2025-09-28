@@ -91,6 +91,7 @@ impl Backend for Flame {
             id: req.executor_id,
             node: spec.node,
             resreq: spec.resreq.unwrap_or_default().into(),
+            slots: spec.slots,
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),

@@ -31,7 +31,7 @@ message SessionStatus {
 
 message SessionSpec {
   string application = 2;
-  int32 slots = 3;
+  uint32 slots = 3;
   optional bytes common_data = 4;
 }
 
@@ -105,7 +105,7 @@ message ApplicationSpec {
   repeated string arguments = 6;
   repeated Environment environments = 7;
   optional string working_directory = 8;
-  optional int32 max_instances = 9;
+  optional uint32 max_instances = 9;
   optional int64 delay_release = 10;
   optional ApplicationSchema schema = 11;
 }
@@ -119,6 +119,7 @@ message Application {
 message ExecutorSpec {
   string node = 1;
   ResourceRequirement resreq = 2;
+  uint32 slots = 3;
 }
 
 /* 

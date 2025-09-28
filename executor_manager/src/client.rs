@@ -96,6 +96,7 @@ impl BackendClient {
             executor_spec: Some(rpc::ExecutorSpec {
                 resreq: Some(exe.resreq.clone().into()),
                 node: exe.node.clone(),
+                slots: exe.slots,
             }),
         };
 

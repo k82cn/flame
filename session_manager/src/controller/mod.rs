@@ -59,7 +59,7 @@ impl Controller {
     pub async fn create_session(
         &self,
         app: String,
-        slots: i32,
+        slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
         self.storage.create_session(app, slots, common_data).await
@@ -122,6 +122,10 @@ impl Controller {
         ssn_id: SessionID,
     ) -> Result<Executor, FlameError> {
         self.storage.create_executor(node_name, ssn_id).await
+    }
+
+    pub async fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
+        self.storage.list_executor()
     }
 
     pub async fn register_executor(&self, e: &Executor) -> Result<(), FlameError> {

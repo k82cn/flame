@@ -40,11 +40,7 @@ pub trait Plugin: Send + Sync + 'static {
 
     fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Option<bool>;
 
-    fn filter(
-        &self,
-        exec: &[ExecutorInfoPtr],
-        ssn: &SessionInfoPtr,
-    ) -> Option<Vec<ExecutorInfoPtr>>;
+    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool>;
 
     // Events
     fn on_session_bind(&mut self, ssn: SessionInfoPtr);
@@ -84,10 +80,43 @@ impl PluginManager {
             .all(|plugin| plugin.is_preemptible(ssn).unwrap_or(false)))
     }
 
-    pub fn filter(&self, execs: &[ExecutorInfoPtr], _: &SessionInfoPtr) -> Vec<ExecutorInfoPtr> {
-        // TODO: if application was prepared, select it.
-        execs.to_owned()
+    pub fn is_available(
+        &self,
+        exec: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<bool, FlameError> {
+        let plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values() {
+            if let Some(available) = plugin.is_available(exec, ssn) {
+                if !available {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
     }
+
+    // pub fn filter(&self, execs: &[ExecutorInfoPtr], ssn: &SessionInfoPtr) -> Vec<ExecutorInfoPtr> {
+    //     // TODO: if application was prepared, select it.
+    //     let plugins = lock_ptr!(self.plugins)?;
+
+    //     let mut execs = None;
+
+    //     for plugin in plugins.values() {
+    //         match execs {
+    //             Some(execs) => {
+    //                 execs = Some(execs.intersection(plugin.filter(execs, ssn)).collect());
+    //             }
+    //             None => {
+    //                 execs = Some(plugin.filter(execs, ssn));
+    //             }
+    //         }
+    //     }
+
+    //     execs.unwrap_or_default()
+    // }
 
     pub fn on_session_bind(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
         let mut plugins = lock_ptr!(self.plugins)?;
