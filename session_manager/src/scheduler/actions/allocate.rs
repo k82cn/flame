@@ -14,14 +14,11 @@ limitations under the License.
 use std::sync::Arc;
 use stdng::collections::BinaryHeap;
 
-use crate::model::{
-    ExecutorInfoPtr, SnapShot, ALL_NODE, IDLE_EXECUTOR, OPEN_SESSION, VOID_EXECUTOR,
-};
+use crate::model::{ALL_NODE, OPEN_SESSION};
 
 use crate::scheduler::actions::{Action, ActionPtr};
-use crate::scheduler::allocator::node_order_fn;
-use crate::scheduler::allocator::ssn_order_fn;
-use crate::scheduler::allocator::Allocator;
+use crate::scheduler::plugins::node_order_fn;
+use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
 use crate::FlameError;
 
@@ -42,47 +39,6 @@ impl Action for AllocateAction {
         let ss = ctx.snapshot.clone();
 
         ss.debug()?;
-
-        let mut open_ssns = BinaryHeap::new(ssn_order_fn(ctx));
-        let ssn_list = ss.find_sessions(OPEN_SESSION)?;
-        for ssn in ssn_list.values() {
-            open_ssns.push(ssn.clone());
-        }
-
-        let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
-
-        // Allocate void executors to underused sessions.
-        // If the executor is void, plugins are not sure which session will use it;
-        // the allocation info may be wrong in the plugin.
-        loop {
-            if void_executors.is_empty() || open_ssns.is_empty() {
-                break;
-            }
-
-            let ssn = open_ssns.pop().unwrap();
-
-            if !ctx.allocator.is_underused(&ssn)? {
-                tracing::debug!("Session <{}> is not underused, skip it.", ssn.id);
-                continue;
-            }
-
-            let mut exec: Option<ExecutorInfoPtr> = None;
-            for (_, e) in void_executors.iter_mut() {
-                if ctx.allocator.is_available(e, &ssn)? {
-                    exec = Some(e.clone());
-                    break;
-                }
-            }
-
-            if let Some(exec) = exec {
-                tracing::debug!("Allocate executor <{}> for session <{}>.", exec.id, ssn.id);
-
-                ctx.allocator.allocate_executor(&exec, &ssn).await?;
-                void_executors.remove(&exec.id);
-
-                open_ssns.push(ssn);
-            }
-        }
 
         let mut open_ssns = BinaryHeap::new(ssn_order_fn(ctx));
         let ssn_list = ss.find_sessions(OPEN_SESSION)?;
@@ -111,12 +67,12 @@ impl Action for AllocateAction {
                 node.name
             );
 
-            let is_underused = ctx.allocator.is_underused(&ssn)?;
-            let is_allocatable = ctx.allocator.is_allocatable(&node, &ssn)?;
+            let is_underused = ctx.is_underused(&ssn)?;
+            let is_allocatable = ctx.is_allocatable(&node, &ssn)?;
 
             match (is_underused, is_allocatable) {
                 (true, true) => {
-                    ctx.allocator.create_executor(&node, &ssn).await?;
+                    ctx.create_executor(&node, &ssn).await?;
                     nodes.push(node.clone());
                     open_ssns.push(ssn.clone());
                 }

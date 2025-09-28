@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for _ in 0..task_num {
         let input = PingRequest {
             duration: cli.duration,
-            memory: memory,
+            memory,
         }
         .try_into()?;
         tasks.push(ssn.run_task(Some(input), info.clone()));

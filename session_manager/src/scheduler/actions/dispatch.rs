@@ -14,9 +14,9 @@ limitations under the License.
 use std::sync::Arc;
 use stdng::collections::BinaryHeap;
 
-use crate::model::{IDLE_EXECUTOR, OPEN_SESSION};
+use crate::model::{ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, VOID_EXECUTOR};
 use crate::scheduler::actions::{Action, ActionPtr};
-use crate::scheduler::dispatcher::ssn_order_fn;
+use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
 
 use crate::FlameError;
@@ -39,19 +39,13 @@ impl Action for DispatchAction {
         ss.debug()?;
 
         let mut open_ssns = BinaryHeap::new(ssn_order_fn(ctx));
-        let mut idle_execs = Vec::new();
-
         let ssn_list = ss.find_sessions(OPEN_SESSION)?;
         for ssn in ssn_list.values() {
-            // TODO(k82cn): check if the application of the session exists in the database and
-            // if not, ignore it and log a message.
             open_ssns.push(ssn.clone());
         }
 
-        let execs = ss.find_executors(IDLE_EXECUTOR)?;
-        for exec in execs.values() {
-            idle_execs.push(exec.clone());
-        }
+        let mut idle_executors = ss.find_executors(IDLE_EXECUTOR)?;
+        let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
 
         loop {
             if open_ssns.is_empty() {
@@ -59,8 +53,9 @@ impl Action for DispatchAction {
             }
 
             let ssn = open_ssns.pop().unwrap();
-            tracing::debug!("Start resources allocation for session <{}>", &ssn.id);
-            if !ctx.dispatcher.is_underused(&ssn)? {
+
+            if !ctx.is_underused(&ssn)? {
+                tracing::debug!("Session <{}> is not underused, skip it.", ssn.id);
                 continue;
             }
 
@@ -69,39 +64,40 @@ impl Action for DispatchAction {
                 &ssn.id
             );
 
-            let mut pos = None;
-            for (i, exec) in idle_execs.iter_mut().enumerate() {
-                tracing::debug!(
-                    "Try to allocate executor <{}> for session <{}>",
-                    exec.id.clone(),
-                    ssn.id.clone()
-                );
-
-                if !ctx.dispatcher.is_available(exec, &ssn)? {
-                    tracing::debug!(
-                        "Executor <{}> is not available for session <{}>, skip it.",
-                        exec.id.clone(),
-                        ssn.id.clone()
-                    );
-                    continue;
+            // Allocate idle executors to underused sessions.
+            let mut exec: Option<ExecutorInfoPtr> = None;
+            for (_, e) in idle_executors.iter_mut() {
+                if ctx.is_available(e, &ssn)? {
+                    exec = Some(e.clone());
+                    break;
                 }
-
-                ctx.dispatcher
-                    .bind_session(exec.clone(), ssn.clone())
-                    .await?;
-                pos = Some(i);
-
-                tracing::debug!(
-                    "Executor <{}> was allocated to session <{}>, remove it from idle list.",
-                    exec.id.clone(),
-                    ssn.id.clone()
-                );
-                open_ssns.push(ssn);
-                break;
             }
 
-            if let Some(p) = pos {
-                idle_execs.remove(p);
+            if let Some(exec) = exec {
+                tracing::debug!("Bind executor <{}> for session <{}>.", exec.id, ssn.id);
+                ctx.bind_session(&exec, &ssn).await?;
+                idle_executors.remove(&exec.id);
+
+                open_ssns.push(ssn);
+                continue;
+            }
+
+            // Pipeline void executors to underused sessions.
+            for (_, e) in void_executors.iter_mut() {
+                if ctx.is_available(e, &ssn)? {
+                    exec = Some(e.clone());
+                    break;
+                }
+            }
+
+            if let Some(exec) = exec {
+                tracing::debug!("Pipeline executor <{}> for session <{}>.", exec.id, ssn.id);
+
+                ctx.pipeline_session(&exec, &ssn).await?;
+                void_executors.remove(&exec.id);
+
+                open_ssns.push(ssn);
+                continue;
             }
         }
 

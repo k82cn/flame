@@ -40,6 +40,7 @@ pub struct DefaultTaskInformer {
 
 impl TaskInformer for DefaultTaskInformer {
     fn on_update(&mut self, task: Task) {
+        tracing::info!("task: {:?}", task.state);
         match task.state {
             TaskState::Succeed => self.succeed += 1,
             TaskState::Failed => self.failed += 1,
@@ -49,6 +50,7 @@ impl TaskInformer for DefaultTaskInformer {
 
     fn on_error(&mut self, _: FlameError) {
         self.error += 1;
+        tracing::info!("error: {}", self.error);
     }
 }
 
@@ -233,14 +235,6 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
                 FlameError::Internal(format!("failed to register application <{name}>: {e}"))
             })?;
     }
-
-    // for (name, _) in apps {
-    //     conn.unregister_application(name.clone())
-    //         .await
-    //         .map_err(|e| {
-    //             FlameError::Internal(format!("failed to unregister application <{}>: {}", name, e))
-    //         })?;
-    // }
 
     Ok(())
 }

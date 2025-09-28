@@ -16,11 +16,11 @@ use std::collections::binary_heap::BinaryHeap;
 use std::collections::HashMap;
 
 use crate::model::{
-    ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_APPLICATION,
-    ALL_EXECUTOR, ALL_NODE, OPEN_SESSION,
+    ExecutorInfo, ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot,
+    ALL_APPLICATION, ALL_EXECUTOR, ALL_NODE, OPEN_SESSION,
 };
-use crate::scheduler::allocator::plugins::{Plugin, PluginPtr};
-use common::apis::{SessionID, TaskState};
+use crate::scheduler::plugins::{Plugin, PluginPtr};
+use common::apis::{ResourceRequirement, SessionID, TaskState};
 use common::FlameError;
 
 #[derive(Default, Clone)]
@@ -29,12 +29,6 @@ struct SSNInfo {
     pub slots: u32,
     pub desired: f64,
     pub deserved: f64,
-    pub allocated: f64,
-}
-
-struct NInfo {
-    pub name: String,
-    pub allocatable: u32,
     pub allocated: f64,
 }
 
@@ -66,18 +60,10 @@ impl Ord for SSNInfo {
     }
 }
 
-pub struct FairShare {
-    ssn_map: HashMap<SessionID, SSNInfo>,
-    node_map: HashMap<String, NInfo>,
-}
-
-impl FairShare {
-    pub fn new_ptr() -> PluginPtr {
-        Box::new(FairShare {
-            ssn_map: HashMap::new(),
-            node_map: HashMap::new(),
-        })
-    }
+struct NInfo {
+    pub name: String,
+    pub allocatable: u32,
+    pub allocated: f64,
 }
 
 impl Eq for NInfo {}
@@ -108,8 +94,26 @@ impl Ord for NInfo {
     }
 }
 
+pub struct FairShare {
+    ssn_map: HashMap<SessionID, SSNInfo>,
+    node_map: HashMap<String, NInfo>,
+    unit: ResourceRequirement,
+}
+
+impl FairShare {
+    pub fn new_ptr() -> PluginPtr {
+        Box::new(FairShare {
+            ssn_map: HashMap::new(),
+            node_map: HashMap::new(),
+            unit: ResourceRequirement::default(),
+        })
+    }
+}
+
 impl Plugin for FairShare {
     fn setup(&mut self, ss: &SnapShot) -> Result<(), FlameError> {
+        self.unit = ss.unit.clone();
+
         let open_ssns = ss.find_sessions(OPEN_SESSION)?;
 
         let apps = ss.find_applications(ALL_APPLICATION)?;
@@ -153,7 +157,7 @@ impl Plugin for FairShare {
 
         let nodes = ss.find_nodes(ALL_NODE)?;
         for node in nodes.values() {
-            let allocatable = node.allocatable.to_slots(&ss.unit);
+            let allocatable = node.allocatable.to_slots(&self.unit);
             remaining_slots += allocatable as f64;
             self.node_map.insert(
                 node.name.clone(),
@@ -167,14 +171,16 @@ impl Plugin for FairShare {
 
         let executors = ss.find_executors(ALL_EXECUTOR)?;
         for exe in executors.values() {
+            remaining_slots -= exe.slots as f64;
             if let Some(node) = self.node_map.get_mut(&exe.node) {
-                remaining_slots -= exe.resreq.to_slots(&ss.unit) as f64;
-                node.allocated += exe.resreq.to_slots(&ss.unit) as f64;
+                node.allocated += exe.slots as f64;
+            } else {
+                tracing::warn!("Node <{}> not found for executor <{}>.", exe.node, exe.id);
+            }
 
-                if let Some(ssn_id) = exe.ssn_id {
-                    if let Some(ssn) = self.ssn_map.get_mut(&ssn_id) {
-                        ssn.allocated += ssn.slots as f64;
-                    }
+            if let Some(ssn_id) = exe.ssn_id {
+                if let Some(ssn) = self.ssn_map.get_mut(&ssn_id) {
+                    ssn.allocated += ssn.slots as f64;
                 }
             }
         }
@@ -205,21 +211,12 @@ impl Plugin for FairShare {
         if tracing::enabled!(tracing::Level::DEBUG) {
             for ssn in self.ssn_map.values() {
                 tracing::debug!(
-                    "Allocation: ssn <{}>, slots <{}>, desired <{}>, deserved <{}>, allocated <{}>.",
+                    "Session <{}>: slots <{}>, desired <{}>, deserved <{}>, allocated <{}>.",
                     ssn.id,
                     ssn.slots,
                     ssn.desired,
                     ssn.deserved,
                     ssn.allocated
-                )
-            }
-
-            for node in self.node_map.values() {
-                tracing::debug!(
-                    "Allocation: node <{}>, allocatable <{}>, allocated <{}>.",
-                    node.name,
-                    node.allocatable,
-                    node.allocated
                 )
             }
         }
@@ -283,6 +280,16 @@ impl Plugin for FairShare {
             .map(|ssn| ssn.allocated < ssn.deserved)
     }
 
+    fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Option<bool> {
+        self.ssn_map
+            .get(&ssn.id)
+            .map(|ssn| ssn.allocated - ssn.slots as f64 >= ssn.deserved)
+    }
+
+    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
+        Some(ssn.slots == exec.slots)
+    }
+
     fn is_allocatable(&self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
         self.node_map
             .get(&node.name)
@@ -299,10 +306,6 @@ impl Plugin for FairShare {
         }
     }
 
-    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
-        Some(exec.slots == ssn.slots)
-    }
-
     fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated += ssn.slots as f64;
@@ -317,9 +320,15 @@ impl Plugin for FairShare {
         }
     }
 
-    fn on_allocate_executor(&mut self, _: ExecutorInfoPtr, ssn: SessionInfoPtr) {
+    fn on_session_bind(&mut self, ssn: SessionInfoPtr) {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated += ssn.slots as f64;
+        }
+    }
+
+    fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {
+        if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
+            ss.allocated -= ssn.slots as f64;
         }
     }
 }

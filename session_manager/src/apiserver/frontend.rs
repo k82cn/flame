@@ -207,9 +207,12 @@ impl Frontend for Flame {
 
         let common_data = ssn_spec.common_data.map(apis::CommonData::from);
 
-        tracing::debug!("common_data: {:?}", common_data);
-        tracing::debug!("application: {:?}", ssn_spec.application);
-        tracing::debug!("slots: {:?}", ssn_spec.slots);
+        tracing::debug!(
+            "common_data: {:?}, application: {:?}, slots: {:?}",
+            common_data,
+            ssn_spec.application,
+            ssn_spec.slots
+        );
 
         let ssn = self
             .controller

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use stdng::collections;
 
 use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot};
-use crate::scheduler::allocator::plugins::fairshare::FairShare;
+use crate::scheduler::plugins::fairshare::FairShare;
 use crate::scheduler::Context;
 
 use common::ptr::{self, MutexPtr};
@@ -33,20 +33,41 @@ pub trait Plugin: Send + Sync + 'static {
     // Installation of plugin
     fn setup(&mut self, ss: &SnapShot) -> Result<(), FlameError>;
 
-    // Schedule Fn
-    fn ssn_order_fn(&self, s1: &SessionInfo, s2: &SessionInfo) -> Option<Ordering>;
+    // Order Fn
+    fn ssn_order_fn(&self, s1: &SessionInfo, s2: &SessionInfo) -> Option<Ordering> {
+        None
+    }
+    fn node_order_fn(&self, s1: &NodeInfo, s2: &NodeInfo) -> Option<Ordering> {
+        None
+    }
 
-    fn node_order_fn(&self, s1: &NodeInfo, s2: &NodeInfo) -> Option<Ordering>;
+    // Filter Fn
+    fn is_underused(&self, ssn: &SessionInfoPtr) -> Option<bool> {
+        None
+    }
 
-    fn is_underused(&self, ssn: &SessionInfoPtr) -> Option<bool>;
+    fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Option<bool> {
+        None
+    }
 
-    fn is_allocatable(&self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Option<bool>;
-    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool>;
-    fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Option<bool>;
+    fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
+        None
+    }
 
-    // Events
-    fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr);
-    fn on_allocate_executor(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr);
+    fn is_allocatable(&self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
+        None
+    }
+
+    fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Option<bool> {
+        None
+    }
+
+    // Events callbacks
+    fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
+
+    fn on_session_bind(&mut self, ssn: SessionInfoPtr) {}
+
+    fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {}
 }
 
 pub struct PluginManager {
@@ -69,9 +90,29 @@ impl PluginManager {
     pub fn is_underused(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
+        Ok(plugins
+            .values()
+            .all(|plugin| plugin.is_underused(ssn).unwrap_or(false)))
+    }
+
+    pub fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
+        let plugins = lock_ptr!(self.plugins)?;
+
+        Ok(plugins
+            .values()
+            .all(|plugin| plugin.is_preemptible(ssn).unwrap_or(false)))
+    }
+
+    pub fn is_available(
+        &self,
+        exec: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<bool, FlameError> {
+        let plugins = lock_ptr!(self.plugins)?;
+
         for plugin in plugins.values() {
-            if let Some(underused) = plugin.is_underused(ssn) {
-                if !underused {
+            if let Some(available) = plugin.is_available(exec, ssn) {
+                if !available {
                     return Ok(false);
                 }
             }
@@ -90,24 +131,6 @@ impl PluginManager {
         for plugin in plugins.values() {
             if let Some(allocatable) = plugin.is_allocatable(node, ssn) {
                 if !allocatable {
-                    return Ok(false);
-                }
-            }
-        }
-
-        Ok(true)
-    }
-
-    pub fn is_available(
-        &self,
-        exec: &ExecutorInfoPtr,
-        ssn: &SessionInfoPtr,
-    ) -> Result<bool, FlameError> {
-        let plugins = lock_ptr!(self.plugins)?;
-
-        for plugin in plugins.values() {
-            if let Some(available) = plugin.is_available(exec, ssn) {
-                if !available {
                     return Ok(false);
                 }
             }
@@ -144,17 +167,22 @@ impl PluginManager {
         Ok(())
     }
 
-    pub fn on_allocate_executor(
-        &self,
-        exec: ExecutorInfoPtr,
-        ssn: SessionInfoPtr,
-    ) -> Result<(), FlameError> {
+    pub fn on_session_bind(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
         let mut plugins = lock_ptr!(self.plugins)?;
 
         for plugin in plugins.values_mut() {
-            plugin.on_allocate_executor(exec.clone(), ssn.clone());
+            plugin.on_session_bind(ssn.clone());
         }
 
+        Ok(())
+    }
+
+    pub fn on_session_unbind(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
+        let mut plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values_mut() {
+            plugin.on_session_unbind(ssn.clone());
+        }
         Ok(())
     }
 
@@ -183,5 +211,37 @@ impl PluginManager {
             }
         }
         Ordering::Equal
+    }
+}
+
+pub fn node_order_fn(ctx: &Context) -> impl collections::Cmp<NodeInfoPtr> {
+    NodeOrderFn {
+        plugin_mgr: ctx.plugins.clone(),
+    }
+}
+
+struct NodeOrderFn {
+    plugin_mgr: PluginManagerPtr,
+}
+
+impl collections::Cmp<NodeInfoPtr> for NodeOrderFn {
+    fn cmp(&self, t1: &NodeInfoPtr, t2: &NodeInfoPtr) -> Ordering {
+        self.plugin_mgr.node_order_fn(t1, t2)
+    }
+}
+
+pub fn ssn_order_fn(ctx: &Context) -> impl collections::Cmp<SessionInfoPtr> {
+    SsnOrderFn {
+        plugin_mgr: ctx.plugins.clone(),
+    }
+}
+
+struct SsnOrderFn {
+    plugin_mgr: PluginManagerPtr,
+}
+
+impl collections::Cmp<SessionInfoPtr> for SsnOrderFn {
+    fn cmp(&self, t1: &SessionInfoPtr, t2: &SessionInfoPtr) -> Ordering {
+        self.plugin_mgr.ssn_order_fn(t1, t2)
     }
 }
