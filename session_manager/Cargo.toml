@@ -42,6 +42,7 @@ features = [
 
 [dev-dependencies]
 tokio-test = "*"
+rand = { workspace = true }
 
 [lints.rust]
 unused = "allow"

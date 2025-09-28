@@ -44,7 +44,7 @@ pub struct SpecYaml {
     pub arguments: Option<Vec<String>>,
     pub environments: Option<HashMap<String, String>>,
     pub working_directory: Option<String>,
-    pub max_instances: Option<i32>,
+    pub max_instances: Option<u32>,
     pub delay_release: Option<i64>,
     pub schema: Option<SchemaYaml>,
 }

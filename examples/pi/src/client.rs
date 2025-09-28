@@ -32,7 +32,7 @@ struct Cli {
     #[arg(short, long)]
     app: Option<String>,
     #[arg(short, long)]
-    slots: Option<i32>,
+    slots: Option<u32>,
     #[arg(long)]
     task_num: Option<u32>,
     #[arg(long)]
@@ -40,7 +40,7 @@ struct Cli {
 }
 
 const DEFAULT_APP: &str = "pi-app";
-const DEFAULT_SLOTS: i32 = 1;
+const DEFAULT_SLOTS: u32 = 1;
 const DEFAULT_TASK_NUM: u32 = 10;
 const DEFAULT_TASK_INPUT: u32 = 10000;
 

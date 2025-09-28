@@ -62,7 +62,7 @@ struct ApplicationDao {
     pub arguments: Option<Json<Vec<String>>>,
     pub environments: Option<Json<HashMap<String, String>>>,
     pub working_directory: Option<String>,
-    pub max_instances: i32,
+    pub max_instances: u32,
     pub delay_release: i64,
     pub schema: Option<Json<AppSchemaDao>>,
 
@@ -75,7 +75,7 @@ struct ApplicationDao {
 struct SessionDao {
     pub id: SessionID,
     pub application: String,
-    pub slots: i32,
+    pub slots: u32,
 
     pub common_data: Option<Vec<u8>>,
     pub creation_time: i64,
@@ -490,7 +490,7 @@ impl Engine for SqliteEngine {
     async fn create_session(
         &self,
         app: String,
-        slots: i32,
+        slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
         let mut tx = self

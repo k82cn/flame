@@ -40,7 +40,7 @@ struct Cli {
     flame_conf: Option<String>,
     #[arg(short, long, default_value = "1")]
     /// The number of slots to use
-    slots: i32,
+    slots: u32,
     /// The number of tasks to run
     #[arg(short, long, default_value = "10")]
     task_num: i32,
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for _ in 0..task_num {
         let input = PingRequest {
             duration: cli.duration,
-            memory: memory,
+            memory,
         }
         .try_into()?;
         tasks.push(ssn.run_task(Some(input), info.clone()));

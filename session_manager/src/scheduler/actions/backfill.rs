@@ -16,7 +16,7 @@ use stdng::collections::BinaryHeap;
 
 use crate::model::{IDLE_EXECUTOR, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
-use crate::scheduler::dispatcher::ssn_order_fn;
+use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
 use crate::FlameError;
 
@@ -67,13 +67,11 @@ impl Action for BackfillAction {
                     ssn.id.clone()
                 );
 
-                if !ctx.dispatcher.filter_one(exec, &ssn) {
+                if !ctx.is_available(exec, &ssn)? {
                     continue;
                 }
 
-                ctx.dispatcher
-                    .bind_session(exec.clone(), ssn.clone())
-                    .await?;
+                ctx.bind_session(exec, &ssn).await?;
 
                 pos = Some(i);
 

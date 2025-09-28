@@ -84,7 +84,7 @@ enum Commands {
         app: String,
         /// The slots requirements of each task
         #[arg(short, long)]
-        slots: i32,
+        slots: u32,
     },
     /// Migrate Flame metadata
     Migrate {

@@ -107,7 +107,7 @@ pub fn init_logger() -> Result<(), FlameError> {
         .add_directive("tower=error".parse()?);
 
     let time_format = LocalTime::new(format_description!(
-        "[hour repr:24]:[minute]:[second]::[subsecond digits:3]"
+        "[hour repr:24]:[minute]:[second].[subsecond digits:3]"
     ));
 
     // Initialize tracing with a custom format

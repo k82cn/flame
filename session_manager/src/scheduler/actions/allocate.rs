@@ -14,10 +14,11 @@ limitations under the License.
 use std::sync::Arc;
 use stdng::collections::BinaryHeap;
 
-use crate::model::{ALL_NODE, IDLE_EXECUTOR, OPEN_SESSION};
+use crate::model::{ALL_NODE, OPEN_SESSION};
+
 use crate::scheduler::actions::{Action, ActionPtr};
-use crate::scheduler::allocator::node_order_fn;
-use crate::scheduler::allocator::ssn_order_fn;
+use crate::scheduler::plugins::node_order_fn;
+use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
 use crate::FlameError;
 
@@ -40,18 +41,18 @@ impl Action for AllocateAction {
         ss.debug()?;
 
         let mut open_ssns = BinaryHeap::new(ssn_order_fn(ctx));
-        let mut nodes = BinaryHeap::new(node_order_fn(ctx));
-
         let ssn_list = ss.find_sessions(OPEN_SESSION)?;
         for ssn in ssn_list.values() {
             open_ssns.push(ssn.clone());
         }
 
+        let mut nodes = BinaryHeap::new(node_order_fn(ctx));
         let node_list = ss.find_nodes(ALL_NODE)?;
         for node in node_list.values() {
             nodes.push(node.clone());
         }
 
+        // Allocate executors for open sessions on nodes.
         loop {
             if open_ssns.is_empty() || nodes.is_empty() {
                 break;
@@ -66,14 +67,12 @@ impl Action for AllocateAction {
                 node.name
             );
 
-            let is_underused = ctx.allocator.is_underused(&ssn)?;
-            let is_allocatable = ctx.allocator.is_allocatable(&node, &ssn)?;
+            let is_underused = ctx.is_underused(&ssn)?;
+            let is_allocatable = ctx.is_allocatable(&node, &ssn)?;
 
             match (is_underused, is_allocatable) {
                 (true, true) => {
-                    ctx.allocator
-                        .create_executor(node.clone(), ssn.clone())
-                        .await?;
+                    ctx.create_executor(&node, &ssn).await?;
                     nodes.push(node.clone());
                     open_ssns.push(ssn.clone());
                 }

@@ -23,7 +23,7 @@ use rpc::flame as rpc;
 use crate::ptr::MutexPtr;
 use crate::FlameError;
 
-pub const DEFAULT_MAX_INSTANCES: i32 = i32::MAX;
+pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
 pub const DEFAULT_DELAY_RELEASE: Duration = Duration::seconds(60);
 
 pub type SessionID = i64;
@@ -94,7 +94,7 @@ pub struct Application {
     pub arguments: Vec<String>,
     pub environments: HashMap<String, String>,
     pub working_directory: String,
-    pub max_instances: i32,
+    pub max_instances: u32,
     pub delay_release: Duration,
     pub schema: Option<ApplicationSchema>,
 }
@@ -109,7 +109,7 @@ pub struct ApplicationAttributes {
     pub arguments: Vec<String>,
     pub environments: HashMap<String, String>,
     pub working_directory: String,
-    pub max_instances: i32,
+    pub max_instances: u32,
     pub delay_release: Duration,
     pub schema: Option<ApplicationSchema>,
 }
@@ -148,7 +148,7 @@ pub struct SessionStatus {
 pub struct Session {
     pub id: SessionID,
     pub application: String,
-    pub slots: i32,
+    pub slots: u32,
     pub common_data: Option<CommonData>,
     pub tasks: HashMap<TaskID, TaskPtr>,
     pub tasks_index: HashMap<TaskState, HashMap<TaskID, TaskPtr>>,
@@ -228,7 +228,7 @@ pub struct TaskContext {
 pub struct SessionContext {
     pub session_id: String,
     pub application: ApplicationContext,
-    pub slots: i32,
+    pub slots: u32,
     pub common_data: Option<CommonData>,
 }
 
@@ -353,15 +353,15 @@ impl From<&String> for ResourceRequirement {
 }
 
 impl ResourceRequirement {
-    pub fn new(slots: i32, unit: &ResourceRequirement) -> Self {
+    pub fn new(slots: u32, unit: &ResourceRequirement) -> Self {
         Self {
             cpu: slots as u64 * unit.cpu,
             memory: slots as u64 * unit.memory,
         }
     }
 
-    pub fn to_slots(&self, unit: &ResourceRequirement) -> u64 {
-        (self.cpu / unit.cpu).min(self.memory / unit.memory)
+    pub fn to_slots(&self, unit: &ResourceRequirement) -> u32 {
+        (self.cpu / unit.cpu).min(self.memory / unit.memory) as u32
     }
 
     fn parse_memory(s: &str) -> u64 {

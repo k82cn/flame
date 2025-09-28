@@ -92,7 +92,7 @@ pub struct TaskInfo {
 pub struct SessionInfo {
     pub id: SessionID,
     pub application: String,
-    pub slots: i32,
+    pub slots: u32,
 
     pub tasks_status: HashMap<TaskState, i32>,
 
@@ -107,6 +107,7 @@ pub struct ExecutorInfo {
     pub id: ExecutorID,
     pub node: String,
     pub resreq: ResourceRequirement,
+    pub slots: u32,
     pub task_id: Option<TaskID>,
     pub ssn_id: Option<SessionID>,
 
@@ -124,7 +125,7 @@ pub struct NodeInfo {
 #[derive(Clone, Debug, Default)]
 pub struct AppInfo {
     pub name: String,
-    pub max_instances: i32,
+    pub max_instances: u32,
     pub delay_release: Duration,
 }
 
@@ -160,6 +161,7 @@ impl From<&Executor> for ExecutorInfo {
             id: exec.id.clone(),
             node: exec.node.clone(),
             resreq: exec.resreq.clone(),
+            slots: exec.slots,
             task_id: exec.task_id,
             ssn_id: exec.ssn_id,
             creation_time: exec.creation_time,
@@ -225,6 +227,11 @@ pub const ALL_NODE: Option<NodeFilter> = None;
 
 pub const IDLE_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
     state: Some(ExecutorState::Idle),
+    ids: vec![],
+});
+
+pub const VOID_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
+    state: Some(ExecutorState::Void),
     ids: vec![],
 });
 
@@ -548,6 +555,7 @@ impl SnapShot {
             node: exec.node.clone(),
             resreq: exec.resreq.clone(),
             task_id: exec.task_id,
+            slots: exec.slots,
             ssn_id: exec.ssn_id,
             creation_time: exec.creation_time,
             state,
@@ -565,6 +573,7 @@ pub struct Executor {
     pub id: ExecutorID,
     pub node: String,
     pub resreq: ResourceRequirement,
+    pub slots: u32,
     pub task_id: Option<TaskID>,
     pub ssn_id: Option<SessionID>,
 
@@ -592,6 +601,7 @@ impl From<&rpc::Executor> for Executor {
             id: metadata.id.clone(),
             node: spec.node.clone(),
             resreq: spec.resreq.unwrap().into(),
+            slots: spec.slots,
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),
@@ -617,6 +627,7 @@ impl From<&Executor> for rpc::Executor {
         let spec = Some(rpc::ExecutorSpec {
             resreq: Some(e.resreq.clone().into()),
             node: e.node.clone(),
+            slots: e.slots,
         });
 
         let status = Some(rpc::ExecutorStatus {

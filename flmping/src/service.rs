@@ -37,14 +37,13 @@ impl flame::service::FlameService for FlmpingService {
     async fn on_task_invoke(&self, ctx: TaskContext) -> Result<Option<TaskOutput>, FlameError> {
         let start_time = Instant::now();
 
-        let input = ctx.input.unwrap_or_default();
-        let input: PingRequest = input.try_into()?;
+        let input = ctx
+            .input
+            .map(|input| input.try_into())
+            .unwrap_or(Result::Ok(PingRequest::default()))?;
 
         let mem = match input.memory {
-            Some(memory) => {
-                let mem = vec![0; memory as usize];
-                mem.into_boxed_slice()
-            }
+            Some(memory) => vec![0; memory as usize].into_boxed_slice(),
             None => Box::new([]),
         };
 
