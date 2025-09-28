@@ -28,6 +28,8 @@ tower = "0.5"
 hyper-util = "0.1"
 chrono = "0.4"
 
+nix = { version = "0.30", features = ["signal"] }
+
 tracing = "*"
 tracing-subscriber = { version = "*", features = ["env-filter", "local-time"] }
 

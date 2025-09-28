@@ -3,8 +3,7 @@ metadata:
 spec:
   working_directory: /opt/examples/crawler/
   environments:
-    - name: FLAME_LOG_LEVEL
-      value: DEBUG
+    FLAME_LOG_LEVEL: DEBUG
   command: /usr/bin/uv
   arguments:
     - run

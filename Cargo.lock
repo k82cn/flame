@@ -1081,6 +1081,7 @@ dependencies = [
  "common",
  "hyper-util",
  "lazy_static",
+ "nix",
  "prost",
  "rpc",
  "tokio",

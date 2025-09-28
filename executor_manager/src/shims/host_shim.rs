@@ -14,8 +14,9 @@ limitations under the License.
 use std::env;
 use std::fs::{self, create_dir_all, File};
 use std::future::Future;
+use std::os::unix::process::CommandExt;
 use std::pin::Pin;
-use std::process::{self, Stdio};
+use std::process::{self, Command, Stdio};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -23,6 +24,8 @@ use std::{thread, time};
 
 use async_trait::async_trait;
 use hyper_util::rt::TokioIo;
+use nix::sys::signal::{killpg, Signal};
+use nix::unistd::Pid;
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
@@ -90,7 +93,7 @@ impl HostShim {
             .envs(envs)
             .args(args)
             .current_dir(cur_dir)
-            .kill_on_drop(true)
+            .process_group(0)
             .spawn()
             .map_err(|e| {
                 FlameError::InvalidConfig(format!(
@@ -138,7 +141,13 @@ impl HostShim {
 
 impl Drop for HostShim {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        if let Some(id) = self.child.id() {
+            let ig = Pid::from_raw(id as i32);
+            killpg(ig, Signal::SIGTERM);
+        } else {
+            self.child.kill();
+        }
+
         let _ = std::fs::remove_file(&self.service_socket);
         let _ = std::fs::remove_dir_all(&self.working_directory);
 
