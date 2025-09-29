@@ -1,6 +1,9 @@
 services:
   flame-session-manager:
     image: xflops/flame-session-manager:latest
+    logging:
+      options:
+        max-size: "100m"
     build:
       context: .
       dockerfile: docker/Dockerfile.fsm
@@ -13,6 +16,9 @@ services:
 
   flame-executor-manager:
     image: xflops/flame-executor-manager:latest
+    logging:
+      options:
+        max-size: "100m"
     build:
       context: .
       dockerfile: docker/Dockerfile.fem
@@ -33,6 +39,9 @@ services:
 
   flame-console:
     image: xflops/flame-console:latest
+    logging:
+      options:
+        max-size: "100m"
     build:
       context: .
       dockerfile: docker/Dockerfile.console

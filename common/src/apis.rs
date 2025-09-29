@@ -482,6 +482,13 @@ impl Session {
 
         self.tasks.insert(task.id, task_ptr.clone());
         self.tasks_index.entry(task.state).or_default();
+
+        // Remove the task from all states first.
+        for state in self.tasks_index.values_mut() {
+            state.remove(&task.id);
+        }
+
+        // Add the task to the new state.
         self.tasks_index
             .get_mut(&task.state)
             .unwrap()

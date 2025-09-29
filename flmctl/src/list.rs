@@ -14,6 +14,8 @@ limitations under the License.
 use std::cmp::Ordering;
 use std::error::Error;
 
+use comfy_table::presets::NOTHING;
+use comfy_table::Table;
 use flame_rs as flame;
 use flame_rs::apis::{FlameContext, FlameError, SessionState};
 use flame_rs::client::Connection;
@@ -36,32 +38,33 @@ pub async fn run(
 async fn list_application(conn: Connection) -> Result<(), Box<dyn Error>> {
     let app_list = conn.list_application().await?;
 
-    println!(
-        "{:<20}{:<10}{:<12}{:<15}{:<30}",
-        "Name", "Shim", "State", "Created", "Command"
-    );
+    let mut table = Table::new();
+    table
+        .load_preset(NOTHING)
+        .set_header(vec!["Name", "State", "Tags", "Created", "Shim", "Command"]);
 
     for app in &app_list {
-        println!(
-            "{:<20}{:<10}{:<12}{:<15}{:<30}",
-            app.name,
-            app.attributes.shim.to_string(),
+        table.add_row(vec![
+            app.name.to_string(),
             app.state.to_string(),
-            app.creation_time.format("%T"),
-            app.attributes.command.clone().unwrap_or("-".to_string())
-        );
+            app.attributes.labels.join(", "),
+            app.creation_time.format("%T").to_string(),
+            app.attributes.shim.to_string(),
+            app.attributes.command.clone().unwrap_or("-".to_string()),
+        ]);
     }
+
+    println!("{table}");
 
     Ok(())
 }
 
 async fn list_session(conn: Connection) -> Result<(), Box<dyn Error>> {
     let mut ssn_list = conn.list_session().await?;
-
-    println!(
-        "{:<10}{:<10}{:<15}{:<10}{:<10}{:<10}{:<10}{:<10}{:<10}",
-        "ID", "State", "App", "Slots", "Pending", "Running", "Succeed", "Failed", "Created"
-    );
+    let mut table = Table::new();
+    table.load_preset(NOTHING).set_header(vec![
+        "ID", "State", "App", "Slots", "Pending", "Running", "Succeed", "Failed", "Created",
+    ]);
 
     ssn_list.sort_by(|l, r| {
         if l.state == r.state {
@@ -76,19 +79,20 @@ async fn list_session(conn: Connection) -> Result<(), Box<dyn Error>> {
     });
 
     for ssn in &ssn_list {
-        println!(
-            "{:<10}{:<10}{:<15}{:<10}{:<10}{:<10}{:<10}{:<10}{:<10}",
-            ssn.id,
-            ssn.state,
-            ssn.application,
-            ssn.slots,
-            ssn.pending,
-            ssn.running,
-            ssn.succeed,
-            ssn.failed,
-            ssn.creation_time.format("%T")
-        );
+        table.add_row(vec![
+            ssn.id.to_string(),
+            ssn.state.to_string(),
+            ssn.application.to_string(),
+            ssn.slots.to_string(),
+            ssn.pending.to_string(),
+            ssn.running.to_string(),
+            ssn.succeed.to_string(),
+            ssn.failed.to_string(),
+            ssn.creation_time.format("%T").to_string(),
+        ]);
     }
+
+    println!("{table}");
 
     Ok(())
 }

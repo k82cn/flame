@@ -9,7 +9,7 @@ RUN cargo install --path ./flmexec
 
 FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y wget vim iputils-ping ssh
+RUN apt-get update && apt-get install -y wget vim iputils-ping ssh curl
 COPY --from=builder /usr/local/cargo/bin/flmping /usr/local/bin/flmping
 COPY --from=builder /usr/local/cargo/bin/flmctl /usr/local/bin/flmctl
 COPY --from=builder /usr/local/cargo/bin/flmexec /usr/local/bin/flmexec
