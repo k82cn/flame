@@ -53,8 +53,11 @@ impl Context {
             // TODO(k82cn): Add ActionManager for them.
             actions: vec![
                 DispatchAction::new_ptr(),
-                ShuffleAction::new_ptr(),
-                BackfillAction::new_ptr(),
+                // TODO(k82cn): Add ShuffleAction back later to support preemption.
+                // ShuffleAction::new_ptr(),
+                // Backfill is not necessary for Flame as
+                // the AllocateAction will create executors for open sessions accordingly.
+                // BackfillAction::new_ptr(),
                 AllocateAction::new_ptr(),
             ],
             schedule_interval: DEFAULT_SCHEDULE_INTERVAL,

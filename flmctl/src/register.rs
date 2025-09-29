@@ -28,14 +28,24 @@ pub async fn run(ctx: &FlameContext, path: &String) -> Result<(), FlameError> {
 
     let contents =
         fs::read_to_string(path.clone()).map_err(|e| FlameError::Internal(e.to_string()))?;
-    let app: ApplicationYaml =
-        serde_yaml::from_str(&contents).map_err(|e| FlameError::Internal(e.to_string()))?;
-
-    let app_attr = ApplicationAttributes::try_from(&app)?;
 
     let conn = flame::client::connect(&ctx.endpoint).await?;
 
-    conn.register_application(app.metadata.name, app_attr)
-        .await?;
+    let documents: Vec<&str> = contents
+        .split("\n---\n")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    for doc in documents {
+        let app: ApplicationYaml =
+            serde_yaml::from_str(doc).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let app_attr = ApplicationAttributes::try_from(&app)?;
+
+        conn.register_application(app.metadata.name, app_attr)
+            .await?;
+    }
+
     Ok(())
 }
