@@ -171,7 +171,6 @@ impl Plugin for FairShare {
 
         let executors = ss.find_executors(ALL_EXECUTOR)?;
         for exe in executors.values() {
-            remaining_slots -= exe.slots as f64;
             if let Some(node) = self.node_map.get_mut(&exe.node) {
                 node.allocated += exe.slots as f64;
             } else {
