@@ -426,6 +426,7 @@ class Session:
         self.succeed = succeed
         self.failed = failed
         self.completion_time = completion_time
+        self.mutex = threading.Lock()
 
     async def create_task(self, input_data: TaskInput) -> Task:
         """Create a new task in the session."""
@@ -520,9 +521,15 @@ class Session:
         watcher = await self.watch_task(task.id)
         
         async for task in watcher:
+            # If informer is provided, use it to update the task and
+            # return None to indicate that the task is handled by the informer.
             if informer is not None:
-                informer.on_update(task)
+                with self.mutex:
+                    informer.on_update(task)
+                if task.is_completed():
+                    return None
 
+            # If the task is failed, raise an error.
             if task.is_failed():
                 for event in task.events:
                     if event.code == TaskState.FAILED:
@@ -530,6 +537,7 @@ class Session:
                             FlameErrorCode.INTERNAL,
                             f"{event.message}"
                         )
+            # If the task is completed, return the output.
             elif task.is_completed():
                 return task.output
 

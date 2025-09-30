@@ -16,10 +16,18 @@ limitations under the License.
 import logging
 import os
 
-if os.getenv("FLAME_LOG_LEVEL", "INFO") == "DEBUG":
-    logging.basicConfig(level=logging.DEBUG, filename="flamepy.log")
-else:
-    logging.basicConfig(level=logging.INFO, filename="flamepy.log")
+_log_level_str = os.getenv("FLAME_LOG_LEVEL", "INFO").upper()
+_log_level_map = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
+
+_log_level = _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
+
+logging.basicConfig(level=_log_level)
 
 from .types import (
     # Type aliases
