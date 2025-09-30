@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 use std::env;
-use std::fs::{self, create_dir_all, File};
+use std::fs::{self, create_dir_all, File, OpenOptions};
 use std::future::Future;
 use std::os::unix::process::CommandExt;
 use std::pin::Pin;
@@ -87,12 +87,24 @@ impl HostShim {
             .clone()
             .unwrap_or(FLAME_WORKING_DIRECTORY.to_string());
 
+        let log_file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(true)
+            .open(format!("{cur_dir}/{}.log", executor.id))
+            .map_err(|e| FlameError::Internal(format!("failed to open log file: {e}")))?;
+
         tracing::debug!("Current directory of application instance: {cur_dir}");
 
         let mut child = cmd
             .envs(envs)
             .args(args)
             .current_dir(cur_dir)
+            .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
+                FlameError::Internal(format!("failed to clone log file: {e}"))
+            })?))
+            .stderr(Stdio::from(log_file))
             .process_group(0)
             .spawn()
             .map_err(|e| {
