@@ -111,6 +111,18 @@ pub enum Shim {
     Wasm = 1,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
+pub enum ExecutorState {
+    Unknown = 0,
+    Void = 1,
+    Idle = 2,
+    Binding = 3,
+    Bound = 4,
+    Unbinding = 5,
+    Releasing = 6,
+    Released = 7,
+}
+
 impl From<FlameError> for Status {
     fn from(value: FlameError) -> Self {
         match value {
@@ -141,6 +153,21 @@ impl From<rpc::ApplicationState> for ApplicationState {
         match s {
             rpc::ApplicationState::Disabled => Self::Disabled,
             rpc::ApplicationState::Enabled => Self::Enabled,
+        }
+    }
+}
+
+impl From<rpc::ExecutorState> for ExecutorState {
+    fn from(s: rpc::ExecutorState) -> Self {
+        match s {
+            rpc::ExecutorState::ExecutorVoid => Self::Void,
+            rpc::ExecutorState::ExecutorIdle => Self::Idle,
+            rpc::ExecutorState::ExecutorBinding => Self::Binding,
+            rpc::ExecutorState::ExecutorBound => Self::Bound,
+            rpc::ExecutorState::ExecutorUnbinding => Self::Unbinding,
+            rpc::ExecutorState::ExecutorReleasing => Self::Releasing,
+            rpc::ExecutorState::ExecutorReleased => Self::Released,
+            rpc::ExecutorState::ExecutorUnknown => Self::Unknown,
         }
     }
 }

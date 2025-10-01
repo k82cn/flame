@@ -18,6 +18,8 @@ service Frontend {
   rpc GetApplication(GetApplicationRequest) returns (Application) {}
   rpc ListApplication(ListApplicationRequest) returns (ApplicationList) {}
 
+  rpc ListExecutor(ListExecutorRequest) returns (ExecutorList) {}
+
   rpc CreateSession (CreateSessionRequest) returns (Session) {}
   rpc DeleteSession (DeleteSessionRequest) returns (Session) {}
 
@@ -54,6 +56,10 @@ message GetApplicationRequest {
 
 message ListApplicationRequest {
 
+}
+
+message ListExecutorRequest {
+  
 }
 
 message CreateSessionRequest {

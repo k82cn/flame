@@ -24,11 +24,13 @@ pub async fn run(
     ctx: &FlameContext,
     application: bool,
     session: bool,
+    executor: bool,
 ) -> Result<(), Box<dyn Error>> {
     let conn = flame::client::connect(&ctx.endpoint).await?;
-    match (application, session) {
-        (true, false) => list_application(conn).await,
-        (false, true) => list_session(conn).await,
+    match (application, session, executor) {
+        (true, _, _) => list_application(conn).await,
+        (_, true, _) => list_session(conn).await,
+        (_, _, true) => list_executor(conn).await,
         _ => Err(Box::new(FlameError::InvalidConfig(
             "unsupported parameters".to_string(),
         ))),
@@ -89,6 +91,28 @@ async fn list_session(conn: Connection) -> Result<(), Box<dyn Error>> {
             ssn.succeed.to_string(),
             ssn.failed.to_string(),
             ssn.creation_time.format("%T").to_string(),
+        ]);
+    }
+
+    println!("{table}");
+
+    Ok(())
+}
+
+async fn list_executor(conn: Connection) -> Result<(), Box<dyn Error>> {
+    let executor_list = conn.list_executor().await?;
+    let mut table = Table::new();
+    table
+        .load_preset(NOTHING)
+        .set_header(vec!["ID", "State", "Session", "Slots", "Node"]);
+
+    for executor in &executor_list {
+        table.add_row(vec![
+            executor.id.to_string(),
+            executor.state.to_string(),
+            executor.session_id.clone().unwrap_or("-".to_string()),
+            executor.slots.to_string(),
+            executor.node.to_string(),
         ]);
     }
 

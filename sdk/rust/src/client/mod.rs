@@ -26,14 +26,14 @@ use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
     GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest,
-    ListSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
+    ListExecutorRequest, ListSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
     UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
 use crate::apis::Shim;
 use crate::apis::{
-    ApplicationID, ApplicationState, CommonData, FlameError, SessionID, SessionState, TaskID,
-    TaskInput, TaskOutput, TaskState,
+    ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,
+    SessionState, TaskID, TaskInput, TaskOutput, TaskState,
 };
 use crate::lock_ptr;
 
@@ -104,6 +104,15 @@ pub struct Application {
 }
 
 #[derive(Clone)]
+pub struct Executor {
+    pub id: String,
+    pub state: ExecutorState,
+    pub session_id: Option<String>,
+    pub slots: u32,
+    pub node: String,
+}
+
+#[derive(Clone)]
 pub struct Session {
     pub(crate) client: Option<FlameClient>,
 
@@ -144,6 +153,14 @@ pub trait TaskInformer: Send + Sync + 'static {
 impl Task {
     pub fn is_completed(&self) -> bool {
         self.state == TaskState::Succeed || self.state == TaskState::Failed
+    }
+
+    pub fn is_succeed(&self) -> bool {
+        self.state == TaskState::Succeed
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.state == TaskState::Failed
     }
 }
 
@@ -281,6 +298,17 @@ impl Connection {
             })
             .await?;
         Ok(Application::from(&app.into_inner()))
+    }
+
+    pub async fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        let executor_list = client.list_executor(ListExecutorRequest {}).await?;
+        Ok(executor_list
+            .into_inner()
+            .executors
+            .iter()
+            .map(Executor::from)
+            .collect())
     }
 }
 
@@ -526,5 +554,29 @@ impl From<rpc::ApplicationSchema> for ApplicationSchema {
             output: schema.output,
             common_data: schema.common_data,
         }
+    }
+}
+
+impl From<&rpc::Executor> for Executor {
+    fn from(e: &rpc::Executor) -> Self {
+        let spec = e.spec.clone().unwrap();
+        let status = e.status.clone().unwrap();
+        let metadata = e.metadata.clone().unwrap();
+
+        let state = rpc::ExecutorState::try_from(status.state).unwrap().into();
+
+        Executor {
+            id: metadata.id,
+            session_id: status.session_id,
+            slots: spec.slots,
+            node: spec.node,
+            state,
+        }
+    }
+}
+
+impl From<rpc::Executor> for Executor {
+    fn from(e: rpc::Executor) -> Self {
+        Executor::from(&e)
     }
 }

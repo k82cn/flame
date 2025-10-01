@@ -47,7 +47,7 @@ impl From<rpc::Executor> for Executor {
 impl From<&rpc::Executor> for Executor {
     fn from(e: &rpc::Executor) -> Self {
         let spec = e.spec.clone().unwrap();
-        let status = e.status.unwrap();
+        let status = e.status.clone().unwrap();
         let metadata = e.metadata.clone().unwrap();
 
         let state = rpc::ExecutorState::try_from(status.state).unwrap().into();
@@ -87,6 +87,7 @@ impl From<&Executor> for rpc::Executor {
 
         let status = Some(ExecutorStatus {
             state: rpc::ExecutorState::from(e.state).into(),
+            session_id: e.session.clone().map(|s| s.session_id),
         });
 
         rpc::Executor {
