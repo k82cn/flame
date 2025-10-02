@@ -637,17 +637,9 @@ impl From<ApplicationContext> for rpc::ApplicationContext {
     }
 }
 
-impl TryFrom<rpc::BindExecutorResponse> for SessionContext {
+impl TryFrom<(rpc::Application, rpc::Session)> for SessionContext {
     type Error = FlameError;
-
-    fn try_from(resp: rpc::BindExecutorResponse) -> Result<Self, Self::Error> {
-        let app = resp
-            .application
-            .ok_or(FlameError::InvalidConfig("application".to_string()))?;
-        let ssn = resp
-            .session
-            .ok_or(FlameError::InvalidConfig("session".to_string()))?;
-
+    fn try_from((app, ssn): (rpc::Application, rpc::Session)) -> Result<Self, Self::Error> {
         let metadata = ssn
             .metadata
             .ok_or(FlameError::InvalidConfig("metadata".to_string()))?;

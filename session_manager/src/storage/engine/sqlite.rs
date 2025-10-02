@@ -16,9 +16,13 @@ use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{migrate::MigrateDatabase, types::Json, FromRow, Sqlite, SqliteConnection, SqlitePool};
+use sqlx::{
+    migrate::MigrateDatabase, types::Json, FromRow, Sqlite, SqliteConnection, SqlitePool,
+    sqlite::SqlitePoolOptions,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time;
 
 use crate::FlameError;
 use common::{
@@ -110,7 +114,14 @@ impl SqliteEngine {
                 .map_err(|e| FlameError::Storage(e.to_string()))?;
         }
 
-        let db = SqlitePool::connect(url)
+        let db = SqlitePoolOptions::new()
+            .max_connections(20) // Start conservative
+            .min_connections(3) // Keep some warm connections
+            .acquire_timeout(time::Duration::from_secs(10))
+            .idle_timeout(time::Duration::from_secs(5 * 60)) // 5 minutes
+            .max_lifetime(time::Duration::from_secs(30 * 60)) // 30 minutes
+            .test_before_acquire(true) // Verify connection is still valid
+            .connect(url)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 

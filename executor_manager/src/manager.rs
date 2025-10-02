@@ -17,7 +17,7 @@ use std::{thread, time};
 
 use crate::client::BackendClient;
 use crate::executor::{self, Executor, ExecutorPtr};
-use common::apis::Node;
+use common::apis::{ExecutorState, Node};
 use common::lock_ptr;
 use common::{ctx::FlameContext, FlameError};
 
@@ -59,12 +59,21 @@ impl ExecutorManager {
                     continue;
                 }
 
+                // Skip the released executors.
+                if executor.state == ExecutorState::Released {
+                    continue;
+                }
+
                 tracing::debug!("Executor <{}> is starting.", executor.id);
                 let executor_ptr = Arc::new(Mutex::new(executor.clone()));
                 self.executors
                     .insert(executor.id.clone(), executor_ptr.clone());
                 executor::start(self.client.clone(), executor_ptr.clone());
             }
+
+            // Remove the released executors.
+            self.executors
+                .retain(|_, e| e.lock().unwrap().state != ExecutorState::Released);
 
             tracing::debug!(
                 "There are {} executors in node {}",

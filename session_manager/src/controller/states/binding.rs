@@ -24,8 +24,20 @@ pub struct BindingState {
 
 #[async_trait::async_trait]
 impl States for BindingState {
-    async fn register_executor(&self, _exe: ExecutorPtr) -> Result<(), FlameError> {
+    async fn register_executor(&self) -> Result<(), FlameError> {
         trace_fn!("BindingState::register_executor");
+
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
+    }
+
+    async fn release_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("BindingState::release_executor");
+
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
+    }
+
+    async fn unregister_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("BindingState::unregister_executor");
 
         Err(FlameError::InvalidState("Executor is binding".to_string()))
     }

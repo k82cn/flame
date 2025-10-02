@@ -25,19 +25,24 @@ pub struct VoidState {
 
 #[async_trait::async_trait]
 impl States for VoidState {
-    async fn register_executor(&self, exe: ExecutorPtr) -> Result<(), FlameError> {
-        let id = {
-            let e = lock_ptr!(exe)?;
-            e.id.clone()
-        };
-
-        let mut e = lock_ptr!(exe)?;
-        if e.id != id {
-            return Err(FlameError::InvalidState("Executor ID mismatch".to_string()));
-        }
+    async fn register_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("VoidState::register_executor");
+        let mut e = lock_ptr!(self.executor)?;
         e.state = ExecutorState::Idle;
 
         Ok(())
+    }
+
+    async fn release_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("VoidState::release_executor");
+
+        Err(FlameError::InvalidState("Executor is void".to_string()))
+    }
+
+    async fn unregister_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("VoidState::unregister_executor");
+
+        Err(FlameError::InvalidState("Executor is void".to_string()))
     }
 
     async fn bind_session(&self, _ssn_ptr: SessionPtr) -> Result<(), FlameError> {

@@ -33,6 +33,17 @@ impl State for IdleState {
 
         let ssn = self.client.bind_executor(&self.executor.clone()).await?;
 
+        let Some(ssn) = ssn else {
+            tracing::debug!(
+                "Executor <{}> is idle but no session is found, start to release.",
+                &self.executor.id.clone()
+            );
+
+            self.executor.session = None;
+            self.executor.state = ExecutorState::Releasing;
+            return Ok(self.executor.clone());
+        };
+
         tracing::debug!(
             "Try to bind Executor <{}> to <{}>.",
             &self.executor.id.clone(),

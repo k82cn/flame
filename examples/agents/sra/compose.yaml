@@ -1,6 +1,9 @@
 services:
   flame-session-manager:
     image: xflops/flame-session-manager:latest
+    logging:
+      options:
+        max-size: "100m"
     build:
       context: .
       dockerfile: docker/Dockerfile.fsm
@@ -23,7 +26,7 @@ services:
       - RUST_LOG=debug
     deploy:
       mode: replicated
-      replicas: 3
+      replicas: 1
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -48,3 +51,29 @@ services:
       - ./ci/flame-conf.yaml:/root/.flame/flame-conf.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
+
+  embedding-api:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    command: uv run -n /opt/examples/agents/sra/embed.py
+    logging:
+      options:
+        max-size: "100m"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ./examples:/opt/examples
+
+  qdrant:
+    image: qdrant/qdrant:v1.14.1
+    logging:
+      options:
+        max-size: "100m"
+    ports:
+      - 6333:6333
+      - 6334:6334
+    volumes:
+      - ./work/vdb/data:/qdrant/data

@@ -32,8 +32,20 @@ pub struct BoundState {
 
 #[async_trait::async_trait]
 impl States for BoundState {
-    async fn register_executor(&self, _exe: ExecutorPtr) -> Result<(), FlameError> {
+    async fn register_executor(&self) -> Result<(), FlameError> {
         trace_fn!("BoundState::register_executor");
+
+        Err(FlameError::InvalidState("Executor is bound".to_string()))
+    }
+
+    async fn release_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("BoundState::release_executor");
+
+        Err(FlameError::InvalidState("Executor is bound".to_string()))
+    }
+
+    async fn unregister_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("BoundState::unregister_executor");
 
         Err(FlameError::InvalidState("Executor is bound".to_string()))
     }

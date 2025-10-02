@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use stdng::collections::BinaryHeap;
 
-use crate::model::{BOUND_EXECUTOR, OPEN_SESSION};
+use crate::model::{BOUND_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::ctx::Context;
 use crate::scheduler::plugins::ssn_order_fn;
@@ -45,12 +45,9 @@ impl Action for ShuffleAction {
             }
         }
 
-        let mut bound_execs = vec![];
-        let execs = ss.find_executors(BOUND_EXECUTOR)?;
-        for exec in execs.values() {
-            bound_execs.push(exec.clone());
-        }
+        let mut bound_execs = ss.find_executors(BOUND_EXECUTOR)?;
 
+        // Unbind overused sessions for underused sessions.
         loop {
             if underused.is_empty() {
                 break;
@@ -61,13 +58,15 @@ impl Action for ShuffleAction {
                 continue;
             }
 
-            let mut pos = None;
-            for (i, exec) in bound_execs.iter().enumerate() {
-                if !ctx.is_available(exec, &ssn)? {
-                    continue;
-                }
+            let mut exec = None;
+            for (_, e) in bound_execs.iter_mut() {
+                tracing::debug!(
+                    "Try to unbound Executor <{}> for session <{}>",
+                    e.id,
+                    ssn.id.clone()
+                );
 
-                let target_ssn = match exec.ssn_id {
+                let target_ssn = match e.ssn_id {
                     Some(ssn_id) => Some(ss.get_session(&ssn_id)?),
                     None => None,
                 };
@@ -77,23 +76,34 @@ impl Action for ShuffleAction {
                         continue;
                     }
 
-                    ctx.unbind_session(exec, &target_ssn).await?;
-                    ctx.pipeline_session(exec, &ssn).await?;
-                }
+                    // Unbind the overused session, so the executor will
+                    // become idle and be allocated to the underused session.
+                    ctx.unbind_session(e, &target_ssn).await?;
+                    exec = Some(e.clone());
 
-                pos = Some(i);
+                    break;
+                }
+            }
+
+            if let Some(exec) = exec {
                 tracing::debug!(
-                    "Executor <{}> was pipeline to session <{}>, remove it from bound list.",
-                    exec.id.clone(),
+                    "Executor <{}> was pipelined to session <{}>, remove it from bound list.",
+                    exec.id,
                     ssn.id.clone()
                 );
-                underused.push(ssn.clone());
-                break;
-            }
 
-            if let Some(p) = pos {
-                bound_execs.remove(p);
+                bound_execs.remove(&exec.id);
+
+                // Pipeline the executor to the underused session to avoid over allocation.
+                ctx.pipeline_session(&exec, &ssn).await?;
+                underused.push(ssn.clone());
             }
+        }
+
+        // Release Idle executors, so the resource can be reallocated.
+        let idle_execs = ss.find_executors(IDLE_EXECUTOR)?;
+        for exec in idle_execs.values() {
+            ctx.release_executor(exec).await?;
         }
 
         Ok(())
