@@ -70,6 +70,9 @@ enum Commands {
         /// List the sessions of Flame
         #[arg(short, long)]
         session: bool,
+        /// List the executors of Flame
+        #[arg(short, long)]
+        executor: bool,
     },
     /// Close the session in Flame
     Close {
@@ -120,7 +123,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::List {
             application,
             session,
-        }) => list::run(&ctx, *application, *session).await?,
+            executor,
+        }) => list::run(&ctx, *application, *session, *executor).await?,
         Some(Commands::Close { .. }) => {
             todo!()
         }

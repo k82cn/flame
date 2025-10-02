@@ -22,14 +22,13 @@ use tonic::{Request, Response, Status};
 
 use self::rpc::frontend_server::Frontend;
 use self::rpc::{
-    CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, DeleteSessionRequest,
-    DeleteTaskRequest, GetSessionRequest, GetTaskRequest, ListSessionRequest, OpenSessionRequest,
-    Session, SessionList, Task, WatchTaskRequest,
+    ApplicationList, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest,
+    DeleteSessionRequest, DeleteTaskRequest, ExecutorList, GetApplicationRequest,
+    GetSessionRequest, GetTaskRequest, ListApplicationRequest, ListExecutorRequest,
+    ListSessionRequest, OpenSessionRequest, RegisterApplicationRequest, Session, SessionList, Task,
+    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
-use ::rpc::flame::{
-    ApplicationList, GetApplicationRequest, ListApplicationRequest, RegisterApplicationRequest,
-    UnregisterApplicationRequest, UpdateApplicationRequest,
-};
+
 use rpc::flame as rpc;
 
 use common::{apis, FlameError};
@@ -193,6 +192,20 @@ impl Frontend for Flame {
         let applications = app_list.iter().map(rpc::Application::from).collect();
 
         Ok(Response::new(ApplicationList { applications }))
+    }
+
+    async fn list_executor(
+        &self,
+        _: tonic::Request<ListExecutorRequest>,
+    ) -> Result<Response<ExecutorList>, Status> {
+        trace_fn!("Frontend::list_executor");
+        let executor_list = self
+            .controller
+            .list_executor()
+            .await
+            .map_err(Status::from)?;
+        let executors = executor_list.iter().map(rpc::Executor::from).collect();
+        Ok(Response::new(ExecutorList { executors }))
     }
 
     async fn create_session(

@@ -144,12 +144,17 @@ enum ExecutorState {
 
 message ExecutorStatus {
   ExecutorState state = 1;
+  optional string session_id = 2;
 }
 
 message Executor {
   Metadata metadata = 1;
   ExecutorSpec spec = 2;
   ExecutorStatus status = 3;
+}
+
+message ExecutorList {
+  repeated Executor executors = 1;
 }
 
 message SessionList {
