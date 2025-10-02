@@ -17,9 +17,7 @@ use stdng::collections;
 
 use crate::controller::ControllerPtr;
 use crate::model::{ExecutorInfo, ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
-use crate::scheduler::actions::{
-    ActionPtr, AllocateAction, BackfillAction, DispatchAction, ShuffleAction,
-};
+use crate::scheduler::actions::{ActionPtr, AllocateAction, DispatchAction, ShuffleAction};
 use crate::scheduler::plugins::{PluginManager, PluginManagerPtr};
 use common::apis::ExecutorState;
 
@@ -32,8 +30,6 @@ pub struct Context {
     pub controller: ControllerPtr,
     pub actions: Vec<ActionPtr>,
     pub plugins: PluginManagerPtr,
-    // pub dispatcher: DispatcherPtr,
-    // pub allocator: AllocatorPtr,
     pub schedule_interval: u64,
 }
 
@@ -41,24 +37,15 @@ impl Context {
     pub fn new(controller: ControllerPtr) -> Result<Self, FlameError> {
         let snapshot = controller.snapshot()?;
         let plugins = PluginManager::setup(&snapshot.clone())?;
-        // let dispatcher = Arc::new(Dispatcher::new(snapshot.clone(), controller.clone())?);
-        // let allocator = Arc::new(Allocator::new(snapshot.clone(), controller.clone())?);
 
         Ok(Context {
             snapshot,
             plugins,
             controller,
-            // dispatcher,
-            // allocator,
-            // TODO(k82cn): Add ActionManager for them.
             actions: vec![
                 DispatchAction::new_ptr(),
-                // TODO(k82cn): Add ShuffleAction back later to support preemption.
-                // ShuffleAction::new_ptr(),
-                // Backfill is not necessary for Flame as
-                // the AllocateAction will create executors for open sessions accordingly.
-                // BackfillAction::new_ptr(),
                 AllocateAction::new_ptr(),
+                ShuffleAction::new_ptr(),
             ],
             schedule_interval: DEFAULT_SCHEDULE_INTERVAL,
         })
@@ -143,6 +130,15 @@ impl Context {
         self.snapshot.add_executor(Arc::new(exec_info))?;
 
         self.plugins.on_create_executor(node.clone(), ssn.clone())?;
+
+        Ok(())
+    }
+
+    pub async fn release_executor(&self, exec: &ExecutorInfoPtr) -> Result<(), FlameError> {
+        self.controller.release_executor(exec.id.clone()).await?;
+
+        self.snapshot
+            .update_executor_state(exec.clone(), ExecutorState::Releasing)?;
 
         Ok(())
     }

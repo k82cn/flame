@@ -23,7 +23,7 @@ use common::apis::{
     SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 use common::ptr::{self, MutexPtr};
-use common::{ctx::FlameContext, lock_ptr, FlameError};
+use common::{ctx::FlameContext, lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 use crate::model::{
     AppInfo, Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo,
@@ -125,6 +125,7 @@ impl Storage {
     }
 
     pub async fn register_node(&self, node: &Node) -> Result<(), FlameError> {
+        trace_fn!("Storage::register_node");
         let mut node_map = lock_ptr!(self.nodes)?;
         node_map.insert(node.name.clone(), ptr::new_ptr(node.clone()));
         Ok(())
@@ -177,6 +178,7 @@ impl Storage {
         slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
+        trace_fn!("Storage::create_session");
         let ssn = self.engine.create_session(app, slots, common_data).await?;
 
         let mut ssn_map = lock_ptr!(self.sessions)?;
@@ -186,6 +188,7 @@ impl Storage {
     }
 
     pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
+        trace_fn!("Storage::close_session");
         let ssn = self.engine.close_session(id).await?;
 
         let ssn_ptr = self.get_session_ptr(ssn.id)?;
@@ -263,6 +266,7 @@ impl Storage {
         ssn_id: SessionID,
         task_input: Option<TaskInput>,
     ) -> Result<Task, FlameError> {
+        trace_fn!("Storage::create_task");
         let task = self.engine.create_task(ssn_id, task_input).await?;
 
         let ssn = self.get_session_ptr(ssn_id)?;
@@ -351,6 +355,7 @@ impl Storage {
         task_state: TaskState,
         message: Option<String>,
     ) -> Result<(), FlameError> {
+        trace_fn!("Storage::update_task_state");
         let gid = TaskGID {
             ssn_id: {
                 let ssn_ptr = lock_ptr!(ssn)?;
@@ -379,6 +384,7 @@ impl Storage {
         task: TaskPtr,
         task_result: TaskResult,
     ) -> Result<(), FlameError> {
+        trace_fn!("Storage::update_task_result");
         let gid = TaskGID {
             ssn_id: {
                 let ssn_ptr = lock_ptr!(ssn)?;
@@ -403,6 +409,7 @@ impl Storage {
         node_name: String,
         ssn_id: SessionID,
     ) -> Result<Executor, FlameError> {
+        trace_fn!("Storage::create_executor");
         let ssn = self.get_session_ptr(ssn_id)?;
 
         let (resreq, slots) = {
@@ -441,5 +448,13 @@ impl Storage {
             .ok_or(FlameError::NotFound(id.to_string()))?;
 
         Ok(exe.clone())
+    }
+
+    pub async fn delete_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
+        trace_fn!("Storage::delete_executor");
+        let mut exe_map = lock_ptr!(self.executors)?;
+        exe_map.remove(&id);
+
+        Ok(())
     }
 }

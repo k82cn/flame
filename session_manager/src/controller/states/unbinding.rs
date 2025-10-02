@@ -25,8 +25,24 @@ pub struct UnbindingState {
 
 #[async_trait::async_trait]
 impl States for UnbindingState {
-    async fn register_executor(&self, _exe: ExecutorPtr) -> Result<(), FlameError> {
+    async fn register_executor(&self) -> Result<(), FlameError> {
         trace_fn!("UnbindingState::register_executor");
+
+        Err(FlameError::InvalidState(
+            "Executor is unbinding".to_string(),
+        ))
+    }
+
+    async fn release_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("UnbindingState::release_executor");
+
+        Err(FlameError::InvalidState(
+            "Executor is unbinding".to_string(),
+        ))
+    }
+
+    async fn unregister_executor(&self) -> Result<(), FlameError> {
+        trace_fn!("UnbindingState::unregister_executor");
 
         Err(FlameError::InvalidState(
             "Executor is unbinding".to_string(),
@@ -72,9 +88,7 @@ impl States for UnbindingState {
     async fn launch_task(&self, _ssn: SessionPtr) -> Result<Option<Task>, FlameError> {
         trace_fn!("UnbindingState::launch_task");
 
-        Err(FlameError::InvalidState(
-            "Executor is unbinding".to_string(),
-        ))
+        Ok(None)
     }
 
     async fn complete_task(
@@ -92,6 +106,7 @@ impl States for UnbindingState {
         {
             let mut e = lock_ptr!(self.executor)?;
             e.task_id = None;
+            e.ssn_id = None;
         };
 
         Ok(())

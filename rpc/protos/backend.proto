@@ -42,8 +42,8 @@ message BindExecutorRequest {
 }
 
 message BindExecutorResponse {
-  Application application = 1;
-  Session session = 2;
+  optional Application application = 1;
+  optional Session session = 2;
 }
 
 message BindExecutorCompletedRequest {

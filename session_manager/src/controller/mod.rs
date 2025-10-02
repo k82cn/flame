@@ -17,9 +17,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationID, CommonData, ExecutorID, Node, NodeState,
-    Session, SessionID, SessionPtr, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr,
-    TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationID, CommonData, ExecutorID, ExecutorState, Node,
+    NodeState, Session, SessionID, SessionPtr, Task, TaskGID, TaskID, TaskInput, TaskOutput,
+    TaskPtr, TaskResult, TaskState,
 };
 
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
@@ -53,6 +53,7 @@ impl Controller {
     }
 
     pub async fn release_node(&self, node_name: &str) -> Result<(), FlameError> {
+        trace_fn!("Controller::release_node");
         self.storage.release_node(node_name).await
     }
 
@@ -62,10 +63,12 @@ impl Controller {
         slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
+        trace_fn!("Controller::create_session");
         self.storage.create_session(app, slots, common_data).await
     }
 
     pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
+        trace_fn!("Controller::close_session");
         self.storage.close_session(id).await
     }
 
@@ -99,6 +102,7 @@ impl Controller {
         task: TaskPtr,
         task_result: TaskResult,
     ) -> Result<(), FlameError> {
+        trace_fn!("Controller::update_task_result");
         self.storage
             .update_task_result(ssn, task, task_result)
             .await
@@ -111,6 +115,7 @@ impl Controller {
         task_state: TaskState,
         message: Option<String>,
     ) -> Result<(), FlameError> {
+        trace_fn!("Controller::update_task_state");
         self.storage
             .update_task_state(ssn, task, task_state, message)
             .await
@@ -121,10 +126,12 @@ impl Controller {
         node_name: String,
         ssn_id: SessionID,
     ) -> Result<Executor, FlameError> {
+        trace_fn!("Controller::create_executor");
         self.storage.create_executor(node_name, ssn_id).await
     }
 
     pub async fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
+        trace_fn!("Controller::list_executor");
         self.storage.list_executor()
     }
 
@@ -133,7 +140,7 @@ impl Controller {
 
         let exe_ptr = self.storage.get_executor_ptr(e.id.clone())?;
         let state = states::from(self.storage.clone(), exe_ptr.clone())?;
-        state.register_executor(exe_ptr).await?;
+        state.register_executor().await?;
 
         Ok(())
     }
@@ -151,10 +158,12 @@ impl Controller {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<(), FlameError> {
+        trace_fn!("Controller::register_application");
         self.storage.register_application(name, attr).await
     }
 
     pub async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
+        trace_fn!("Controller::unregister_application");
         self.storage.unregister_application(name).await
     }
 
@@ -163,16 +172,19 @@ impl Controller {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<(), FlameError> {
+        trace_fn!("Controller::update_application");
         self.storage.update_application(name, attr).await
     }
 
     pub async fn list_application(&self) -> Result<Vec<Application>, FlameError> {
+        trace_fn!("Controller::list_application");
         self.storage.list_application().await
     }
 }
 
 impl Controller {
     pub async fn watch_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
+        trace_fn!("Controller::watch_task");
         let task_ptr = self.storage.get_task_ptr(gid)?;
         WatchTaskFuture::new(self.storage.clone(), &task_ptr)?.await?;
 
@@ -180,15 +192,19 @@ impl Controller {
         Ok((*task).clone())
     }
 
-    pub async fn wait_for_session(&self, id: ExecutorID) -> Result<Session, FlameError> {
+    pub async fn wait_for_session(&self, id: ExecutorID) -> Result<Option<Session>, FlameError> {
         trace_fn!("Controller::wait_for_session");
         let exe_ptr = self.storage.get_executor_ptr(id)?;
         let ssn_id = WaitForSsnFuture::new(&exe_ptr).await?;
 
+        let Some(ssn_id) = ssn_id else {
+            return Ok(None);
+        };
+
         let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
         let ssn = lock_ptr!(ssn_ptr)?;
 
-        Ok((*ssn).clone())
+        Ok(Some((*ssn).clone()))
     }
 
     pub async fn bind_session(&self, id: ExecutorID, ssn_id: SessionID) -> Result<(), FlameError> {
@@ -222,11 +238,12 @@ impl Controller {
             let exec = lock_ptr!(exe_ptr)?;
             (exec.ssn_id, exec.task_id)
         };
-        let ssn_id = ssn_id.ok_or(FlameError::InvalidState(
-            "no session in bound executor".to_string(),
-        ))?;
 
-        //
+        let Some(ssn_id) = ssn_id else {
+            // As the session was unbound from the executor, there are no tasks to launch for it.
+            return Ok(None);
+        };
+
         if let Some(task_id) = task_id {
             tracing::warn!(
                 "Re-launch the task <{}/{}>",
@@ -248,7 +265,7 @@ impl Controller {
         id: ExecutorID,
         task_result: TaskResult,
     ) -> Result<(), FlameError> {
-        trace_fn!("Storage::complete_task");
+        trace_fn!("Controller::complete_task");
         let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
         let (ssn_id, task_id, host) = {
             let exe = lock_ptr!(exe_ptr)?;
@@ -292,6 +309,7 @@ impl Controller {
     }
 
     pub async fn unbind_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
+        trace_fn!("Controller::unbind_executor");
         let exe_ptr = self.storage.get_executor_ptr(id)?;
         let state = states::from(self.storage.clone(), exe_ptr)?;
         state.unbind_executor().await?;
@@ -300,10 +318,31 @@ impl Controller {
     }
 
     pub async fn unbind_executor_completed(&self, id: ExecutorID) -> Result<(), FlameError> {
+        trace_fn!("Controller::unbind_executor_completed");
         let exe_ptr = self.storage.get_executor_ptr(id)?;
         let state = states::from(self.storage.clone(), exe_ptr)?;
 
         state.unbind_executor_completed().await?;
+
+        Ok(())
+    }
+
+    pub async fn release_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
+        trace_fn!("Controller::release_executor");
+        let exe_ptr = self.storage.get_executor_ptr(id)?;
+        let state = states::from(self.storage.clone(), exe_ptr)?;
+        state.release_executor().await?;
+
+        Ok(())
+    }
+
+    pub async fn unregister_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
+        trace_fn!("Controller::unregister_executor");
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let state = states::from(self.storage.clone(), exe_ptr)?;
+        state.unregister_executor().await?;
+
+        self.storage.delete_executor(id).await?;
 
         Ok(())
     }
@@ -361,10 +400,14 @@ impl WaitForSsnFuture {
 }
 
 impl Future for WaitForSsnFuture {
-    type Output = Result<SessionID, FlameError>;
+    type Output = Result<Option<SessionID>, FlameError>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         let exe = lock_ptr!(self.executor)?;
+
+        if exe.state == ExecutorState::Releasing || exe.state == ExecutorState::Released {
+            return Poll::Ready(Ok(None));
+        }
 
         match exe.ssn_id {
             None => {
@@ -372,7 +415,7 @@ impl Future for WaitForSsnFuture {
                 ctx.waker().wake_by_ref();
                 Poll::Pending
             }
-            Some(ssn_id) => Poll::Ready(Ok(ssn_id)),
+            Some(ssn_id) => Poll::Ready(Ok(Some(ssn_id))),
         }
     }
 }

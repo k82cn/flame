@@ -107,9 +107,14 @@ impl Backend for Flame {
     }
     async fn unregister_executor(
         &self,
-        _: Request<UnregisterExecutorRequest>,
+        req: Request<UnregisterExecutorRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
-        todo!()
+        trace_fn!("Backend::unregister_executor");
+        let req = req.into_inner();
+
+        self.controller.unregister_executor(req.executor_id).await?;
+
+        Ok(Response::new(rpc::Result::default()))
     }
 
     async fn bind_executor(
@@ -123,10 +128,21 @@ impl Backend for Flame {
             .controller
             .wait_for_session(req.executor_id.to_string())
             .await?;
-        let session = Some(rpc::Session::from(&ssn));
 
-        let app = self.controller.get_application(ssn.application).await?;
+        // If the session is not found, return.
+        let Some(ssn) = ssn else {
+            return Ok(Response::new(BindExecutorResponse {
+                application: None,
+                session: None,
+            }));
+        };
+
+        let app = self
+            .controller
+            .get_application(ssn.application.clone())
+            .await?;
         let application = Some(rpc::Application::from(&app));
+        let session = Some(rpc::Session::from(&ssn));
 
         tracing::debug!(
             "Bind executor <{}> to Session <{}:{}>",

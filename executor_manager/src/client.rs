@@ -18,11 +18,13 @@ use rpc::flame as rpc;
 use rpc::{
     BindExecutorCompletedRequest, BindExecutorRequest, CompleteTaskRequest, LaunchTaskRequest,
     RegisterExecutorRequest, RegisterNodeRequest, ReleaseNodeRequest, SyncNodeRequest,
-    UnbindExecutorCompletedRequest, UnbindExecutorRequest,
+    UnbindExecutorCompletedRequest, UnbindExecutorRequest, UnregisterExecutorRequest,
 };
 
 use crate::executor::Executor;
-use common::apis::{Node, ResourceRequirement, SessionContext, TaskContext, TaskResult};
+use common::apis::{
+    Application, Node, ResourceRequirement, Session, SessionContext, TaskContext, TaskResult,
+};
 use common::ctx::FlameContext;
 use common::{lock_ptr, FlameError};
 
@@ -108,18 +110,28 @@ impl BackendClient {
         Ok(())
     }
 
-    pub async fn bind_executor(&mut self, exe: &Executor) -> Result<SessionContext, FlameError> {
+    pub async fn bind_executor(
+        &mut self,
+        exe: &Executor,
+    ) -> Result<Option<SessionContext>, FlameError> {
         let req = BindExecutorRequest {
             executor_id: exe.id.clone(),
         };
 
-        let ssn = self
+        let resp = self
             .client
             .bind_executor(req)
             .await
             .map_err(FlameError::from)?;
 
-        SessionContext::try_from(ssn.into_inner())
+        let resp = resp.into_inner();
+        let ssn = resp.clone().session;
+        let app = resp.clone().application;
+
+        match (app, ssn) {
+            (Some(app), Some(ssn)) => Ok(Some(SessionContext::try_from((app, ssn))?)),
+            _ => Ok(None),
+        }
     }
 
     pub async fn bind_executor_completed(&mut self, exe: &Executor) -> Result<(), FlameError> {
@@ -194,6 +206,19 @@ impl BackendClient {
 
         self.client
             .complete_task(req)
+            .await
+            .map_err(FlameError::from)?;
+
+        Ok(())
+    }
+
+    pub async fn unregister_executor(&mut self, exe: &Executor) -> Result<(), FlameError> {
+        let req = UnregisterExecutorRequest {
+            executor_id: exe.id.clone(),
+        };
+
+        self.client
+            .unregister_executor(req)
             .await
             .map_err(FlameError::from)?;
 

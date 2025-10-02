@@ -127,6 +127,11 @@ pub fn start(client: BackendClient, executor: ExecutorPtr) {
                 }
             };
 
+            if exec.state == ExecutorState::Released {
+                tracing::info!("Executor <{}> is released, exit.", exec.id);
+                break;
+            }
+
             let mut state = states::from(client.clone(), exec.clone());
             match state.execute().await {
                 Ok(next_state) => {

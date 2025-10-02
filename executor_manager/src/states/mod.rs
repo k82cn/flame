@@ -21,6 +21,7 @@ use common::FlameError;
 
 mod bound;
 mod idle;
+mod releasing;
 mod unbinding;
 mod unknown;
 mod void;
@@ -42,6 +43,10 @@ pub fn from(client: BackendClient, e: Executor) -> Box<dyn State> {
             executor: e,
         }),
         ExecutorState::Unbinding => Box::new(unbinding::UnbindingState {
+            client,
+            executor: e,
+        }),
+        ExecutorState::Releasing => Box::new(releasing::ReleasingState {
             client,
             executor: e,
         }),
