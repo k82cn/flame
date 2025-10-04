@@ -26,23 +26,27 @@ use crate::{FlameError, FlameThread};
 mod backend;
 mod frontend;
 
+const DEFAULT_PORT: u16 = 8080;
+const ALL_HOST_ADDRESS: &str = "0.0.0.0";
+
 pub struct Flame {
     controller: ControllerPtr,
 }
 
-pub fn new(controller: ControllerPtr) -> Arc<dyn FlameThread> {
-    Arc::new(ApiserverRunner { controller })
+pub fn new_frontend(controller: ControllerPtr) -> Arc<dyn FlameThread> {
+    Arc::new(FrontendRunner { controller })
 }
 
-struct ApiserverRunner {
+pub fn new_backend(controller: ControllerPtr) -> Arc<dyn FlameThread> {
+    Arc::new(BackendRunner { controller })
+}
+
+struct FrontendRunner {
     controller: ControllerPtr,
 }
 
-const DEFAULT_PORT: u16 = 8080;
-const ALL_HOST_ADDRESS: &str = "0.0.0.0";
-
 #[async_trait::async_trait]
-impl FlameThread for ApiserverRunner {
+impl FlameThread for FrontendRunner {
     async fn run(&self, ctx: FlameContext) -> Result<(), FlameError> {
         let url = url::Url::parse(&ctx.endpoint)
             .map_err(|_| FlameError::InvalidConfig("invalid endpoint".to_string()))?;
@@ -50,7 +54,7 @@ impl FlameThread for ApiserverRunner {
 
         // The fsm will bind to all addresses of host directly.
         let address_str = format!("{ALL_HOST_ADDRESS}:{port}");
-        tracing::info!("Listening apiserver at {}", address_str);
+        tracing::info!("Listening apiserver frontend at {}", address_str);
         let address = address_str
             .parse()
             .map_err(|_| FlameError::InvalidConfig("failed to parse url".to_string()))?;
@@ -59,13 +63,41 @@ impl FlameThread for ApiserverRunner {
             controller: self.controller.clone(),
         };
 
+        Server::builder()
+            .tcp_keepalive(Some(Duration::from_secs(1)))
+            .add_service(FrontendServer::new(frontend_service))
+            .serve(address)
+            .await
+            .map_err(|e| FlameError::Network(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+struct BackendRunner {
+    controller: ControllerPtr,
+}
+
+#[async_trait::async_trait]
+impl FlameThread for BackendRunner {
+    async fn run(&self, ctx: FlameContext) -> Result<(), FlameError> {
+        let url = url::Url::parse(&ctx.endpoint)
+            .map_err(|_| FlameError::InvalidConfig("invalid endpoint".to_string()))?;
+        let port = url.port().unwrap_or(DEFAULT_PORT) + 1;
+
+        // The fsm will bind to all addresses of host directly.
+        let address_str = format!("{ALL_HOST_ADDRESS}:{port}");
+        tracing::info!("Listening apiserver backend at {}", address_str);
+        let address = address_str
+            .parse()
+            .map_err(|_| FlameError::InvalidConfig("failed to parse url".to_string()))?;
+
         let backend_service = Flame {
             controller: self.controller.clone(),
         };
 
         Server::builder()
             .tcp_keepalive(Some(Duration::from_secs(1)))
-            .add_service(FrontendServer::new(frontend_service))
             .add_service(BackendServer::new(backend_service))
             .serve(address)
             .await
