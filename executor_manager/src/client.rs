@@ -28,6 +28,8 @@ use common::apis::{
 use common::ctx::FlameContext;
 use common::{lock_ptr, FlameError};
 
+const DEFAULT_PORT: u16 = 8080;
+
 pub type FlameClient = FlameBackendClient<Channel>;
 
 #[derive(Clone, Debug)]
@@ -37,7 +39,19 @@ pub struct BackendClient {
 
 impl BackendClient {
     pub async fn new(ctx: &FlameContext) -> Result<Self, FlameError> {
-        let client = FlameBackendClient::connect(ctx.endpoint.clone())
+        let url = url::Url::parse(&ctx.endpoint)
+            .map_err(|_| FlameError::InvalidConfig("invalid endpoint".to_string()))?;
+        let port = url.port().unwrap_or(DEFAULT_PORT) + 1;
+
+        let endpoint = format!(
+            "{}://{}:{port}",
+            url.scheme(),
+            url.host_str().unwrap_or("localhost")
+        );
+
+        tracing::info!("Connecting to flame backend at {}", endpoint);
+
+        let client = FlameBackendClient::connect(endpoint)
             .await
             .map_err(|_e| FlameError::Network("tonic connection".to_string()))?;
 

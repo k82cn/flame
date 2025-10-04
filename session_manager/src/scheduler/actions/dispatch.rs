@@ -14,7 +14,9 @@ limitations under the License.
 use std::sync::Arc;
 use stdng::collections::BinaryHeap;
 
-use crate::model::{ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, VOID_EXECUTOR};
+use crate::model::{
+    ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, RELEASING_EXECUTOR, VOID_EXECUTOR,
+};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
@@ -46,6 +48,7 @@ impl Action for DispatchAction {
 
         let mut idle_executors = ss.find_executors(IDLE_EXECUTOR)?;
         let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
+        let mut releasing_executors = ss.find_executors(RELEASING_EXECUTOR)?;
 
         loop {
             if open_ssns.is_empty() {

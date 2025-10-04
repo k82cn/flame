@@ -15,6 +15,7 @@ use clap::Parser;
 use futures::future::join_all;
 use std::io::Write;
 use std::process;
+use tokio::runtime::{Builder, Runtime};
 
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
@@ -58,13 +59,36 @@ async fn main() -> Result<(), FlameError> {
     storage.load_data().await?;
 
     let controller = controller::new_ptr(storage.clone());
+    let build_runtime = |name: &str, threads: usize| -> Result<Runtime, FlameError> {
+        Builder::new_multi_thread()
+            .worker_threads(threads)
+            .thread_name(name)
+            .enable_all()
+            .build()
+            .map_err(|e| FlameError::Internal(format!("failed to build runtime <{name}>: {e}")))
+    };
 
-    // Start apiserver thread.
+    let frontend_rt = build_runtime("frontend", 1)?;
+    let backend_rt = build_runtime("backend", 1)?;
+    let scheduler_rt = build_runtime("scheduler", 1)?;
+
+    // Start apiserver frontend thread.
     {
         let controller = controller.clone();
         let ctx = ctx.clone();
-        let handler = tokio::spawn(async move {
-            let apiserver = apiserver::new(controller);
+        let handler = frontend_rt.spawn(async move {
+            let apiserver = apiserver::new_frontend(controller);
+            apiserver.run(ctx).await
+        });
+        handlers.push(handler);
+    }
+
+    // Start apiserver backend thread.
+    {
+        let controller = controller.clone();
+        let ctx = ctx.clone();
+        let handler = backend_rt.spawn(async move {
+            let apiserver = apiserver::new_backend(controller);
             apiserver.run(ctx).await
         });
         handlers.push(handler);
@@ -74,7 +98,7 @@ async fn main() -> Result<(), FlameError> {
     {
         let controller = controller.clone();
         let ctx = ctx.clone();
-        let handler = tokio::spawn(async move {
+        let handler = scheduler_rt.spawn(async move {
             let scheduler = scheduler::new(controller);
             scheduler.run(ctx).await
         });

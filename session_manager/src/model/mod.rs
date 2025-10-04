@@ -235,6 +235,11 @@ pub const VOID_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
     ids: vec![],
 });
 
+pub const RELEASING_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
+    state: Some(ExecutorState::Releasing),
+    ids: vec![],
+});
+
 pub const BOUND_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
     state: Some(ExecutorState::Bound),
     ids: vec![],

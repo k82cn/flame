@@ -22,6 +22,7 @@ use common::apis::{
 };
 
 mod sqlite;
+mod types;
 
 pub type EnginePtr = Arc<dyn Engine>;
 
