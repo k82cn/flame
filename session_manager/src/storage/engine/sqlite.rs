@@ -17,12 +17,15 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{
-    migrate::MigrateDatabase, types::Json, FromRow, Sqlite, SqliteConnection, SqlitePool,
-    sqlite::SqlitePoolOptions,
+    migrate::MigrateDatabase,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+    types::Json,
+    FromRow, Sqlite, SqliteConnection, SqlitePool,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time;
+use std::str::FromStr;
 
 use crate::FlameError;
 use common::{
@@ -108,20 +111,27 @@ pub struct SqliteEngine {
 
 impl SqliteEngine {
     pub async fn new_ptr(url: &str) -> Result<EnginePtr, FlameError> {
-        if !Sqlite::database_exists(url).await.unwrap_or(false) {
-            Sqlite::create_database(url)
-                .await
-                .map_err(|e| FlameError::Storage(e.to_string()))?;
-        }
+
+        // if !Sqlite::database_exists(url).await.unwrap_or(false) {
+        //     Sqlite::create_database(url)
+        //         .await
+        //         .map_err(|e| FlameError::Storage(e.to_string()))?;
+        // }
+
+        tracing::debug!("Try to create and connect to {}", url);
+
+        let options = SqliteConnectOptions::from_str(url).map_err(|e| FlameError::Storage(e.to_string()))?
+            .journal_mode(SqliteJournalMode::Wal) // Enables better concurrency
+            .create_if_missing(true);
 
         let db = SqlitePoolOptions::new()
-            .max_connections(20) // Start conservative
+            .max_connections(50) // Start conservative
             .min_connections(3) // Keep some warm connections
             .acquire_timeout(time::Duration::from_secs(10))
             .idle_timeout(time::Duration::from_secs(5 * 60)) // 5 minutes
             .max_lifetime(time::Duration::from_secs(30 * 60)) // 30 minutes
             .test_before_acquire(true) // Verify connection is still valid
-            .connect(url)
+            .connect_with(options)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
