@@ -13,11 +13,11 @@ limitations under the License.
 
 pub mod apis;
 pub mod ctx;
-pub mod ptr;
 pub mod trace;
 
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
 use time::macros::format_description;
 use tonic::Status;
@@ -78,21 +78,17 @@ impl From<FromEnvError> for FlameError {
     }
 }
 
+pub type MutexPtr<T> = Arc<std::sync::Mutex<T>>;
+
+pub fn new_ptr<T>(t: T) -> MutexPtr<T> {
+    Arc::new(std::sync::Mutex::new(t))
+}
+
 #[macro_export]
 macro_rules! lock_ptr {
     ( $mutex_arc:expr ) => {
         $mutex_arc
             .lock()
-            .map_err(|_| FlameError::Internal("mutex ptr".to_string()))
-    };
-}
-
-#[macro_export]
-macro_rules! lock_async_ptr {
-    ( $mutex_arc:expr ) => {
-        $mutex_arc
-            .lock()
-            .await
             .map_err(|_| FlameError::Internal("mutex ptr".to_string()))
     };
 }
