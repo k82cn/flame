@@ -121,6 +121,12 @@ impl Storage {
             ssn_map.insert(ssn.id, SessionPtr::new(ssn.into()));
         }
 
+        let app_list = self.engine.find_application().await?;
+        for app in app_list {
+            let mut app_map = lock_ptr!(self.applications)?;
+            app_map.insert(app.name.clone(), ApplicationPtr::new(app.into()));
+        }
+
         Ok(())
     }
 
