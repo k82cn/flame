@@ -20,8 +20,8 @@ use rustix::system;
 use ::rpc::flame::ApplicationSpec;
 use rpc::flame as rpc;
 
-use crate::MutexPtr;
 use crate::FlameError;
+use crate::{lock_ptr, MutexPtr};
 
 pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
 pub const DEFAULT_DELAY_RELEASE: Duration = Duration::seconds(60);
@@ -84,6 +84,7 @@ pub struct ApplicationSchema {
 #[derive(Clone, Debug, Default)]
 pub struct Application {
     pub name: String,
+    pub version: u32,
     pub state: ApplicationState,
     pub creation_time: DateTime<Utc>,
     pub shim: Shim,
@@ -149,6 +150,7 @@ pub struct Session {
     pub id: SessionID,
     pub application: String,
     pub slots: u32,
+    pub version: u32,
     pub common_data: Option<CommonData>,
     pub tasks: HashMap<TaskID, TaskPtr>,
     pub tasks_index: HashMap<TaskState, HashMap<TaskID, TaskPtr>>,
@@ -179,6 +181,7 @@ pub struct TaskGID {
 pub struct Task {
     pub id: TaskID,
     pub ssn_id: SessionID,
+    pub version: u32,
 
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
@@ -477,8 +480,20 @@ impl Session {
         self.status.state == SessionState::Closed
     }
 
-    pub fn update_task(&mut self, task: &Task) {
+    pub fn update_task(&mut self, task: &Task) -> Result<(), FlameError> {
         let task_ptr = TaskPtr::new(task.clone().into());
+
+        let old_task_ptr = self.tasks.get(&task.id);
+        if let Some(old_task_ptr) = old_task_ptr {
+            let old_task = lock_ptr!(old_task_ptr)?;
+            if old_task.version >= task.version {
+                tracing::debug!(
+                    "Update task: <{task_id}> with an old version, ignore it.",
+                    task_id = task.id
+                );
+                return Ok(());
+            }
+        }
 
         self.tasks.insert(task.id, task_ptr.clone());
         self.tasks_index.entry(task.state).or_default();
@@ -493,6 +508,8 @@ impl Session {
             .get_mut(&task.state)
             .unwrap()
             .insert(task.id, task_ptr);
+
+        Ok(())
     }
 
     pub fn pop_pending_task(&mut self) -> Option<TaskPtr> {
@@ -511,6 +528,7 @@ impl Clone for Session {
             id: self.id,
             application: self.application.clone(),
             slots: self.slots,
+            version: self.version,
             common_data: self.common_data.clone(),
             tasks: HashMap::new(),
             tasks_index: HashMap::new(),
@@ -523,10 +541,12 @@ impl Clone for Session {
         for (id, t) in &self.tasks {
             match t.lock() {
                 Ok(t) => {
-                    ssn.update_task(&t);
+                    if let Err(e) = ssn.update_task(&t) {
+                        tracing::error!("Failed to update task: <{id}> for session: <{ssn_id}>, ignore it during clone: {e}", ssn_id = self.id);
+                    }
                 }
                 Err(_) => {
-                    tracing::error!("Failed to lock task: <{id}>, ignore it during clone.");
+                    tracing::error!("Failed to lock task: <{id}> for session: <{ssn_id}>, ignore it during clone.", ssn_id = self.id);
                 }
             }
         }
@@ -779,6 +799,7 @@ impl TryFrom<&rpc::Application> for Application {
 
         Ok(Application {
             name: metadata.name.clone(),
+            version: 0,
             state: ApplicationState::from(status.state()),
             creation_time: DateTime::<Utc>::from_timestamp(status.creation_time, 0).ok_or(
                 FlameError::InvalidState("invalid creation time".to_string()),

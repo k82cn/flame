@@ -197,9 +197,25 @@ impl Storage {
         trace_fn!("Storage::close_session");
         let ssn = self.engine.close_session(id).await?;
 
-        let ssn_ptr = self.get_session_ptr(ssn.id)?;
-        let mut ssn = lock_ptr!(ssn_ptr)?;
-        ssn.status.state = SessionState::Closed;
+        let mut ssn_list = lock_ptr!(self.sessions)?;
+        let ssn_ptr = ssn_list
+            .get(&ssn.id)
+            .ok_or(FlameError::NotFound(format!(
+                "session <{id}> not found",
+                id = ssn.id
+            )))?
+            .clone();
+
+        let mut old_ssn = lock_ptr!(ssn_ptr)?;
+
+        if old_ssn.version >= ssn.version {
+            return Err(FlameError::VersionMismatch(format!(
+                "session <{id}> version is not incremented",
+                id = ssn.id
+            )));
+        }
+
+        ssn_list.insert(ssn.id, SessionPtr::new(ssn.clone().into()));
 
         Ok(ssn.clone())
     }
@@ -277,7 +293,7 @@ impl Storage {
 
         let ssn = self.get_session_ptr(ssn_id)?;
         let mut ssn = lock_ptr!(ssn)?;
-        ssn.update_task(&task);
+        ssn.update_task(&task)?;
 
         Ok(task)
     }
@@ -310,6 +326,9 @@ impl Storage {
         let app = self.engine.register_application(name, attr).await?;
 
         let mut app_map = lock_ptr!(self.applications)?;
+        // just lock the sessions to avoid cache mismatch.
+        let _unused = lock_ptr!(self.sessions)?;
+
         app_map.insert(app.name.clone(), common::new_ptr(app.clone()));
 
         Ok(())
@@ -320,11 +339,10 @@ impl Storage {
 
         {
             let mut app_map = lock_ptr!(self.applications)?;
-            app_map.remove(&name);
-        }
-
-        {
             let mut ssn_map = lock_ptr!(self.sessions)?;
+
+            app_map.remove(&name);
+
             ssn_map.retain(|_, ssn| {
                 let ssn_ptr = lock_ptr!(ssn);
                 match ssn_ptr {
@@ -379,7 +397,7 @@ impl Storage {
             .await?;
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
-        ssn_ptr.update_task(&task);
+        ssn_ptr.update_task(&task)?;
 
         Ok(())
     }
@@ -405,7 +423,7 @@ impl Storage {
         let task = self.engine.update_task_result(gid, task_result).await?;
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
-        ssn_ptr.update_task(&task);
+        ssn_ptr.update_task(&task)?;
 
         Ok(())
     }

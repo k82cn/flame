@@ -21,7 +21,7 @@ use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionI
 use crate::scheduler::plugins::fairshare::FairShare;
 use crate::scheduler::Context;
 
-use common::{self, MutexPtr, new_ptr};
+use common::{self, new_ptr, MutexPtr};
 use common::{lock_ptr, FlameError};
 
 mod fairshare;

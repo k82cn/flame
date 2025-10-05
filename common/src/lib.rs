@@ -48,6 +48,9 @@ pub enum FlameError {
 
     #[error("{0}")]
     Storage(String),
+
+    #[error("{0}")]
+    VersionMismatch(String),
 }
 
 impl From<FlameError> for Status {
