@@ -21,7 +21,7 @@ use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionI
 use crate::scheduler::plugins::fairshare::FairShare;
 use crate::scheduler::Context;
 
-use common::ptr::{self, MutexPtr};
+use common::{self, MutexPtr, new_ptr};
 use common::{lock_ptr, FlameError};
 
 mod fairshare;
@@ -83,7 +83,7 @@ impl PluginManager {
         }
 
         Ok(Arc::new(PluginManager {
-            plugins: ptr::new_ptr(plugins),
+            plugins: new_ptr(plugins),
         }))
     }
 

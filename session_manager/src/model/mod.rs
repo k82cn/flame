@@ -22,7 +22,7 @@ use common::apis::{
     Application, ExecutorID, ExecutorState, Node, NodeState, ResourceRequirement, Session,
     SessionID, SessionState, Task, TaskID, TaskState,
 };
-use common::ptr::MutexPtr;
+use common::MutexPtr;
 use common::{lock_ptr, FlameError};
 
 pub type SessionInfoPtr = Arc<SessionInfo>;

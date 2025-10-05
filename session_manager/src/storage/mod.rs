@@ -22,7 +22,7 @@ use common::apis::{
     ExecutorState, Node, NodePtr, ResourceRequirement, Session, SessionID, SessionPtr,
     SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
-use common::ptr::{self, MutexPtr};
+use common::{self, MutexPtr};
 use common::{ctx::FlameContext, lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 use crate::model::{
@@ -49,10 +49,10 @@ pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
     Ok(Arc::new(Storage {
         context: config.clone(),
         engine: engine::connect(&config.storage).await?,
-        sessions: ptr::new_ptr(HashMap::new()),
-        executors: ptr::new_ptr(HashMap::new()),
-        nodes: ptr::new_ptr(HashMap::new()),
-        applications: ptr::new_ptr(HashMap::new()),
+        sessions: common::new_ptr(HashMap::new()),
+        executors: common::new_ptr(HashMap::new()),
+        nodes: common::new_ptr(HashMap::new()),
+        applications: common::new_ptr(HashMap::new()),
     }))
 }
 
@@ -133,7 +133,7 @@ impl Storage {
     pub async fn register_node(&self, node: &Node) -> Result<(), FlameError> {
         trace_fn!("Storage::register_node");
         let mut node_map = lock_ptr!(self.nodes)?;
-        node_map.insert(node.name.clone(), ptr::new_ptr(node.clone()));
+        node_map.insert(node.name.clone(), common::new_ptr(node.clone()));
         Ok(())
     }
 
@@ -145,7 +145,7 @@ impl Storage {
         // trace_fn!("Storage::sync_node");
 
         let mut node_map = lock_ptr!(self.nodes)?;
-        node_map.insert(node.name.clone(), ptr::new_ptr(node.clone()));
+        node_map.insert(node.name.clone(), common::new_ptr(node.clone()));
 
         let mut res = vec![];
 
@@ -310,7 +310,7 @@ impl Storage {
         let app = self.engine.register_application(name, attr).await?;
 
         let mut app_map = lock_ptr!(self.applications)?;
-        app_map.insert(app.name.clone(), ptr::new_ptr(app.clone()));
+        app_map.insert(app.name.clone(), common::new_ptr(app.clone()));
 
         Ok(())
     }
@@ -345,7 +345,7 @@ impl Storage {
         let app = self.engine.update_application(name.clone(), attr).await?;
 
         let mut app_map = lock_ptr!(self.applications)?;
-        app_map.insert(name.clone(), ptr::new_ptr(app.clone()));
+        app_map.insert(name.clone(), common::new_ptr(app.clone()));
 
         Ok(())
     }

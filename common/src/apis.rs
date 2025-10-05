@@ -20,7 +20,7 @@ use rustix::system;
 use ::rpc::flame::ApplicationSpec;
 use rpc::flame as rpc;
 
-use crate::ptr::MutexPtr;
+use crate::MutexPtr;
 use crate::FlameError;
 
 pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
