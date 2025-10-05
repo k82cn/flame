@@ -42,6 +42,7 @@ pub struct AppSchemaDao {
 #[derive(Clone, FromRow, Debug)]
 pub struct ApplicationDao {
     pub name: ApplicationID,
+    pub version: u32,
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Option<Json<Vec<String>>>,
@@ -63,6 +64,7 @@ pub struct SessionDao {
     pub id: SessionID,
     pub application: String,
     pub slots: i64,
+    pub version: u32,
 
     pub common_data: Option<Vec<u8>>,
     pub creation_time: i64,
@@ -75,7 +77,7 @@ pub struct SessionDao {
 pub struct TaskDao {
     pub id: TaskID,
     pub ssn_id: SessionID,
-
+    pub version: u32,
     pub input: Option<Vec<u8>>,
     pub output: Option<Vec<u8>>,
 
@@ -93,6 +95,7 @@ impl TryFrom<&SessionDao> for Session {
             id: ssn.id,
             application: ssn.application.clone(),
             slots: ssn.slots as u32,
+            version: ssn.version,
             common_data: ssn.common_data.clone().map(Bytes::from),
             creation_time: DateTime::<Utc>::from_timestamp(ssn.creation_time, 0)
                 .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
@@ -128,6 +131,7 @@ impl TryFrom<&TaskDao> for Task {
         Ok(Self {
             id: task.id,
             ssn_id: task.ssn_id,
+            version: task.version,
             input: task.input.clone().map(Bytes::from),
             output: task.output.clone().map(Bytes::from),
 
@@ -163,6 +167,7 @@ impl TryFrom<&ApplicationDao> for Application {
 
         Ok(Self {
             name: app.name.clone(),
+            version: app.version,
             state: ApplicationState::try_from(app.state)?,
             shim: Shim::try_from(app.shim)
                 .map_err(|_| FlameError::Internal("unknown shim".to_string()))?,

@@ -344,7 +344,8 @@ impl Engine for SqliteEngine {
                         environments=?,
                         working_directory=?,
                         max_instances=?,
-                        delay_release=?
+                        delay_release=?,
+                        version=version+1
                     WHERE name=?
                     RETURNING *"#;
 
@@ -537,7 +538,7 @@ impl Engine for SqliteEngine {
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
         let sql = r#"UPDATE sessions 
-            SET state=?, completion_time=?
+            SET state=?, completion_time=?, version=version+1
             WHERE id=? AND (SELECT COUNT(*) FROM tasks WHERE ssn_id=? AND state NOT IN (?, ?))=0
             RETURNING *"#;
         let ssn: SessionDao = sqlx::query_as(sql)
@@ -688,7 +689,8 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let sql = r#"UPDATE tasks SET state=? WHERE id=? AND ssn_id=? RETURNING *"#;
+        let sql =
+            r#"UPDATE tasks SET state=?, version=version+1 WHERE id=? AND ssn_id=? RETURNING *"#;
         let task: TaskDao = sqlx::query_as(sql)
             .bind(TaskState::Pending as i32)
             .bind(gid.task_id)
@@ -728,8 +730,7 @@ impl Engine for SqliteEngine {
             _ => None,
         };
 
-        let sql =
-            r#"UPDATE tasks SET state=?, completion_time=? WHERE id=? AND ssn_id=? RETURNING *"#;
+        let sql = r#"UPDATE tasks SET state=?, completion_time=?, version=version+1 WHERE id=? AND ssn_id=? RETURNING *"#;
         let task: TaskDao = sqlx::query_as(sql)
             .bind::<i32>(task_state.into())
             .bind(completion_time)
@@ -781,7 +782,7 @@ impl Engine for SqliteEngine {
             }
         };
 
-        let sql = r#"UPDATE tasks SET state=?, completion_time=?, output=? WHERE id=? AND ssn_id=? RETURNING *"#;
+        let sql = r#"UPDATE tasks SET state=?, completion_time=?, output=?, version=version+1 WHERE id=? AND ssn_id=? RETURNING *"#;
 
         let task: TaskDao = sqlx::query_as(sql)
             .bind::<i32>(task_result.state.into())
