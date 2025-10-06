@@ -180,9 +180,7 @@ impl Controller {
         trace_fn!("Controller::list_application");
         self.storage.list_application().await
     }
-}
 
-impl Controller {
     pub async fn watch_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
         trace_fn!("Controller::watch_task");
         let task_ptr = self.storage.get_task_ptr(gid)?;

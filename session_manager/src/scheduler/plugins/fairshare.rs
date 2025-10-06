@@ -20,7 +20,7 @@ use crate::model::{
     ALL_APPLICATION, ALL_EXECUTOR, ALL_NODE, OPEN_SESSION,
 };
 use crate::scheduler::plugins::{Plugin, PluginPtr};
-use common::apis::{ResourceRequirement, SessionID, TaskState};
+use common::apis::{ExecutorState, ResourceRequirement, SessionID, TaskState};
 use common::FlameError;
 
 #[derive(Default, Clone)]
@@ -176,7 +176,10 @@ impl Plugin for FairShare {
             } else {
                 tracing::warn!("Node <{}> not found for executor <{}>.", exe.node, exe.id);
             }
-
+            // If the executor is not bound, it means it is not allocated to any session.
+            if exe.state != ExecutorState::Bound {
+                continue;
+            }
             if let Some(ssn_id) = exe.ssn_id {
                 if let Some(ssn) = self.ssn_map.get_mut(&ssn_id) {
                     ssn.allocated += ssn.slots as f64;
