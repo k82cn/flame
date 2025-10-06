@@ -195,7 +195,7 @@ impl Storage {
 
     pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
         trace_fn!("Storage::close_session");
-        let ssn = self.engine.close_session(id).await?;
+        let mut ssn = self.engine.close_session(id).await?;
 
         let mut ssn_list = lock_ptr!(self.sessions)?;
         let ssn_ptr = ssn_list
@@ -214,6 +214,9 @@ impl Storage {
                 id = ssn.id
             )));
         }
+
+        ssn.tasks = old_ssn.tasks.clone();
+        ssn.tasks_index = old_ssn.tasks_index.clone();
 
         ssn_list.insert(ssn.id, SessionPtr::new(ssn.clone().into()));
 

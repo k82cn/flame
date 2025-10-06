@@ -15,7 +15,7 @@ use std::sync::Arc;
 use stdng::collections::BinaryHeap;
 
 use crate::model::{
-    ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, RELEASING_EXECUTOR, VOID_EXECUTOR,
+    ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR,
 };
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
@@ -48,7 +48,7 @@ impl Action for DispatchAction {
 
         let mut idle_executors = ss.find_executors(IDLE_EXECUTOR)?;
         let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
-        let mut releasing_executors = ss.find_executors(RELEASING_EXECUTOR)?;
+        let mut unbinding_executors = ss.find_executors(UNBINDING_EXECUTOR)?;
 
         loop {
             if open_ssns.is_empty() {
@@ -85,22 +85,29 @@ impl Action for DispatchAction {
                 continue;
             }
 
-            // Pipeline void executors to underused sessions.
-            for (_, e) in void_executors.iter_mut() {
-                if ctx.is_available(e, &ssn)? {
-                    exec = Some(e.clone());
-                    break;
+            // Pipeline void/unbinding executors to underused sessions.
+            // * For void executors, it means the executor is not registered; it'll be idle later.
+            //   Pipeline it to the underused session to avoid over allocation.
+            // * For unbinding executors, it means the executor is being unbound from a session.
+            //   Pipeline it to the underused session to avoid over preemption.
+            for exe_list in [&mut void_executors, &mut unbinding_executors] {
+                let mut exec = None;
+                for (_, e) in exe_list.iter_mut() {
+                    if ctx.is_available(e, &ssn)? {
+                        exec = Some(e.clone());
+                        break;
+                    }
                 }
-            }
 
-            if let Some(exec) = exec {
-                tracing::debug!("Pipeline executor <{}> for session <{}>.", exec.id, ssn.id);
+                if let Some(exec) = exec {
+                    tracing::debug!("Pipeline executor <{}> for session <{}>.", exec.id, ssn.id);
 
-                ctx.pipeline_session(&exec, &ssn).await?;
-                void_executors.remove(&exec.id);
+                    ctx.pipeline_session(&exec, &ssn).await?;
+                    exe_list.remove(&exec.id);
 
-                open_ssns.push(ssn);
-                continue;
+                    open_ssns.push(ssn.clone());
+                    continue;
+                }
             }
         }
 

@@ -175,6 +175,7 @@ impl Backend for Flame {
         &self,
         req: Request<UnbindExecutorRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
+        trace_fn!("Backend::unbind_executor");
         let req = req.into_inner();
         self.controller.unbind_executor(req.executor_id).await?;
 
@@ -185,6 +186,7 @@ impl Backend for Flame {
         &self,
         req: Request<UnbindExecutorCompletedRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
+        trace_fn!("Backend::unbind_executor_completed");
         let req = req.into_inner();
         self.controller
             .unbind_executor_completed(req.executor_id)
@@ -197,6 +199,7 @@ impl Backend for Flame {
         &self,
         req: Request<LaunchTaskRequest>,
     ) -> Result<Response<LaunchTaskResponse>, Status> {
+        trace_fn!("Backend::launch_task");
         let req = req.into_inner();
         let task = self.controller.launch_task(req.executor_id).await?;
         if let Some(task) = task {
@@ -212,6 +215,7 @@ impl Backend for Flame {
         &self,
         req: Request<CompleteTaskRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
+        trace_fn!("Backend::complete_task");
         let req = req.into_inner();
 
         let task_result = req.task_result.ok_or(FlameError::InvalidState(format!(
