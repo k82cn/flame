@@ -1,8 +1,8 @@
 # Flame: A Distributed System for Agentic AI
 
-[![license](https://img.shields.io/github/license/flame-sh/flame)](http://github.com/flame-sh/flame)
-[![RepoSize](https://img.shields.io/github/repo-size/flame-sh/flame)](http://github.com/flame-sh/flame)
-[![Release](https://img.shields.io/github/release/flame-sh/flame)](https://github.com/flame-sh/flame/releases)
+[![license](https://img.shields.io/github/license/xflops/flame)](http://github.com/xflops/flame)
+[![RepoSize](https://img.shields.io/github/repo-size/xflops/flame)](http://github.com/xflops/flame)
+[![Release](https://img.shields.io/github/release/xflops/flame)](https://github.com/xflops/flame/releases)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/7299/badge)](https://bestpractices.coreinfrastructure.org/projects/7299)
 
 Flame is a distributed system designed for Agentic AI, providing a comprehensive suite of mechanisms commonly required by various classes of Agentic AI workloads, including tools, Agent, and more. Built upon over a decade and a half of experience running diverse high-performance workloads at scale across multiple systems and platforms, Flame incorporates best-of-breed ideas and practices from the open source community.
