@@ -1,3 +1,11 @@
+# Detect OS and set container runtime
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    CONTAINER_RUNTIME ?= podman
+else
+    CONTAINER_RUNTIME ?= docker
+endif
+
 # Docker image configuration
 DOCKER_REGISTRY ?= xflops
 FSM_TAG ?= $(shell cargo get --entry session_manager/ package.version --pretty)
@@ -50,33 +58,33 @@ sdk-python-clean: ## Clean Python SDK build artifacts
 sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
 
 e2e-ci:
-	docker compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .
+	$(CONTAINER_RUNTIME) compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .
 
 # Docker build targets
 docker-build-fsm: update_protos ## Build session manager Docker image
-	docker build -t $(FSM_IMAGE):$(FSM_TAG) -f $(FSM_DOCKERFILE) .
-	docker tag $(FSM_IMAGE):$(FSM_TAG) $(FSM_IMAGE):latest
+	$(CONTAINER_RUNTIME) build -t $(FSM_IMAGE):$(FSM_TAG) -f $(FSM_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) tag $(FSM_IMAGE):$(FSM_TAG) $(FSM_IMAGE):latest
 
 docker-build-fem: update_protos ## Build executor manager Docker image
-	docker build -t $(FEM_IMAGE):$(FEM_TAG) -f $(FEM_DOCKERFILE) .
-	docker tag $(FEM_IMAGE):$(FEM_TAG) $(FEM_IMAGE):latest
+	$(CONTAINER_RUNTIME) build -t $(FEM_IMAGE):$(FEM_TAG) -f $(FEM_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) tag $(FEM_IMAGE):$(FEM_TAG) $(FEM_IMAGE):latest
 
 docker-build-console: update_protos ## Build console Docker image
-	docker build -t $(CONSOLE_IMAGE):$(CONSOLE_TAG) -f $(CONSOLE_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) build -t $(CONSOLE_IMAGE):$(CONSOLE_TAG) -f $(CONSOLE_DOCKERFILE) .
 
 docker-build: docker-build-fsm docker-build-fem docker-build-console ## Build all Docker images
 
 # Docker push targets
 docker-push-fsm: docker-build-fsm ## Push session manager Docker image
-	docker push $(FSM_IMAGE):$(FSM_TAG)
-	docker push $(FSM_IMAGE):latest
+	$(CONTAINER_RUNTIME) push $(FSM_IMAGE):$(FSM_TAG)
+	$(CONTAINER_RUNTIME) push $(FSM_IMAGE):latest
 
 docker-push-fem: docker-build-fem ## Push executor manager Docker image
-	docker push $(FEM_IMAGE):$(FEM_TAG)
-	docker push $(FEM_IMAGE):latest
+	$(CONTAINER_RUNTIME) push $(FEM_IMAGE):$(FEM_TAG)
+	$(CONTAINER_RUNTIME) push $(FEM_IMAGE):latest
 
 docker-push-console: docker-build-console ## Push console Docker image
-	docker push $(CONSOLE_IMAGE):$(CONSOLE_TAG)
+	$(CONTAINER_RUNTIME) push $(CONSOLE_IMAGE):$(CONSOLE_TAG)
 
 docker-push: docker-push-fsm docker-push-fem docker-push-console ## Push all Docker images
 
@@ -84,38 +92,38 @@ docker-push: docker-push-fsm docker-push-fem docker-push-console ## Push all Doc
 docker-release: init docker-build docker-push ## Build and push all images for release
 
 ci-image: update_protos ## Build images for CI (without version tags)
-	docker build -t $(FSM_IMAGE) -f $(FSM_DOCKERFILE) .
-	docker build -t $(FEM_IMAGE) -f $(FEM_DOCKERFILE) .
-	docker build -t $(CONSOLE_IMAGE) -f $(CONSOLE_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) build -t $(FSM_IMAGE) -f $(FSM_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) build -t $(FEM_IMAGE) -f $(FEM_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) build -t $(CONSOLE_IMAGE) -f $(CONSOLE_DOCKERFILE) .
 
 # Cleanup targets
 docker-clean: ## Remove all flame Docker images
-	docker rmi $(FSM_IMAGE):$(FSM_TAG) $(FSM_IMAGE):latest 2>/dev/null || true
-	docker rmi $(FEM_IMAGE):$(FEM_TAG) $(FEM_IMAGE):latest 2>/dev/null || true
-	docker rmi $(CONSOLE_IMAGE):$(CONSOLE_TAG) 2>/dev/null || true
+	$(CONTAINER_RUNTIME) rmi $(FSM_IMAGE):$(FSM_TAG) $(FSM_IMAGE):latest 2>/dev/null || true
+	$(CONTAINER_RUNTIME) rmi $(FEM_IMAGE):$(FEM_TAG) $(FEM_IMAGE):latest 2>/dev/null || true
+	$(CONTAINER_RUNTIME) rmi $(CONSOLE_IMAGE):$(CONSOLE_TAG) 2>/dev/null || true
 
 docker-clean-all: ## Remove all Docker images and containers (use with caution)
-	docker system prune -a -f
+	$(CONTAINER_RUNTIME) system prune -a -f
 
 # Development targets
 docker-run-fsm: docker-build-fsm ## Run session manager container
-	docker run --rm -it $(FSM_IMAGE):latest
+	$(CONTAINER_RUNTIME) run --rm -it $(FSM_IMAGE):latest
 
 docker-run-fem: docker-build-fem ## Run executor manager container
-	docker run --rm -it $(FEM_IMAGE):latest
+	$(CONTAINER_RUNTIME) run --rm -it $(FEM_IMAGE):latest
 
 docker-run-console: docker-build-console ## Run console container
-	docker run --rm -it $(CONSOLE_IMAGE):latest
+	$(CONTAINER_RUNTIME) run --rm -it $(CONSOLE_IMAGE):latest
 
 # Utility targets
 docker-images: ## List all flame Docker images
-	docker images | grep $(DOCKER_REGISTRY)/flame
+	$(CONTAINER_RUNTIME) images | grep $(DOCKER_REGISTRY)/flame
 
 docker-logs: ## Show logs for running flame containers
-	docker ps | grep flame | awk '{print $$1}' | xargs -I {} docker logs {}
+	$(CONTAINER_RUNTIME) ps | grep flame | awk '{print $$1}' | xargs -I {} $(CONTAINER_RUNTIME) logs {}
 
 # Legacy targets for backward compatibility
 docker-release-legacy: init ## Legacy release target (original implementation)
-	docker build -t $(FSM_IMAGE):$(FSM_TAG) -f $(FSM_DOCKERFILE) .
-	docker build -t $(FEM_IMAGE):$(FEM_TAG) -f $(FEM_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) build -t $(FSM_IMAGE):$(FSM_TAG) -f $(FSM_DOCKERFILE) .
+	$(CONTAINER_RUNTIME) build -t $(FEM_IMAGE):$(FEM_TAG) -f $(FEM_DOCKERFILE) .
 
