@@ -25,8 +25,8 @@ use self::rpc::{
     ApplicationList, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest,
     DeleteSessionRequest, DeleteTaskRequest, ExecutorList, GetApplicationRequest,
     GetSessionRequest, GetTaskRequest, ListApplicationRequest, ListExecutorRequest,
-    ListSessionRequest, OpenSessionRequest, RegisterApplicationRequest, Session, SessionList, Task,
-    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
+    ListSessionRequest, ListTaskRequest, OpenSessionRequest, RegisterApplicationRequest, Session,
+    SessionList, Task, UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 
 use rpc::flame as rpc;
@@ -39,6 +39,39 @@ use crate::apiserver::Flame;
 #[async_trait]
 impl Frontend for Flame {
     type WatchTaskStream = Pin<Box<dyn Stream<Item = Result<Task, Status>> + Send>>;
+    type ListTaskStream = Pin<Box<dyn Stream<Item = Result<Task, Status>> + Send>>;
+
+    async fn list_task(
+        &self,
+        req: Request<ListTaskRequest>,
+    ) -> Result<Response<Self::ListTaskStream>, Status> {
+        trace_fn!("Frontend::list_task");
+        let req = req.into_inner();
+        let ssn_id = req
+            .session_id
+            .parse::<apis::SessionID>()
+            .map_err(|_| Status::invalid_argument("invalid session id"))?;
+        let task_list = self.controller.list_task(ssn_id).map_err(Status::from)?;
+
+        let (tx, rx) = mpsc::channel(128);
+
+        tokio::spawn(async move {
+            for task in task_list {
+                if tx.is_closed() {
+                    break;
+                }
+
+                if let Err(e) = tx.send(Result::<_, Status>::Ok(Task::from(&task))).await {
+                    tracing::error!("Failed to send Task <{}>: {e}", task.id);
+                }
+            }
+        });
+
+        let output_stream = ReceiverStream::new(rx);
+        Ok(Response::new(
+            Box::pin(output_stream) as Self::WatchTaskStream
+        ))
+    }
 
     async fn register_application(
         &self,

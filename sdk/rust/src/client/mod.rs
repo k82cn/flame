@@ -16,6 +16,8 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::TryFutureExt;
+// use serde::{Deserialize, Serialize};
+use serde_derive::{Deserialize, Serialize};
 use stdng::{logs::TraceFn, trace_fn};
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -26,8 +28,9 @@ use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
     GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest,
-    ListExecutorRequest, ListSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
-    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
+    ListExecutorRequest, ListSessionRequest, ListTaskRequest, RegisterApplicationRequest,
+    SessionSpec, TaskSpec, UnregisterApplicationRequest, UpdateApplicationRequest,
+    WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
 use crate::apis::Shim;
@@ -51,10 +54,11 @@ pub async fn connect(addr: &str) -> Result<Connection, FlameError> {
     Ok(Connection { channel })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Event {
     pub code: i32,
     pub message: Option<String>,
+    #[serde(with = "serde_utc")]
     pub creation_time: DateTime<Utc>,
 }
 
@@ -63,21 +67,22 @@ pub struct Connection {
     pub(crate) channel: Channel,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SessionAttributes {
     pub application: String,
     pub slots: u32,
+    #[serde(with = "serde_message")]
     pub common_data: Option<CommonData>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ApplicationSchema {
     pub input: Option<String>,
     pub output: Option<String>,
     pub common_data: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ApplicationAttributes {
     pub shim: Shim,
 
@@ -89,21 +94,23 @@ pub struct ApplicationAttributes {
     pub environments: HashMap<String, String>,
     pub working_directory: Option<String>,
     pub max_instances: Option<u32>,
+    #[serde(with = "serde_duration")]
     pub delay_release: Option<Duration>,
     pub schema: Option<ApplicationSchema>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Application {
     pub name: ApplicationID,
 
     pub attributes: ApplicationAttributes,
 
     pub state: ApplicationState,
+    #[serde(with = "serde_utc")]
     pub creation_time: DateTime<Utc>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Executor {
     pub id: String,
     pub state: ExecutorState,
@@ -112,13 +119,15 @@ pub struct Executor {
     pub node: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Session {
+    #[serde(skip)]
     pub(crate) client: Option<FlameClient>,
 
     pub id: SessionID,
     pub slots: u32,
     pub application: String,
+    #[serde(with = "serde_utc")]
     pub creation_time: DateTime<Utc>,
 
     pub state: SessionState,
@@ -128,16 +137,19 @@ pub struct Session {
     pub failed: i32,
 
     pub events: Vec<Event>,
+    pub tasks: Option<Vec<Task>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: TaskID,
     pub ssn_id: SessionID,
 
     pub state: TaskState,
 
+    #[serde(with = "serde_message")]
     pub input: Option<TaskInput>,
+    #[serde(with = "serde_message")]
     pub output: Option<TaskOutput>,
 
     pub events: Vec<Event>,
@@ -351,6 +363,31 @@ impl Session {
         Ok(Task::from(&task))
     }
 
+    pub async fn list_tasks(&self) -> Result<Vec<Task>, FlameError> {
+        // TODO (k82cn): Add top n tasks to avoid memory overflow.
+        trace_fn!("Session::list_task");
+        let mut client = self
+            .client
+            .clone()
+            .ok_or(FlameError::Internal("no flame client".to_string()))?;
+        let task_stream = client
+            .list_task(Request::new(ListTaskRequest {
+                session_id: self.id.to_string(),
+            }))
+            .await?;
+
+        let mut task_list = vec![];
+
+        let mut task_stream = task_stream.into_inner();
+        while let Some(task) = task_stream.next().await {
+            if let Ok(t) = task {
+                task_list.push(Task::from(&t));
+            }
+        }
+
+        Ok(task_list)
+    }
+
     pub async fn run_task(
         &self,
         input: Option<TaskInput>,
@@ -449,6 +486,7 @@ impl From<&rpc::Session> for Session {
             succeed: status.succeed,
             failed: status.failed,
             events: status.events.clone().into_iter().map(Event::from).collect(),
+            tasks: None,
         }
     }
 }
@@ -578,5 +616,72 @@ impl From<&rpc::Executor> for Executor {
 impl From<rpc::Executor> for Executor {
     fn from(e: rpc::Executor) -> Self {
         Executor::from(&e)
+    }
+}
+
+mod serde_duration {
+    use chrono::Duration;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match duration {
+            Some(duration) => serializer.serialize_i64(duration.num_seconds()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let seconds = i64::deserialize(deserializer)?;
+        Ok(Some(Duration::seconds(seconds)))
+    }
+}
+
+mod serde_utc {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i64(date.timestamp())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let timestamp = i64::deserialize(deserializer)?;
+        DateTime::<Utc>::from_timestamp(timestamp, 0)
+            .ok_or(serde::de::Error::custom("invalid timestamp"))
+    }
+}
+
+mod serde_message {
+    use bytes::Bytes;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(message: &Option<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match message {
+            Some(message) => serializer.serialize_bytes(message),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Bytes>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        Ok(Some(Bytes::from(bytes)))
     }
 }

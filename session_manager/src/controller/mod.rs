@@ -96,6 +96,10 @@ impl Controller {
         self.storage.get_task(ssn_id, id)
     }
 
+    pub fn list_task(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
+        self.storage.list_task(ssn_id)
+    }
+
     pub async fn update_task_result(
         &self,
         ssn: SessionPtr,

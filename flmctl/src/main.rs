@@ -55,6 +55,10 @@ enum Commands {
         /// The id of task
         #[arg(short, long)]
         task: Option<String>,
+
+        /// The output format of the view
+        #[arg(short, long)]
+        output_format: Option<String>,
     },
     /// Update the object of Flame
     Update {
@@ -133,7 +137,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             application,
             session,
             task,
-        }) => view::run(&ctx, application, session, task).await?,
+            output_format,
+        }) => view::run(&ctx, output_format, application, session, task).await?,
         Some(Commands::Migrate { url, sql }) => migrate::run(&ctx, url, sql).await?,
         Some(Commands::Register { file }) => register::run(&ctx, file).await?,
         Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,
