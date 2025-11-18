@@ -215,12 +215,12 @@ impl Storage {
             )));
         }
 
-        ssn.tasks = old_ssn.tasks.clone();
-        ssn.tasks_index = old_ssn.tasks_index.clone();
+        old_ssn.status.state = ssn.status.state;
+        old_ssn.completion_time = ssn.completion_time;
+        old_ssn.version = ssn.version;
+        old_ssn.events = ssn.events.clone();
 
-        ssn_list.insert(ssn.id, SessionPtr::new(ssn.clone().into()));
-
-        Ok(ssn.clone())
+        Ok(old_ssn.clone())
     }
 
     pub fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
