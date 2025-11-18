@@ -100,7 +100,7 @@ pub const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
 pub const FLAME_WORKING_DIRECTORY: &str = "/tmp";
 
 pub fn init_logger() -> Result<(), FlameError> {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()?
+    let filter = tracing_subscriber::EnvFilter::from_default_env()
         .add_directive("h2=error".parse()?)
         .add_directive("hyper_util=error".parse()?)
         .add_directive("sqlx=warn".parse()?)
