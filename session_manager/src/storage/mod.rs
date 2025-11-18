@@ -317,6 +317,25 @@ impl Storage {
         Ok(task.clone())
     }
 
+    pub fn list_task(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
+        let ssn_map = lock_ptr!(self.sessions)?;
+        let ssn = ssn_map
+            .get(&ssn_id)
+            .ok_or(FlameError::NotFound(ssn_id.to_string()))?;
+
+        let ssn = lock_ptr!(ssn)?;
+        let task_list = ssn
+            .tasks
+            .values()
+            .map(|task_ptr| {
+                let task = lock_ptr!(task_ptr)?;
+                Ok(task.clone())
+            })
+            .collect::<Result<Vec<Task>, FlameError>>()?;
+
+        Ok(task_list)
+    }
+
     pub async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError> {
         self.engine.get_application(id).await
     }

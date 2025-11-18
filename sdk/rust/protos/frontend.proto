@@ -34,6 +34,7 @@ service Frontend {
 
   rpc GetTask (GetTaskRequest) returns (Task) {}
   rpc WatchTask (WatchTaskRequest) returns (stream Task) {}
+  rpc ListTask (ListTaskRequest) returns (stream Task) {}
 }
 
 message RegisterApplicationRequest {
@@ -102,4 +103,8 @@ message GetTaskRequest {
 message WatchTaskRequest {
   string task_id = 1;
   string session_id = 2;
+}
+
+message ListTaskRequest {
+  string session_id = 1;
 }

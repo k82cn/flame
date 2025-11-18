@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::{env, fmt};
 
 use chrono::{DateTime, Duration, Utc};
+#[cfg(target_os = "linux")]
 use rustix::system;
 
 use ::rpc::flame::ApplicationSpec;
@@ -276,9 +277,29 @@ pub struct Node {
     pub state: NodeState,
 }
 
+#[cfg(not(target_os = "linux"))]
+fn uname() -> String {
+    String::from("unknown-node")
+}
+
+#[cfg(target_os = "linux")]
+fn uname() -> String {
+    system::uname().nodename().to_string_lossy().to_string()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn totalram() -> u64 {
+    0
+}
+
+#[cfg(target_os = "linux")]
+fn totalram() -> u64 {
+    system::sysinfo().totalram
+}
+
 impl Node {
     pub fn new() -> Self {
-        let name = system::uname().nodename().to_string_lossy().to_string();
+        let name = uname();
         let mut node = Node {
             name,
             state: NodeState::Ready,
@@ -291,8 +312,7 @@ impl Node {
     }
 
     pub fn refresh(&mut self) {
-        let sysinfo = system::sysinfo();
-        let memory = sysinfo.totalram;
+        let memory = totalram();
         let cpu = num_cpus::get() as u64;
 
         let capacity = ResourceRequirement { cpu, memory };

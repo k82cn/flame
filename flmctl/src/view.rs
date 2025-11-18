@@ -13,13 +13,16 @@ limitations under the License.
 
 use std::error::Error;
 
+use comfy_table::presets::NOTHING;
+use comfy_table::Table;
 use serde_json::Value;
 
-use flame_rs::apis::{FlameContext, FlameError};
+use flame_rs::apis::{FlameContext, FlameError, TaskState};
 use flame_rs::client;
 
 pub async fn run(
     ctx: &FlameContext,
+    output_format: &Option<String>,
     application: &Option<String>,
     session: &Option<String>,
     task: &Option<String>,
@@ -27,7 +30,7 @@ pub async fn run(
     let conn = client::connect(&ctx.endpoint).await?;
     match (application, session, task) {
         (Some(application), None, None) => view_application(conn, application).await,
-        (None, Some(session), None) => view_session(conn, session).await,
+        (None, Some(session), None) => view_session(conn, output_format, session).await,
         (None, Some(session), Some(task)) => view_task(conn, session, task).await,
         _ => Err(Box::new(FlameError::InvalidConfig(
             "unsupported parameters".to_string(),
@@ -61,23 +64,59 @@ async fn view_task(
     Ok(())
 }
 
-async fn view_session(conn: client::Connection, ssn_id: &String) -> Result<(), Box<dyn Error>> {
-    let session = conn.get_session(ssn_id).await?;
+async fn view_session(
+    conn: client::Connection,
+    output_format: &Option<String>,
+    ssn_id: &String,
+) -> Result<(), Box<dyn Error>> {
+    let mut session = conn.get_session(ssn_id).await?;
+    let tasks = session.list_tasks().await?;
 
-    println!("{:<15}{}", "Session:", session.id);
-    println!("{:<15}{}", "Application:", session.application);
-    println!("{:<15}{}", "State:", session.state);
-    println!("{:<15}{}", "Creation Time:", session.creation_time);
-    println!("{:<15}", "Events:");
-    for event in session.events {
-        println!(
-            "  {}: {} ({})",
-            event.creation_time.format("%H:%M:%S%.3f"),
-            event.message.unwrap_or_default(),
-            event.code
-        );
+    session.tasks = Some(tasks);
+
+    match output_format {
+        Some(format) => match format.as_str() {
+            "json" => view_session_json(&session),
+            _ => view_session_table(&session),
+        },
+        None => view_session_table(&session),
+    }
+}
+
+fn view_session_table(session: &client::Session) -> Result<(), Box<dyn Error>> {
+    let mut table = Table::new();
+    table.load_preset(NOTHING);
+
+    table.add_row(vec!["Session:", &session.id.to_string()]);
+    table.add_row(vec!["Application:", &session.application.to_string()]);
+    table.add_row(vec!["State:", &session.state.to_string()]);
+    table.add_row(vec![
+        "Creation Time:",
+        &session.creation_time.format("%T").to_string(),
+    ]);
+
+    let mut success = 0;
+    let mut failed = 0;
+    for task in session.tasks.as_ref().unwrap() {
+        if task.state == TaskState::Succeed {
+            success += 1;
+        } else {
+            failed += 1;
+        }
     }
 
+    table.add_row(vec![
+        "Tasks:",
+        &format!("{success} succeed, {failed} failed"),
+    ]);
+
+    println!("{table}");
+    Ok(())
+}
+
+fn view_session_json(session: &client::Session) -> Result<(), Box<dyn Error>> {
+    let json = serde_json::to_string_pretty(session).unwrap();
+    println!("{json}");
     Ok(())
 }
 
@@ -153,7 +192,7 @@ fn get_type(schema: Option<String>) -> Result<String, FlameError> {
             let schema_type = value.get("type").ok_or(FlameError::InvalidConfig(
                 "schema type is missed".to_string(),
             ))?;
-            Ok(schema_type.to_string())
+            Ok(schema_type.to_string().trim_matches('\"').to_string())
         }
         None => Ok("-".to_string()),
     }

@@ -85,13 +85,17 @@ impl From<FromEnvError> for FlameError {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display, Serialize, Deserialize,
+)]
 pub enum SessionState {
     Open = 0,
     Closed = 1,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display, Serialize, Deserialize,
+)]
 pub enum TaskState {
     Pending = 0,
     Running = 1,
@@ -99,19 +103,25 @@ pub enum TaskState {
     Failed = 3,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display, Serialize, Deserialize,
+)]
 pub enum ApplicationState {
     Enabled = 0,
     Disabled = 1,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display, Serialize, Deserialize,
+)]
 pub enum Shim {
     Host = 0,
     Wasm = 1,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display, Serialize, Deserialize,
+)]
 pub enum ExecutorState {
     Unknown = 0,
     Void = 1,
