@@ -189,7 +189,8 @@ impl Future for WaitForTaskFuture {
         match ssn.pop_pending_task() {
             None => {
                 let now = Utc::now();
-                if now - self.start_time > self.delay_release
+                let duration = now.signed_duration_since(self.start_time);
+                if duration.num_seconds() > self.delay_release.num_seconds()
                     || ssn.status.state == SessionState::Closed
                 {
                     // If the delay release is reached or the session is closed, return None.
