@@ -1,6 +1,6 @@
 # Flame Python SDK
 
-Python SDK for the Flame distributed computing framework.
+Python SDK for the Flame, a distributed system for Agentic AI.
 
 ## Installation
 
@@ -12,30 +12,20 @@ pip install flamepy
 
 ```python
 import asyncio
-from flamepy import SessionAttributes, connect
+import flamepy
 
 async def main():
-    # Connect to Flame service
-    conn = await connect("http://localhost:8080")
-    # Create a session
-    session = await conn.create_session(SessionAttributes(
-        application="flmping",
-        slots=2,
-        common_data=b"shared data"
-    ))
+    # Create a session with the application, e.g. Agent
+    session = await flamepy.create_session("flmping")
     
     # Create and run a task
-    task = await session.create_task(b"task input data")
-    
-    # Watch task progress
-    async for update in session.watch_task(task.id):
-        print(f"Task {task.id}: {update.state}")
-        if update.is_completed():
-            break
-    
+    resp = await session.invoke(b"task input data")
+
+    # Handle the output of task
+    print(resp.output)
+
     # Close session
     await session.close()
-    await conn.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -43,30 +33,13 @@ if __name__ == "__main__":
 
 ## API Reference
 
-### Connection
-
-The main entry point for connecting to Flame services.
-
-```python
-from flamepy import connect
-
-# Connect to a Flame service
-conn = await connect("http://localhost:8080")
-```
-
 ### Session
 
-Represents a computing session with distributed resources.
+Represents a computing session with application, e.g. Agent, Tools.
 
 ```python
 # Create a session
-session = await conn.create_session(SessionAttributes(
-    application="my-app",
-    slots=2
-))
-
-# List sessions
-sessions = await conn.list_sessions()
+session = await flamepy.create_session("my-app")
 
 # Close a session
 await session.close()
@@ -78,7 +51,7 @@ Represents individual computing tasks within a session.
 
 ```python
 # Create a task
-task = await session.create_task(b"input data")
+task = await session.invoke(b"input data")
 
 # Get task status
 task = await session.get_task(task.id)
@@ -90,21 +63,6 @@ async for update in session.watch_task(task.id):
         break
 ```
 
-### Application
-
-Manage distributed applications.
-
-```python
-# Register an application
-await conn.register_application("my-app", {
-    "command": "python",
-    "arguments": ["script.py"]
-})
-
-# List applications
-apps = await conn.list_applications()
-```
-
 ## Error Handling
 
 The SDK provides custom exception types for different error scenarios:
@@ -113,7 +71,7 @@ The SDK provides custom exception types for different error scenarios:
 from flamepy import FlameError, FlameErrorCode
 
 try:
-    session = await conn.create_session(attrs)
+    session = await flamepy.create_session("flmping")
 except FlameError as e:
     if e.code == FlameErrorCode.INVALID_CONFIG:
         print("Configuration error:", e.message)
@@ -127,7 +85,7 @@ To set up the development environment:
 
 ```bash
 # Clone the repository
-git clone https://github.com/flame-sh/flame.git
+git clone https://github.com/xflops/flame.git
 cd flame/sdk/python
 
 # Install in development mode

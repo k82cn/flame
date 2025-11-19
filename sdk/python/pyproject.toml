@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "flamepy"
 version = "0.5.0"
-description = "Python SDK for Flame distributed engine"
+description = "Python SDK for Flame, a distributed system for Agentic AI"
 readme = "README.md"
 requires-python = ">=3.12"
 license-files = ["LICENSE"]
 authors = [
   {name = "XFLOPS Authors", email = "support@xflops.io"}
 ]
-keywords = ["distributed computing", "flame", "sdk"]
+keywords = ["distributed system", "agentic ai", "flame", "sdk"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
