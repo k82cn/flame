@@ -30,8 +30,8 @@ chrono = "0.4"
 
 nix = { version = "0.30", features = ["signal"] }
 
-tracing = "*"
-tracing-subscriber = { version = "*", features = ["env-filter", "local-time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }
 
 strum = { version = "0.26", features = ["derive"] }
 strum_macros = "0.26"
