@@ -107,3 +107,6 @@ We welcome contributions! Please see our [contributing guidelines](CONTRIBUTING.
 
 This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=xflops/flame&type=timeline&legend=top-left)](https://www.star-history.com/#xflops/flame&type=timeline&legend=top-left)
