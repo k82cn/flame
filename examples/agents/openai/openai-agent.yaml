@@ -2,9 +2,11 @@ metadata:
   name: openai-agent
 spec:
   max_instances: 1
+  working_directory: /opt/examples/agents/openai
   command: /usr/bin/uv
   arguments:
     - run
-    - /opt/examples/agents/openai/main.py
+    - agent.py
+    - apis.py
   environments:
     DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxx

@@ -10,17 +10,12 @@
 # limitations under the License.
 
 import flamepy
-import asyncio
-from apis import SysPrompt, Question, Answer
 
-OPENAI_APP_NAME = "openai-agent"
+class SysPrompt(flamepy.Request):
+    prompt: str
 
-async def main():
-    session = await flamepy.create_session(OPENAI_APP_NAME, SysPrompt(prompt="You are a weather forecaster."))
-    output = await session.invoke(Question(question="Who are you?"))
-    answer = Answer.from_json(output)
+class Question(flamepy.Request):
+    question: str
 
-    print(answer.answer)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+class Answer(flamepy.Response):
+    answer: str

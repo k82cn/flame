@@ -28,6 +28,9 @@ debug_service = None
 
 class FlameInstance(FlameService):
     def __init__(self):
+        self.session_id = None
+        self.task_id = None
+
         self._entrypoint = None
         self._parameter = None
         self._return_type = None
@@ -74,11 +77,20 @@ class FlameInstance(FlameService):
         if self._context is None:
             logger.warning("No context function defined")
             return
+
+        self.session_id = context.session_id
+
         if self._context_parameter is None:
-            self._context()
+            if inspect.iscoroutinefunction(self._context):
+                await self._context()
+            else:
+                self._context()
         else:
             obj = self._context_parameter.annotation.model_validate_json(context.common_data) if context.common_data is not None else None
-            self._context(obj)
+            if inspect.iscoroutinefunction(self._context):
+                await self._context(obj)
+            else:
+                self._context(obj)
 
     async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         logger = logging.getLogger(__name__)
@@ -87,20 +99,33 @@ class FlameInstance(FlameService):
             logger.warning("No entrypoint function defined")
             return
 
+        self.task_id = context.task_id
+
         if self._parameter is not None:
             obj = self._parameter.annotation.model_validate_json(context.input) if context.input is not None else None
-            res = self._entrypoint(obj)
+            if inspect.iscoroutinefunction(self._entrypoint):
+                res = await self._entrypoint(obj)
+            else:
+                res = self._entrypoint(obj)
         else:
-            res = self._entrypoint()
+            if inspect.iscoroutinefunction(self._entrypoint):
+                res = await self._entrypoint()
+            else:
+                res = self._entrypoint()
 
         res = self._return_type.model_validate(res).model_dump_json()
         logger.debug(f"on_task_invoke: {res}")
+
+        self.task_id = None
 
         return TaskOutput(data=res.encode("utf-8"))
 
     async def on_session_leave(self):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_leave")
+
+        self.session_id = None
+        self.task_id = None
 
     def run(self):
         logger = logging.getLogger(__name__)
