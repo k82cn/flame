@@ -26,7 +26,7 @@ from .types import (
 )
 
 from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment
-from .frontend_pb2 import RegisterApplicationRequest, UnregisterApplicationRequest, ListApplicationRequest, CreateSessionRequest, ListSessionRequest, GetSessionRequest, CloseSessionRequest, CreateTaskRequest, WatchTaskRequest, GetTaskRequest, GetApplicationRequest
+from .frontend_pb2 import RegisterApplicationRequest, UnregisterApplicationRequest, ListApplicationRequest, CreateSessionRequest, ListSessionRequest, GetSessionRequest, CloseSessionRequest, CreateTaskRequest, WatchTaskRequest, GetTaskRequest, GetApplicationRequest, OpenSessionRequest
 from .frontend_pb2_grpc import FrontendStub
 
 async def connect(addr: str) -> "Connection":
@@ -44,6 +44,10 @@ async def create_session(application: str, common_data: Dict[str, Any] = None, s
 
     session = await conn.create_session(SessionAttributes(application=application, common_data=common_data, slots=slots))
     return session
+
+async def open_session(session_id: SessionID) -> "Session":
+    conn = await ConnectionInstance().instance()
+    return await conn.open_session(session_id)
 
 async def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
     conn = await ConnectionInstance().instance()
@@ -343,6 +347,32 @@ class Connection:
                 f"failed to list sessions: {e.details()}"
             )
     
+    async def open_session(self, session_id: SessionID) -> "Session":
+        """Open a session."""
+        request = OpenSessionRequest(session_id=session_id)
+
+        try:
+            response = await self._frontend.OpenSession(request)
+            return Session(
+                connection=self,
+                id=response.metadata.id,
+                application=response.spec.application,
+                slots=response.spec.slots,
+                state=SessionState(response.status.state),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
+                pending=response.status.pending,
+                running=response.status.running,
+                succeed=response.status.succeed,
+                failed=response.status.failed,
+                completion_time=datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField('completion_time') else None
+            )
+
+        except grpc.RpcError as e:
+            raise FlameError(
+                FlameErrorCode.INTERNAL,
+                f"failed to open session: {e.details()}"
+            )
+
     async def get_session(self, session_id: SessionID) -> "Session":
         """Get a session by ID."""
         request = GetSessionRequest(session_id=session_id)

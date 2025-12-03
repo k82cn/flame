@@ -291,9 +291,23 @@ impl Frontend for Flame {
 
     async fn open_session(
         &self,
-        _: Request<OpenSessionRequest>,
+        req: Request<OpenSessionRequest>,
     ) -> Result<Response<rpc::Session>, Status> {
-        todo!()
+        trace_fn!("Frontend::open_session");
+        let ssn_id = req
+            .into_inner()
+            .session_id
+            .parse::<apis::SessionID>()
+            .map_err(|_| Status::invalid_argument("invalid session id"))?;
+
+        let ssn = self
+            .controller
+            .open_session(ssn_id)
+            .await
+            .map(Session::from)
+            .map_err(Status::from)?;
+
+        Ok(Response::new(ssn))
     }
 
     async fn close_session(

@@ -61,7 +61,7 @@ from .types import (
 
 from .client import (Connection, Session, TaskWatcher, 
     connect, create_session, register_application, unregister_application, list_applications, get_application, 
-    list_sessions, get_session, close_session
+    list_sessions, get_session, close_session, open_session
 )
 from .service import (
     FlameService,
@@ -118,6 +118,7 @@ __all__ = [
     "get_application",
     "list_sessions",
     "get_session",
+    "open_session",
     "close_session",
     "TaskWatcher",
     "Session", 
