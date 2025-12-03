@@ -18,8 +18,8 @@ use std::task::{Context, Poll};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, CommonData, ExecutorID, ExecutorState, Node,
-    NodeState, Session, SessionID, SessionPtr, Task, TaskGID, TaskID, TaskInput, TaskOutput,
-    TaskPtr, TaskResult, TaskState,
+    NodeState, Session, SessionID, SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput,
+    TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
@@ -65,6 +65,19 @@ impl Controller {
     ) -> Result<Session, FlameError> {
         trace_fn!("Controller::create_session");
         self.storage.create_session(app, slots, common_data).await
+    }
+
+    pub async fn open_session(&self, id: SessionID) -> Result<Session, FlameError> {
+        trace_fn!("Controller::open_session");
+        let ssn = self.storage.get_session(id)?;
+        if ssn.status.state != SessionState::Open {
+            return Err(FlameError::InvalidState(format!(
+                "session <{id}> is not open",
+                id = id
+            )));
+        }
+
+        Ok(ssn)
     }
 
     pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
