@@ -1,0 +1,22 @@
+[project]
+name = "sra"
+version = "0.1.0"
+description = "Simple Research Agent by Flame"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "flamepy",
+  "ddgs",
+  "langchain",
+  "langgraph",
+  "langchain-deepseek",
+  "langchain-community",
+  "qdrant-client>=1.14.1",
+  "requests>=2.32.3",
+  "markitdown",
+  "python-dotenv",
+  "pytest",
+]
+
+[tool.uv.sources]
+flamepy = { path = "/usr/local/flame/sdk/python" }

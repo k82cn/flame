@@ -1,11 +1,3 @@
-# /// script
-# dependencies = [
-#   "langchain",
-#   "flamepy",
-# ]
-# [tool.uv.sources]
-# flamepy = { path = "/usr/local/flame/sdk/python" }
-# ///
 
 import flamepy
 import asyncio
@@ -18,8 +10,8 @@ async def ask_agent():
     question = Question(question="Who are you?")
 
     agent = await flamepy.create_session(LANGCHAIN_AGENT_NAME, sys_prompt)
-    task = await agent.invoke(question)
-    answer = Answer.from_json(task.output)
+    output = await agent.invoke(question)
+    answer = Answer.from_json(output)
 
     print(answer.answer)
 

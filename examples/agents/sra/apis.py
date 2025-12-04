@@ -13,9 +13,3 @@ class WebPage(flamepy.Request):
 class Script(flamepy.Request):
     language: str
     code: str
-
-class EmbedRequest(flamepy.Request):
-    inputs: str
-
-class EmbedResponse(flamepy.Response):
-    vector: list[float]

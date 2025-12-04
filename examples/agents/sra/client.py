@@ -1,12 +1,4 @@
 
-# /// script
-# dependencies = [
-#   "flamepy",
-# ]
-# [tool.uv.sources]
-# flamepy = { path = "/usr/local/flame/sdk/python" }
-# ///
-
 import flamepy
 import asyncio
 from apis import Question, Answer

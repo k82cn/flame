@@ -1,15 +1,4 @@
 
-# /// script
-# dependencies = [
-#   "flamepy",
-#   "markitdown",
-#   "qdrant-client>=1.14.1",
-#   "requests>=2.32.3",
-# ]
-# [tool.uv.sources]
-# flamepy = { path = "/usr/local/flame/sdk/python" }
-# ///
-
 import markitdown
 import qdrant_client
 import flamepy
@@ -19,7 +8,8 @@ import uuid
 
 from qdrant_client.models import VectorParams, Distance, PointStruct
 
-from apis import WebPage, Answer, EmbedRequest, EmbedResponse
+from apis import WebPage, Answer
+from embed import EmbeddingClient
 
 ins = flamepy.FlameInstance()
 
@@ -48,18 +38,15 @@ def crawler(wp: WebPage) -> Answer:
     if not client.collection_exists("sra"):
         client.create_collection(
             collection_name="sra",
-            vectors_config=VectorParams(size=2560, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
         )
 
-    chunk_size = min(8192, len(result))
+    chunk_size = min(1024, len(result))
+
+    embedding_client = EmbeddingClient()
 
     for chunk in range(0, len(result), chunk_size):
-        req = EmbedRequest(inputs=result[chunk:chunk+chunk_size])
-        data = req.model_dump_json().encode("utf-8")
-        resp = requests.post("http://embedding-api:8000/embed", data=data)
-        if resp.status_code != 200:
-            return Answer(answer=f"Failed to embed text from {wp.url}")
-        vector = resp.json()["vector"]
+        vector = embedding_client.embed(result[chunk:chunk+chunk_size])
 
         client.upsert(collection_name="sra", points=[
             PointStruct(
