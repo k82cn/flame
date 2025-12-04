@@ -665,6 +665,7 @@ mod serde_utc {
 
 mod serde_message {
     use bytes::Bytes;
+    use prost::Message;
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(message: &Option<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
@@ -672,7 +673,7 @@ mod serde_message {
         S: Serializer,
     {
         match message {
-            Some(message) => serializer.serialize_bytes(message),
+            Some(message) => serializer.serialize_str(String::from_utf8_lossy(message).as_ref()),
             None => serializer.serialize_none(),
         }
     }
@@ -681,7 +682,7 @@ mod serde_message {
     where
         D: Deserializer<'de>,
     {
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-        Ok(Some(Bytes::from(bytes)))
+        let data: String = String::deserialize(deserializer)?;
+        Ok(Some(Bytes::from(data.encode_to_vec())))
     }
 }
