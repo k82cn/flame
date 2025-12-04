@@ -5,54 +5,29 @@ spec:
   working_directory: /opt/examples/agents/sra/
   tags:
     - Tool
+  environments:
+    SILICONFLOW_API_KEY: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   command: /usr/bin/uv
   arguments:
     - run
     - -n
     - crawler.py
     - apis.py
----
-metadata:
-  name: collector
-spec:
-  working_directory: /opt/examples/agents/sra/
-  tags:
-    - Agent
-  environments:
-    DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  command: /usr/bin/uv
-  arguments:
-    - run
-    - -n
-    - collector.py
-    - apis.py
+
 ---
 metadata:
   name: sra
 spec:
   working_directory: /opt/examples/agents/sra/
+  max_instances: 1
   tags:
     - Agent
   environments:
-    DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    SILICONFLOW_API_KEY: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   command: /usr/bin/uv
   arguments:
     - run
     - -n
     - sra.py
-    - apis.py
----
-metadata:
-  name: writer
-spec:
-  working_directory: /opt/examples/agents/sra/
-  tags:
-    - Agent
-  environments:
-    DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  command: /usr/bin/uv
-  arguments:
-    - run
-    - -n
-    - writer.py
     - apis.py

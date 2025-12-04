@@ -1,16 +1,9 @@
-# /// script
-# dependencies = [
-#   "openai",
-#   "flamepy",
-#   "langchain_deepseek",
-# ]
-# [tool.uv.sources]
-# flamepy = { path = "/usr/local/flame/sdk/python" }
-# ///
 
-import os
 import flamepy
+
 from langchain_deepseek import ChatDeepSeek
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
 
 from apis import SysPrompt, Question, Answer
 
@@ -24,26 +17,23 @@ llm = ChatDeepSeek(
     max_retries=2,
 )
 
-sys_prompt = """
-You are a helpful assistant.
-"""
+agent = create_agent(
+    model=llm,
+)
 
 @ins.context
 def sys_context(sp: SysPrompt):
-    global sys_prompt
-    sys_prompt = sp.prompt
+    agent.system_prompt = sp.prompt
 
 @ins.entrypoint
 def weather_agent(q: Question) -> Answer:
-    global sys_prompt
-    global llm
+    output = agent.invoke({
+        "messages": [HumanMessage(q.question)]
+    })
+    
+    aimsgs = output["messages"][-1]
 
-    response = llm.invoke([
-        ("system", sys_prompt),
-        ("human", q.question)
-    ])
-
-    return Answer(answer=response.content)
+    return Answer(answer=aimsgs.content)
 
 if __name__ == "__main__":
     ins.run()

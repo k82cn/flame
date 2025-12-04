@@ -52,23 +52,8 @@ services:
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
 
-  embedding-api:
-    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
-    command: uv run -n /opt/examples/agents/sra/embed.py
-    logging:
-      options:
-        max-size: "100m"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    volumes:
-      - ./examples:/opt/examples
-
   qdrant:
-    image: qdrant/qdrant:v1.14.1
+    image: qdrant/qdrant:v1.16.1
     logging:
       options:
         max-size: "100m"

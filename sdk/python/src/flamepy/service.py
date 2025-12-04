@@ -59,7 +59,7 @@ class TaskOutput:
 
 class FlameService:
     """Base class for implementing Flame services."""
-    
+
     @abstractmethod
     async def on_session_enter(self, context: SessionContext):
         """
@@ -72,7 +72,7 @@ class FlameService:
             True if successful, False otherwise
         """
         pass
-    
+
     @abstractmethod
     async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         """
@@ -85,7 +85,7 @@ class FlameService:
             Task output
         """
         pass
-    
+
     @abstractmethod
     async def on_session_leave(self):
         """
@@ -99,10 +99,10 @@ class FlameService:
 
 class FlmInstanceServicer(InstanceServicer):
     """gRPC servicer implementation for GrpcShim service."""
-    
+
     def __init__(self, service: FlameService):
         self._service = service
-    
+
     async def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
         logger.debug("OnSessionEnter")
@@ -117,7 +117,7 @@ class FlmInstanceServicer(InstanceServicer):
                 image=request.application.image if request.application.HasField("image") else None,
                 command=request.application.command if request.application.HasField("command") else None
             )
-            
+
             logger.debug(f"app_context: {app_context}")
 
             session_context = SessionContext(
@@ -127,24 +127,24 @@ class FlmInstanceServicer(InstanceServicer):
             )
 
             logger.debug(f"session_context: {session_context}")
-            
+
             # Call the service implementation
             logger.debug("Calling on_session_enter")
             await self._service.on_session_enter(session_context)
             logger.debug("on_session_enter returned")
-            
+
             # Return result
             return Result(
                 return_code=0,
             )
-            
+
         except Exception as e:
             logger.error(f"Error in OnSessionEnter: {e}")
             return Result(
                 return_code=-1,
                 message=f"{str(e)}"
             )
-    
+
     async def OnTaskInvoke(self, request, context):
         """Handle OnTaskInvoke RPC call."""
         logger.debug("OnTaskInvoke")
@@ -157,7 +157,7 @@ class FlmInstanceServicer(InstanceServicer):
             )
 
             logger.debug(f"task_context: {task_context}")
-            
+
             # Call the service implementation
             logger.debug("Calling on_task_invoke")
             output = await self._service.on_task_invoke(task_context)
@@ -169,7 +169,7 @@ class FlmInstanceServicer(InstanceServicer):
                 output=output.data,
                 message=None
             )
-            
+
         except Exception as e:
             logger.error(f"Error in OnTaskInvoke: {e}")
             return TaskResultProto(
@@ -177,7 +177,7 @@ class FlmInstanceServicer(InstanceServicer):
                 output=None,
                 message=f"{str(e)}"
             )
-    
+
     async def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
         logger.debug("OnSessionLeave")
@@ -190,7 +190,7 @@ class FlmInstanceServicer(InstanceServicer):
             return Result(
                 return_code=0,
             )
-            
+
         except Exception as e:
             logger.error(f"Error in OnSessionLeave: {e}")
             return Result(
@@ -200,22 +200,22 @@ class FlmInstanceServicer(InstanceServicer):
 
 class FlmInstanceServer:
     """Server for gRPC shim services."""
-    
+
     def __init__(self, service: FlameService):
         self._service = service
         self._server = None
-    
+
     async def start(self):
         """Start the gRPC server."""
         try:
             # Create gRPC server
             self._server = grpc.aio.server()
-            
+
             # Add servicer to server
             shim_servicer = FlmInstanceServicer(self._service)
             add_InstanceServicer_to_server(shim_servicer, self._server)
 
-             # Listen on Unix socket
+            # Listen on Unix socket
             socket_path = f"/tmp/flame/shim/fsi.sock"
 
             exec_id = os.getenv('FLAME_EXECUTOR_ID')
@@ -229,13 +229,13 @@ class FlmInstanceServer:
             await self._server.start()
             # Keep server running
             await self._server.wait_for_termination()
-            
+
         except Exception as e:
             raise FlameError(
                 FlameErrorCode.INTERNAL,
                 f"Failed to start gRPC instance server: {str(e)}"
             )
-    
+
     async def stop(self):
         """Stop the gRPC server."""
         if self._server:
@@ -253,4 +253,3 @@ def run(service: FlameService):
 
     server = FlmInstanceServer(service)
     asyncio.run(server.start())
-

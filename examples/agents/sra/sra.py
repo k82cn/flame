@@ -1,105 +1,200 @@
-# /// script
-# dependencies = [
-#   "flamepy",
-#   "langchain",
-#   "langgraph",
-#   "langchain-deepseek",
-#   "langchain-community",
-# ]
-# [tool.uv.sources]
-# flamepy = { path = "/usr/local/flame/sdk/python" }
-# ///
-
 import flamepy
 import asyncio
+import qdrant_client
+from qdrant_client.models import VectorParams, Distance
+import logging
 
+from langchain.globals import set_verbose, set_debug
 from langchain_core.tools import tool
 from langchain.chat_models import init_chat_model
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+from langchain_community.tools import DuckDuckGoSearchResults
 
-from apis import Question, Answer
+from apis import Question, Answer, Script, WebPage
+from embed import EmbeddingClient
 
-async def collect_data(topic: str) -> str:
-    """
-    Collect the necessary information from the web based on the topic.
-    Return the necessary information from the web.
-    """
-    collector = await flamepy.create_session("collector")
-    output = await collector.invoke(Question(topic=topic))
-    answer = Answer.from_json(output)
-    await collector.close()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-    return answer.answer
+set_verbose(True)
+set_debug(True)
 
-@tool
-def data_collector_agent(topic: str) -> str:
-    """
-    Collect the information from the web based on the topic.
-    All the information will be persisted to the vector database for other agents to use.
-    A summary of collection status will be returned.
+script_runner = None
+web_crawler = None
 
-    Args:
-        topic: the topic to collect the information from the web
+async def run_script_async(code: str) -> str:
+    global script_runner
+    if script_runner is None:
+        script_runner = await flamepy.create_session("flmexec")
 
-    Returns:
-        str: the summary of collection status
-    """
+    output = await script_runner.invoke(Script(language="python", code=code))
 
-    return asyncio.run(collect_data(topic))
-
-
-async def write_report(topic: str) -> str:
-    writer = await flamepy.create_session("writer")
-    
-    output = await writer.invoke(Question(topic=topic))
-    answer = Answer.from_json(output)
-    await writer.close()
-
-    return answer.answer
+    return output.decode("utf-8")
 
 @tool
-def report_writer_agent(topic: str) -> str:
+def run_script(code: str) -> str:
     """
-    Write the report based on the topic and the necessary information from the vector database.
-    The report will be returned in a markdown format as a string.
+    Run the python script and return the result. The stdout of the script will be returned as a string.
+    The script will be launched by `uv run` command with the dependencies declared in the script.
+    For example, if the script depends on `numpy`, you should declare the dependencies in the script like this:
+    ```
+    # /// script
+    # dependencies = [
+    #   "numpy",
+    # ]
+    # ///
+    ```
+    Reference to https://docs.astral.sh/uv/guides/scripts/ for more details about how to declare the dependencies.
 
     Args:
-        topic: the topic to write the report
+        code: the python code to run
 
     Returns:
-        str: the report in a markdown format as a string
+        str: the stdout of the script
     """
 
-    return asyncio.run(write_report(topic))
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.run_until_completion(run_script_async(code))
+    except RuntimeError:
+        return asyncio.run(run_script_async(code))
+
+class Counter(flamepy.TaskInformer):
+    """
+    Count the number of failed, succeed and error tasks.
+    """
+    def __init__(self):
+        super().__init__()
+        self.failed = 0
+        self.succeed = 0
+        self.error = 0
+
+    def on_update(self, task: flamepy.Task):
+        if task.is_failed():
+            self.failed += 1
+        elif task.is_completed():
+            self.succeed += 1
+
+    def on_error(self, _: flamepy.FlameError):
+        self.error += 1
 
 
-llm = init_chat_model("deepseek-chat", model_provider="deepseek")
-agent = create_react_agent(llm, [data_collector_agent, report_writer_agent])
+async def web_search_async(topics: list[str]) -> int:
+    """
+    Search the web for the topics and persist the content of the web page to the vector database.
+    Return the number of urls crawled successfully.
+
+    Args:
+        topics: the topics to search the web for
+
+    Returns:
+        int: the number of urls crawled successfully
+    """
+
+    global web_crawler
+    if web_crawler is None:
+        web_crawler = await flamepy.create_session("crawler")
+
+    wrapper = DuckDuckGoSearchAPIWrapper(time="d", max_results=20)
+    search = DuckDuckGoSearchResults(api_wrapper=wrapper, source="news", output_format="list")
+
+    counter = Counter()
+
+    tasks = []
+    for topic in topics:
+        items = search.invoke(topic)
+        for item in items:
+            task = web_crawler.invoke(WebPage(url=item["link"]), informer=counter)
+            tasks.append(task)
+
+    await asyncio.gather(*tasks)
+
+    return counter.succeed
+
+@tool
+def web_search(topics: list[str]) -> int:
+    """
+    Search the web for the topics and persist the content of the web page to the vector database.
+    Return the number of urls crawled successfully.
+
+    Args:
+        topics: the topics to search the web for
+
+    Returns:
+        int: the number of urls crawled successfully
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.run_until_completion(web_search_async(topics))
+    except RuntimeError:
+        return asyncio.run(web_search_async(topics))
+
+@tool
+def collect_data(topic: str) -> list[str]:
+    """
+    Collect the necessary information from the vector database based on the topic.
+    The information will be returned as a list of strings.
+
+    Args:
+        topic: the topic to collect the information from the vector database
+
+    Returns:
+        list[str]: the list of contents from the vector database
+    """
+
+    embedding_client = EmbeddingClient()
+    vector = embedding_client.embed(topic)
+
+    db_client = qdrant_client.QdrantClient(host="qdrant", port=6333)
+
+    results = db_client.query_points(collection_name="sra", query=vector, limit=3)
+
+    logger.debug(f"collect_data results: {results}")
+    payloads = [result.payload for result in results.points]
+    logger.debug(f"collect_data payloads: {payloads}")
+
+    return payloads
 
 ins = flamepy.FlameInstance()
 
 sys_prompt = """
-You are the entrypoint of SRA (Simple Research Agent) which is a multi-agent system.
-You will try to understand the research topic from the user and organize collector and writer agents to build the report.
-As the supervisor of SRA, you should follow the following rules:
-    1. You should understand the research topic from the user.
-    2. You should collect the necessary information based on the understanding of the user's topic.
-    3. You should build a plan to organize the collector and writer agents to build the report.
-    4. By default, it should be a research report of this year.
+You are a writer agent for research; you will write the research paper based on the research topics and the necessary information from the tools.
+As a writer, you should follow the following rules:
+    1. You should write the research paper in a professional and academic style.
+    2. The research paper should also include a prediction section, which should be based on the necessary information from the tools.
+    3. Try to use python script to do the calculation and prediction.
+    4. You should use the necessary information from the vector database to write the research paper.
+    5. The research paper should be written in a concise and clear manner.
+    6. The research paper should be written in a logical and coherent manner.
+    7. The research paper should be written in a consistent manner.
+    8. The research paper should be written in a markdown format.
 """
+
+llm = init_chat_model("deepseek-chat", model_provider="deepseek")
+agent = create_agent(model=llm,
+                     tools=[run_script, collect_data, web_search],
+                     system_prompt=sys_prompt)
+
+client = qdrant_client.QdrantClient(host="qdrant", port=6333)
+if not client.collection_exists("sra"):
+    client.create_collection(
+        collection_name="sra",
+        vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+    )
 
 @ins.entrypoint
 def sra(q: Question) -> Answer:
-    messages = [
-        {"role": "system", "content": sys_prompt},
-        {"role": "user", "content": q.topic}
-    ]
+    logger.debug(f"sra input: {q.topic}")
+    output = agent.invoke({"messages": [HumanMessage(q.topic)]})
 
-    for step in agent.stream({"messages": messages}, stream_mode="values"):
-        messages = messages + step["messages"]
-        print(step["messages"][-1].pretty_print())
+    logger.debug(f"sra output: {output}")
+    messages = [msg.content for msg in output["messages"]]
+    logger.debug(f"sra messages: {messages}")
 
-    return Answer(answer=messages[-1].content)
+    return Answer(answer="\n".join(messages))
+
 
 if __name__ == "__main__":
     ins.run()

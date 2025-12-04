@@ -1,59 +1,62 @@
-# /// script
-# dependencies = [
-#   "huggingface_hub",
-#   "transformers>=4.51.0",
-#   "sentence-transformers>=2.7.0",
-#   "fastapi>=0.116.0",
-#   "uvicorn>=0.35.0",
-#   "pydantic",
-# ]
-# ///
+import requests
+import os
+import logging
 
-from huggingface_hub import snapshot_download
-from sentence_transformers import SentenceTransformer
-from fastapi import FastAPI, HTTPException
-import uvicorn
-import pydantic
+logger = logging.getLogger(__name__)
 
-class EmbedRequest(pydantic.BaseModel):
-    inputs: str
+class EmbeddingClient:
+    """
+    A client for the Embedding API.
+    """
+    def __init__(self, api_key: str = None, model: str = "Qwen/Qwen3-Embedding-0.6B"):
+        """
+        Initialize the EmbeddingClient.
 
-class EmbedResponse(pydantic.BaseModel):
-    vector: list[float]
+        Args:
+            api_key: The API key for the Embedding API.
+            model: The model to use for the embedding.
+        """
+        
+        if api_key is None:
+            api_key = os.getenv("SILICONFLOW_API_KEY")
 
-app = FastAPI(name="embedding-api")
+        self.api_key = api_key
+        self.model = model
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        self.api_url = "https://api.siliconflow.cn/v1/embeddings"
+    
 
-model_name = "Qwen/Qwen3-Embedding-4B"
+    def embed(self, text: str) -> list[float]:
+        """
+        Embed the given text using the Embedding API.
 
-# Download the model
-snapshot_download(repo_id=model_name)
+        Args:
+            text: The text to embed.
 
-# Load the model
-model = SentenceTransformer(model_name, device="cpu")
+        Returns:
+            A list of floats representing the embedding.
+        """
+        if text is None or text == "":
+            return []
 
-# We recommend enabling flash_attention_2 for better acceleration and memory saving,
-# together with setting `padding_side` to "left":
-# model = SentenceTransformer(
-#     "Qwen/Qwen3-Embedding-4B",
-#     model_kwargs={"attn_implementation": "flash_attention_2", "device_map": "auto"},
-#     tokenizer_kwargs={"padding_side": "left"},
-# )
+        logger.info("Embedding text: %s", text[:100] + "..." if len(text) > 100 else text)
 
-@app.get("/health")
-async def health_check():
-    try:
-        model.encode("embedding health check")
-        return {"status": "healthy", "model": model_name}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to health check the model: {e}")
+        # Make API call to Embedding API
+        payload = {
+            "model": self.model,
+            "input": text,
+            "encoding_format": "float",
+            "dimensions": 1024
+        }
 
-@app.post("/embed")
-async def embed(request: EmbedRequest):
-    try:
-        embeddings = model.encode(request.inputs)
-        return EmbedResponse(vector=embeddings.tolist())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to embed the text: {e}")
+        response = requests.post(self.api_url, headers=self.headers, json=payload)
+        
+        if response.status_code != 200:
+            raise RuntimeError(f"Embedding API Error: {response.status_code} - {response.json()}")
+        
+        result = response.json()
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        return result["data"][0]["embedding"] if result["data"] else []
