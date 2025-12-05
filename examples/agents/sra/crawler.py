@@ -1,4 +1,3 @@
-
 import markitdown
 import qdrant_client
 import flamepy
@@ -46,14 +45,22 @@ def crawler(wp: WebPage) -> Answer:
     embedding_client = EmbeddingClient()
 
     for chunk in range(0, len(result), chunk_size):
-        vector = embedding_client.embed(result[chunk:chunk+chunk_size])
+        chunk_end = min(chunk + chunk_size, len(result))
+        vector = embedding_client.embed(result[chunk:chunk_end])
 
-        client.upsert(collection_name="sra", points=[
-            PointStruct(
-                id=f"{uuid.uuid4()}",
-                vector=vector,
-                payload={"url": wp.url, "chunk": chunk, "content": result[chunk:chunk+chunk_size]})
-        ])
+        client.upsert(collection_name="sra",
+                      points=[
+                          PointStruct(id=f"{uuid.uuid4()}",
+                                      vector=vector,
+                                      payload={
+                                          "url":
+                                          wp.url,
+                                          "chunk":
+                                          chunk,
+                                          "content":
+                                          result[chunk:chunk + chunk_size]
+                                      })
+                      ])
 
     return Answer(answer=f"Crawled {wp.url}")
 
