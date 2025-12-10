@@ -30,7 +30,7 @@ def weather_agent(q: Question) -> Answer:
     output = agent.invoke({
         "messages": [HumanMessage(q.question)]
     })
-    
+
     aimsgs = output["messages"][-1]
 
     return Answer(answer=aimsgs.content)

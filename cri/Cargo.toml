@@ -3,10 +3,6 @@ name = "cri-rs"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "cri-e2e"
-path = "src/e2e.rs"
-
 [dependencies]
 common = { path = "../common" }
 tokio = { workspace = true }
