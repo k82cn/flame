@@ -20,7 +20,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use time::macros::format_description;
-use tonic::Status;
+use tonic::{Status};
+use prost::UnknownEnumValue;
 use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tracing_subscriber::fmt::time::LocalTime;
 
@@ -77,6 +78,12 @@ impl From<ParseError> for FlameError {
 
 impl From<FromEnvError> for FlameError {
     fn from(value: FromEnvError) -> Self {
+        FlameError::InvalidConfig(value.to_string())
+    }
+}
+
+impl From<UnknownEnumValue> for FlameError {
+    fn from(value: UnknownEnumValue) -> Self {
         FlameError::InvalidConfig(value.to_string())
     }
 }
