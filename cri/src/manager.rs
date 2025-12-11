@@ -22,13 +22,14 @@ use tracing::info;
 
 use common::{FlameError, apis::ApplicationContext, trace::TraceFn, trace_fn};
 
-use crate::apis::{Metadata, Pod, PodRuntime, PodSpec, PodState, PodStatus};
+use crate::apis::{Container, Pod, PodMetadata, PodRuntime, PodSpec, PodState, PodStatus};
 use crate::cri_v1::image_service_client::ImageServiceClient;
 use crate::cri_v1::runtime_service_client::RuntimeServiceClient;
 use crate::cri_v1::{
-    ContainerConfig, CreateContainerRequest, ImageSpec, ListPodSandboxRequest, PodSandboxConfig,
-    PodSandboxStatusRequest, PullImageRequest, RunPodSandboxRequest, StartContainerRequest,
-    StopPodSandboxRequest, VersionRequest,
+    ContainerConfig, CreateContainerRequest, ImageSpec, ListContainersRequest,
+    ListPodSandboxRequest, PodSandboxConfig, PodSandboxState, PodSandboxStatusRequest,
+    PullImageRequest, RunPodSandboxRequest, StartContainerRequest, StopPodSandboxRequest,
+    VersionRequest,
 };
 
 pub struct PodManager {
@@ -104,8 +105,8 @@ impl PodManager {
     }
 
     pub async fn run_pod(&mut self, app: &ApplicationContext) -> Result<Pod, FlameError> {
-        let mut pod = Pod::try_from(app)?;
-        let sandbox_config = PodSandboxConfig::from((&pod.metadata, &self.runtime));
+        let mut pod = Pod::new(app)?;
+        let sandbox_config = PodSandboxConfig::from((&pod, &self.runtime));
 
         for container in &pod.spec.containers {
             let request = PullImageRequest {
@@ -198,20 +199,33 @@ impl PodManager {
         let sandbox_status = status.status.clone().unwrap();
         let metadata = sandbox_status.metadata.clone().unwrap();
 
+        let state = PodSandboxState::try_from(sandbox_status.state).map_err(FlameError::from)?;
+        let state = PodState::from(state);
+
+        let request = ListContainersRequest { filter: None };
+        let resp = self
+            .rt_client
+            .list_containers(request)
+            .await
+            .map_err(FlameError::from)?;
+
+        let mut containers = Vec::new();
+        for container in resp.into_inner().containers {
+            if container.pod_sandbox_id != id {
+                continue;
+            }
+            containers.push(Container::try_from(container)?);
+        }
+
         Ok(Pod {
-            metadata: Metadata {
+            metadata: PodMetadata {
                 name: metadata.name,
                 namespace: metadata.namespace,
-                uid: metadata.uid,
+                uid: metadata.uid.clone(),
                 creation_time: Utc::now(),
             },
-            spec: PodSpec {
-                containers: Vec::new(),
-            },
-            status: Some(PodStatus {
-                state: PodState::Running,
-                conditions: Vec::new(),
-            }),
+            spec: PodSpec { containers },
+            status: Some(PodStatus { id: sandbox_status.id, state }),
         })
     }
 
@@ -223,8 +237,37 @@ impl PodManager {
             .list_pod_sandbox(request)
             .await
             .map_err(FlameError::from)?;
-        let _ = pods.into_inner();
+        let pods = pods.into_inner();
 
-        todo!()
+        let request = ListContainersRequest { filter: None };
+        let resp = self
+            .rt_client
+            .list_containers(request)
+            .await
+            .map_err(FlameError::from)?;
+
+        let mut containers = HashMap::new();
+        for c in resp.into_inner().containers {
+            containers
+                .entry(c.pod_sandbox_id.clone())
+                .or_insert(Vec::new())
+                .push(Container::try_from(c)?);
+        }
+
+        let mut pods = pods
+            .items
+            .into_iter()
+            .map(Pod::try_from)
+            .collect::<Result<Vec<Pod>, FlameError>>()?;
+
+        for pod in &mut pods {
+            let status = pod.status.clone().ok_or(FlameError::InvalidState("pod status is empty".to_string()))?;
+            pod.spec.containers = containers
+                .get(&status.id)
+                .unwrap_or(&Vec::new())
+                .clone();
+        }
+
+        Ok(pods)
     }
 }

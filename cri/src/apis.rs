@@ -19,9 +19,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::cri_v1::{
-    ContainerConfig, ContainerMetadata, DnsConfig as CriDnsConfig, ImageSpec, KeyValue,
-    LinuxContainerConfig, LinuxPodSandboxConfig, LinuxSandboxSecurityContext, PodSandboxConfig,
-    PodSandboxMetadata, Signal,
+    Container as CriContainer, ContainerConfig, ContainerMetadata, DnsConfig as CriDnsConfig,
+    ImageSpec, KeyValue, LinuxContainerConfig, LinuxPodSandboxConfig, LinuxSandboxSecurityContext,
+    PodSandbox, PodSandboxConfig, PodSandboxMetadata, PodSandboxState, PodSandboxStatus, Signal,
 };
 
 #[derive(Debug, Clone)]
@@ -42,7 +42,7 @@ pub struct DnsConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct Metadata {
+pub struct PodMetadata {
     pub name: String,
     pub namespace: String,
     pub uid: String,
@@ -51,7 +51,7 @@ pub struct Metadata {
 
 #[derive(Debug, Clone)]
 pub struct Pod {
-    pub metadata: Metadata,
+    pub metadata: PodMetadata,
     pub spec: PodSpec,
     pub status: Option<PodStatus>,
 }
@@ -63,23 +63,22 @@ pub struct PodSpec {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PodState {
-    Pending = 0,
-    Running = 1,
-    Succeed = 2,
-    Failed = 3,
+    Ready = 0,
+    NotReady = 1,
 }
 
 #[derive(Debug, Clone)]
 pub struct PodStatus {
+    // The ID of the pod in container runtime.
+    pub id: String,
     pub state: PodState,
-    pub conditions: Vec<Condition>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Condition {
+pub struct PodCondition {
     pub name: String,
     pub status: String,
-    pub last_transition_time: String,
+    pub last_transition_time: DateTime<Utc>,
     pub reason: String,
     pub message: String,
 }
@@ -98,10 +97,8 @@ pub struct PodRuntime {
     pub security_context: SecurityContext,
 }
 
-impl TryFrom<&ApplicationContext> for Pod {
-    type Error = FlameError;
-
-    fn try_from(app: &ApplicationContext) -> Result<Self, Self::Error> {
+impl Pod {
+    pub fn new(app: &ApplicationContext) -> Result<Self, FlameError> {
         let suffix = Alphanumeric.sample_string(&mut ThreadRng::default(), 8);
         let name = format!("{}-{}", app.name.clone(), suffix);
         let uid = Uuid::new_v4().to_string();
@@ -111,10 +108,10 @@ impl TryFrom<&ApplicationContext> for Pod {
         )))?;
 
         Ok(Self {
-            metadata: Metadata {
+            metadata: PodMetadata {
                 name: name.clone(),
                 namespace: app.name.clone(),
-                uid,
+                uid: uid.clone(),
                 creation_time: Utc::now(),
             },
             spec: PodSpec {
@@ -132,17 +129,17 @@ impl TryFrom<&ApplicationContext> for Pod {
     }
 }
 
-impl From<(&Metadata, &PodRuntime)> for PodSandboxConfig {
-    fn from((metadata, runtime): (&Metadata, &PodRuntime)) -> Self {
+impl From<(&Pod, &PodRuntime)> for PodSandboxConfig {
+    fn from((pod, runtime): (&Pod, &PodRuntime)) -> Self {
         Self {
             metadata: Some(PodSandboxMetadata {
-                name: metadata.name.clone(),
-                uid: metadata.uid.clone(),
-                namespace: metadata.namespace.clone(),
+                name: pod.metadata.name.clone(),
+                uid: pod.metadata.uid.clone(),
+                namespace: pod.metadata.namespace.clone(),
                 attempt: 0,
             }),
             annotations: HashMap::new(),
-            hostname: metadata.name.clone(),
+            hostname: pod.metadata.name.clone(),
             log_directory: runtime.log_directory.clone(),
             dns_config: Some(runtime.dns_config.clone().into()),
             port_mappings: Vec::new(),
@@ -226,5 +223,72 @@ impl From<(&Container, &PodRuntime)> for ContainerConfig {
             stop_signal: Signal::Sigterm.into(),
             cdi_devices: Vec::new(),
         }
+    }
+}
+
+impl TryFrom<PodSandbox> for Pod {
+    type Error = FlameError;
+
+    fn try_from(pod: PodSandbox) -> Result<Self, Self::Error> {
+        let state = PodSandboxState::try_from(pod.state).map_err(FlameError::from)?;
+        let state = PodState::from(state);
+        let metadata = pod.metadata.clone().ok_or(FlameError::InvalidState(
+            "pod metadata is empty".to_string(),
+        ))?;
+
+        Ok(Self {
+            metadata: PodMetadata {
+                name: metadata.name,
+                namespace: metadata.namespace,
+                uid: metadata.uid.clone(),
+                creation_time: Utc::now(),
+            },
+            spec: PodSpec {
+                containers: Vec::new(),
+            },
+            status: Some(PodStatus { id: pod.id, state }),
+        })
+    }
+}
+
+impl TryFrom<PodSandboxStatus> for PodStatus {
+    type Error = FlameError;
+
+    fn try_from(status: PodSandboxStatus) -> Result<Self, Self::Error> {
+        let state = PodSandboxState::try_from(status.state).map_err(FlameError::from)?;
+        Ok(Self {
+            id: status.id,
+            state: PodState::from(state),
+        })
+    }
+}
+
+impl From<PodSandboxState> for PodState {
+    fn from(state: PodSandboxState) -> Self {
+        match state {
+            PodSandboxState::SandboxReady => PodState::Ready,
+            PodSandboxState::SandboxNotready => PodState::NotReady,
+        }
+    }
+}
+
+impl TryFrom<CriContainer> for Container {
+    type Error = FlameError;
+
+    fn try_from(container: CriContainer) -> Result<Self, Self::Error> {
+        let metadata = container.metadata.clone().ok_or(FlameError::InvalidState(
+            "container metadata is empty".to_string(),
+        ))?;
+        let image = container.image.clone().ok_or(FlameError::InvalidState(
+            "container image is empty".to_string(),
+        ))?;
+        Ok(Self {
+            name: metadata.name,
+            image: image.image,
+            command: None,
+            args: Vec::new(),
+            envs: HashMap::new(),
+            working_directory: "/tmp".to_string(),
+        })
     }
 }

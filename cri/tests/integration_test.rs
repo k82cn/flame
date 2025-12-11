@@ -62,18 +62,24 @@ async fn test_run_pod() -> Result<(), FlameError> {
 
     let pod = pm.get_pod(&pod.metadata.uid).await?;
 
-    assert_eq!(pod.status.unwrap().state, PodState::Running);
+    assert_eq!(pod.status.unwrap().state, PodState::Ready);
+    assert!(!pod.spec.containers.is_empty());
 
     Ok(())
 }
 
-// #[tokio::main]
-// pub async fn main() -> Result<(), FlameError> {
-//     test_run_pod().await?;
-//     println!("test_run_pod result: Done");
+#[tokio::test]
+async fn test_list_pods() -> Result<(), FlameError> {
+    let mut pm =
+        PodManager::new("/run/containerd/containerd.sock", &default_test_runtime()).await?;
+    assert!(!pm.version().is_empty());
 
-//     test_new_pod_manager().await?;
-//     println!("test_new_pod_manager result: Done");
+    let pods = pm.list_pods().await?;
+    assert!(!pods.is_empty());
 
-//     Ok(())
-// }
+    for pod in pods {
+        assert!(!pod.spec.containers.is_empty());
+    }
+
+    Ok(())
+}
