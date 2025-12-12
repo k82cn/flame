@@ -59,11 +59,14 @@ async fn test_run_pod() -> Result<(), FlameError> {
     };
 
     let pod = pm.run_pod(&app).await?;
+    let status = pod.status.unwrap();
 
-    let pod = pm.get_pod(&pod.metadata.uid).await?;
+    let pod = pm.get_pod(&status.id).await?;
 
-    assert_eq!(pod.status.unwrap().state, PodState::Ready);
+    assert_eq!(status.state, PodState::Ready);
     assert!(!pod.spec.containers.is_empty());
+
+    pm.stop_pod(&status.id).await?;
 
     Ok(())
 }
@@ -74,12 +77,29 @@ async fn test_list_pods() -> Result<(), FlameError> {
         PodManager::new("/run/containerd/containerd.sock", &default_test_runtime()).await?;
     assert!(!pm.version().is_empty());
 
+    let app = ApplicationContext {
+        name: "test-pod".to_string(),
+        image: Some("nginx".to_string()),
+        command: None,
+        arguments: vec![],
+        environments: HashMap::new(),
+        shim: Shim::Host,
+        working_directory: None,
+    };
+
+    let pod = pm.run_pod(&app).await?;
+
     let pods = pm.list_pods().await?;
     assert!(!pods.is_empty());
 
     for pod in pods {
+        let status = pod.status.unwrap();
         assert!(!pod.spec.containers.is_empty());
+        pm.stop_pod(&status.id).await?;
     }
+
+    let pods = pm.list_pods().await?;
+    assert!(pods.is_empty());
 
     Ok(())
 }
