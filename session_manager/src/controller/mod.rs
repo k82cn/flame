@@ -72,8 +72,7 @@ impl Controller {
         let ssn = self.storage.get_session(id)?;
         if ssn.status.state != SessionState::Open {
             return Err(FlameError::InvalidState(format!(
-                "session <{id}> is not open",
-                id = id
+                "session <{id}> is not open"
             )));
         }
 

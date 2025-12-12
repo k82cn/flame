@@ -28,8 +28,8 @@ use crate::cri_v1::runtime_service_client::RuntimeServiceClient;
 use crate::cri_v1::{
     ContainerConfig, CreateContainerRequest, ImageSpec, ListContainersRequest,
     ListPodSandboxRequest, PodSandboxConfig, PodSandboxState, PodSandboxStatusRequest,
-    PullImageRequest, RunPodSandboxRequest, StartContainerRequest, StopPodSandboxRequest,
-    VersionRequest,
+    PullImageRequest, RemovePodSandboxRequest, RunPodSandboxRequest, StartContainerRequest,
+    StopPodSandboxRequest, VersionRequest,
 };
 
 pub struct PodManager {
@@ -105,7 +105,7 @@ impl PodManager {
     }
 
     pub async fn run_pod(&mut self, app: &ApplicationContext) -> Result<Pod, FlameError> {
-        let mut pod = Pod::new(app)?;
+        let pod = Pod::new(app)?;
         let sandbox_config = PodSandboxConfig::from((&pod, &self.runtime));
 
         for container in &pod.spec.containers {
@@ -137,12 +137,9 @@ impl PodManager {
             .map_err(FlameError::from)?
             .into_inner();
 
-        // Update the pod metadata with the sandbox ID.
-        pod.metadata.uid = resp.pod_sandbox_id.clone();
-
         let pod_sandbox_id = resp.pod_sandbox_id.clone();
-        // Create the containers.
 
+        // Create the containers.
         for container in &pod.spec.containers {
             let container_config = ContainerConfig::from((container, &self.runtime));
             let request = CreateContainerRequest {
@@ -166,7 +163,8 @@ impl PodManager {
                 .await
                 .map_err(FlameError::from)?;
         }
-        Ok(pod)
+
+        self.get_pod(&pod_sandbox_id).await
     }
 
     pub async fn stop_pod(&mut self, id: &str) -> Result<(), FlameError> {
@@ -176,6 +174,14 @@ impl PodManager {
 
         self.rt_client
             .stop_pod_sandbox(request)
+            .await
+            .map_err(FlameError::from)?;
+
+        let request = RemovePodSandboxRequest {
+            pod_sandbox_id: id.to_string(),
+        };
+        self.rt_client
+            .remove_pod_sandbox(request)
             .await
             .map_err(FlameError::from)?;
 
@@ -225,7 +231,10 @@ impl PodManager {
                 creation_time: Utc::now(),
             },
             spec: PodSpec { containers },
-            status: Some(PodStatus { id: sandbox_status.id, state }),
+            status: Some(PodStatus {
+                id: sandbox_status.id,
+                state,
+            }),
         })
     }
 
@@ -261,11 +270,11 @@ impl PodManager {
             .collect::<Result<Vec<Pod>, FlameError>>()?;
 
         for pod in &mut pods {
-            let status = pod.status.clone().ok_or(FlameError::InvalidState("pod status is empty".to_string()))?;
-            pod.spec.containers = containers
-                .get(&status.id)
-                .unwrap_or(&Vec::new())
-                .clone();
+            let status = pod
+                .status
+                .clone()
+                .ok_or(FlameError::InvalidState("pod status is empty".to_string()))?;
+            pod.spec.containers = containers.get(&status.id).unwrap_or(&Vec::new()).clone();
         }
 
         Ok(pods)
