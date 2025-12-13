@@ -18,11 +18,9 @@ import os
 from pydantic import BaseModel
 from fastapi import FastAPI, Request as FastAPIRequest, Response as FastAPIResponse
 
-from .service import FlameService, SessionContext, TaskContext, TaskOutput, run as run_service, ApplicationContext
+from .service import FlameService, SessionContext, TaskContext, TaskOutput, run as run_service, ApplicationContext, FLAME_INSTANCE_ENDPOINT
 from .types import Shim
 import logging
-
-FLAME_EXECUTOR_ID = "FLAME_EXECUTOR_ID"
 
 debug_service = None
 
@@ -131,8 +129,8 @@ class FlameInstance(FlameService):
         logger = logging.getLogger(__name__)
         try:
             # Run the service
-            exec_id = os.getenv(FLAME_EXECUTOR_ID)
-            if exec_id is not None:
+            endpoint = os.getenv(FLAME_INSTANCE_ENDPOINT)
+            if endpoint is not None:
                 # If the instance was started by executor, run the service.
                 logger.info("🚀 Starting Flame Instance")
                 logger.info("=" * 50)
