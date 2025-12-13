@@ -26,6 +26,8 @@ from .types_pb2 import Result, EmptyRequest, TaskResult as TaskResultProto
 
 logger = logging.getLogger(__name__)
 
+FLAME_INSTANCE_ENDPOINT = "FLAME_INSTANCE_ENDPOINT"
+
 @dataclass
 class ApplicationContext:
     """Context for an application."""
@@ -216,14 +218,15 @@ class FlmInstanceServer:
             add_InstanceServicer_to_server(shim_servicer, self._server)
 
             # Listen on Unix socket
-            socket_path = f"/tmp/flame/shim/fsi.sock"
-
-            exec_id = os.getenv('FLAME_EXECUTOR_ID')
-            if exec_id is not None:
-                socket_path = f"/tmp/flame/shim/{exec_id}/fsi.sock"
-
-            self._server.add_insecure_port(f"unix://{socket_path}")
-            logger.debug(f"Flame Python instance service started on Unix socket: {socket_path}")
+            endpoint = os.getenv(FLAME_INSTANCE_ENDPOINT)
+            if endpoint is not None:
+                self._server.add_insecure_port(f"unix://{endpoint}")
+                logger.debug(f"Flame Python instance service started on Unix socket: {endpoint}")
+            else:
+                raise FlameError(
+                    FlameErrorCode.INVALID_CONFIG,
+                    "FLAME_INSTANCE_ENDPOINT not found"
+                )
 
             # Start server
             await self._server.start()

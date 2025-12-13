@@ -22,7 +22,7 @@ use crate::apis::flame as rpc;
 
 use crate::apis::{CommonData, FlameError, TaskInput, TaskOutput};
 
-const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
+const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 
 pub struct ApplicationContext {
     pub name: String,
@@ -128,12 +128,10 @@ pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::E
         service: Arc::new(service),
     };
 
-    let uds = match std::env::var(FLAME_EXECUTOR_ID) {
-        Ok(executor_id) => UnixListener::bind(format!("/tmp/flame/shim/{executor_id}/fsi.sock"))?,
-        Err(_) => UnixListener::bind("/tmp/flame/shim/fsi.sock")?,
-    };
+    let endpoint = std::env::var(FLAME_INSTANCE_ENDPOINT)
+        .map_err(|_| FlameError::InvalidConfig("FLAME_INSTANCE_ENDPOINT not found".to_string()))?;
 
-    let uds_stream = UnixListenerStream::new(uds);
+    let uds_stream = UnixListenerStream::new(UnixListener::bind(endpoint)?);
 
     Server::builder()
         .add_service(InstanceServer::new(shim_service))

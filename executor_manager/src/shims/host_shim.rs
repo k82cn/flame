@@ -39,16 +39,16 @@ use rpc::EmptyRequest;
 use uuid::Uuid;
 
 use crate::executor::Executor;
+use crate::shims::grpc_shim::GrpcShim;
 use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
-use common::{trace::TraceFn, trace_fn, FlameError, FLAME_EXECUTOR_ID, FLAME_WORKING_DIRECTORY};
+use common::{
+    trace::TraceFn, trace_fn, FlameError, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY,
+};
 
 pub struct HostShim {
-    session_context: Option<SessionContext>,
-    client: InstanceClient<Channel>,
     child: tokio::process::Child,
-    service_socket: String,
-    working_directory: String,
+    instance_client: GrpcShim,
 }
 
 const RUST_LOG: &str = "RUST_LOG";
@@ -61,19 +61,17 @@ impl HostShim {
     ) -> Result<ShimPtr, FlameError> {
         trace_fn!("HostShim::new_ptr");
 
-        let working_directory = format!("/tmp/flame/shim/{}", executor.id);
-        let service_socket = format!("{working_directory}/fsi.sock");
-
-        // Create executor working directory for shims.
-        fs::create_dir_all(working_directory.clone())
-            .map_err(|e| FlameError::Internal(format!("failed to create shim directory: {e}")))?;
+        let mut instance_client = GrpcShim::new(executor, app).await?;
 
         let command = app.command.clone().unwrap_or_default();
         let args = app.arguments.clone();
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
         let mut envs = app.environments.clone();
         envs.insert(RUST_LOG.to_string(), log_level);
-        envs.insert(FLAME_EXECUTOR_ID.to_string(), executor.id.clone());
+        envs.insert(
+            FLAME_INSTANCE_ENDPOINT.to_string(),
+            instance_client.endpoint().to_string(),
+        );
 
         tracing::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"
@@ -113,40 +111,11 @@ impl HostShim {
                 ))
             })?;
 
-        let service_id = child.id().unwrap_or_default();
-        tracing::debug!("The service <{service_id}> was started, waiting for registering.");
-
-        WaitForSvcSocketFuture::new(service_socket.clone()).await?;
-        tracing::debug!("Try to connect to service <{service_id}> at <{service_socket}>");
-
-        let channel = Endpoint::try_from("http://[::]:50051")
-            .unwrap()
-            .connect_with_connector({
-                let service_addr = service_socket.clone();
-
-                service_fn(move |_: Uri| {
-                    let service_addr = service_addr.clone();
-                    async move {
-                        UnixStream::connect(service_addr)
-                            .await
-                            .map(TokioIo::new)
-                            .map_err(std::io::Error::other)
-                    }
-                })
-            })
-            .await
-            .map_err(|e| {
-                FlameError::Network(format!("failed to connect to service <{service_id}>: {e}"))
-            })?;
-
-        let client = InstanceClient::new(channel);
+        instance_client.connect().await?;
 
         Ok(Arc::new(Mutex::new(Self {
-            session_context: None,
-            client,
             child,
-            service_socket,
-            working_directory,
+            instance_client,
         })))
     }
 }
@@ -160,9 +129,6 @@ impl Drop for HostShim {
             self.child.kill();
         }
 
-        let _ = std::fs::remove_file(&self.service_socket);
-        let _ = std::fs::remove_dir_all(&self.working_directory);
-
         tracing::debug!(
             "The service <{}> was stopped",
             self.child.id().unwrap_or_default()
@@ -175,64 +141,18 @@ impl Shim for HostShim {
     async fn on_session_enter(&mut self, ctx: &SessionContext) -> Result<(), FlameError> {
         trace_fn!("HostShim::on_session_enter");
 
-        let req = Request::new(rpc::SessionContext::from(ctx.clone()));
-        tracing::debug!("req: {:?}", req);
-        let resp = self.client.on_session_enter(req).await?;
-        let output = resp.into_inner();
-        if output.return_code != 0 {
-            return Err(FlameError::Internal(output.message.unwrap_or_default()));
-        }
-
-        Ok(())
+        self.instance_client.on_session_enter(ctx).await
     }
 
     async fn on_task_invoke(&mut self, ctx: &TaskContext) -> Result<TaskResult, FlameError> {
         trace_fn!("HostShim::on_task_invoke");
 
-        let req = Request::new(rpc::TaskContext::from(ctx.clone()));
-        tracing::debug!("req: {:?}", req);
-        let resp = self.client.on_task_invoke(req).await?;
-        let output = resp.into_inner();
-
-        Ok(output.into())
+        self.instance_client.on_task_invoke(ctx).await
     }
 
     async fn on_session_leave(&mut self) -> Result<(), FlameError> {
         trace_fn!("HostShim::on_session_leave");
 
-        let resp = self
-            .client
-            .on_session_leave(Request::new(EmptyRequest::default()))
-            .await?;
-
-        let output = resp.into_inner();
-        if output.return_code != 0 {
-            return Err(FlameError::Internal(output.message.unwrap_or_default()));
-        }
-
-        Ok(())
-    }
-}
-
-struct WaitForSvcSocketFuture {
-    path: String,
-}
-
-impl WaitForSvcSocketFuture {
-    pub fn new(path: String) -> Self {
-        Self { path }
-    }
-}
-
-impl Future for WaitForSvcSocketFuture {
-    type Output = Result<(), FlameError>;
-
-    fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        if fs::exists(&self.path).unwrap_or(false) {
-            Poll::Ready(Ok(()))
-        } else {
-            ctx.waker().wake_by_ref();
-            Poll::Pending
-        }
+        self.instance_client.on_session_leave().await
     }
 }

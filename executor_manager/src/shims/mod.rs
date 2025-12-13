@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+mod grpc_shim;
 mod host_shim;
 mod wasm_shim;
 

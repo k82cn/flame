@@ -15,13 +15,13 @@ pub mod apis;
 pub mod ctx;
 pub mod trace;
 
+use prost::UnknownEnumValue;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use time::macros::format_description;
-use tonic::{Status};
-use prost::UnknownEnumValue;
+use tonic::Status;
 use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tracing_subscriber::fmt::time::LocalTime;
 
@@ -103,8 +103,8 @@ macro_rules! lock_ptr {
     };
 }
 
-pub const FLAME_EXECUTOR_ID: &str = "FLAME_EXECUTOR_ID";
-pub const FLAME_WORKING_DIRECTORY: &str = "/tmp";
+pub const FLAME_WORKING_DIRECTORY: &str = "/tmp/flame";
+pub const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 
 pub fn init_logger() -> Result<(), FlameError> {
     let filter = tracing_subscriber::EnvFilter::from_default_env()
