@@ -63,6 +63,19 @@ impl HostShim {
 
         let mut instance_client = GrpcShim::new(executor, app).await?;
 
+        let child = Self::launch_instance(app, executor, instance_client.endpoint())?;
+
+        instance_client.connect().await?;
+
+        Ok(Arc::new(Mutex::new(Self {
+            child,
+            instance_client,
+        })))
+    }
+
+    fn launch_instance(app: &ApplicationContext, executor: &Executor, endpoint: &str) -> Result<tokio::process::Child, FlameError> {
+        trace_fn!("HostShim::launch_instance");
+
         let command = app.command.clone().unwrap_or_default();
         let args = app.arguments.clone();
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
@@ -70,7 +83,7 @@ impl HostShim {
         envs.insert(RUST_LOG.to_string(), log_level);
         envs.insert(
             FLAME_INSTANCE_ENDPOINT.to_string(),
-            instance_client.endpoint().to_string(),
+            endpoint.to_string(),
         );
 
         tracing::debug!(
@@ -111,12 +124,7 @@ impl HostShim {
                 ))
             })?;
 
-        instance_client.connect().await?;
-
-        Ok(Arc::new(Mutex::new(Self {
-            child,
-            instance_client,
-        })))
+        Ok(child)
     }
 }
 
