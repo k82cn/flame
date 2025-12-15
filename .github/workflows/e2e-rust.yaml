@@ -14,10 +14,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Start Flame
-        uses: hoverkraft-tech/compose-action@v2.0.1
+      - name: Set up Docker Compose
+        uses: docker/setup-compose-action@v1
         with:
-          compose-file: "./compose.yaml"
+          version: latest
+      - name: Start Flame
+        run: |
+          docker compose up --build --force-recreate -d
       - name: Install gRPC
         run: |
           sudo apt-get update && sudo apt-get install -y protobuf-compiler

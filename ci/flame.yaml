@@ -1,0 +1,5 @@
+---
+current-cluster: flame
+clusters:
+  - name: flame
+    endpoint: "http://flame-session-manager:8080"

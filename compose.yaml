@@ -48,6 +48,6 @@ services:
     environment:
       - RUST_LOG=info
     volumes:
-      - ./ci/flame-conf.yaml:/root/.flame/flame-conf.yaml
+      - ./ci/flame.yaml:/root/.flame/flame.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e

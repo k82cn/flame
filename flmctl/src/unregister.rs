@@ -17,8 +17,8 @@ use flame_rs::apis::FlameContext;
 use flame_rs::client;
 
 pub async fn run(ctx: &FlameContext, application: &str) -> Result<(), Box<dyn Error>> {
-    let conn = client::connect(&ctx.endpoint).await?;
-
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = client::connect(&current_cluster.endpoint).await?;
     conn.unregister_application(application.to_owned()).await?;
 
     Ok(())

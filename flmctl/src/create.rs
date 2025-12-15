@@ -17,7 +17,8 @@ use flame_rs as flame;
 use flame_rs::{apis::FlameContext, client::SessionAttributes};
 
 pub async fn run(ctx: &FlameContext, app: &str, slots: &u32) -> Result<(), Box<dyn Error>> {
-    let conn = flame::client::connect(&ctx.endpoint).await?;
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = flame::client::connect(&current_cluster.endpoint).await?;
     let attr = SessionAttributes {
         application: app.to_owned(),
         slots: *slots,

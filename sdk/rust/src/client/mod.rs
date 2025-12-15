@@ -44,12 +44,12 @@ type FlameClient = FlameFrontendClient<Channel>;
 
 pub async fn connect(addr: &str) -> Result<Connection, FlameError> {
     let endpoint = Endpoint::from_shared(addr.to_string())
-        .map_err(|_| FlameError::InvalidConfig("invalid address".to_string()))?;
+        .map_err(|_| FlameError::InvalidConfig(format!("invalid address <{addr}>")))?;
 
     let channel = endpoint
         .connect()
         .await
-        .map_err(|_| FlameError::InvalidConfig("failed to connect".to_string()))?;
+        .map_err(|_| FlameError::InvalidConfig(format!("failed to connect to <{addr}>")))?;
 
     Ok(Connection { channel })
 }

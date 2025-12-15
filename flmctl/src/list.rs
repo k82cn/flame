@@ -26,7 +26,8 @@ pub async fn run(
     session: bool,
     executor: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let conn = flame::client::connect(&ctx.endpoint).await?;
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = flame::client::connect(&current_cluster.endpoint).await?;
     match (application, session, executor) {
         (true, _, _) => list_application(conn).await,
         (_, true, _) => list_session(conn).await,

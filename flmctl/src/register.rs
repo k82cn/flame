@@ -29,7 +29,8 @@ pub async fn run(ctx: &FlameContext, path: &String) -> Result<(), FlameError> {
     let contents =
         fs::read_to_string(path.clone()).map_err(|e| FlameError::Internal(e.to_string()))?;
 
-    let conn = flame::client::connect(&ctx.endpoint).await?;
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = flame::client::connect(&current_cluster.endpoint).await?;
 
     let documents: Vec<&str> = contents
         .split("\n---\n")

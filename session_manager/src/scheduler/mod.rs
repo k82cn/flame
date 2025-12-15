@@ -69,6 +69,7 @@ mod tests {
     use common::apis::{
         Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement, Shim,
     };
+    use common::ctx::FlameCluster;
     use common::ctx::FlameContext;
     use common::FlameError;
     use std::collections::HashMap;
@@ -133,7 +134,11 @@ mod tests {
 
             let url = format!("/tmp/flame_test_env_{}.db", Utc::now().timestamp());
             let config = FlameContext {
-                storage: format!("sqlite:///{url}"),
+                cluster: FlameCluster {
+                    storage: format!("sqlite:///{url}"),
+                    ..Default::default()
+                },
+
                 ..Default::default()
             };
 

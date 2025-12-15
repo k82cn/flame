@@ -16,10 +16,6 @@ pub(crate) mod flame {
 }
 use flame as rpc;
 
-use std::fmt::{Display, Formatter};
-use std::fs;
-use std::path::Path;
-
 use bytes::Bytes;
 use prost::Enumeration;
 use serde_derive::{Deserialize, Serialize};
@@ -29,6 +25,10 @@ use tonic::Status;
 use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tracing_subscriber::fmt::time::LocalTime;
 
+mod ctx;
+pub use ctx::FlameCluster;
+pub use ctx::FlameContext;
+
 pub type TaskID = String;
 pub type SessionID = String;
 pub type ApplicationID = String;
@@ -37,10 +37,6 @@ type Message = Bytes;
 pub type TaskInput = Message;
 pub type TaskOutput = Message;
 pub type CommonData = Message;
-
-const DEFAULT_FLAME_CONF: &str = "flame-conf.yaml";
-const DEFAULT_CONTEXT_NAME: &str = "flame";
-const DEFAULT_FLAME_ENDPOINT: &str = "http://127.0.0.1:8080";
 
 #[macro_export]
 macro_rules! lock_ptr {
@@ -179,51 +175,6 @@ impl From<rpc::ExecutorState> for ExecutorState {
             rpc::ExecutorState::ExecutorReleased => Self::Released,
             rpc::ExecutorState::ExecutorUnknown => Self::Unknown,
         }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlameContext {
-    pub name: String,
-    pub endpoint: String,
-}
-
-impl Display for FlameContext {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "name: {}, endpoint: {}", self.name, self.endpoint)
-    }
-}
-
-impl Default for FlameContext {
-    fn default() -> Self {
-        FlameContext {
-            name: DEFAULT_CONTEXT_NAME.to_string(),
-            endpoint: DEFAULT_FLAME_ENDPOINT.to_string(),
-        }
-    }
-}
-
-impl FlameContext {
-    pub fn from_file(fp: Option<String>) -> Result<Self, FlameError> {
-        let fp = match fp {
-            None => {
-                format!("{}/.flame/{}", env!("HOME", "."), DEFAULT_FLAME_CONF)
-            }
-            Some(path) => path,
-        };
-
-        if !Path::new(&fp).is_file() {
-            return Err(FlameError::InvalidConfig(format!("<{fp}> is not a file")));
-        }
-
-        let contents =
-            fs::read_to_string(fp.clone()).map_err(|e| FlameError::Internal(e.to_string()))?;
-        let ctx: FlameContext =
-            serde_yaml::from_str(&contents).map_err(|e| FlameError::Internal(e.to_string()))?;
-
-        tracing::debug!("Load FrameContext from <{fp}>: {ctx}");
-
-        Ok(ctx)
     }
 }
 
