@@ -48,7 +48,8 @@ async fn update_application(ctx: &FlameContext, application: &str) -> Result<(),
 
     let app_attr = ApplicationAttributes::try_from(&app)?;
 
-    let conn = flame::client::connect(&ctx.endpoint).await?;
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = flame::client::connect(&current_cluster.endpoint).await?;
 
     conn.update_application(app.metadata.name, app_attr).await?;
 

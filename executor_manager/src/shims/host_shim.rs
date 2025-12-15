@@ -73,7 +73,11 @@ impl HostShim {
         })))
     }
 
-    fn launch_instance(app: &ApplicationContext, executor: &Executor, endpoint: &str) -> Result<tokio::process::Child, FlameError> {
+    fn launch_instance(
+        app: &ApplicationContext,
+        executor: &Executor,
+        endpoint: &str,
+    ) -> Result<tokio::process::Child, FlameError> {
         trace_fn!("HostShim::launch_instance");
 
         let command = app.command.clone().unwrap_or_default();
@@ -81,10 +85,7 @@ impl HostShim {
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
         let mut envs = app.environments.clone();
         envs.insert(RUST_LOG.to_string(), log_level);
-        envs.insert(
-            FLAME_INSTANCE_ENDPOINT.to_string(),
-            endpoint.to_string(),
-        );
+        envs.insert(FLAME_INSTANCE_ENDPOINT.to_string(), endpoint.to_string());
 
         tracing::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"

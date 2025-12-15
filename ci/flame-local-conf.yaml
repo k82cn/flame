@@ -1,6 +1,11 @@
 ---
-name: flame
-endpoint: "http://127.0.0.1:30080"
-slot: "cpu=1,mem=1g"
-policy: priority
-storage: sqlite://flame.db
+cluster:
+  name: flame
+  endpoint: "http://127.0.0.1:30080"
+  slot: "cpu=1,mem=1g"
+  policy: priority
+  storage: sqlite://flame.db
+executors:
+  shim: host
+  limits:
+    max_executors: 10

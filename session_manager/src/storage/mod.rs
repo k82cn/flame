@@ -48,7 +48,7 @@ pub struct Storage {
 pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
     Ok(Arc::new(Storage {
         context: config.clone(),
-        engine: engine::connect(&config.storage).await?,
+        engine: engine::connect(&config.cluster.storage).await?,
         sessions: common::new_ptr(HashMap::new()),
         executors: common::new_ptr(HashMap::new()),
         nodes: common::new_ptr(HashMap::new()),
@@ -58,7 +58,7 @@ pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
 
 impl Storage {
     pub fn snapshot(&self) -> Result<SnapShotPtr, FlameError> {
-        let res = SnapShot::new(self.context.slot.clone());
+        let res = SnapShot::new(self.context.cluster.slot.clone());
 
         {
             let node_map = lock_ptr!(self.nodes)?;
@@ -461,7 +461,7 @@ impl Storage {
         let (resreq, slots) = {
             let ssn = lock_ptr!(ssn)?;
             (
-                ResourceRequirement::new(ssn.slots, &self.context.slot),
+                ResourceRequirement::new(ssn.slots, &self.context.cluster.slot),
                 ssn.slots,
             )
         };

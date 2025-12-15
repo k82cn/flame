@@ -32,10 +32,8 @@ CommonData = Message
 
 
 # Constants
-DEFAULT_FLAME_CONF = "flame-conf.yaml"
-DEFAULT_CONTEXT_NAME = "flame"
+DEFAULT_FLAME_CONF = "flame.yaml"
 DEFAULT_FLAME_ENDPOINT = "http://127.0.0.1:8080"
-
 
 class SessionState(IntEnum):
     """Session state enumeration."""
@@ -158,22 +156,6 @@ class Application:
     delay_release: Optional[int] = None
     schema: Optional[ApplicationSchema] = None
 
-
-@dataclass
-class FlameContext:
-    """Flame context configuration."""
-    name: str
-    endpoint: str
-    
-    @classmethod
-    def default(cls) -> "FlameContext":
-        """Create a default Flame context."""
-        return cls(
-            name=DEFAULT_CONTEXT_NAME,
-            endpoint=DEFAULT_FLAME_ENDPOINT
-        )
-
-
 class TaskInformer:
     """Interface for task updates."""
     
@@ -210,11 +192,21 @@ class FlameContext:
     def __init__(self):
         self._endpoint = DEFAULT_FLAME_ENDPOINT
 
-        home = Path.home()
-        config_file = home / ".flame" / DEFAULT_FLAME_CONF
-        if config_file.exists():
-            with open(config_file, "r") as f:
-                config = yaml.safe_load(f)
-                self._endpoint = config.get("endpoint", self._endpoint)
-
-        self._endpoint = os.getenv("FLAME_ENDPOINT", self._endpoint)
+        endpoint = os.getenv("FLAME_ENDPOINT")
+        if endpoint is not None:
+            self._endpoint = endpoint
+        else:
+            home = Path.home()
+            config_file = home / ".flame" / DEFAULT_FLAME_CONF
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    config = yaml.safe_load(f)
+                    cc = config.get("current-cluster")
+                    if cc is None:
+                        raise FlameError(FlameErrorCode.INVALID_CONFIG, "current-cluster is not set")
+                    for cluster in config.get("clusters", []):
+                        if cc == cluster['name']:
+                            self._endpoint = cluster.get('endpoint', self._endpoint)
+                            break
+                    else:
+                        raise FlameError(FlameErrorCode.INVALID_CONFIG, f"cluster <{cc}> not found")

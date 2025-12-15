@@ -27,7 +27,7 @@ async def main():
     # Invoke task
     print("Running task...")
     await session.invoke(b"task input data", MyTaskInformer())
-        
+
     # Close session
     print("Closing session...")
     await session.close()

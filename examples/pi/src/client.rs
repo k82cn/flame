@@ -56,7 +56,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let ctx = FlameContext::from_file(None)?;
 
-    let conn = flame::client::connect(&ctx.endpoint).await?;
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = flame::client::connect(&current_cluster.endpoint).await?;
     let ssn = conn
         .create_session(&SessionAttributes {
             application: app,

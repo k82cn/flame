@@ -39,8 +39,9 @@ pub struct BackendClient {
 
 impl BackendClient {
     pub async fn new(ctx: &FlameContext) -> Result<Self, FlameError> {
-        let url = url::Url::parse(&ctx.endpoint)
-            .map_err(|_| FlameError::InvalidConfig("invalid endpoint".to_string()))?;
+        let url = url::Url::parse(&ctx.cluster.endpoint).map_err(|_| {
+            FlameError::InvalidConfig(format!("invalid endpoint <{}>", ctx.cluster.endpoint))
+        })?;
         let port = url.port().unwrap_or(DEFAULT_PORT) + 1;
 
         let endpoint = format!(
@@ -51,9 +52,9 @@ impl BackendClient {
 
         tracing::info!("Connecting to flame backend at {}", endpoint);
 
-        let client = FlameBackendClient::connect(endpoint)
+        let client = FlameBackendClient::connect(endpoint.clone())
             .await
-            .map_err(|_e| FlameError::Network("tonic connection".to_string()))?;
+            .map_err(|_e| FlameError::Network(format!("failed to connect to <{endpoint}>")))?;
 
         Ok(Self { client })
     }

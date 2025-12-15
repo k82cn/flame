@@ -1020,6 +1020,17 @@ impl From<TaskState> for i32 {
     }
 }
 
+impl TryFrom<String> for Shim {
+    type Error = FlameError;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        match s.to_lowercase().as_str() {
+            "host" => Ok(Self::Host),
+            "wasm" => Ok(Self::Wasm),
+            _ => Err(FlameError::InvalidConfig(format!("invalid shim: {s}"))),
+        }
+    }
+}
+
 impl From<rpc::Shim> for Shim {
     fn from(s: rpc::Shim) -> Self {
         match s {

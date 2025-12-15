@@ -27,7 +27,8 @@ pub async fn run(
     session: &Option<String>,
     task: &Option<String>,
 ) -> Result<(), Box<dyn Error>> {
-    let conn = client::connect(&ctx.endpoint).await?;
+    let current_cluster = ctx.get_current_cluster()?;
+    let conn = client::connect(&current_cluster.endpoint).await?;
     match (application, session, task) {
         (Some(application), None, None) => view_application(conn, application).await,
         (None, Some(session), None) => view_session(conn, output_format, session).await,
