@@ -87,7 +87,7 @@ async fn test_list_pods() -> Result<(), FlameError> {
         working_directory: None,
     };
 
-    let pod = pm.run_pod(&app).await?;
+    let _ = pm.run_pod(&app).await?;
 
     let pods = pm.list_pods().await?;
     assert!(!pods.is_empty());
