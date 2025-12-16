@@ -171,8 +171,8 @@ async def context_local_api(s: FastAPIRequest):
         session_id = s.query_params.get("session_id") or "0",
         application=ApplicationContext(
             name="test",
-            shim=Shim.GRPC,
-            url=None,
+            shim=Shim.Host,
+            image=None,
             command=None,
         ),
         common_data=body_str,
