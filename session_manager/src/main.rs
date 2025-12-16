@@ -31,6 +31,7 @@ mod controller;
 mod model;
 pub mod scheduler;
 mod storage;
+mod provider;
 
 #[derive(Parser)]
 #[command(name = "flame-session-manager")]
@@ -71,6 +72,19 @@ async fn main() -> Result<(), FlameError> {
     let frontend_rt = build_runtime("frontend", 1)?;
     let backend_rt = build_runtime("backend", 1)?;
     let scheduler_rt = build_runtime("scheduler", 1)?;
+    let provider_rt = build_runtime("provider", 1)?;
+
+    // Start provider thread.
+    {
+        let controller = controller.clone();
+        let ctx = ctx.clone();
+
+        let handler = provider_rt.spawn(async move {
+            let provider = provider::new("none", controller)?;
+            provider.run(ctx).await
+        });
+        handlers.push(handler);
+    }
 
     // Start apiserver frontend thread.
     {
