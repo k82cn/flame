@@ -27,5 +27,7 @@ serde_yaml = "0.9"
 rustix = { version = "1.1" , features = ["system"] }
 num_cpus = "1.17"
 
+bincode = "2"
+
 [dev-dependencies]
 tempfile = { version = "3" }

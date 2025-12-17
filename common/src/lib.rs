@@ -14,6 +14,7 @@ limitations under the License.
 pub mod apis;
 pub mod collections;
 pub mod ctx;
+pub mod storage;
 pub mod trace;
 
 use prost::UnknownEnumValue;
@@ -86,6 +87,12 @@ impl From<FromEnvError> for FlameError {
 impl From<UnknownEnumValue> for FlameError {
     fn from(value: UnknownEnumValue) -> Self {
         FlameError::InvalidConfig(value.to_string())
+    }
+}
+
+impl From<std::io::Error> for FlameError {
+    fn from(value: std::io::Error) -> Self {
+        FlameError::Storage(value.to_string())
     }
 }
 
