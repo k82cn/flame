@@ -13,15 +13,13 @@ limitations under the License.
 
 use std::sync::Arc;
 
-use stdng::collections::BinaryHeap;
-
 use crate::model::{BOUND_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::ctx::Context;
 use crate::scheduler::plugins::ssn_order_fn;
 
 use common::FlameError;
-use common::{trace::TraceFn, trace_fn};
+use common::{collections::BinaryHeap, trace::TraceFn, trace_fn};
 
 pub struct ShuffleAction {}
 

@@ -1183,7 +1183,6 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sqlx",
- "stdng",
  "strum",
  "strum_macros",
  "thiserror 1.0.69",

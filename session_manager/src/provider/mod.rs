@@ -14,8 +14,8 @@ limitations under the License.
 use std::sync::Arc;
 
 use crate::controller::ControllerPtr;
-use common::{ctx::FlameContext, FlameError};
 use async_trait::async_trait;
+use common::{ctx::FlameContext, FlameError};
 
 mod k8s;
 mod none;

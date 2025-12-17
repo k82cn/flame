@@ -11,23 +11,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use async_trait::async_trait;
-use common::{ctx::FlameContext, FlameError};
+use std::cmp::Ordering;
 
-use crate::controller::ControllerPtr;
-use crate::provider::Provider;
+mod bin_heap;
 
-pub struct NoneProvider {}
+pub use bin_heap::BinaryHeap;
 
-impl NoneProvider {
-    pub fn new(_: ControllerPtr) -> Self {
-        Self {}
-    }
-}
-
-#[async_trait]
-impl Provider for NoneProvider {
-    async fn run(&self, _: FlameContext) -> Result<(), FlameError> {
-        Ok(())
-    }
+pub trait Cmp<T> {
+    fn cmp(&self, t1: &T, t2: &T) -> Ordering;
 }

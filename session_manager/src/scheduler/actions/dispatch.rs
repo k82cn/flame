@@ -12,7 +12,6 @@ limitations under the License.
 */
 
 use std::sync::Arc;
-use stdng::collections::BinaryHeap;
 
 use crate::model::{
     ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR,
@@ -22,7 +21,7 @@ use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
 
 use crate::FlameError;
-use common::{trace::TraceFn, trace_fn};
+use common::{collections::BinaryHeap, trace::TraceFn, trace_fn};
 
 pub struct DispatchAction {}
 

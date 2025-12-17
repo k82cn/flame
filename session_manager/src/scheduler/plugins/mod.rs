@@ -15,14 +15,12 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use stdng::collections;
-
 use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot};
 use crate::scheduler::plugins::fairshare::FairShare;
 use crate::scheduler::Context;
 
 use common::{self, new_ptr, MutexPtr};
-use common::{lock_ptr, FlameError};
+use common::{collections, lock_ptr, FlameError};
 
 mod fairshare;
 

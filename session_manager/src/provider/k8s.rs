@@ -11,11 +11,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use common::{ctx::FlameContext, FlameError};
 use async_trait::async_trait;
+use common::{ctx::FlameContext, FlameError};
 
-use crate::provider::Provider;
 use crate::controller::ControllerPtr;
+use crate::provider::Provider;
 
 pub struct K8sProvider {
     controller: ControllerPtr,

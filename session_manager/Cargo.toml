@@ -28,7 +28,6 @@ tokio-stream = { version = "0.1"}
 url = { workspace = true }
 futures="0.3"
 thiserror = "1"
-stdng = "0.1"
 bytes = "1"
 jsonschema = "0.33.0"
 

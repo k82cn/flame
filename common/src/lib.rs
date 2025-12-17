@@ -12,6 +12,7 @@ limitations under the License.
 */
 
 pub mod apis;
+pub mod collections;
 pub mod ctx;
 pub mod trace;
 

@@ -29,9 +29,9 @@ use common::FlameError;
 mod apiserver;
 mod controller;
 mod model;
+mod provider;
 pub mod scheduler;
 mod storage;
-mod provider;
 
 #[derive(Parser)]
 #[command(name = "flame-session-manager")]
