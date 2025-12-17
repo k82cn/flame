@@ -12,7 +12,6 @@ limitations under the License.
 */
 
 use std::sync::Arc;
-use stdng::collections::{BinaryHeap, Cmp};
 
 use crate::model::{ALL_NODE, OPEN_SESSION};
 
@@ -22,7 +21,11 @@ use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
 use crate::FlameError;
 
-use common::{trace::TraceFn, trace_fn};
+use common::{
+    collections::{BinaryHeap, Cmp},
+    trace::TraceFn,
+    trace_fn,
+};
 
 pub struct AllocateAction {}
 

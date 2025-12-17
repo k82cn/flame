@@ -13,14 +13,13 @@ limitations under the License.
 
 use std::cmp::Ordering;
 use std::sync::Arc;
-use stdng::collections;
 
 use crate::controller::ControllerPtr;
 use crate::model::{ExecutorInfo, ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
 use crate::scheduler::actions::{ActionPtr, AllocateAction, DispatchAction, ShuffleAction};
 use crate::scheduler::plugins::{PluginManager, PluginManagerPtr};
 use common::apis::ExecutorState;
-
+use common::collections;
 use common::FlameError;
 
 const DEFAULT_SCHEDULE_INTERVAL: u64 = 500;
