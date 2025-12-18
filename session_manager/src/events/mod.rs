@@ -50,6 +50,8 @@ impl Object for EventDao {
     }
 }
 
+pub type EventManagerPtr = Arc<EventManager>;
+
 pub struct EventManager {
     storage_path: String,
     event_storage: MutexPtr<HashMap<SessionID, EventStorage>>,
@@ -121,14 +123,14 @@ impl EventManager {
         let base_path = format!("{}/{}", self.storage_path, session_id);
 
         let mut event_storage = lock_ptr!(self.event_storage)?;
-        if !event_storage.contains_key(&session_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = event_storage.entry(session_id) {
             fs::create_dir_all(&base_path)?;
 
             let storage = EventStorage {
                 object_storage: ObjectStorage::new(&base_path, "events")?,
                 data_storage: DataStorage::new(&base_path, "event_messages")?,
             };
-            event_storage.insert(session_id, storage);
+            e.insert(storage);
         }
 
         Ok(())

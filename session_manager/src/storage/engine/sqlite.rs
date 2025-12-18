@@ -84,85 +84,6 @@ impl SqliteEngine {
         Ok(Arc::new(SqliteEngine { pool: db }))
     }
 
-    async fn _record_event(
-        &self,
-        tx: &mut SqliteConnection,
-        owner: &dyn Ownership,
-        code: i32,
-        message: Option<String>,
-    ) -> Result<Event, FlameError> {
-        let sql = r#"INSERT INTO events (owner, parent, code, message, creation_time)
-                    VALUES (?, ?, ?, ?, ?)
-                    RETURNING *"#;
-        let event: EventDao = sqlx::query_as(sql)
-            .bind(owner.uid())
-            .bind(owner.owner())
-            .bind(code)
-            .bind(message)
-            .bind(Utc::now().timestamp_millis())
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to record event: {e}")))?;
-
-        event.try_into()
-    }
-
-    async fn _delete_event_by_owner(
-        &self,
-        tx: &mut SqliteConnection,
-        owner: String,
-    ) -> Result<Vec<EventDao>, FlameError> {
-        let sql = "DELETE FROM events WHERE owner=? RETURNING * ";
-        let events: Vec<EventDao> = sqlx::query_as(sql)
-            .bind(owner)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to delete event: {e}")))?;
-        Ok(events)
-    }
-
-    async fn _delete_event_by_parent(
-        &self,
-        tx: &mut SqliteConnection,
-        parent: String,
-    ) -> Result<Vec<EventDao>, FlameError> {
-        let sql = "DELETE FROM events WHERE parent=? RETURNING *";
-        let events: Vec<EventDao> = sqlx::query_as(sql)
-            .bind(parent)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to delete event: {e}")))?;
-        Ok(events)
-    }
-
-    async fn _all_events_by_owner(
-        &self,
-        tx: &mut SqliteConnection,
-        owner: &dyn Ownership,
-    ) -> Result<Vec<EventDao>, FlameError> {
-        let sql = "SELECT * FROM events WHERE owner=?";
-        let events: Vec<EventDao> = sqlx::query_as(sql)
-            .bind(owner.uid())
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to get all events by owner: {e}")))?;
-        Ok(events)
-    }
-
-    async fn _all_events_by_parent(
-        &self,
-        tx: &mut SqliteConnection,
-        parent: String,
-    ) -> Result<Vec<EventDao>, FlameError> {
-        let sql = "SELECT * FROM events WHERE parent=?";
-        let events: Vec<EventDao> = sqlx::query_as(sql)
-            .bind(parent)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(format!("failed to get all events by parent: {e}")))?;
-        Ok(events)
-    }
-
     async fn _count_open_tasks(
         &self,
         tx: &mut SqliteConnection,
@@ -200,10 +121,6 @@ impl SqliteEngine {
             .map_err(|e| FlameError::Storage(format!("failed to close session: {e}")))?;
 
         let ssn: Session = ssn.try_into()?;
-
-        // Delete events
-        self._delete_event_by_parent(tx, ssn.uid()).await?;
-        self._delete_event_by_owner(tx, ssn.uid()).await?;
 
         Ok(ssn)
     }
@@ -635,20 +552,11 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let events = self._all_events_by_owner(&mut tx, &gid).await?;
-
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let mut task: Task = task.try_into()?;
-        task.events = events
-            .into_iter()
-            .map(Event::try_from)
-            .filter_map(Result::ok)
-            .collect();
-
-        Ok(task)
+        task.try_into()
     }
 
     async fn delete_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
@@ -666,20 +574,11 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let events = self._delete_event_by_owner(&mut tx, gid.uid()).await?;
-
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let mut task: Task = task.try_into()?;
-        task.events = events
-            .into_iter()
-            .map(Event::try_from)
-            .filter_map(Result::ok)
-            .collect();
-
-        Ok(task)
+        task.try_into()
     }
 
     async fn retry_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
@@ -740,23 +639,11 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        self._record_event(&mut tx, &gid, task_state.into(), message)
-            .await?;
-
-        let events = self._all_events_by_owner(&mut tx, &gid).await?;
-
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let mut task: Task = task.try_into()?;
-        task.events = events
-            .into_iter()
-            .map(Event::try_from)
-            .filter_map(Result::ok)
-            .collect();
-
-        Ok(task)
+        task.try_into()
     }
 
     async fn update_task_result(
@@ -794,23 +681,11 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        self._record_event(&mut tx, &gid, task_result.state.into(), task_result.message)
-            .await?;
-
-        let events = self._all_events_by_owner(&mut tx, &gid).await?;
-
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let mut task: Task = task.try_into()?;
-        task.events = events
-            .into_iter()
-            .map(Event::try_from)
-            .filter_map(Result::ok)
-            .collect();
-
-        Ok(task)
+        task.try_into()
     }
 
     async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
@@ -827,28 +702,11 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let events = self._all_events_by_parent(&mut tx, ssn_id.uid()).await?;
-        let mut event_map = HashMap::<String, Vec<Event>>::new();
-
-        for event in events {
-            let owner = event.owner.clone();
-            match Event::try_from(event) {
-                Ok(event) => event_map.entry(owner).or_default().push(event),
-                Err(e) => tracing::error!("failed to convert event: {e}"),
-            }
-        }
-
         let mut tasks: Vec<Task> = task_list
             .iter()
             .map(Task::try_from)
             .filter_map(Result::ok)
             .collect();
-
-        for task in &mut tasks {
-            if let Some(events) = event_map.get(&task.uid()) {
-                task.events = events.clone();
-            }
-        }
 
         tx.commit()
             .await
@@ -887,7 +745,6 @@ mod tests {
         assert_eq!(tasks[0].id, 1);
         assert_eq!(tasks[0].ssn_id, ssn_1.id);
         assert_eq!(tasks[0].state, TaskState::Pending);
-        assert_eq!(tasks[0].events.len(), 0);
         assert_eq!(tasks[0].input, None);
         assert_eq!(tasks[0].output, None);
 
@@ -903,12 +760,6 @@ mod tests {
         assert_eq!(tasks[0].id, 1);
         assert_eq!(tasks[0].ssn_id, ssn_1.id);
         assert_eq!(tasks[0].state, TaskState::Succeed);
-        assert_eq!(tasks[0].events.len(), 1);
-        assert_eq!(tasks[0].events[0].code, 2);
-        assert_eq!(
-            tasks[0].events[0].message,
-            Some("Task succeeded".to_string())
-        );
 
         Ok(())
     }
