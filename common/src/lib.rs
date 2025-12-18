@@ -17,6 +17,8 @@ pub mod ctx;
 pub mod storage;
 pub mod trace;
 
+use std::string::FromUtf8Error;
+
 use prost::UnknownEnumValue;
 use serde_json::json;
 use std::collections::HashMap;
@@ -74,6 +76,12 @@ impl From<Status> for FlameError {
 
 impl From<ParseError> for FlameError {
     fn from(value: ParseError) -> Self {
+        FlameError::InvalidConfig(value.to_string())
+    }
+}
+
+impl From<FromUtf8Error> for FlameError {
+    fn from(value: FromUtf8Error) -> Self {
         FlameError::InvalidConfig(value.to_string())
     }
 }

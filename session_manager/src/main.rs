@@ -28,6 +28,7 @@ use common::FlameError;
 
 mod apiserver;
 mod controller;
+mod events;
 mod model;
 mod provider;
 pub mod scheduler;

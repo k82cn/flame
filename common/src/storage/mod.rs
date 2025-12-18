@@ -18,4 +18,5 @@ pub use data::DataStorage;
 pub use data::Index;
 pub use object::Filter;
 pub use object::Object;
+pub use object::ObjectId;
 pub use object::ObjectStorage;

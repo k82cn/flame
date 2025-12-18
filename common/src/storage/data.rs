@@ -16,8 +16,11 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::path::PathBuf;
 
+use bincode::{Decode, Encode};
+
 use crate::FlameError;
 
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct Index {
     pub start: u64,
     pub end: u64,
@@ -66,7 +69,8 @@ impl DataStorage {
     }
 
     pub fn clear(&mut self) -> Result<(), FlameError> {
-        fs::remove_file(&self.path)?;
+        fs::remove_file(&self.path)
+            .map_err(|e| FlameError::Storage(format!("failed to clear data storage: {}", e)))?;
         Ok(())
     }
 }

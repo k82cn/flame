@@ -1191,6 +1191,7 @@ name = "flame-session-manager"
 version = "0.5.0"
 dependencies = [
  "async-trait",
+ "bincode 2.0.1",
  "bytes",
  "chrono",
  "clap",
@@ -1206,6 +1207,7 @@ dependencies = [
  "sqlx",
  "strum",
  "strum_macros",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",

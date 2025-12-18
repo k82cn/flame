@@ -27,7 +27,7 @@ use serde_derive::Serialize;
 use crate::trace_fn;
 use crate::{trace::TraceFn, FlameError};
 
-type ObjectId = u64;
+pub type ObjectId = u64;
 
 pub trait Object {
     fn id(&self) -> ObjectId;
@@ -62,8 +62,8 @@ impl ObjectStorage {
     pub fn new(path: &str, name: &str) -> Result<Self, FlameError> {
         trace_fn!("ObjectStorage::new");
 
-        let metadata_file_path = PathBuf::from(format!("{}/{}.ini", path, name));
-        let owners_file_path = PathBuf::from(format!("{}/{}.idx", path, name));
+        let metadata_file_path = PathBuf::from(format!("{}/{}.json", path, name));
+        let owners_file_path = PathBuf::from(format!("{}/{}.csv", path, name));
         let data_file_path = PathBuf::from(format!("{}/{}.dat", path, name));
 
         let data = OpenOptions::new()
@@ -75,7 +75,7 @@ impl ObjectStorage {
 
         let owners_file = OpenOptions::new()
             .read(true)
-            .write(true)
+            .append(true)
             .create(true)
             .truncate(false)
             .open(&owners_file_path)?;
@@ -164,9 +164,16 @@ impl ObjectStorage {
         Ok(object)
     }
 
-    pub fn list<T: Object + Decode<()>>(&mut self, filter: &Filter) -> Result<Vec<T>, FlameError> {
+    pub fn list<T: Object + Decode<()>>(
+        &mut self,
+        filter: Option<Filter>,
+    ) -> Result<Vec<T>, FlameError> {
         let mut objects = vec![];
-        let ids = self.owners.get(&filter.owner).unwrap_or(&vec![]).clone();
+        let ids = if let Some(filter) = &filter {
+            self.owners.get(&filter.owner).cloned().unwrap_or(vec![])
+        } else {
+            self.owners.values().flatten().cloned().collect()
+        };
 
         for id in ids {
             let object = self.load::<T>(id)?;
@@ -177,9 +184,27 @@ impl ObjectStorage {
     }
 
     pub fn clear(&mut self) -> Result<(), FlameError> {
-        fs::remove_file(&self.data_file_path)?;
-        fs::remove_file(&self.owners_file_path)?;
-        fs::remove_file(&self.metadata_file_path)?;
+        fs::remove_file(&self.data_file_path).map_err(|e| {
+            FlameError::Storage(format!(
+                "failed to clear object storage data at <{}>: {}",
+                self.data_file_path.to_string_lossy(),
+                e
+            ))
+        })?;
+        fs::remove_file(&self.owners_file_path).map_err(|e| {
+            FlameError::Storage(format!(
+                "failed to clear object storage owners at <{}>: {}",
+                self.owners_file_path.to_string_lossy(),
+                e
+            ))
+        })?;
+        fs::remove_file(&self.metadata_file_path).map_err(|e| {
+            FlameError::Storage(format!(
+                "failed to clear object storage metadata at <{}>: {}",
+                self.metadata_file_path.to_string_lossy(),
+                e
+            ))
+        })?;
 
         Ok(())
     }
@@ -455,7 +480,7 @@ mod tests {
         assert_eq!(obj2.updated_at, updated_at + 1);
         assert_eq!(obj2.owner, 1);
 
-        let objects: Vec<TestObject> = storage.list(&Filter { owner: 1 }).unwrap();
+        let objects: Vec<TestObject> = storage.list(Some(Filter { owner: 1 })).unwrap();
         assert_eq!(objects.len(), 3);
         assert_eq!(objects[0].id(), 1);
         assert_eq!(objects[0].state, 0);

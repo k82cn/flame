@@ -43,3 +43,4 @@ sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-native-tls", "sqlit
 
 url = { version = "2", features = ["serde"] }
 
+bincode = { version = "2" }
