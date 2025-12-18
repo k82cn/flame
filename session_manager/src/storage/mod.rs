@@ -18,9 +18,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, ExecutorID,
-    ExecutorState, Node, NodePtr, ResourceRequirement, Session, SessionID, SessionPtr,
-    SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, Event,
+    EventOwner, ExecutorID, ExecutorState, Node, NodePtr, ResourceRequirement, Session, SessionID,
+    SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult,
+    TaskState,
 };
 use common::{self, MutexPtr};
 use common::{ctx::FlameContext, lock_ptr, trace::TraceFn, trace_fn, FlameError};
@@ -29,6 +30,8 @@ use crate::model::{
     AppInfo, Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo,
     SessionInfoPtr, SnapShot, SnapShotPtr,
 };
+
+use crate::events::{EventManager, EventManagerPtr};
 use crate::storage::engine::EnginePtr;
 
 mod engine;
@@ -43,6 +46,7 @@ pub struct Storage {
     executors: MutexPtr<HashMap<ExecutorID, ExecutorPtr>>,
     nodes: MutexPtr<HashMap<String, NodePtr>>,
     applications: MutexPtr<HashMap<String, ApplicationPtr>>,
+    event_manager: EventManagerPtr,
 }
 
 pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
@@ -53,6 +57,7 @@ pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
         executors: common::new_ptr(HashMap::new()),
         nodes: common::new_ptr(HashMap::new()),
         applications: common::new_ptr(HashMap::new()),
+        event_manager: Arc::new(EventManager::new(None)?),
     }))
 }
 
@@ -298,6 +303,15 @@ impl Storage {
         let mut ssn = lock_ptr!(ssn)?;
         ssn.update_task(&task)?;
 
+        self.event_manager.record_event(
+            EventOwner::from(&task),
+            Event {
+                code: task.state.into(),
+                message: Some(format!("Task was created with state <{:?}>", task.state)),
+                creation_time: Utc::now(),
+            },
+        )?;
+
         Ok(task)
     }
 
@@ -313,7 +327,12 @@ impl Storage {
             .tasks
             .get(&id)
             .ok_or(FlameError::NotFound(id.to_string()))?;
-        let task = lock_ptr!(task)?;
+        let mut task = lock_ptr!(task)?;
+        let events = self
+            .event_manager
+            .find_events(EventOwner::from(task.gid()))?;
+        task.events = events;
+
         Ok(task.clone())
     }
 
@@ -421,6 +440,15 @@ impl Storage {
         let mut ssn_ptr = lock_ptr!(ssn)?;
         ssn_ptr.update_task(&task)?;
 
+        self.event_manager.record_event(
+            EventOwner::from(task.gid()),
+            Event {
+                code: task_state.into(),
+                message: Some(format!("Task state was updated to <{:?}>", task_state)),
+                creation_time: Utc::now(),
+            },
+        )?;
+
         Ok(())
     }
 
@@ -446,6 +474,15 @@ impl Storage {
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
         ssn_ptr.update_task(&task)?;
+
+        self.event_manager.record_event(
+            EventOwner::from(task.gid()),
+            Event {
+                code: task.state.into(),
+                message: Some(format!("Task was completed with state <{:?}>", task.state)),
+                creation_time: Utc::now(),
+            },
+        )?;
 
         Ok(())
     }

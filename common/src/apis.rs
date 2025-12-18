@@ -1205,6 +1205,36 @@ impl Ownership for ApplicationID {
     }
 }
 
+impl From<&Task> for EventOwner {
+    fn from(task: &Task) -> Self {
+        Self {
+            task_id: task.id,
+            session_id: task.ssn_id,
+        }
+    }
+}
+
+impl From<&TaskGID> for EventOwner {
+    fn from(gid: &TaskGID) -> Self {
+        Self {
+            task_id: gid.task_id,
+            session_id: gid.ssn_id,
+        }
+    }
+}
+
+impl From<Task> for EventOwner {
+    fn from(task: Task) -> Self {
+        Self::from(&task)
+    }
+}
+
+impl From<TaskGID> for EventOwner {
+    fn from(gid: TaskGID) -> Self {
+        Self::from(&gid)
+    }
+}
+
 impl Ownership for Node {
     fn uid(&self) -> String {
         format!("node/{}", self.name)

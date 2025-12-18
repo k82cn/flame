@@ -212,7 +212,7 @@ impl ObjectStorage {
     fn update_owners(&mut self, id: ObjectId, owner: ObjectId) -> Result<(), FlameError> {
         writeln!(self.owners_file, "{id},{owner}")?;
 
-        self.owners.entry(owner).or_insert(vec![]).push(id);
+        self.owners.entry(owner).or_default().push(id);
 
         Ok(())
     }
