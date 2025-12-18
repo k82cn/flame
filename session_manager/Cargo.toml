@@ -23,6 +23,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
 chrono = { workspace = true }
+bincode = { workspace = true }
 
 tokio-stream = { version = "0.1"}
 url = { workspace = true }
@@ -42,6 +43,7 @@ features = [
 [dev-dependencies]
 tokio-test = "*"
 rand = { workspace = true }
+tempfile = "3"
 
 [lints.rust]
 unused = "allow"

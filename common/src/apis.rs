@@ -47,6 +47,11 @@ pub trait Ownership: Send + Sync + 'static {
     fn owner(&self) -> Option<String>;
 }
 
+pub struct EventOwner {
+    pub task_id: TaskID,
+    pub session_id: SessionID,
+}
+
 #[derive(Clone, Debug)]
 pub struct Event {
     pub code: i32,
