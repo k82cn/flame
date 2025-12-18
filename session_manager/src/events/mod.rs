@@ -10,7 +10,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-use std::collections::HashMap;
+
+use std::collections::{hash_map::Entry, HashMap};
 use std::fs;
 use std::sync::{Arc, Mutex};
 
@@ -123,7 +124,7 @@ impl EventManager {
         let base_path = format!("{}/{}", self.storage_path, session_id);
 
         let mut event_storage = lock_ptr!(self.event_storage)?;
-        if let std::collections::hash_map::Entry::Vacant(e) = event_storage.entry(session_id) {
+        if let Entry::Vacant(e) = event_storage.entry(session_id) {
             fs::create_dir_all(&base_path)?;
 
             let storage = EventStorage {
