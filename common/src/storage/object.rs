@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(obj2.updated_at, updated_at + 1);
         assert_eq!(obj2.owner, 1);
 
-        let objects: Vec<TestObject> = storage.list(&Filter { owner: 1 }).unwrap();
+        let objects: Vec<TestObject> = storage.list(Some(Filter { owner: 1 })).unwrap();
         assert_eq!(objects.len(), 3);
         assert_eq!(objects[0].id(), 1);
         assert_eq!(objects[0].state, 0);

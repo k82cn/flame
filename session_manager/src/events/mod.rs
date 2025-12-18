@@ -216,8 +216,9 @@ impl EventManager {
                 )))?;
         }
 
-        fs::remove_dir_all(format!("{}/{}", self.storage_path, session_id))
-            .map_err(|e| FlameError::Storage(format!("Failed to remove event storage directory: {}", e)))?;
+        fs::remove_dir_all(format!("{}/{}", self.storage_path, session_id)).map_err(|e| {
+            FlameError::Storage(format!("Failed to remove event storage directory: {}", e))
+        })?;
 
         Ok(())
     }
