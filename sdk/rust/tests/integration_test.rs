@@ -132,6 +132,11 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
     assert_eq!(task.state, TaskState::Succeed);
     assert_ne!(task.events.len(), 0);
     for event in task.events {
+        if event.code > 15 {
+            // The first 16 codes are reserved as Flame system code.
+            continue;
+        }
+
         assert!(
             event.code == TaskState::Succeed as i32
                 || event.code == TaskState::Pending as i32
