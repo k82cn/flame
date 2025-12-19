@@ -264,6 +264,8 @@ impl Storage {
         let mut ssn_map = lock_ptr!(self.sessions)?;
         ssn_map.remove(&ssn.id);
 
+        self.event_manager.remove_events(id)?;
+
         Ok(ssn)
     }
 

@@ -127,6 +127,20 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
         assert_eq!(informer.succeed, task_num);
     }
 
+    // Also check the events of the task.
+    let task = ssn.get_task(&String::from("1")).await?;
+    assert_eq!(task.state, TaskState::Succeed);
+    assert_ne!(task.events.len(), 0);
+    for event in task.events {
+        assert!(
+            event.code == TaskState::Succeed as i32
+                || event.code == TaskState::Pending as i32
+                || event.code == TaskState::Running as i32,
+            "event code <{}> is not valid",
+            event.code
+        );
+    }
+
     ssn.close().await?;
 
     Ok(())
