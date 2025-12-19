@@ -41,12 +41,7 @@ pub type TaskInput = Message;
 pub type TaskOutput = Message;
 pub type CommonData = Message;
 
-// This trait is used to get the owner and parent of the object in Flame.
-pub trait Ownership: Send + Sync + 'static {
-    fn uid(&self) -> String;
-    fn owner(&self) -> Option<String>;
-}
-
+#[derive(Clone, Debug)]
 pub struct EventOwner {
     pub task_id: TaskID,
     pub session_id: SessionID,
@@ -1145,66 +1140,6 @@ impl TryFrom<TaskResult> for rpc::TaskResult {
     }
 }
 
-impl Ownership for Task {
-    fn uid(&self) -> String {
-        format!("task/{}/{}", self.ssn_id, self.id)
-    }
-
-    fn owner(&self) -> Option<String> {
-        Some(self.ssn_id.uid())
-    }
-}
-
-impl Ownership for TaskGID {
-    fn uid(&self) -> String {
-        format!("task/{}/{}", self.ssn_id, self.task_id)
-    }
-
-    fn owner(&self) -> Option<String> {
-        Some(self.ssn_id.uid())
-    }
-}
-
-impl Ownership for Session {
-    fn uid(&self) -> String {
-        format!("ssn/{}/{}", self.application, self.id)
-    }
-
-    fn owner(&self) -> Option<String> {
-        Some(format!("app/{}", self.application))
-    }
-}
-
-impl Ownership for SessionID {
-    fn uid(&self) -> String {
-        format!("ssn/{self}")
-    }
-
-    fn owner(&self) -> Option<String> {
-        unreachable!()
-    }
-}
-
-impl Ownership for Application {
-    fn uid(&self) -> String {
-        format!("app/{}", self.name)
-    }
-
-    fn owner(&self) -> Option<String> {
-        None
-    }
-}
-
-impl Ownership for ApplicationID {
-    fn uid(&self) -> String {
-        format!("app/{self}")
-    }
-
-    fn owner(&self) -> Option<String> {
-        None
-    }
-}
-
 impl From<&Task> for EventOwner {
     fn from(task: &Task) -> Self {
         Self {
@@ -1235,13 +1170,29 @@ impl From<TaskGID> for EventOwner {
     }
 }
 
-impl Ownership for Node {
-    fn uid(&self) -> String {
-        format!("node/{}", self.name)
-    }
+impl TryFrom<rpc::EventOwner> for EventOwner {
+    type Error = FlameError;
+    fn try_from(owner: rpc::EventOwner) -> Result<Self, Self::Error> {
+        let task_id = owner.task_id.unwrap_or(String::from("0"));
 
-    fn owner(&self) -> Option<String> {
-        None
+        Ok(Self {
+            task_id: task_id
+                .parse::<TaskID>()
+                .map_err(|e| FlameError::InvalidConfig(format!("invalid task id: {e}")))?,
+            session_id: owner
+                .session_id
+                .parse::<SessionID>()
+                .map_err(|e| FlameError::InvalidConfig(format!("invalid session id: {e}")))?,
+        })
+    }
+}
+
+impl From<EventOwner> for rpc::EventOwner {
+    fn from(owner: EventOwner) -> Self {
+        Self {
+            task_id: Some(owner.task_id.to_string()),
+            session_id: owner.session_id.to_string(),
+        }
     }
 }
 

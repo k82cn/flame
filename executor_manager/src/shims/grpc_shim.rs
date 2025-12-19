@@ -24,11 +24,14 @@ use std::time::Duration;
 use std::{thread, time};
 
 use async_trait::async_trait;
+use futures::join;
 use hyper_util::rt::TokioIo;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tonic::transport::{Endpoint, Uri};
 use tonic::Request;
@@ -40,14 +43,17 @@ use rpc::EmptyRequest;
 use uuid::Uuid;
 
 use crate::executor::Executor;
-use crate::shims::{Shim, ShimPtr};
-use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
+use crate::shims::{EventHandler, EventHandlerPtr, Shim, ShimPtr};
+use common::apis::{
+    ApplicationContext, Event, EventOwner, SessionContext, TaskContext, TaskOutput, TaskResult,
+};
 use common::{trace::TraceFn, trace_fn, FlameError, FLAME_WORKING_DIRECTORY};
 
 pub struct GrpcShim {
     client: Option<InstanceClient<Channel>>,
     working_directory: String,
     endpoint: String,
+    event_handler: Option<JoinHandle<Result<(), FlameError>>>,
 }
 
 const RUST_LOG: &str = "RUST_LOG";
@@ -70,6 +76,7 @@ impl GrpcShim {
             client: None,
             working_directory: working_directory.to_string_lossy().to_string(),
             endpoint: endpoint.to_string_lossy().to_string(),
+            event_handler: None,
         })
     }
 
@@ -180,6 +187,47 @@ impl Shim for GrpcShim {
                 self.endpoint
             )));
         }
+
+        if let Some(ref mut event_handler) = self.event_handler {
+            event_handler
+                .await
+                .map_err(|e| FlameError::Internal(format!("event handler failed: {e}")))?;
+        }
+
+        Ok(())
+    }
+
+    async fn watch_event(&mut self, event_handler: EventHandlerPtr) -> Result<(), FlameError> {
+        trace_fn!("GrpcShim::watch_event");
+
+        let mut client = self.client.clone().ok_or(FlameError::Internal(format!(
+            "no connection to service at <{}>",
+            self.endpoint
+        )))?;
+
+        let event_handler = event_handler.clone();
+
+        self.event_handler = Some(tokio::task::spawn(async move {
+            let mut event_stream = client
+                .watch_event(EmptyRequest::default())
+                .await?
+                .into_inner();
+
+            while let Some(Ok(resp)) = event_stream.next().await {
+                match (resp.owner, resp.event) {
+                    (Some(owner), Some(event)) => {
+                        let owner = EventOwner::try_from(owner)?;
+                        let event = Event::from(event);
+                        let mut event_handler = event_handler.lock().await;
+                        event_handler.on_event(owner, event).await?;
+                    }
+                    _ => {
+                        return Err(FlameError::Internal("invalid event, skip it".to_string()));
+                    }
+                }
+            }
+            Ok(())
+        }));
 
         Ok(())
     }

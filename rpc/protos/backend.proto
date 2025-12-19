@@ -26,6 +26,8 @@ service Backend {
 
   rpc LaunchTask (LaunchTaskRequest) returns (LaunchTaskResponse) {}
   rpc CompleteTask(CompleteTaskRequest) returns (Result) {}
+
+  rpc RecordEvent(RecordEventRequest) returns (Result) {}
 }
 
 message RegisterExecutorRequest {
@@ -88,4 +90,9 @@ message SyncNodeRequest {
 message SyncNodeResponse {
   Node node = 1;
   repeated Executor executors = 2;
+}
+
+message RecordEventRequest {
+  EventOwner owner = 1;
+  Event event = 2;
 }

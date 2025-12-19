@@ -34,7 +34,10 @@ impl flame::service::FlameService for PiService {
         let mut rng = rand::rng();
         let die = Uniform::try_from(0.0..1.0).unwrap();
 
-        let input = ctx.input.unwrap_or(TaskInput::from(util::zero_u32()));
+        let input = ctx
+            .input
+            .clone()
+            .unwrap_or(TaskInput::from(util::zero_u32()));
         let total = util::bytes_to_u32(input.to_vec())?;
         let mut sum = 0u32;
 
@@ -47,6 +50,11 @@ impl flame::service::FlameService for PiService {
                 sum += 1;
             }
         }
+
+        ctx.record_event(
+            256,
+            Some(format!("Task <{}> completed with sum: {}", ctx.task_id, sum)),
+        )?;
 
         Ok(Some(TaskOutput::from(util::u32_to_bytes(sum))))
     }

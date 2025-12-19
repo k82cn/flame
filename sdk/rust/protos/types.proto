@@ -212,6 +212,11 @@ message TaskResult {
 message EmptyRequest {
 }
 
+message EventOwner {
+  string session_id = 1;
+  optional string task_id = 2;
+}
+
 message Event {
   int32 code = 1;
   optional string message = 2;

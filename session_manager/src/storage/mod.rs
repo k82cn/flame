@@ -540,4 +540,9 @@ impl Storage {
 
         Ok(())
     }
+
+    pub async fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
+        trace_fn!("Storage::record_event");
+        self.event_manager.record_event(owner, event)
+    }
 }

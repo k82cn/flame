@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use crate::client::BackendClient;
 use crate::executor::Executor;
 
-use common::apis::ExecutorState;
-use common::FlameError;
+use common::apis::{Event, EventOwner, ExecutorState};
+use common::{trace::TraceFn, trace_fn, FlameError};
 
 mod bound;
 mod idle;
