@@ -12,15 +12,15 @@ limitations under the License.
 */
 
 use std::sync::{Arc, Mutex};
+use tokio::task::JoinHandle;
 
 use crate::client::BackendClient;
-use crate::shims::ShimPtr;
+use crate::shims::{EventHandler, ShimPtr};
 use ::rpc::flame::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
 
 use crate::states;
 use common::apis::{ExecutorState, ResourceRequirement, SessionContext, TaskContext};
-use common::FlameError;
-use common::{lock_ptr, trace::TraceFn, trace_fn};
+use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
 
 #[derive(Clone)]
 pub struct Executor {

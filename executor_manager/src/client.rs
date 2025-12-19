@@ -17,13 +17,15 @@ use rpc::backend_client::BackendClient as FlameBackendClient;
 use rpc::flame as rpc;
 use rpc::{
     BindExecutorCompletedRequest, BindExecutorRequest, CompleteTaskRequest, LaunchTaskRequest,
-    RegisterExecutorRequest, RegisterNodeRequest, ReleaseNodeRequest, SyncNodeRequest,
-    UnbindExecutorCompletedRequest, UnbindExecutorRequest, UnregisterExecutorRequest,
+    RecordEventRequest, RegisterExecutorRequest, RegisterNodeRequest, ReleaseNodeRequest,
+    SyncNodeRequest, UnbindExecutorCompletedRequest, UnbindExecutorRequest,
+    UnregisterExecutorRequest,
 };
 
 use crate::executor::Executor;
 use common::apis::{
-    Application, Node, ResourceRequirement, Session, SessionContext, TaskContext, TaskResult,
+    Application, Event, EventOwner, Node, ResourceRequirement, Session, SessionContext,
+    TaskContext, TaskResult,
 };
 use common::ctx::FlameContext;
 use common::{lock_ptr, FlameError};
@@ -234,6 +236,24 @@ impl BackendClient {
 
         self.client
             .unregister_executor(req)
+            .await
+            .map_err(FlameError::from)?;
+
+        Ok(())
+    }
+
+    pub async fn record_event(
+        &mut self,
+        owner: EventOwner,
+        event: Event,
+    ) -> Result<(), FlameError> {
+        let req = RecordEventRequest {
+            owner: Some(owner.into()),
+            event: Some(event.into()),
+        };
+
+        self.client
+            .record_event(req)
             .await
             .map_err(FlameError::from)?;
 

@@ -17,8 +17,8 @@ use async_trait::async_trait;
 
 use crate::FlameError;
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationID, CommonData, Event, Ownership, Session,
-    SessionID, Task, TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationID, CommonData, Event, Session, SessionID, Task,
+    TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
 };
 
 mod sqlite;

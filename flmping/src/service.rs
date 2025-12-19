@@ -39,6 +39,7 @@ impl flame::service::FlameService for FlmpingService {
 
         let input = ctx
             .input
+            .clone()
             .map(|input| input.try_into())
             .unwrap_or(Result::Ok(PingRequest::default()))?;
 
@@ -62,6 +63,16 @@ impl flame::service::FlameService for FlmpingService {
                 gethostname().to_string_lossy(),
             ),
         };
+
+        // Record event for task completion
+        ctx.record_event(
+            256,
+            Some(format!(
+                "Task <{}> completed on <{}> ",
+                ctx.task_id,
+                gethostname().to_string_lossy()
+            )),
+        )?;
 
         Ok(Some(output.try_into()?))
     }

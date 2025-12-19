@@ -17,9 +17,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationID, CommonData, ExecutorID, ExecutorState, Node,
-    NodeState, Session, SessionID, SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput,
-    TaskOutput, TaskPtr, TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationID, CommonData, Event, EventOwner, ExecutorID,
+    ExecutorState, Node, NodeState, Session, SessionID, SessionPtr, SessionState, Task, TaskGID,
+    TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 
 use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
@@ -359,6 +359,11 @@ impl Controller {
         self.storage.delete_executor(id).await?;
 
         Ok(())
+    }
+
+    pub async fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
+        trace_fn!("Controller::record_event");
+        self.storage.record_event(owner, event).await
     }
 }
 

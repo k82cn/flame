@@ -26,6 +26,8 @@ lazy_static = "1.5"
 wasmtime = "16"
 wasmtime-wasi = "16"
 anyhow = "1"
+futures = { workspace = true }
+tokio-stream = "0.1"
 
 [dependencies.uuid]
 version = "1.19.0"

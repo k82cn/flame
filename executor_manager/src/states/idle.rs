@@ -17,8 +17,8 @@ use crate::client::BackendClient;
 use crate::executor::Executor;
 use crate::shims;
 use crate::states::State;
-use common::apis::ExecutorState;
-use common::{trace::TraceFn, trace_fn, FlameError};
+use common::apis::{Event, EventOwner, ExecutorState};
+use common::{new_async_ptr, new_ptr, trace::TraceFn, trace_fn, FlameError};
 
 #[derive(Clone)]
 pub struct IdleState {
@@ -52,6 +52,13 @@ impl State for IdleState {
 
         let shim_ptr = shims::new(&self.executor.clone(), &ssn.application).await?;
         {
+            let event_handler = new_async_ptr(WatchEventHandler::new(self.client.clone()));
+
+            let mut shim = shim_ptr.lock().await;
+            shim.watch_event(event_handler).await?;
+        }
+
+        {
             // TODO(k82cn): if on_session_enter failed, add retry limits.
             let mut shim = shim_ptr.lock().await;
             shim.on_session_enter(&ssn).await?;
@@ -74,5 +81,23 @@ impl State for IdleState {
         );
 
         Ok(self.executor.clone())
+    }
+}
+
+#[derive(Clone)]
+struct WatchEventHandler {
+    client: BackendClient,
+}
+
+impl WatchEventHandler {
+    pub fn new(client: BackendClient) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl shims::EventHandler for WatchEventHandler {
+    async fn on_event(&mut self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
+        self.client.record_event(owner, event).await
     }
 }
