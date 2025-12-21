@@ -6,23 +6,26 @@ import warnings
 import flamepy.shim_pb2 as shim__pb2
 import flamepy.types_pb2 as types__pb2
 
-GRPC_GENERATED_VERSION = '1.74.0'
+GRPC_GENERATED_VERSION = "1.74.0"
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
+
+    _version_not_supported = first_version_is_lower(
+        GRPC_VERSION, GRPC_GENERATED_VERSION
+    )
 except ImportError:
     _version_not_supported = True
 
 if _version_not_supported:
     raise RuntimeError(
-        f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in shim_pb2_grpc.py depends on'
-        + f' grpcio>={GRPC_GENERATED_VERSION}.'
-        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
+        f"The grpc package installed is at version {GRPC_VERSION},"
+        + f" but the generated code in shim_pb2_grpc.py depends on"
+        + f" grpcio>={GRPC_GENERATED_VERSION}."
+        + f" Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}"
+        + f" or downgrade your generated code using grpcio-tools<={GRPC_VERSION}."
     )
 
 
@@ -36,20 +39,29 @@ class InstanceStub(object):
             channel: A grpc.Channel.
         """
         self.OnSessionEnter = channel.unary_unary(
-                '/flame.Instance/OnSessionEnter',
-                request_serializer=shim__pb2.SessionContext.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                _registered_method=True)
+            "/flame.Instance/OnSessionEnter",
+            request_serializer=shim__pb2.SessionContext.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+            _registered_method=True,
+        )
         self.OnTaskInvoke = channel.unary_unary(
-                '/flame.Instance/OnTaskInvoke',
-                request_serializer=shim__pb2.TaskContext.SerializeToString,
-                response_deserializer=types__pb2.TaskResult.FromString,
-                _registered_method=True)
+            "/flame.Instance/OnTaskInvoke",
+            request_serializer=shim__pb2.TaskContext.SerializeToString,
+            response_deserializer=types__pb2.TaskResult.FromString,
+            _registered_method=True,
+        )
         self.OnSessionLeave = channel.unary_unary(
-                '/flame.Instance/OnSessionLeave',
-                request_serializer=types__pb2.EmptyRequest.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                _registered_method=True)
+            "/flame.Instance/OnSessionLeave",
+            request_serializer=types__pb2.EmptyRequest.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+            _registered_method=True,
+        )
+        self.WatchEvent = channel.unary_stream(
+            "/flame.Instance/WatchEvent",
+            request_serializer=types__pb2.EmptyRequest.SerializeToString,
+            response_deserializer=shim__pb2.WatchEventResponse.FromString,
+            _registered_method=True,
+        )
 
 
 class InstanceServicer(object):
@@ -58,65 +70,79 @@ class InstanceServicer(object):
     def OnSessionEnter(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def OnTaskInvoke(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def OnSessionLeave(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def WatchEvent(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_InstanceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'OnSessionEnter': grpc.unary_unary_rpc_method_handler(
-                    servicer.OnSessionEnter,
-                    request_deserializer=shim__pb2.SessionContext.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
-            'OnTaskInvoke': grpc.unary_unary_rpc_method_handler(
-                    servicer.OnTaskInvoke,
-                    request_deserializer=shim__pb2.TaskContext.FromString,
-                    response_serializer=types__pb2.TaskResult.SerializeToString,
-            ),
-            'OnSessionLeave': grpc.unary_unary_rpc_method_handler(
-                    servicer.OnSessionLeave,
-                    request_deserializer=types__pb2.EmptyRequest.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
+        "OnSessionEnter": grpc.unary_unary_rpc_method_handler(
+            servicer.OnSessionEnter,
+            request_deserializer=shim__pb2.SessionContext.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
+        "OnTaskInvoke": grpc.unary_unary_rpc_method_handler(
+            servicer.OnTaskInvoke,
+            request_deserializer=shim__pb2.TaskContext.FromString,
+            response_serializer=types__pb2.TaskResult.SerializeToString,
+        ),
+        "OnSessionLeave": grpc.unary_unary_rpc_method_handler(
+            servicer.OnSessionLeave,
+            request_deserializer=types__pb2.EmptyRequest.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
+        "WatchEvent": grpc.unary_stream_rpc_method_handler(
+            servicer.WatchEvent,
+            request_deserializer=types__pb2.EmptyRequest.FromString,
+            response_serializer=shim__pb2.WatchEventResponse.SerializeToString,
+        ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'flame.Instance', rpc_method_handlers)
+        "flame.Instance", rpc_method_handlers
+    )
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('flame.Instance', rpc_method_handlers)
+    server.add_registered_method_handlers("flame.Instance", rpc_method_handlers)
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class Instance(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def OnSessionEnter(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def OnSessionEnter(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Instance/OnSessionEnter',
+            "/flame.Instance/OnSessionEnter",
             shim__pb2.SessionContext.SerializeToString,
             types__pb2.Result.FromString,
             options,
@@ -127,23 +153,26 @@ class Instance(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def OnTaskInvoke(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def OnTaskInvoke(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Instance/OnTaskInvoke',
+            "/flame.Instance/OnTaskInvoke",
             shim__pb2.TaskContext.SerializeToString,
             types__pb2.TaskResult.FromString,
             options,
@@ -154,23 +183,26 @@ class Instance(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def OnSessionLeave(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def OnSessionLeave(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Instance/OnSessionLeave',
+            "/flame.Instance/OnSessionLeave",
             types__pb2.EmptyRequest.SerializeToString,
             types__pb2.Result.FromString,
             options,
@@ -181,4 +213,35 @@ class Instance(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def WatchEvent(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            "/flame.Instance/WatchEvent",
+            types__pb2.EmptyRequest.SerializeToString,
+            shim__pb2.WatchEventResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )

@@ -1,5 +1,3 @@
-
-
 """
 Copyright 2025 The Flame Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +23,9 @@ _log_level_map = {
     "DEBUG": logging.DEBUG,
 }
 
-_log_level = _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
+_log_level = (
+    _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
+)
 
 logging.basicConfig(level=_log_level)
 
@@ -38,15 +38,12 @@ from .types import (
     TaskInput,
     TaskOutput,
     CommonData,
-    
     # Enums
     SessionState,
     TaskState,
     ApplicationState,
     Shim,
-
     FlameErrorCode,
-    
     # Classes
     FlameError,
     SessionAttributes,
@@ -59,14 +56,28 @@ from .types import (
     Response,
 )
 
-from .client import (Connection, Session, TaskWatcher, 
-    connect, create_session, register_application, unregister_application, list_applications, get_application, 
-    list_sessions, get_session, close_session, open_session
+from .client import (
+    Connection,
+    Session,
+    TaskWatcher,
+    connect,
+    create_session,
+    register_application,
+    unregister_application,
+    list_applications,
+    get_application,
+    list_sessions,
+    get_session,
+    close_session,
+    open_session,
 )
 from .service import (
     FlameService,
-    ApplicationContext, SessionContext, TaskContext, TaskOutput,
-    run
+    ApplicationContext,
+    SessionContext,
+    TaskContext,
+    TaskOutput,
+    run,
 )
 from .instance import FlameInstance
 
@@ -75,20 +86,18 @@ __version__ = "0.3.0"
 __all__ = [
     # Type aliases
     "TaskID",
-    "SessionID", 
+    "SessionID",
     "ApplicationID",
     "Message",
     "TaskInput",
     "TaskOutput",
     "CommonData",
-    
     # Enums
     "SessionState",
-    "TaskState", 
+    "TaskState",
     "ApplicationState",
     "Shim",
     "FlameErrorCode",
-
     # Service classes
     "FlameService",
     "ApplicationContext",
@@ -96,18 +105,16 @@ __all__ = [
     "TaskContext",
     "TaskOutput",
     "run",
-
     # Classes
     "FlameError",
     "SessionAttributes",
-    "ApplicationAttributes", 
+    "ApplicationAttributes",
     "Task",
     "Application",
     "FlameContext",
     "TaskInformer",
     "Request",
     "Response",
-    
     # Client classes
     "Connection",
     "connect",
@@ -121,12 +128,11 @@ __all__ = [
     "open_session",
     "close_session",
     "TaskWatcher",
-    "Session", 
+    "Session",
     "Task",
     "TaskInput",
     "TaskOutput",
     "CommonData",
-
     # Instance classes
     "FlameInstance",
-] 
+]

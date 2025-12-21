@@ -13,6 +13,7 @@ limitations under the License.
 
 import asyncio
 import os
+import time
 import grpc
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
@@ -22,15 +23,24 @@ from concurrent import futures
 
 from .types import Shim, FlameError, FlameErrorCode
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
-from .types_pb2 import Result, EmptyRequest, TaskResult as TaskResultProto
+from .shim_pb2 import WatchEventResponse as WatchEventResponseProto
+from .types_pb2 import (
+    Result,
+    EmptyRequest,
+    TaskResult as TaskResultProto,
+    Event as EventProto,
+    EventOwner as EventOwnerProto,
+)
 
 logger = logging.getLogger(__name__)
 
 FLAME_INSTANCE_ENDPOINT = "FLAME_INSTANCE_ENDPOINT"
 
+
 @dataclass
 class ApplicationContext:
     """Context for an application."""
+
     name: str
     shim: Shim
     image: Optional[str] = None
@@ -40,22 +50,47 @@ class ApplicationContext:
 @dataclass
 class SessionContext:
     """Context for a session."""
+
+    _queue: asyncio.Queue
     session_id: str
     application: ApplicationContext
     common_data: Optional[bytes] = None
+
+    async def record_event(self, code: int, message: Optional[str] = None):
+        """Record an event."""
+        event = WatchEventResponseProto(
+            owner=EventOwnerProto(session_id=self.session_id, task_id=None),
+            event=EventProto(
+                code=code, message=message, creation_time=int(time.time() * 1000)
+            ),
+        )
+        await self._queue.put(event)
 
 
 @dataclass
 class TaskContext:
     """Context for a task."""
+
+    _queue: asyncio.Queue
     task_id: str
     session_id: str
     input: Optional[bytes] = None
+
+    async def record_event(self, code: int, message: Optional[str] = None):
+        """Record an event."""
+        event = WatchEventResponseProto(
+            owner=EventOwnerProto(session_id=self.session_id, task_id=self.task_id),
+            event=EventProto(
+                code=code, message=message, creation_time=int(time.time() * 1000)
+            ),
+        )
+        await self._queue.put(event)
 
 
 @dataclass
 class TaskOutput:
     """Output from a task."""
+
     data: Optional[bytes] = None
 
 
@@ -66,10 +101,10 @@ class FlameService:
     async def on_session_enter(self, context: SessionContext):
         """
         Called when entering a session.
-        
+
         Args:
             context: Session context information
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -79,10 +114,10 @@ class FlameService:
     async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         """
         Called when a task is invoked.
-        
+
         Args:
             context: Task context information
-            
+
         Returns:
             Task output
         """
@@ -92,7 +127,7 @@ class FlameService:
     async def on_session_leave(self):
         """
         Called when leaving a session.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -104,6 +139,7 @@ class FlmInstanceServicer(InstanceServicer):
 
     def __init__(self, service: FlameService):
         self._service = service
+        self._queue = asyncio.Queue()
 
     async def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
@@ -116,16 +152,27 @@ class FlmInstanceServicer(InstanceServicer):
             app_context = ApplicationContext(
                 name=request.application.name,
                 shim=Shim(request.application.shim),
-                image=request.application.image if request.application.HasField("image") else None,
-                command=request.application.command if request.application.HasField("command") else None
+                image=(
+                    request.application.image
+                    if request.application.HasField("image")
+                    else None
+                ),
+                command=(
+                    request.application.command
+                    if request.application.HasField("command")
+                    else None
+                ),
             )
 
             logger.debug(f"app_context: {app_context}")
 
             session_context = SessionContext(
+                _queue=self._queue,
                 session_id=request.session_id,
                 application=app_context,
-                common_data=request.common_data if request.HasField("common_data") else None
+                common_data=(
+                    request.common_data if request.HasField("common_data") else None
+                ),
             )
 
             logger.debug(f"session_context: {session_context}")
@@ -142,10 +189,7 @@ class FlmInstanceServicer(InstanceServicer):
 
         except Exception as e:
             logger.error(f"Error in OnSessionEnter: {e}")
-            return Result(
-                return_code=-1,
-                message=f"{str(e)}"
-            )
+            return Result(return_code=-1, message=f"{str(e)}")
 
     async def OnTaskInvoke(self, request, context):
         """Handle OnTaskInvoke RPC call."""
@@ -153,9 +197,10 @@ class FlmInstanceServicer(InstanceServicer):
         try:
             # Convert protobuf request to TaskContext
             task_context = TaskContext(
+                _queue=self._queue,
                 task_id=request.task_id,
                 session_id=request.session_id,
-                input=request.input if request.HasField("input") else None
+                input=request.input if request.HasField("input") else None,
             )
 
             logger.debug(f"task_context: {task_context}")
@@ -166,19 +211,11 @@ class FlmInstanceServicer(InstanceServicer):
             logger.debug("on_task_invoke returned")
 
             # Return task output
-            return TaskResultProto(
-                return_code=0,
-                output=output.data,
-                message=None
-            )
+            return TaskResultProto(return_code=0, output=output.data, message=None)
 
         except Exception as e:
             logger.error(f"Error in OnTaskInvoke: {e}")
-            return TaskResultProto(
-                return_code=-1,
-                output=None,
-                message=f"{str(e)}"
-            )
+            return TaskResultProto(return_code=-1, output=None, message=f"{str(e)}")
 
     async def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
@@ -188,6 +225,12 @@ class FlmInstanceServicer(InstanceServicer):
             logger.debug("Calling on_session_leave")
             await self._service.on_session_leave()
             logger.debug("on_session_leave returned")
+
+            await self._queue.join()
+
+            # shutdown the queue to notify the watcher that the queue is shutting down
+            # self._queue.shutdown()
+
             # Return result
             return Result(
                 return_code=0,
@@ -195,10 +238,24 @@ class FlmInstanceServicer(InstanceServicer):
 
         except Exception as e:
             logger.error(f"Error in OnSessionLeave: {e}")
-            return Result(
-                return_code=-1,
-                message=f"{str(e)}"
-            )
+            return Result(return_code=-1, message=f"{str(e)}")
+
+    async def WatchEvent(self, request, context):
+        """Watch events from the service."""
+        try:
+            while True:
+                event = await self._queue.get()
+                logger.debug(f"Event: {event}")
+
+                yield event
+                self._queue.task_done()
+        except asyncio.QueueShutdown:
+            logger.debug("Queue shutdown")
+            return
+        except Exception as e:
+            logger.error(f"Error in WatchEvents: {e}")
+            raise
+
 
 class FlmInstanceServer:
     """Server for gRPC shim services."""
@@ -221,11 +278,12 @@ class FlmInstanceServer:
             endpoint = os.getenv(FLAME_INSTANCE_ENDPOINT)
             if endpoint is not None:
                 self._server.add_insecure_port(f"unix://{endpoint}")
-                logger.debug(f"Flame Python instance service started on Unix socket: {endpoint}")
+                logger.debug(
+                    f"Flame Python instance service started on Unix socket: {endpoint}"
+                )
             else:
                 raise FlameError(
-                    FlameErrorCode.INVALID_CONFIG,
-                    "FLAME_INSTANCE_ENDPOINT not found"
+                    FlameErrorCode.INVALID_CONFIG, "FLAME_INSTANCE_ENDPOINT not found"
                 )
 
             # Start server
@@ -236,7 +294,7 @@ class FlmInstanceServer:
         except Exception as e:
             raise FlameError(
                 FlameErrorCode.INTERNAL,
-                f"Failed to start gRPC instance server: {str(e)}"
+                f"Failed to start gRPC instance server: {str(e)}",
             )
 
     async def stop(self):
@@ -249,7 +307,7 @@ class FlmInstanceServer:
 def run(service: FlameService):
     """
     Run a gRPC shim server.
-    
+
     Args:
         service: The shim service implementation
     """
