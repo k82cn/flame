@@ -99,3 +99,8 @@ module = [
 ]
 ignore_missing_imports = true 
 
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+]
+

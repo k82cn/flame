@@ -6,12 +6,13 @@ Example usage of the Flame Python SDK.
 import asyncio
 import flamepy
 
+
 class MyTaskInformer(flamepy.TaskInformer):
     """Example task informer that prints task updates."""
-    
+
     def on_update(self, task):
         print(f"Task {task.id}: {task.state.name}")
-    
+
     def on_error(self, error):
         print(f"Error: {error}")
 
@@ -19,8 +20,7 @@ class MyTaskInformer(flamepy.TaskInformer):
 async def main():
     print("Creating session...")
     session = await flamepy.create_session(
-        application="flmtest",
-        common_data=b"shared data"
+        application="flmtest", common_data=b"shared data"
     )
     print(f"Created session: {session.id}")
 
@@ -31,9 +31,9 @@ async def main():
     # Close session
     print("Closing session...")
     await session.close()
-        
+
     print("Example completed successfully!")
 
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

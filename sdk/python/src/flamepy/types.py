@@ -35,14 +35,17 @@ CommonData = Message
 DEFAULT_FLAME_CONF = "flame.yaml"
 DEFAULT_FLAME_ENDPOINT = "http://127.0.0.1:8080"
 
+
 class SessionState(IntEnum):
     """Session state enumeration."""
+
     OPEN = 0
     CLOSED = 1
 
 
 class TaskState(IntEnum):
     """Task state enumeration."""
+
     PENDING = 0
     RUNNING = 1
     SUCCEED = 2
@@ -51,18 +54,21 @@ class TaskState(IntEnum):
 
 class ApplicationState(IntEnum):
     """Application state enumeration."""
+
     ENABLED = 0
     DISABLED = 1
 
 
 class Shim(IntEnum):
     """Shim type enumeration."""
+
     Host = 0
     Wasm = 1
 
 
 class FlameErrorCode(IntEnum):
     """Flame error code enumeration."""
+
     INVALID_CONFIG = 0
     INVALID_STATE = 1
     INVALID_ARGUMENT = 2
@@ -71,15 +77,17 @@ class FlameErrorCode(IntEnum):
 
 class FlameError(Exception):
     """Flame SDK error exception."""
-    
+
     def __init__(self, code: FlameErrorCode, message: str):
         self.code = code
         self.message = message
         super().__init__(f"{message} (code: {code})")
 
+
 @dataclass
 class Event:
     """Event for a task."""
+
     code: int
     message: Optional[str] = None
     creation_time: datetime = None
@@ -88,6 +96,7 @@ class Event:
 @dataclass
 class SessionAttributes:
     """Attributes for creating a session."""
+
     application: str
     slots: int
     common_data: Optional[bytes] = None
@@ -96,6 +105,7 @@ class SessionAttributes:
 @dataclass
 class ApplicationSchema:
     """Attributes for an application schema."""
+
     input: Optional[str] = None
     output: Optional[str] = None
     common_data: Optional[str] = None
@@ -104,6 +114,7 @@ class ApplicationSchema:
 @dataclass
 class ApplicationAttributes:
     """Attributes for an application."""
+
     shim: Shim
     image: Optional[str] = None
     description: Optional[str] = None
@@ -120,6 +131,7 @@ class ApplicationAttributes:
 @dataclass
 class Task:
     """Represents a computing task."""
+
     id: TaskID
     session_id: SessionID
     state: TaskState
@@ -128,7 +140,7 @@ class Task:
     output: Optional[bytes] = None
     completion_time: Optional[datetime] = None
     events: Optional[List[Event]] = None
-    
+
     def is_completed(self) -> bool:
         """Check if the task is completed."""
         return self.state in (TaskState.SUCCEED, TaskState.FAILED)
@@ -137,9 +149,11 @@ class Task:
         """Check if the task is failed."""
         return self.state == TaskState.FAILED
 
+
 @dataclass
 class Application:
     """Represents a distributed application."""
+
     id: ApplicationID
     name: str
     shim: Shim
@@ -156,16 +170,17 @@ class Application:
     delay_release: Optional[int] = None
     schema: Optional[ApplicationSchema] = None
 
+
 class TaskInformer:
     """Interface for task updates."""
-    
+
     def on_update(self, task: Task) -> None:
         """Called when a task is updated."""
         pass
-    
+
     def on_error(self, error: FlameError) -> None:
         """Called when an error occurs."""
-        pass 
+        pass
 
 
 class Request(BaseModel):
@@ -185,8 +200,10 @@ class Response(BaseModel):
     def to_json(self) -> bytes:
         return self.model_dump_json().encode("utf-8")
 
+
 class FlameContext:
     """Flame configuration."""
+
     _endpoint = None
 
     def __init__(self):
@@ -203,10 +220,14 @@ class FlameContext:
                     config = yaml.safe_load(f)
                     cc = config.get("current-cluster")
                     if cc is None:
-                        raise FlameError(FlameErrorCode.INVALID_CONFIG, "current-cluster is not set")
+                        raise FlameError(
+                            FlameErrorCode.INVALID_CONFIG, "current-cluster is not set"
+                        )
                     for cluster in config.get("clusters", []):
-                        if cc == cluster['name']:
-                            self._endpoint = cluster.get('endpoint', self._endpoint)
+                        if cc == cluster["name"]:
+                            self._endpoint = cluster.get("endpoint", self._endpoint)
                             break
                     else:
-                        raise FlameError(FlameErrorCode.INVALID_CONFIG, f"cluster <{cc}> not found")
+                        raise FlameError(
+                            FlameErrorCode.INVALID_CONFIG, f"cluster <{cc}> not found"
+                        )
