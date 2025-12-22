@@ -49,6 +49,11 @@ impl Action for DispatchAction {
         let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
         let mut unbinding_executors = ss.find_executors(UNBINDING_EXECUTOR)?;
 
+        tracing::debug!("Open sessions: <{:?}>", open_ssns.len());
+        tracing::debug!("Idle executors: <{:?}>", idle_executors.len());
+        tracing::debug!("Void executors: <{:?}>", void_executors.len());
+        tracing::debug!("Unbinding executors: <{:?}>", unbinding_executors.len());
+
         loop {
             if open_ssns.is_empty() {
                 break;

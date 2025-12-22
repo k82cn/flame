@@ -53,7 +53,10 @@ impl flame::service::FlameService for PiService {
 
         ctx.record_event(
             256,
-            Some(format!("Task <{}> completed with sum: {}", ctx.task_id, sum)),
+            Some(format!(
+                "Task <{}> completed with sum: {}",
+                ctx.task_id, sum
+            )),
         )?;
 
         Ok(Some(TaskOutput::from(util::u32_to_bytes(sum))))

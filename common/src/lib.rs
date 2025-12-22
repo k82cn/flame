@@ -33,7 +33,7 @@ use crate::apis::{ApplicationAttributes, ApplicationSchema, Shim};
 
 #[derive(Error, Debug)]
 pub enum FlameError {
-    #[error("'{0}' not found")]
+    #[error("{0}")]
     NotFound(String),
 
     #[error("{0}")]
@@ -45,7 +45,7 @@ pub enum FlameError {
     #[error("{0}")]
     InvalidConfig(String),
 
-    #[error("'{0}' is not initialized")]
+    #[error("{0}")]
     Uninitialized(String),
 
     #[error("{0}")]
