@@ -236,11 +236,12 @@ impl Storage {
 
     pub fn get_session_ptr(&self, id: SessionID) -> Result<SessionPtr, FlameError> {
         let ssn_map = lock_ptr!(self.sessions)?;
-        let ssn = ssn_map
-            .get(&id)
-            .ok_or(FlameError::NotFound(id.to_string()))?;
+        tracing::debug!("Getting session <{:?}> in map <{:?}>", id, ssn_map);
 
-        Ok(ssn.clone())
+        ssn_map
+            .get(&id)
+            .ok_or(FlameError::NotFound(id.to_string()))
+            .cloned()
     }
 
     pub fn get_task_ptr(&self, gid: TaskGID) -> Result<TaskPtr, FlameError> {

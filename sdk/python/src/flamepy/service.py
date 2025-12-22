@@ -36,6 +36,14 @@ logger = logging.getLogger(__name__)
 
 FLAME_INSTANCE_ENDPOINT = "FLAME_INSTANCE_ENDPOINT"
 
+class TraceFn:
+    def __init__(self, name:str):
+        self.name = name
+        logger.debug(f"{name} Enter")
+
+    def __del__(self):
+        logger.debug(f"{self.name} Exit")
+
 
 @dataclass
 class ApplicationContext:
@@ -143,7 +151,8 @@ class FlmInstanceServicer(InstanceServicer):
 
     async def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
-        logger.debug("OnSessionEnter")
+        _trace_fn = TraceFn("OnSessionEnter")
+
         try:
 
             logger.debug(f"OnSessionEnter request: {request}")
@@ -178,9 +187,8 @@ class FlmInstanceServicer(InstanceServicer):
             logger.debug(f"session_context: {session_context}")
 
             # Call the service implementation
-            logger.debug("Calling on_session_enter")
             await self._service.on_session_enter(session_context)
-            logger.debug("on_session_enter returned")
+            logger.debug("on_session_enter completed successfully")
 
             # Return result
             return Result(
@@ -193,7 +201,8 @@ class FlmInstanceServicer(InstanceServicer):
 
     async def OnTaskInvoke(self, request, context):
         """Handle OnTaskInvoke RPC call."""
-        logger.debug("OnTaskInvoke")
+        _trace_fn = TraceFn("OnTaskInvoke")
+
         try:
             # Convert protobuf request to TaskContext
             task_context = TaskContext(
@@ -206,9 +215,8 @@ class FlmInstanceServicer(InstanceServicer):
             logger.debug(f"task_context: {task_context}")
 
             # Call the service implementation
-            logger.debug("Calling on_task_invoke")
             output = await self._service.on_task_invoke(task_context)
-            logger.debug("on_task_invoke returned")
+            logger.debug("on_task_invoke completed successfully")
 
             # Return task output
             return TaskResultProto(return_code=0, output=output.data, message=None)
@@ -219,17 +227,20 @@ class FlmInstanceServicer(InstanceServicer):
 
     async def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
-        logger.debug("OnSessionLeave")
+        _trace_fn = TraceFn("OnSessionLeave")
+
         try:
             # Call the service implementation
-            logger.debug("Calling on_session_leave")
             await self._service.on_session_leave()
-            logger.debug("on_session_leave returned")
+            logger.debug("on_session_leave completed successfully")
 
+            # Put None to the queue to signal the queue is shutting down
+            self._queue.put_nowait(None)
+
+            # Wait for the queue to be empty
             await self._queue.join()
 
-            # shutdown the queue to notify the watcher that the queue is shutting down
-            # self._queue.shutdown()
+            logger.debug("All events processed, exiting OnSessionLeave")
 
             # Return result
             return Result(
@@ -247,11 +258,14 @@ class FlmInstanceServicer(InstanceServicer):
                 event = await self._queue.get()
                 logger.debug(f"Event: {event}")
 
-                yield event
+                # Mark the event as processed
                 self._queue.task_done()
-        except asyncio.QueueShutdown:
-            logger.debug("Queue shutdown")
-            return
+
+                # If the event is None, it means the queue is shutting down
+                if event is None:
+                    return
+
+                yield event
         except Exception as e:
             logger.error(f"Error in WatchEvents: {e}")
             raise

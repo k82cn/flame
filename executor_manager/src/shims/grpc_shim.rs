@@ -175,13 +175,15 @@ impl Shim for GrpcShim {
 
         if let Some(ref mut client) = self.client {
             let req = Request::new(EmptyRequest::default());
-            tracing::debug!("req: {:?}", req);
             let resp = client.on_session_leave(req).await?;
+            tracing::debug!("on_session_leave response: {:?}", resp);
             let output = resp.into_inner();
             if output.return_code != 0 {
+                tracing::error!("on_session_leave failed: {:?}", output);
                 return Err(FlameError::Internal(output.message.unwrap_or_default()));
             }
         } else {
+            tracing::error!("no connection to service at <{}>", self.endpoint);
             return Err(FlameError::Internal(format!(
                 "no connection to service at <{}>",
                 self.endpoint
@@ -189,9 +191,11 @@ impl Shim for GrpcShim {
         }
 
         if let Some(ref mut event_handler) = self.event_handler {
+            tracing::debug!("waiting for event handler to complete");
             event_handler
                 .await
                 .map_err(|e| FlameError::Internal(format!("event handler failed: {e}")))?;
+            tracing::debug!("event handler completed successfully");
         }
 
         Ok(())

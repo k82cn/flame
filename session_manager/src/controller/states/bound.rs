@@ -80,19 +80,33 @@ impl States for BoundState {
     async fn launch_task(&self, ssn_ptr: SessionPtr) -> Result<Option<Task>, FlameError> {
         trace_fn!("BoundState::launch_task");
 
+        tracing::debug!("Launching task for session");
+
         let app_name = {
             let ssn = lock_ptr!(ssn_ptr)?;
+            tracing::debug!("Got session <{}>", ssn.id);
             ssn.application.clone()
         };
 
-        let app_ptr = self.storage.get_application(app_name).await?;
+        tracing::debug!("Getting application <{}>", app_name);
+
+        let app_ptr = self.storage.get_application(app_name.clone()).await?;
+
+        tracing::debug!(
+            "Got application <{}>, delay release: {:?}",
+            app_name,
+            app_ptr.delay_release
+        );
 
         let task_ptr = WaitForTaskFuture::new(&ssn_ptr, app_ptr.delay_release).await?;
+        tracing::debug!("Got task!");
 
         let (exec_id, host) = {
             let e = lock_ptr!(self.executor)?;
             (e.id.clone(), e.node.clone())
         };
+
+        tracing::debug!("Got executor <{}>, host <{}>", exec_id, host);
 
         let task_ptr = {
             match task_ptr {
@@ -114,6 +128,7 @@ impl States for BoundState {
 
         // No pending task, return.
         if task_ptr.is_none() {
+            tracing::debug!("No pending task, return.");
             return Ok(None);
         }
 

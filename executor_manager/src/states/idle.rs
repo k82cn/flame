@@ -98,6 +98,7 @@ impl WatchEventHandler {
 #[async_trait]
 impl shims::EventHandler for WatchEventHandler {
     async fn on_event(&mut self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
+        tracing::debug!("on_event: {:?}, event: {:?}", owner, event);
         self.client.record_event(owner, event).await
     }
 }

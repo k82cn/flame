@@ -253,7 +253,9 @@ impl Controller {
             (exec.ssn_id, exec.task_id)
         };
 
+        tracing::debug!("Try to launch task for session <{:?}>", ssn_id);
         let Some(ssn_id) = ssn_id else {
+            tracing::debug!("No session to launch task for, return.");
             // As the session was unbound from the executor, there are no tasks to launch for it.
             return Ok(None);
         };
@@ -270,8 +272,24 @@ impl Controller {
             return Ok(Some((*task).clone()));
         }
 
-        let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
-        state.launch_task(ssn_ptr).await
+        tracing::debug!("Launching task for session <{:?}>", ssn_id);
+        let ssn_ptr = self.storage.get_session_ptr(ssn_id);
+
+        match ssn_ptr {
+            Ok(ssn_ptr) => state.launch_task(ssn_ptr).await,
+            Err(FlameError::NotFound(msg)) => {
+                tracing::warn!(
+                    "Session <{:?}> not found when launching task: {}",
+                    ssn_id,
+                    msg
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::error!("Failed to get session <{:?}> when launching task: {:?}", ssn_id, e);
+                return Err(e);
+            }
+        }
     }
 
     pub async fn complete_task(
