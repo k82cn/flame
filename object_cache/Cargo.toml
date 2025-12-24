@@ -15,6 +15,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
 
+network-interface = "2"
 actix-web = "4"
 actix-rt = "2"
 bson = { version = "3", features = ["serde"] }

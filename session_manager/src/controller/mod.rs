@@ -286,7 +286,11 @@ impl Controller {
                 Ok(None)
             }
             Err(e) => {
-                tracing::error!("Failed to get session <{:?}> when launching task: {:?}", ssn_id, e);
+                tracing::error!(
+                    "Failed to get session <{:?}> when launching task: {:?}",
+                    ssn_id,
+                    e
+                );
                 Err(e)
             }
         }
