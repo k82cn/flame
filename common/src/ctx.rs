@@ -29,6 +29,8 @@ const DEFAULT_POLICY: &str = "proportion";
 const DEFAULT_STORAGE: &str = "sqlite://flame.db";
 const DEFAULT_MAX_EXECUTORS_PER_NODE: u32 = 128;
 const DEFAULT_SHIM: &str = "host";
+const DEFAULT_FLAME_CACHE_ENDPOINT: &str = "http://127.0.0.1:9090";
+const DEFAULT_FLAME_CACHE_NETWORK_INTERFACE: &str = "eth0";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FlameContextYaml {
@@ -54,7 +56,8 @@ struct FlameExecutorsYaml {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FlameCacheYaml {
-    pub endpoint: String,
+    pub endpoint: Option<String>,
+    pub network_interface: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +90,7 @@ pub struct FlameExecutors {
 #[derive(Debug, Clone, Default)]
 pub struct FlameCache {
     pub endpoint: String,
+    pub network_interface: String,
 }
 
 #[derive(Debug, Clone)]
@@ -199,7 +203,10 @@ impl Default for FlameCluster {
 impl TryFrom<FlameCacheYaml> for FlameCache {
     type Error = FlameError;
     fn try_from(cache: FlameCacheYaml) -> Result<Self, Self::Error> {
-        Ok(FlameCache { endpoint: cache.endpoint })
+        Ok(FlameCache {
+            endpoint: cache.endpoint.unwrap_or(DEFAULT_FLAME_CACHE_ENDPOINT.to_string()),
+            network_interface: cache.network_interface.unwrap_or(DEFAULT_FLAME_CACHE_NETWORK_INTERFACE.to_string()),
+        })
     }
 }
 

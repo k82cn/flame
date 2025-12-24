@@ -42,6 +42,7 @@ async fn test_put_and_get_object() {
         let cache_endpoint = CacheEndpoint::try_from(&endpoint_str_clone).unwrap();
         let flame_cache = FlameCache {
             endpoint: cache_endpoint.objects(),
+            network_interface: "eth0".to_string(),
         };
         let cache = cache::new_ptr(&flame_cache).unwrap();
 

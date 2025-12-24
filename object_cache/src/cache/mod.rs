@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
+use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use serde::{Deserialize, Serialize};
 
 use common::FlameError;
@@ -28,8 +29,31 @@ pub mod client;
 pub type ObjectCachePtr = Arc<ObjectCache>;
 
 pub fn new_ptr(config: &FlameCache) -> Result<ObjectCachePtr, FlameError> {
+    let mut endpoint = CacheEndpoint::try_from(&config.endpoint)?;
+    let network_interfaces =
+        NetworkInterface::show().map_err(|e| FlameError::Network(e.to_string()))?;
+    let host = network_interfaces
+        .iter()
+        .find(|iface| iface.name == config.network_interface)
+        .ok_or(FlameError::InvalidConfig(format!(
+            "network interface <{}> not found",
+            config.network_interface
+        )))?
+        .clone();
+
+    endpoint.host = host
+        .addr
+        .iter()
+        .find(|ip| ip.ip().is_ipv4())
+        .ok_or(FlameError::InvalidConfig(format!(
+            "network interface <{}> has no IPv4 addresses",
+            config.network_interface
+        )))?
+        .ip()
+        .to_string();
+
     Ok(Arc::new(ObjectCache {
-        endpoint: CacheEndpoint::try_from(&config.endpoint)?,
+        endpoint,
         objects: common::new_ptr(HashMap::new()),
     }))
 }
@@ -105,9 +129,7 @@ impl ObjectCache {
 
     pub fn put(&self, object: Object) -> Result<(), FlameError> {
         let mut objects = lock_ptr!(self.objects)?;
-        let objects = objects
-            .entry(object.session_id)
-            .or_insert(HashMap::new());
+        let objects = objects.entry(object.session_id).or_insert(HashMap::new());
 
         objects.insert(object.uid.clone(), object.clone());
         Ok(())

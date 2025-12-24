@@ -1475,6 +1475,7 @@ dependencies = [
  "clap",
  "common",
  "futures",
+ "network-interface",
  "reqwest",
  "serde",
  "serde_derive",
@@ -2704,6 +2705,18 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "network-interface"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e79101e6efcffacab279462884a7eebf65ea5f4ac2cc727b60c715a9aa04722"
+dependencies = [
+ "cc",
+ "libc",
+ "thiserror 2.0.17",
+ "winapi",
 ]
 
 [[package]]
