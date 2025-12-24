@@ -204,8 +204,12 @@ impl TryFrom<FlameCacheYaml> for FlameCache {
     type Error = FlameError;
     fn try_from(cache: FlameCacheYaml) -> Result<Self, Self::Error> {
         Ok(FlameCache {
-            endpoint: cache.endpoint.unwrap_or(DEFAULT_FLAME_CACHE_ENDPOINT.to_string()),
-            network_interface: cache.network_interface.unwrap_or(DEFAULT_FLAME_CACHE_NETWORK_INTERFACE.to_string()),
+            endpoint: cache
+                .endpoint
+                .unwrap_or(DEFAULT_FLAME_CACHE_ENDPOINT.to_string()),
+            network_interface: cache
+                .network_interface
+                .unwrap_or(DEFAULT_FLAME_CACHE_NETWORK_INTERFACE.to_string()),
         })
     }
 }

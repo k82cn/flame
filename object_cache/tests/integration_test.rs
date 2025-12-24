@@ -13,7 +13,7 @@ limitations under the License.
 
 use std::time::Duration;
 
-use::common::ctx::FlameCache;
+use ::common::ctx::FlameCache;
 
 use flame_object_cache::cache::client;
 use flame_object_cache::cache::{self, CacheEndpoint, Object};

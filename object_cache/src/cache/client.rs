@@ -47,8 +47,8 @@ pub async fn put(endpoint: &CacheEndpoint, object: &Object) -> Result<ObjectInfo
         .await
         .map_err(|e| FlameError::Network(e.to_string()))?;
 
-    let object_info =
-        serde_json::from_slice::<ObjectInfo>(&bytes).map_err(|e| FlameError::Internal(e.to_string()))?;
+    let object_info = serde_json::from_slice::<ObjectInfo>(&bytes)
+        .map_err(|e| FlameError::Internal(e.to_string()))?;
 
     Ok(object_info)
 }
