@@ -41,18 +41,12 @@ async fn test_put_and_get_object() {
     let network_interfaces = NetworkInterface::show().unwrap();
     let mut netiface = String::from("eth0");
     for iface in network_interfaces {
-        let addrs = iface
-            .addr
-            .iter()
-            .filter(|addr| addr.ip().is_ipv4() || addr.ip().is_ipv6());
-        if addrs.count() > 1 {
+        let addrs = iface.addr.iter().filter(|addr| addr.ip().is_loopback());
+        if addrs.count() > 0 {
             netiface = iface.name.clone();
             break;
         }
     }
-
-    println!("Using network interface: {}", netiface);
-    println!("Using endpoint: {}", endpoint_str);
 
     // Start the server in background
     let endpoint_str_clone = endpoint_str.clone();
