@@ -34,6 +34,7 @@ const DEFAULT_SHIM: &str = "host";
 struct FlameContextYaml {
     pub cluster: FlameClusterYaml,
     pub executors: FlameExecutorsYaml,
+    pub cache: Option<FlameCacheYaml>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +53,11 @@ struct FlameExecutorsYaml {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct FlameCacheYaml {
+    pub endpoint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct FlameExecutorLimitsYaml {
     pub max_executors: Option<u32>,
 }
@@ -60,6 +66,7 @@ struct FlameExecutorLimitsYaml {
 pub struct FlameContext {
     pub cluster: FlameCluster,
     pub executors: FlameExecutors,
+    pub cache: Option<FlameCache>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +82,11 @@ pub struct FlameCluster {
 pub struct FlameExecutors {
     pub shim: Shim,
     pub limits: FlameExecutorLimits,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FlameCache {
+    pub endpoint: String,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +134,7 @@ impl TryFrom<FlameContextYaml> for FlameContext {
         Ok(FlameContext {
             cluster: ctx.cluster.try_into()?,
             executors: ctx.executors.try_into()?,
+            cache: ctx.cache.map(FlameCache::try_from).transpose()?,
         })
     }
 }
@@ -180,6 +193,13 @@ impl Default for FlameCluster {
             policy: DEFAULT_POLICY.to_string(),
             storage: DEFAULT_STORAGE.to_string(),
         }
+    }
+}
+
+impl TryFrom<FlameCacheYaml> for FlameCache {
+    type Error = FlameError;
+    fn try_from(cache: FlameCacheYaml) -> Result<Self, Self::Error> {
+        Ok(FlameCache { endpoint: cache.endpoint })
     }
 }
 
