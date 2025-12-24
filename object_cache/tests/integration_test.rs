@@ -13,6 +13,8 @@ limitations under the License.
 
 use std::time::Duration;
 
+use network_interface::{NetworkInterface, NetworkInterfaceConfig};
+
 use ::common::ctx::FlameCache;
 
 use flame_object_cache::cache::client;
@@ -36,13 +38,30 @@ async fn test_put_and_get_object() {
         data: vec![1, 3, 3, 7],
     };
 
+    let network_interfaces = NetworkInterface::show().unwrap();
+    let mut netiface = String::from("eth0");
+    for iface in network_interfaces {
+        let addrs = iface
+            .addr
+            .iter()
+            .filter(|addr| addr.ip().is_ipv4() || addr.ip().is_ipv6());
+        if addrs.count() > 1 {
+            netiface = iface.name.clone();
+            break;
+        }
+    }
+
+    println!("Using network interface: {}", netiface);
+    println!("Using endpoint: {}", endpoint_str);
+
     // Start the server in background
     let endpoint_str_clone = endpoint_str.clone();
     let _srv = actix_rt::spawn(async move {
         let cache_endpoint = CacheEndpoint::try_from(&endpoint_str_clone).unwrap();
+
         let flame_cache = FlameCache {
             endpoint: cache_endpoint.objects(),
-            network_interface: "eth0".to_string(),
+            network_interface: netiface.to_string(),
         };
         let cache = cache::new_ptr(&flame_cache).unwrap();
 
