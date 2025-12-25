@@ -11,10 +11,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use crate::manager::ExecutorManager;
 use clap::Parser;
+use futures::future::join_all;
+use tokio::runtime::{Builder, Runtime};
+
+use crate::manager::ExecutorManager;
 use common::ctx::FlameContext;
 use common::FlameError;
+use object_cache::cache;
 
 mod client;
 mod executor;
@@ -41,11 +45,33 @@ async fn main() -> Result<(), FlameError> {
     let cli = Cli::parse();
     let ctx = FlameContext::from_file(cli.flame_conf)?;
 
-    // Create the executor manager by the context.
-    let mut manager = ExecutorManager::new(&ctx).await?;
+    let mut handlers = vec![];
+    let build_runtime = |name: &str, threads: usize| -> Result<Runtime, FlameError> {
+        Builder::new_multi_thread()
+            .worker_threads(threads)
+            .thread_name(name)
+            .enable_all()
+            .build()
+            .map_err(|e| FlameError::Internal(format!("failed to build runtime <{name}>: {e}")))
+    };
 
-    // Run the executor manager.
-    manager.run().await?;
+    // The manager thread will start one thread for each executor.
+    let max_executors = ctx.executors.limits.max_executors as usize;
+    let manager_rt = build_runtime("manager", max_executors + 1)?;
+
+    // Start executor manager thread.
+    {
+        let ctx = ctx.clone();
+        let handler = manager_rt.spawn(async move {
+            // Create the executor manager by the context.
+            let mut manager = ExecutorManager::new(&ctx).await?;
+            manager.run().await
+        });
+        handlers.push(handler);
+    }
+
+    // Waiting for all thread to exit.
+    let _ = join_all(handlers).await;
 
     Ok(())
 }
