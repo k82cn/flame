@@ -47,6 +47,7 @@ impl ExecutorManager {
         self.client.register_node(&node).await?;
         let one_second = time::Duration::from_secs(1);
 
+        tracing::debug!("Starting executor manager loop...");
         loop {
             node.refresh();
 

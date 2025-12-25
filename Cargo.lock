@@ -1440,6 +1440,7 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 name = "flame-executor-manager"
 version = "0.5.0"
 dependencies = [
+ "actix-rt",
  "anyhow",
  "async-trait",
  "bytes",
@@ -1448,8 +1449,8 @@ dependencies = [
  "common",
  "futures",
  "hyper-util",
- "lazy_static",
  "nix",
+ "object-cache",
  "prost",
  "rpc",
  "tokio",
@@ -1462,29 +1463,6 @@ dependencies = [
  "uuid",
  "wasmtime",
  "wasmtime-wasi",
-]
-
-[[package]]
-name = "flame-object-cache"
-version = "0.1.0"
-dependencies = [
- "actix-rt",
- "actix-web",
- "bson",
- "chrono",
- "clap",
- "common",
- "futures",
- "network-interface",
- "reqwest",
- "serde",
- "serde_derive",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -2874,6 +2852,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "object-cache"
+version = "0.1.0"
+dependencies = [
+ "actix-rt",
+ "actix-web",
+ "bson",
+ "chrono",
+ "clap",
+ "common",
+ "futures",
+ "network-interface",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3769,15 +3771,15 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.146"
+version = "1.0.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217ca874ae0207aac254aa02c957ded05585a90892cc8d87f9e5fa49669dadd8"
+checksum = "6af14725505314343e673e9ecb7cd7e8a36aa9791eb936235a3567cc31447ae4"
 dependencies = [
  "itoa",
  "memchr",
- "ryu",
  "serde",
  "serde_core",
+ "zmij",
 ]
 
 [[package]]
@@ -4290,9 +4292,9 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tempfile"
-version = "3.23.0"
+version = "3.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d31c77bdf42a745371d260a26ca7163f1e0924b64afa0b688e61b5a9fa02f16"
+checksum = "655da9c7eb6305c55742045d5a8d2037996d61d8de95806335c7c86ce0f82e9c"
 dependencies = [
  "fastrand",
  "getrandom 0.3.4",
@@ -6028,6 +6030,12 @@ dependencies = [
  "quote",
  "syn 2.0.111",
 ]
+
+[[package]]
+name = "zmij"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1dccf46b25b205e4bebe1d5258a991df1cc17801017a845cb5b3fe0269781aa"
 
 [[package]]
 name = "zstd"

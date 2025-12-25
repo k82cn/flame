@@ -32,9 +32,12 @@ pub fn new_ptr(config: &FlameCache) -> Result<ObjectCachePtr, FlameError> {
     let mut endpoint = CacheEndpoint::try_from(&config.endpoint)?;
     let network_interfaces =
         NetworkInterface::show().map_err(|e| FlameError::Network(e.to_string()))?;
+
+    let reg = regex::Regex::new(config.network_interface.as_str())
+        .map_err(|e| FlameError::InvalidConfig(e.to_string()))?;
     let host = network_interfaces
         .iter()
-        .find(|iface| iface.name == config.network_interface)
+        .find(|iface| reg.is_match(iface.name.as_str()))
         .ok_or(FlameError::InvalidConfig(format!(
             "network interface <{}> not found",
             config.network_interface
