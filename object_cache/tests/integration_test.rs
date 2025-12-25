@@ -17,8 +17,8 @@ use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 
 use ::common::ctx::FlameCache;
 
-use flame_object_cache::cache::client;
-use flame_object_cache::cache::{self, CacheEndpoint, Object};
+use object_cache::cache::client;
+use object_cache::cache::{self, CacheEndpoint, Object};
 
 use uuid::Uuid;
 

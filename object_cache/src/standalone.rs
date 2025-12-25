@@ -15,7 +15,7 @@ use clap::Parser;
 use common::FlameError;
 use common::ctx::FlameContext;
 
-use flame_object_cache::cache;
+use object_cache::cache;
 
 #[derive(Parser)]
 #[command(name = "flame-object-cache")]

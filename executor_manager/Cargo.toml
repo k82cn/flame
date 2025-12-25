@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 rpc = { path = "../rpc" }
 common = { path = "../common" }
+object-cache = { path = "../object_cache" }
 
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -21,22 +22,15 @@ hyper-util = { workspace = true }
 chrono = { workspace = true }
 nix = { workspace = true }
 url = { workspace = true }
+actix-rt = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+
 bytes = "1"
-lazy_static = "1.5"
 wasmtime = "16"
 wasmtime-wasi = "16"
 anyhow = "1"
-futures = { workspace = true }
 tokio-stream = "0.1"
-
-[dependencies.uuid]
-version = "1.19.0"
-features = [
-    "v4",                # Lets you generate random UUIDs
-    "fast-rng",          # Use a faster (but still sufficiently random) RNG
-    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
-]
-
 
 [lints.rust]
 unused = "allow"

@@ -1,5 +1,5 @@
 [package]
-name = "flame-object-cache"
+name = "object-cache"
 version = "0.1.0"
 edition = "2024"
 
@@ -14,16 +14,16 @@ tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
+actix-rt = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
 
 network-interface = "2"
 actix-web = "4"
-actix-rt = "2"
 bson = { version = "3", features = ["serde"] }
-futures = "0.3"
-uuid = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12" }
-
+regex = "1"
 
 [[bin]]
 name = "flame-object-cache"
