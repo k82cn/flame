@@ -18,8 +18,8 @@ use tokio::runtime::{Builder, Runtime};
 use crate::manager::ExecutorManager;
 use common::ctx::FlameContext;
 use common::FlameError;
-use object_cache::cache;
 
+mod cache;
 mod client;
 mod executor;
 mod manager;
@@ -58,6 +58,7 @@ async fn main() -> Result<(), FlameError> {
     // The manager thread will start one thread for each executor.
     let max_executors = ctx.executors.limits.max_executors as usize;
     let manager_rt = build_runtime("manager", max_executors + 1)?;
+    let cache_rt = build_runtime("cache", max_executors + 1)?;
 
     // Start executor manager thread.
     {
@@ -70,16 +71,21 @@ async fn main() -> Result<(), FlameError> {
         handlers.push(handler);
     }
 
-    // // Start object cache thread.
-    // {
-    //     let cache_config = ctx.clone().cache;
-    //     if let Some(cache_config) = cache_config {
-    //         let objcache = cache::new_ptr(&cache_config)?;
-    //         objcache.run().await?;
-    //     } else {
-    //         tracing::warn!("No object cache configuration found, skipping object cache thread.");
-    //     }
-    // }
+    {
+        let ctx = ctx.clone();
+        let handler = cache_rt.spawn(async move {
+            // Start the object cache server.
+            if let Some(cache_config) = ctx.cache {
+                cache::run(&cache_config).await
+            } else {
+                tracing::warn!(
+                    "No object cache configuration found, skipping object cache thread."
+                );
+                Ok(())
+            }
+        });
+        handlers.push(handler);
+    }
 
     // Waiting for all thread to exit.
     let _ = join_all(handlers).await;
