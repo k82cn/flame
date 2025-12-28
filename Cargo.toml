@@ -7,7 +7,6 @@ members = [
     "flmexec",
     "session_manager",
     "executor_manager",
-    "object_cache",
     "rpc",
     "sdk/rust",
     "examples/pi",

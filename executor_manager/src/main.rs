@@ -11,6 +11,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::thread;
+
 use clap::Parser;
 use futures::future::join_all;
 use tokio::runtime::{Builder, Runtime};
@@ -18,8 +20,8 @@ use tokio::runtime::{Builder, Runtime};
 use crate::manager::ExecutorManager;
 use common::ctx::FlameContext;
 use common::FlameError;
-use object_cache::cache;
 
+mod cache;
 mod client;
 mod executor;
 mod manager;
@@ -58,6 +60,25 @@ async fn main() -> Result<(), FlameError> {
     // The manager thread will start one thread for each executor.
     let max_executors = ctx.executors.limits.max_executors as usize;
     let manager_rt = build_runtime("manager", max_executors + 1)?;
+    let cache_rt = build_runtime("cache", 3)?;
+
+    {
+        let ctx = ctx.clone();
+        thread::spawn(move || {
+            let _ = cache_rt.spawn(async move {
+                // Start the object cache server.
+                if let Some(cache_config) = ctx.cache {
+                    cache::run(&cache_config).await
+                } else {
+                    tracing::warn!(
+                        "No object cache configuration found, skipping object cache thread."
+                    );
+                    Ok(())
+                }
+            });
+            // handlers.push(handler);
+        });
+    }
 
     // Start executor manager thread.
     {

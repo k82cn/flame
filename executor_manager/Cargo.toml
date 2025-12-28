@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 rpc = { path = "../rpc" }
 common = { path = "../common" }
-object-cache = { path = "../object_cache" }
 
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -31,6 +30,8 @@ wasmtime = "16"
 wasmtime-wasi = "16"
 anyhow = "1"
 tokio-stream = "0.1"
+network-interface = "2"
+regex = "1"
 
 [lints.rust]
 unused = "allow"
