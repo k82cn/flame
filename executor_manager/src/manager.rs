@@ -56,7 +56,7 @@ impl ExecutorManager {
 
             for executor in &executors {
                 if self.executors.contains_key(&executor.id) {
-                    // tracing::debug!("Executor <{}> is already running.", executor.id);
+                    // If the executor is already running, skip it.
                     continue;
                 }
 
@@ -87,4 +87,11 @@ impl ExecutorManager {
 
         Ok(())
     }
+}
+
+pub async fn run(ctx: &FlameContext) -> Result<(), FlameError> {
+    let mut manager = ExecutorManager::new(ctx).await?;
+    manager.run().await?;
+
+    Ok(())
 }

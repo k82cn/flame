@@ -10,6 +10,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+use std::time::Duration;
 
 use tonic::transport::Channel;
 
@@ -53,10 +54,17 @@ impl BackendClient {
         );
 
         tracing::info!("Connecting to flame backend at {}", endpoint);
+        let channel = Channel::from_shared(endpoint.clone()).map_err(|e| {
+            FlameError::Network(format!("Failed to create channel for <{endpoint}>: {e}"))
+        })?;
 
-        let client = FlameBackendClient::connect(endpoint.clone())
+        let channel = channel
+            .timeout(Duration::from_secs(60)) // 1 minute timeout for all requests
+            .connect()
             .await
-            .map_err(|_e| FlameError::Network(format!("failed to connect to <{endpoint}>")))?;
+            .map_err(|e| FlameError::Network(format!("Failed to connect to <{endpoint}>: {e}")))?;
+
+        let client = FlameBackendClient::new(channel);
 
         Ok(Self { client })
     }
