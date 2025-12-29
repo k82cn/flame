@@ -12,12 +12,11 @@ limitations under the License.
 */
 
 use std::thread;
+use std::{future::Future, pin::Pin, task::Context, task::Poll, thread::JoinHandle};
 
 use clap::Parser;
-use futures::future::join_all;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::manager::ExecutorManager;
 use common::ctx::FlameContext;
 use common::FlameError;
 
@@ -30,7 +29,7 @@ mod states;
 
 #[derive(Parser)]
 #[command(name = "flame-executor-manager")]
-#[command(author = "Klaus Ma <klaus@xflops.cn>")]
+#[command(author = "XFLOPS <support@xflops.io>")]
 #[command(version = "0.5.0")]
 #[command(about = "Flame Executor Manager", long_about = None)]
 struct Cli {
@@ -62,37 +61,75 @@ async fn main() -> Result<(), FlameError> {
     let manager_rt = build_runtime("manager", max_executors + 1)?;
     let cache_rt = build_runtime("cache", 3)?;
 
+    // Start the object cache server thread.
     {
         let ctx = ctx.clone();
-        thread::spawn(move || {
-            let _ = cache_rt.spawn(async move {
-                // Start the object cache server.
-                if let Some(cache_config) = ctx.cache {
-                    cache::run(&cache_config).await
-                } else {
+        let handler = thread::spawn(move || {
+            let _ = cache_rt.block_on(async move {
+                let Some(cache_config) = ctx.cache else {
                     tracing::warn!(
                         "No object cache configuration found, skipping object cache thread."
                     );
-                    Ok(())
+                    return Ok(());
+                };
+
+                match cache::run(&cache_config).await {
+                    Ok(_) => {
+                        tracing::info!("Object cache exited successfully.");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("Object cache exited with error: {e}");
+                        Err(e)
+                    }
                 }
             });
-            // handlers.push(handler);
-        });
-    }
-
-    // Start executor manager thread.
-    {
-        let ctx = ctx.clone();
-        let handler = manager_rt.spawn(async move {
-            // Create the executor manager by the context.
-            let mut manager = ExecutorManager::new(&ctx).await?;
-            manager.run().await
         });
         handlers.push(handler);
     }
 
-    // Waiting for all thread to exit.
-    let _ = join_all(handlers).await;
+    // Start the executor manager thread.
+    {
+        let ctx = ctx.clone();
+        let handler = thread::spawn(move || {
+            let _ = manager_rt.block_on(async move {
+                match manager::run(&ctx).await {
+                    Ok(_) => {
+                        tracing::info!("Executor manager exited successfully.");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("Executor manager exited with error: {e}");
+                        Err(e)
+                    }
+                }
+            });
+        });
+        handlers.push(handler);
+    }
+
+    // Waiting for any thread to exit.
+    JoinAny { handlers }.await?;
 
     Ok(())
+}
+
+struct JoinAny {
+    handlers: Vec<JoinHandle<()>>,
+}
+
+impl Future for JoinAny {
+    type Output = Result<(), FlameError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        for handler in &self.handlers {
+            if handler.is_finished() {
+                tracing::info!("Thread <{}> exited.", handler.thread().name().unwrap());
+                return Poll::Ready(Ok(()));
+            }
+        }
+
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    }
 }

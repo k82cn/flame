@@ -166,7 +166,10 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
         .add_service(ObjectCacheServer::new(cache))
         .serve(address)
         .await
-        .map_err(|e| FlameError::Network(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Object cache server exited with error: {e}");
+            FlameError::Network(e.to_string())
+        })?;
 
     Ok(())
 }
