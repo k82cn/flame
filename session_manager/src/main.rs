@@ -12,17 +12,10 @@ limitations under the License.
 */
 
 use clap::Parser;
-use futures::future::join_all;
-use std::io::Write;
-use std::process;
+use futures::future::select_all;
 use tokio::runtime::{Builder, Runtime};
+use tokio::task::JoinHandle;
 
-use chrono::{Duration, Utc};
-use std::collections::HashMap;
-
-use common::apis::{
-    ApplicationAttributes, ApplicationState, Shim, DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
-};
 use common::ctx::FlameContext;
 use common::FlameError;
 
@@ -79,12 +72,11 @@ async fn main() -> Result<(), FlameError> {
     {
         let controller = controller.clone();
         let ctx = ctx.clone();
-
-        let handler = provider_rt.spawn(async move {
+        let _ = provider_rt.spawn(async move {
             let provider = provider::new("none", controller)?;
             provider.run(ctx).await
         });
-        handlers.push(handler);
+        // handlers.push(handler);
     }
 
     // Start apiserver frontend thread.
@@ -122,21 +114,17 @@ async fn main() -> Result<(), FlameError> {
 
     tracing::info!("flame-session-manager started.");
 
-    {
-        // Register default applications.
-        let handler = tokio::spawn(async move {
-            for (name, attr) in common::default_applications() {
-                controller.register_application(name, attr).await?;
-            }
+    // Register default applications.
+    let _: JoinHandle<Result<(), FlameError>> = tokio::spawn(async move {
+        for (name, attr) in common::default_applications() {
+            controller.register_application(name, attr).await?;
+        }
 
-            Ok(())
-        });
+        Ok(())
+    });
 
-        handlers.push(handler);
-    }
-
-    // Waiting for all thread to exit.
-    let _ = join_all(handlers).await;
+    let (res, idx, _) = select_all(handlers).await;
+    tracing::info!("Thread <{idx}> exited with result: {res:?}");
 
     Ok(())
 }

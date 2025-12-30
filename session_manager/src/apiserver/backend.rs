@@ -13,6 +13,7 @@ limitations under the License.
 
 use async_trait::async_trait;
 use chrono::Utc;
+use stdng::{logs::TraceFn, trace_fn};
 use tonic::{Request, Response, Status};
 
 use self::rpc::backend_server::Backend;
@@ -30,7 +31,7 @@ use crate::model::{
     SnapShot, SnapShotPtr,
 };
 use common::apis::{Application, Event, EventOwner, ExecutorState, Node, Session, TaskResult};
-use common::{trace::TraceFn, trace_fn, FlameError};
+use common::FlameError;
 
 #[async_trait]
 impl Backend for Flame {

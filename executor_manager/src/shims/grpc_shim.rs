@@ -47,7 +47,8 @@ use crate::shims::{EventHandler, EventHandlerPtr, Shim, ShimPtr};
 use common::apis::{
     ApplicationContext, Event, EventOwner, SessionContext, TaskContext, TaskOutput, TaskResult,
 };
-use common::{trace::TraceFn, trace_fn, FlameError, FLAME_WORKING_DIRECTORY};
+use common::{FlameError, FLAME_WORKING_DIRECTORY};
+use stdng::{logs::TraceFn, trace_fn};
 
 pub struct GrpcShim {
     client: Option<InstanceClient<Channel>>,

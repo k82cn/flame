@@ -11,16 +11,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use chrono::{DateTime, Duration, Utc};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use chrono::{DateTime, Duration, Utc};
+use stdng::{logs::TraceFn, trace_fn};
 
 use crate::model::ExecutorPtr;
 use common::apis::{
     ExecutorState, SessionPtr, SessionState, Task, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
-use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
+use common::{lock_ptr, FlameError};
 
 use crate::controller::states::States;
 use crate::storage::StoragePtr;

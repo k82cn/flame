@@ -13,10 +13,11 @@ limitations under the License.
 
 use crate::controller::states::States;
 use crate::storage::StoragePtr;
+use stdng::{logs::TraceFn, trace_fn};
 
 use crate::model::ExecutorPtr;
 use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult, TaskState};
-use common::{lock_ptr, trace::TraceFn, trace_fn, FlameError};
+use common::{lock_ptr, FlameError};
 
 pub struct UnbindingState {
     pub storage: StoragePtr,

@@ -12,10 +12,8 @@ limitations under the License.
 */
 
 pub mod apis;
-pub mod collections;
 pub mod ctx;
 pub mod storage;
-pub mod trace;
 
 use std::string::FromUtf8Error;
 
@@ -56,6 +54,12 @@ pub enum FlameError {
 
     #[error("{0}")]
     VersionMismatch(String),
+}
+
+impl From<stdng::Error> for FlameError {
+    fn from(value: stdng::Error) -> Self {
+        FlameError::Internal(value.to_string())
+    }
 }
 
 impl From<FlameError> for Status {
@@ -126,6 +130,7 @@ macro_rules! lock_ptr {
 
 pub const FLAME_WORKING_DIRECTORY: &str = "/tmp/flame";
 pub const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
+pub const FLAME_CACHE_ENDPOINT: &str = "FLAME_CACHE_ENDPOINT";
 
 pub fn init_logger() -> Result<(), FlameError> {
     let filter = tracing_subscriber::EnvFilter::from_default_env()

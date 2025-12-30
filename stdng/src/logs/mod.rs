@@ -1,5 +1,5 @@
 /*
-Copyright 2025 The Flame Authors.
+Copyright 2023 The Flame Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -11,12 +11,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::cmp::Ordering;
+pub struct TraceFn {
+    pub fn_name: String,
+}
 
-mod bin_heap;
+impl TraceFn {
+    pub fn new(n: String) -> Self {
+        tracing::debug!("{n} Enter");
+        TraceFn { fn_name: n }
+    }
+}
 
-pub use bin_heap::BinaryHeap;
+impl Drop for TraceFn {
+    fn drop(&mut self) {
+        tracing::debug!("{} Leaving", self.fn_name);
+    }
+}
 
-pub trait Cmp<T> {
-    fn cmp(&self, t1: &T, t2: &T) -> Ordering;
+#[macro_export]
+macro_rules! trace_fn {
+    ($e:expr) => {
+        let _trace_fn = TraceFn::new($e.to_string());
+    };
 }

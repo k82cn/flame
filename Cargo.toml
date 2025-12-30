@@ -11,6 +11,7 @@ members = [
     "sdk/rust",
     "examples/pi",
     "cri",
+    "stdng",
 ]
 
 [workspace.dependencies]

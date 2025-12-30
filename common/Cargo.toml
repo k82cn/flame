@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 rpc = { path = "../rpc"}
+stdng = { path = "../stdng" }
 
 tokio = { workspace = true }
 tonic = { workspace = true }
