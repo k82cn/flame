@@ -12,14 +12,14 @@ limitations under the License.
 */
 
 use async_trait::async_trait;
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::{logs::TraceFn, new_ptr, trace_fn, MutexPtr};
 
 use crate::client::BackendClient;
 use crate::executor::Executor;
 use crate::shims;
 use crate::states::State;
 use common::apis::{Event, EventOwner, ExecutorState};
-use common::{new_async_ptr, new_ptr, FlameError};
+use common::{new_async_ptr, FlameError};
 
 #[derive(Clone)]
 pub struct IdleState {

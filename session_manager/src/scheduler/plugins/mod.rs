@@ -16,13 +16,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use stdng::collections;
-use stdng::lock_ptr;
+use stdng::{lock_ptr, new_ptr, MutexPtr};
 
 use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot};
 use crate::scheduler::plugins::fairshare::FairShare;
 use crate::scheduler::Context;
 
-use common::{new_ptr, FlameError, MutexPtr};
+use common::FlameError;
 
 mod fairshare;
 

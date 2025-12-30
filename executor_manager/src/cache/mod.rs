@@ -19,6 +19,7 @@ use regex::Regex;
 use async_trait::async_trait;
 use network_interface::NetworkInterface;
 use network_interface::NetworkInterfaceConfig;
+use stdng::{lock_ptr, new_ptr, MutexPtr};
 use tonic::{transport::Server, Request, Response, Status};
 use url::Url;
 
@@ -29,8 +30,7 @@ use self::rpc::{
 use ::rpc::flame as rpc;
 
 use common::ctx::FlameCache;
-use common::lock_ptr;
-use common::{FlameError, MutexPtr};
+use common::FlameError;
 
 mod client;
 mod types;
@@ -69,10 +69,9 @@ impl ObjectCache for FlameObjectCache {
             size: object.data.len() as u64,
         };
 
-        let mut objects = lock_ptr!(self.objects)?;
+        let mut objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
         objects.insert(uuid.clone(), object);
         tracing::debug!("Object put: {}", endpoint);
-
         Ok(Response::new(metadata.into()))
     }
 
@@ -81,8 +80,7 @@ impl ObjectCache for FlameObjectCache {
         request: Request<GetObjectRequest>,
     ) -> Result<Response<rpc::Object>, Status> {
         let req = request.into_inner();
-
-        let objects = lock_ptr!(self.objects)?;
+        let objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
         if let Some(obj) = objects.get(&req.uuid) {
             tracing::debug!("Object get: {}", req.uuid);
             Ok(Response::new(obj.clone().into()))
@@ -97,7 +95,7 @@ impl ObjectCache for FlameObjectCache {
         request: Request<rpc::Object>,
     ) -> Result<Response<rpc::ObjectMetadata>, Status> {
         let mut obj = request.into_inner();
-        let mut objects = lock_ptr!(self.objects)?;
+        let mut objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
 
         if objects.contains_key(&obj.uuid) {
             let Some(object) = objects.get(&obj.uuid) else {
@@ -135,7 +133,7 @@ impl ObjectCache for FlameObjectCache {
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<rpc::Result>, Status> {
         let req = request.into_inner();
-        let mut objects = self.objects.lock().unwrap();
+        let mut objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
         let existed = objects.remove(&req.uuid).is_some();
 
         tracing::debug!("Object deleted: {}", req.uuid);
@@ -156,7 +154,7 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
 
     let cache = FlameObjectCache {
         endpoint,
-        objects: common::new_ptr(HashMap::new()),
+        objects: new_ptr(HashMap::new()),
     };
 
     tracing::info!("Listening object cache at {address_str}");

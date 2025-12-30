@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 use std::sync::{Arc, Mutex};
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 use tokio::task::JoinHandle;
 
 use crate::client::BackendClient;
@@ -21,7 +21,7 @@ use ::rpc::flame::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
 
 use crate::states;
 use common::apis::{ExecutorState, ResourceRequirement, SessionContext, TaskContext};
-use common::{ctx::FlameContext, lock_ptr, FlameError};
+use common::{ctx::FlameContext, FlameError};
 
 #[derive(Clone)]
 pub struct Executor {

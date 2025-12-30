@@ -11,6 +11,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::sync::{Arc, Mutex};
+
 use thiserror::Error;
 
 pub mod collections;
@@ -26,6 +28,12 @@ pub enum Error {
 
     #[error("{0}")]
     Network(String),
+}
+
+pub type MutexPtr<T> = Arc<Mutex<T>>;
+
+pub fn new_ptr<T>(t: T) -> MutexPtr<T> {
+    Arc::new(Mutex::new(t))
 }
 
 #[macro_export]

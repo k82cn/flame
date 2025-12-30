@@ -17,10 +17,11 @@ use std::sync::{Arc, Mutex};
 
 use bincode::{Decode, Encode};
 use chrono::{DateTime, Utc};
+use stdng::{lock_ptr, new_ptr, MutexPtr};
 
 use common::apis::{Event, EventOwner, SessionID, TaskID};
 use common::storage::{DataStorage, Index, Object, ObjectId, ObjectStorage};
-use common::{lock_ptr, new_ptr, FlameError, MutexPtr};
+use common::FlameError;
 
 const EVENT_STORAGE: &str = "events";
 
