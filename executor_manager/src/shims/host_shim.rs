@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use hyper_util::rt::TokioIo;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
+use stdng::{logs::TraceFn, trace_fn};
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
@@ -42,9 +43,7 @@ use crate::executor::Executor;
 use crate::shims::grpc_shim::GrpcShim;
 use crate::shims::{EventHandler, EventHandlerPtr, Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
-use common::{
-    trace::TraceFn, trace_fn, FlameError, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY,
-};
+use common::{FlameError, FLAME_CACHE_ENDPOINT, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY};
 
 pub struct HostShim {
     child: tokio::process::Child,
@@ -83,9 +82,15 @@ impl HostShim {
         let command = app.command.clone().unwrap_or_default();
         let args = app.arguments.clone();
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
+
         let mut envs = app.environments.clone();
         envs.insert(RUST_LOG.to_string(), log_level);
         envs.insert(FLAME_INSTANCE_ENDPOINT.to_string(), endpoint.to_string());
+        if let Some(context) = &executor.context {
+            if let Some(cache) = &context.cache {
+                envs.insert(FLAME_CACHE_ENDPOINT.to_string(), cache.endpoint.clone());
+            }
+        }
 
         tracing::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"

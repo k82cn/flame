@@ -17,6 +17,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use stdng::{logs::TraceFn, trace_fn};
+
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, Event,
     EventOwner, ExecutorID, ExecutorState, Node, NodePtr, ResourceRequirement, Session, SessionID,
@@ -24,7 +26,7 @@ use common::apis::{
     TaskState,
 };
 use common::{self, MutexPtr};
-use common::{ctx::FlameContext, lock_ptr, trace::TraceFn, trace_fn, FlameError};
+use common::{ctx::FlameContext, lock_ptr, FlameError};
 
 use crate::model::{
     AppInfo, Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo,

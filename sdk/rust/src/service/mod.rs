@@ -11,18 +11,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-mod async_queue;
-
 use std::{pin::Pin, sync::Arc};
 
+use chrono::Utc;
 use futures::Stream;
+use stdng::collections::AsyncQueue;
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
-
-use chrono::Utc;
 
 use self::rpc::instance_server::{Instance, InstanceServer};
 use crate::apis::flame as rpc;
@@ -42,7 +40,7 @@ pub struct SessionContext {
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
 
-    event_queue: async_queue::AsyncQueue<rpc::WatchEventResponse>,
+    event_queue: AsyncQueue<rpc::WatchEventResponse>,
 }
 
 pub struct TaskContext {
@@ -50,7 +48,7 @@ pub struct TaskContext {
     pub session_id: String,
     pub input: Option<TaskInput>,
 
-    event_queue: async_queue::AsyncQueue<rpc::WatchEventResponse>,
+    event_queue: AsyncQueue<rpc::WatchEventResponse>,
 }
 
 #[tonic::async_trait]
@@ -64,7 +62,7 @@ pub type FlameServicePtr = Arc<dyn FlameService>;
 
 struct ShimService {
     service: FlameServicePtr,
-    event_queue: async_queue::AsyncQueue<rpc::WatchEventResponse>,
+    event_queue: AsyncQueue<rpc::WatchEventResponse>,
 }
 
 #[tonic::async_trait]
@@ -130,7 +128,10 @@ impl Instance for ShimService {
         tracing::debug!("ShimService::on_session_leave");
         let resp = self.service.on_session_leave().await;
 
-        self.event_queue.close().await?;
+        self.event_queue
+            .close()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
 
         match resp {
             Ok(_) => Ok(Response::new(rpc::Result {
@@ -181,7 +182,7 @@ impl Instance for ShimService {
 pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::Error>> {
     let shim_service = ShimService {
         service: Arc::new(service),
-        event_queue: async_queue::AsyncQueue::new(),
+        event_queue: AsyncQueue::new(),
     };
 
     let endpoint = std::env::var(FLAME_INSTANCE_ENDPOINT)
@@ -207,17 +208,9 @@ impl From<rpc::ApplicationContext> for ApplicationContext {
     }
 }
 
-impl
-    From<(
-        rpc::SessionContext,
-        async_queue::AsyncQueue<rpc::WatchEventResponse>,
-    )> for SessionContext
-{
+impl From<(rpc::SessionContext, AsyncQueue<rpc::WatchEventResponse>)> for SessionContext {
     fn from(
-        (ctx, event_queue): (
-            rpc::SessionContext,
-            async_queue::AsyncQueue<rpc::WatchEventResponse>,
-        ),
+        (ctx, event_queue): (rpc::SessionContext, AsyncQueue<rpc::WatchEventResponse>),
     ) -> Self {
         SessionContext {
             session_id: ctx.session_id.clone(),
@@ -228,18 +221,8 @@ impl
     }
 }
 
-impl
-    From<(
-        rpc::TaskContext,
-        async_queue::AsyncQueue<rpc::WatchEventResponse>,
-    )> for TaskContext
-{
-    fn from(
-        (ctx, event_queue): (
-            rpc::TaskContext,
-            async_queue::AsyncQueue<rpc::WatchEventResponse>,
-        ),
-    ) -> Self {
+impl From<(rpc::TaskContext, AsyncQueue<rpc::WatchEventResponse>)> for TaskContext {
+    fn from((ctx, event_queue): (rpc::TaskContext, AsyncQueue<rpc::WatchEventResponse>)) -> Self {
         TaskContext {
             task_id: ctx.task_id.clone(),
             session_id: ctx.session_id.clone(),

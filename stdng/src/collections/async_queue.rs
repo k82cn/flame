@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::task::{Context, Poll};
 
-use crate::{apis::FlameError, lock_ptr};
+use crate::{Error, lock_ptr};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
 enum AsyncQueueState {
@@ -47,7 +47,7 @@ impl<T> AsyncQueue<T> {
         }
     }
 
-    pub fn push_back(&self, item: T) -> Result<(), FlameError> {
+    pub fn push_back(&self, item: T) -> Result<(), Error> {
         let mut queue = lock_ptr!(self.queue)?;
         queue.push_back(item);
 
@@ -61,7 +61,7 @@ impl<T> AsyncQueue<T> {
         .await
     }
 
-    pub async fn close(&self) -> Result<(), FlameError> {
+    pub async fn close(&self) -> Result<(), Error> {
         {
             let mut queue = lock_ptr!(self.queue)?;
             queue.close();
@@ -77,10 +77,7 @@ impl<T> AsyncQueue<T> {
         let queue = lock_ptr!(self.queue);
         match queue {
             Ok(queue) => queue.is_closed(),
-            Err(e) => {
-                tracing::error!("Failed to lock queue: {e}");
-                true
-            }
+            Err(e) => true,
         }
     }
 }
@@ -136,10 +133,7 @@ impl<T> Future for WaitForItemFuture<T> {
                     Poll::Pending
                 }
             }
-            Err(e) => {
-                tracing::error!("Failed to lock queue: {e}");
-                Poll::Ready(None)
-            }
+            Err(e) => Poll::Ready(None),
         }
     }
 }
@@ -149,7 +143,7 @@ struct WaitForCloseFuture<T> {
 }
 
 impl<T> Future for WaitForCloseFuture<T> {
-    type Output = Result<(), FlameError>;
+    type Output = Result<(), Error>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         let queue = lock_ptr!(self.queue);
@@ -162,10 +156,7 @@ impl<T> Future for WaitForCloseFuture<T> {
                     Poll::Pending
                 }
             }
-            Err(e) => {
-                tracing::error!("Failed to lock queue: {e}");
-                Poll::Ready(Err(FlameError::Internal(e.to_string())))
-            }
+            Err(e) => Poll::Ready(Err(Error::Internal(e.to_string()))),
         }
     }
 }

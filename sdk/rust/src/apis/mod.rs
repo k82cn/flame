@@ -69,6 +69,12 @@ pub enum FlameError {
     InvalidConfig(String),
 }
 
+impl From<stdng::Error> for FlameError {
+    fn from(value: stdng::Error) -> Self {
+        FlameError::Internal(value.to_string())
+    }
+}
+
 impl From<ParseError> for FlameError {
     fn from(value: ParseError) -> Self {
         FlameError::InvalidConfig(value.to_string())

@@ -3,3 +3,4 @@ current-cluster: flame
 clusters:
   - name: flame
     endpoint: "http://flame-session-manager:8080"
+    cache: "http://flame-executor-manager:9090"

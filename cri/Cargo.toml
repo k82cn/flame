@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
+stdng = { path = "../stdng" }
+
 tokio = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }

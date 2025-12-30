@@ -24,8 +24,8 @@ use bincode::{
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
 
-use crate::trace_fn;
-use crate::{trace::TraceFn, FlameError};
+use crate::FlameError;
+use stdng::{logs::TraceFn, trace_fn};
 
 pub type ObjectId = u64;
 

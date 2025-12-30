@@ -6,7 +6,9 @@ spec:
   command: /usr/bin/uv
   arguments:
     - run
+    - -n
     - agent.py
     - apis.py
   environments:
     DEEPSEEK_API_KEY: sk-xxxxxxxxxxxxxxxxx
+    FLAME_LOG_LEVEL: DEBUG

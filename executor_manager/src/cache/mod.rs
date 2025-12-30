@@ -64,14 +64,14 @@ impl ObjectCache for FlameObjectCache {
             self.endpoint.scheme, self.endpoint.host, self.endpoint.port, uuid
         );
         let metadata = ObjectMetadata {
-            endpoint,
+            endpoint: endpoint.clone(),
             version: 1,
             size: object.data.len() as u64,
         };
 
         let mut objects = lock_ptr!(self.objects)?;
         objects.insert(uuid.clone(), object);
-        tracing::debug!("Object put: {}", uuid);
+        tracing::debug!("Object put: {}", endpoint);
 
         Ok(Response::new(metadata.into()))
     }
@@ -117,12 +117,12 @@ impl ObjectCache for FlameObjectCache {
             );
 
             let metadata = ObjectMetadata {
-                endpoint,
+                endpoint: endpoint.clone(),
                 version: obj.version,
                 size: obj.data.len() as u64,
             };
 
-            tracing::debug!("Object updated: {}", obj.uuid);
+            tracing::debug!("Object updated: {}", endpoint);
 
             Ok(Response::new(metadata.into()))
         } else {

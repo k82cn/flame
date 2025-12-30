@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use stdng::{logs::TraceFn, trace_fn};
 use tokio::sync::Mutex;
 use wasmtime::component::*;
 use wasmtime::{Config, Engine, Store};
@@ -23,7 +24,7 @@ use wasmtime_wasi::preview2::{command, Table, WasiCtx, WasiCtxBuilder, WasiView}
 use crate::executor::Executor;
 use crate::shims::wasm_shim::exports::component::flame::service;
 use crate::shims::{EventHandler, EventHandlerPtr, Shim, ShimPtr};
-use common::{self, apis, trace::TraceFn, trace_fn, FlameError};
+use common::{self, apis, FlameError};
 
 wasmtime::component::bindgen!({
     path: "wit/flame.wit",

@@ -31,8 +31,16 @@ async def main(message: str, ssn_id: Optional[str] = None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--session", type=str, default=None, help="The session to open")
-    parser.add_argument("-m", "--message", type=str, required=True, help="The message to send to the agent")
+    parser.add_argument("-s",
+                        "--session",
+                        type=str,
+                        default=None,
+                        help="The session to open")
+    parser.add_argument("-m",
+                        "--message",
+                        type=str,
+                        required=True,
+                        help="The message to send to the agent")
     args = parser.parse_args()
 
     asyncio.run(main(args.message, args.session))

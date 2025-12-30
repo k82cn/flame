@@ -20,7 +20,8 @@ use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 use tracing::info;
 
-use common::{FlameError, apis::ApplicationContext, trace::TraceFn, trace_fn};
+use common::{FlameError, apis::ApplicationContext};
+use stdng::{logs::TraceFn, trace_fn};
 
 use crate::apis::{Container, Pod, PodMetadata, PodRuntime, PodSpec, PodState, PodStatus};
 use crate::cri_v1::image_service_client::ImageServiceClient;

@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use common::apis::ApplicationAttributes;
 use futures::Stream;
 use serde_json::Value;
+use stdng::{logs::TraceFn, trace_fn};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
@@ -32,7 +33,6 @@ use self::rpc::{
 use rpc::flame as rpc;
 
 use common::{apis, FlameError};
-use common::{trace::TraceFn, trace_fn};
 
 use crate::apiserver::Flame;
 

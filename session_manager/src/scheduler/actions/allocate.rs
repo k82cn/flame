@@ -13,19 +13,16 @@ limitations under the License.
 
 use std::sync::Arc;
 
-use crate::model::{ALL_NODE, OPEN_SESSION};
+use stdng::collections::{BinaryHeap, Cmp};
+use stdng::{logs::TraceFn, trace_fn};
 
+use crate::model::{ALL_NODE, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::node_order_fn;
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
-use crate::FlameError;
 
-use common::{
-    collections::{BinaryHeap, Cmp},
-    trace::TraceFn,
-    trace_fn,
-};
+use common::FlameError;
 
 pub struct AllocateAction {}
 

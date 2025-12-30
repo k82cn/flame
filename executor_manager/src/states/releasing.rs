@@ -12,12 +12,13 @@ limitations under the License.
 */
 
 use async_trait::async_trait;
+use stdng::{logs::TraceFn, trace_fn};
 
 use crate::client::BackendClient;
 use crate::executor::Executor;
 use crate::states::State;
 use common::apis::ExecutorState;
-use common::{trace::TraceFn, trace_fn, FlameError};
+use common::FlameError;
 
 #[derive(Clone)]
 pub struct ReleasingState {

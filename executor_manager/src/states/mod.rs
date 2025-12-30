@@ -12,12 +12,13 @@ limitations under the License.
 */
 
 use async_trait::async_trait;
+use stdng::{logs::TraceFn, trace_fn};
 
 use crate::client::BackendClient;
 use crate::executor::Executor;
 
 use common::apis::{Event, EventOwner, ExecutorState};
-use common::{trace::TraceFn, trace_fn, FlameError};
+use common::FlameError;
 
 mod bound;
 mod idle;

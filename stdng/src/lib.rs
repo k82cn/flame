@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Flame Authors.
+Copyright 2025 The Flame Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -11,24 +11,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use async_trait::async_trait;
-use stdng::{logs::TraceFn, trace_fn};
+use thiserror::Error;
 
-use crate::executor::Executor;
-use crate::states::State;
+pub mod collections;
+pub mod logs;
 
-use common::FlameError;
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0}")]
+    NotFound(String),
 
-#[derive(Clone)]
-pub struct UnknownState {
-    pub executor: Executor,
+    #[error("{0}")]
+    Internal(String),
+
+    #[error("{0}")]
+    Network(String),
 }
 
-#[async_trait]
-impl State for UnknownState {
-    async fn execute(&mut self) -> Result<Executor, FlameError> {
-        trace_fn!("UnknownState::execute");
-
-        Ok(self.executor.clone())
-    }
+#[macro_export]
+macro_rules! lock_ptr {
+    ( $mutex_arc:expr ) => {
+        $mutex_arc
+            .lock()
+            .map_err(|_| $crate::Error::Internal("mutex ptr".to_string()))
+    };
 }

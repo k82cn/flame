@@ -54,7 +54,7 @@ impl ExecutorManager {
             // TODO(k82cn): also sync the executors in that node.
             let mut executors = self.client.sync_node(&node, vec![]).await?;
 
-            for executor in &executors {
+            for mut executor in &mut executors {
                 if self.executors.contains_key(&executor.id) {
                     // If the executor is already running, skip it.
                     continue;
@@ -66,6 +66,10 @@ impl ExecutorManager {
                 }
 
                 tracing::debug!("Executor <{}> is starting.", executor.id);
+
+                // Put the context into the executor.
+                executor.context = Some(self.ctx.clone());
+
                 let executor_ptr = Arc::new(Mutex::new(executor.clone()));
                 self.executors
                     .insert(executor.id.clone(), executor_ptr.clone());
