@@ -14,6 +14,7 @@ limitations under the License.
 use chrono::Utc;
 use hyper_util::rt::TokioIo;
 use std::collections::HashMap;
+use stdng::trace_fn;
 use tokio::net::UnixStream;
 use tonic::transport::Channel;
 use tonic::transport::{Endpoint, Uri};
@@ -21,7 +22,6 @@ use tower::service_fn;
 use tracing::info;
 
 use common::{FlameError, apis::ApplicationContext};
-use stdng::{logs::TraceFn, trace_fn};
 
 use crate::apis::{Container, Pod, PodMetadata, PodRuntime, PodSpec, PodState, PodStatus};
 use crate::cri_v1::image_service_client::ImageServiceClient;

@@ -18,9 +18,8 @@ use flame_rs::{
     self as flame,
     apis::{FlameError, TaskOutput},
     service::{SessionContext, TaskContext},
-    trace::TraceFn,
-    trace_fn,
 };
+use stdng::trace_fn;
 
 use api::Script;
 

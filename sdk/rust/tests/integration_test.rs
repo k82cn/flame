@@ -11,21 +11,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 
 use futures::future::try_join_all;
-
 use serde_json::json;
+use stdng::{lock_ptr, new_ptr};
 
 use flame_rs as flame;
 
 use flame::{
     apis::{FlameError, SessionState, Shim, TaskState},
     client::{ApplicationAttributes, ApplicationSchema, SessionAttributes, Task, TaskInformer},
-    lock_ptr, new_ptr,
 };
 
 const FLAME_DEFAULT_ADDR: &str = "http://127.0.0.1:8080";
@@ -107,7 +103,7 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
 
     assert_eq!(ssn.state, SessionState::Open);
 
-    let informer = new_ptr!(DefaultTaskInformer {
+    let informer = new_ptr(DefaultTaskInformer {
         succeed: 0,
         failed: 0,
         error: 0,
@@ -166,7 +162,7 @@ async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
     let ssn_2 = conn.create_session(&ssn_attr).await?;
     assert_eq!(ssn_2.state, SessionState::Open);
 
-    let informer = new_ptr!(DefaultTaskInformer {
+    let informer = new_ptr(DefaultTaskInformer {
         succeed: 0,
         failed: 0,
         error: 0,

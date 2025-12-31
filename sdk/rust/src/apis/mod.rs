@@ -16,6 +16,7 @@ pub(crate) mod flame {
 }
 use flame as rpc;
 
+use bincode::{config, Decode, Encode};
 use bytes::Bytes;
 use prost::Enumeration;
 use serde_derive::{Deserialize, Serialize};
@@ -38,20 +39,45 @@ pub type TaskInput = Message;
 pub type TaskOutput = Message;
 pub type CommonData = Message;
 
-#[macro_export]
-macro_rules! lock_ptr {
-    ( $mutex_arc:expr ) => {
-        $mutex_arc
-            .lock()
-            .map_err(|_| FlameError::Internal("mutex ptr".to_string()))
-    };
+#[derive(Encode, Decode, PartialEq, Eq)]
+pub enum DataSource {
+    Local,
+    Remote,
 }
 
-#[macro_export]
-macro_rules! new_ptr {
-    ( $mutex_arc:expr ) => {
-        Arc::new(Mutex::new($mutex_arc))
-    };
+#[derive(Encode, Decode)]
+pub struct DataExpr {
+    pub source: DataSource,
+    pub endpoint: Option<String>,
+    pub data: Option<Vec<u8>>,
+}
+
+impl DataExpr {
+    pub fn encode(&self) -> Result<Bytes, FlameError> {
+        if self.source == DataSource::Local {
+            let data = bincode::encode_to_vec(self, config::standard())
+                .map_err(|e| FlameError::Internal(e.to_string()))?;
+            return Ok(Bytes::from(data));
+        }
+
+        let data_expr = DataExpr {
+            source: DataSource::Remote,
+            endpoint: self.endpoint.clone(),
+            data: None,
+        };
+        let data = bincode::encode_to_vec(data_expr, config::standard())
+            .map_err(|e| FlameError::Internal(e.to_string()))?;
+        
+        Ok(Bytes::from(data))
+    }
+
+    pub fn decode(data: Bytes) -> Result<Self, FlameError> {
+        let data = data.to_vec();
+
+        let (data, _): (Self, usize) = bincode::decode_from_slice(&data, config::standard())
+            .map_err(|e| FlameError::Internal(e.to_string()))?;
+        Ok(data)
+    }
 }
 
 #[derive(Error, Debug, Clone)]

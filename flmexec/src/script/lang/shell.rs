@@ -22,7 +22,8 @@ use std::{
 
 use rand::Rng;
 
-use flame_rs::{apis::FlameError, trace::TraceFn, trace_fn};
+use flame_rs::apis::FlameError;
+use stdng::trace_fn;
 
 use crate::api::{Script, ScriptRuntime};
 use crate::script::ScriptEngine;

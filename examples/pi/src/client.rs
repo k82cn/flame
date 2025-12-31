@@ -11,17 +11,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::error::Error;
-use std::sync::{Arc, Mutex};
-
 mod util;
 
-use flame_rs::apis::{FlameContext, FlameError, TaskInput};
-use flame_rs::client::{SessionAttributes, Task, TaskInformer};
-use flame_rs::{self as flame, lock_ptr, new_ptr};
+use std::error::Error;
 
 use clap::Parser;
 use futures::future::try_join_all;
+use stdng::{lock_ptr, new_ptr};
+
+use flame_rs::apis::{FlameContext, FlameError, TaskInput};
+use flame_rs::client::{SessionAttributes, Task, TaskInformer};
+use flame_rs::{self as flame};
 
 #[derive(Parser)]
 #[command(name = "pi")]
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })
         .await?;
 
-    let informer = new_ptr!(PiInfo { area: 0 });
+    let informer = new_ptr(PiInfo { area: 0 });
     let mut tasks = vec![];
     for _ in 0..task_num {
         let task_input = util::u32_to_bytes(task_input);

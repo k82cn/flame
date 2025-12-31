@@ -18,7 +18,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::TryFutureExt;
 // use serde::{Deserialize, Serialize};
 use serde_derive::{Deserialize, Serialize};
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::{lock_ptr, trace_fn};
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
@@ -38,7 +38,6 @@ use crate::apis::{
     ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,
     SessionState, TaskID, TaskInput, TaskOutput, TaskState,
 };
-use crate::lock_ptr;
 
 type FlameClient = FlameFrontendClient<Channel>;
 
