@@ -11,9 +11,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::collections::HashMap;
+
 use chrono::Utc;
 use hyper_util::rt::TokioIo;
-use std::collections::HashMap;
 use stdng::trace_fn;
 use tokio::net::UnixStream;
 use tonic::transport::Channel;

@@ -138,7 +138,7 @@ impl States for BoundState {
         let (ssn_id, task_id) = {
             let task_ptr = task_ptr.clone().unwrap();
             let task = lock_ptr!(task_ptr)?;
-            (task.ssn_id, task.id)
+            (task.ssn_id.clone(), task.id)
         };
 
         tracing::debug!(

@@ -44,6 +44,7 @@ pub trait Engine: Send + Sync + 'static {
 
     async fn create_session(
         &self,
+        id: SessionID,
         app: String,
         slots: u32,
         common_data: Option<CommonData>,

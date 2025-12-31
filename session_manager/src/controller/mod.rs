@@ -60,17 +60,20 @@ impl Controller {
 
     pub async fn create_session(
         &self,
+        id: SessionID,
         app: String,
         slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
         trace_fn!("Controller::create_session");
-        self.storage.create_session(app, slots, common_data).await
+        self.storage
+            .create_session(id, app, slots, common_data)
+            .await
     }
 
     pub async fn open_session(&self, id: SessionID) -> Result<Session, FlameError> {
         trace_fn!("Controller::open_session");
-        let ssn = self.storage.get_session(id)?;
+        let ssn = self.storage.get_session(id.clone())?;
         if ssn.status.state != SessionState::Open {
             return Err(FlameError::InvalidState(format!(
                 "session <{id}> is not open"
@@ -251,7 +254,7 @@ impl Controller {
         let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         let (ssn_id, task_id) = {
             let exec = lock_ptr!(exe_ptr)?;
-            (exec.ssn_id, exec.task_id)
+            (exec.ssn_id.clone(), exec.task_id)
         };
 
         tracing::debug!("Try to launch task for session <{:?}>", ssn_id);
@@ -274,7 +277,7 @@ impl Controller {
         }
 
         tracing::debug!("Launching task for session <{:?}>", ssn_id);
-        let ssn_ptr = self.storage.get_session_ptr(ssn_id);
+        let ssn_ptr = self.storage.get_session_ptr(ssn_id.clone());
 
         match ssn_ptr {
             Ok(ssn_ptr) => state.launch_task(ssn_ptr).await,
@@ -307,7 +310,7 @@ impl Controller {
         let (ssn_id, task_id, host) = {
             let exe = lock_ptr!(exe_ptr)?;
             (
-                exe.ssn_id.ok_or(FlameError::InvalidState(
+                exe.ssn_id.clone().ok_or(FlameError::InvalidState(
                     "no session in executor".to_string(),
                 ))?,
                 exe.task_id
@@ -316,8 +319,11 @@ impl Controller {
             )
         };
 
-        let task_ptr = self.storage.get_task_ptr(TaskGID { ssn_id, task_id })?;
-        let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
+        let task_ptr = self.storage.get_task_ptr(TaskGID {
+            ssn_id: ssn_id.clone(),
+            task_id,
+        })?;
+        let ssn_ptr = self.storage.get_session_ptr(ssn_id.clone())?;
 
         let msg = match task_result.state {
             TaskState::Failed => task_result.message,
@@ -405,7 +411,7 @@ impl WatchTaskFuture {
             storage,
             current_state: task.state,
             task_gid: TaskGID {
-                ssn_id: task.ssn_id,
+                ssn_id: task.ssn_id.clone(),
                 task_id: task.id,
             },
         })
@@ -416,7 +422,7 @@ impl Future for WatchTaskFuture {
     type Output = Result<(), FlameError>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let task_ptr = self.storage.get_task_ptr(self.task_gid)?;
+        let task_ptr = self.storage.get_task_ptr(self.task_gid.clone())?;
 
         let task = lock_ptr!(task_ptr)?;
         // If the state of task was updated, return ready.
@@ -451,7 +457,7 @@ impl Future for WaitForSsnFuture {
             return Poll::Ready(Ok(None));
         }
 
-        match exe.ssn_id {
+        match exe.ssn_id.clone() {
             None => {
                 // No bound session, trigger waker.
                 ctx.waker().wake_by_ref();

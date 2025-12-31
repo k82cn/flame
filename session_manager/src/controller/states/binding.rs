@@ -49,7 +49,7 @@ impl States for BindingState {
 
         let ssn_id = {
             let ssn = lock_ptr!(ssn_ptr)?;
-            ssn.id
+            ssn.id.clone()
         };
 
         let mut e = lock_ptr!(self.executor)?;

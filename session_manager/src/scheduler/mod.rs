@@ -168,11 +168,16 @@ mod tests {
             controller.register_application("flmtest".to_string(), new_test_application()),
         )?;
         tokio_test::block_on(controller.register_node(&new_test_node("node_1".to_string())))?;
-        let ssn_1 =
-            tokio_test::block_on(controller.create_session("flmtest".to_string(), 1, None))?;
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(controller.create_session(
+            ssn_1_id.clone(),
+            "flmtest".to_string(),
+            1,
+            None,
+        ))?;
 
         for _ in 0..task_num {
-            tokio_test::block_on(controller.create_task(ssn_1.id, None))?;
+            tokio_test::block_on(controller.create_task(ssn_1.id.clone(), None))?;
         }
 
         for i in 0..10 {
@@ -195,7 +200,7 @@ mod tests {
 
             let ssn_list = snapshot.find_sessions(OPEN_SESSION)?;
             assert_eq!(ssn_list.len(), 1);
-            assert_eq!(ssn_list.values().next().unwrap().id, ssn_1.id);
+            assert_eq!(ssn_list.values().next().unwrap().id, ssn_1.id.clone());
 
             let node_list = snapshot.find_nodes(ALL_NODE)?;
             assert_eq!(node_list.len(), 1);

@@ -7,7 +7,7 @@ package flame;
 option go_package = "github.com/flame-sh/flame/sdk/go/rpc";
 
 /*
-  The backend service of Lava, which is used to communicate with service sdk,
+  The backend service of Flame, which is used to communicate with service sdk,
   e.g. register executor, invoke tasks and so on.
  */
 service Backend {

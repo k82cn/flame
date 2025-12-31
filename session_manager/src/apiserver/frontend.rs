@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use common::apis::ApplicationAttributes;
 use futures::Stream;
 use serde_json::Value;
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::trace_fn;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
@@ -246,10 +246,14 @@ impl Frontend for Flame {
         req: Request<CreateSessionRequest>,
     ) -> Result<Response<Session>, Status> {
         trace_fn!("Frontend::create_session");
+        let req = req.into_inner();
         let ssn_spec = req
-            .into_inner()
             .session
             .ok_or(Status::invalid_argument("session spec"))?;
+        let ssn_id = req
+            .session_id
+            .parse::<apis::SessionID>()
+            .map_err(|_| Status::invalid_argument("invalid session id"))?;
 
         let common_data = ssn_spec.common_data.map(apis::CommonData::from);
 
@@ -262,7 +266,7 @@ impl Frontend for Flame {
 
         let ssn = self
             .controller
-            .create_session(ssn_spec.application, ssn_spec.slots, common_data)
+            .create_session(ssn_id, ssn_spec.application, ssn_spec.slots, common_data)
             .await
             .map(Session::from)
             .map_err(Status::from)?;
@@ -402,7 +406,7 @@ impl Frontend for Flame {
 
             task_id: req
                 .task_id
-                .parse::<apis::SessionID>()
+                .parse::<apis::TaskID>()
                 .map_err(|_| Status::invalid_argument("invalid task id"))?,
         };
 
@@ -411,7 +415,7 @@ impl Frontend for Flame {
         let controller = self.controller.clone();
         tokio::spawn(async move {
             loop {
-                match controller.watch_task(gid).await {
+                match controller.watch_task(gid.clone()).await {
                     Ok(task) => {
                         tracing::debug!("Task <{}> state is <{}>", task.id, task.state as i32);
                         if let Err(e) = tx.send(Result::<_, Status>::Ok(Task::from(&task))).await {
@@ -446,7 +450,7 @@ impl Frontend for Flame {
 
         let task_id = req
             .task_id
-            .parse::<apis::SessionID>()
+            .parse::<apis::TaskID>()
             .map_err(|_| Status::invalid_argument("invalid task id"))?;
 
         let task = self

@@ -74,7 +74,7 @@ impl EventManager {
         // Setup event storage for all sessions.
         let sessions = evtmgr.list_sessions()?;
         for session_id in &sessions {
-            evtmgr.setup_event_storage(*session_id)?;
+            evtmgr.setup_event_storage(session_id.clone())?;
         }
 
         // Setup event message for all sessions.
@@ -98,7 +98,7 @@ impl EventManager {
                 .list(None)?;
             for event_dao in event_daos {
                 events
-                    .entry(*session_id)
+                    .entry(session_id.clone())
                     .or_insert(HashMap::new())
                     .entry(event_dao.owner as TaskID)
                     .or_insert(vec![])
@@ -113,9 +113,8 @@ impl EventManager {
         let entries = fs::read_dir(&self.storage_path)?;
         for entry in entries {
             let file_name = entry?.file_name();
-            if let Ok(session_id) = file_name.to_string_lossy().parse::<SessionID>() {
-                sessions.push(session_id);
-            }
+            let session_id = file_name.to_string_lossy().to_string();
+            sessions.push(session_id);
         }
 
         Ok(sessions)
@@ -139,7 +138,7 @@ impl EventManager {
     }
 
     pub fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
-        self.setup_event_storage(owner.session_id)?;
+        self.setup_event_storage(owner.session_id.clone())?;
 
         let mut event_storage = lock_ptr!(self.event_storage)?;
         let event_storage: &mut EventStorage = event_storage
@@ -254,7 +253,7 @@ mod tests {
         event_manager
             .record_event(
                 EventOwner {
-                    session_id: 1,
+                    session_id: String::from("1"),
                     task_id: 1,
                 },
                 Event {
@@ -276,7 +275,7 @@ mod tests {
         event_manager
             .record_event(
                 EventOwner {
-                    session_id: 1,
+                    session_id: String::from("1"),
                     task_id: 1,
                 },
                 Event {
@@ -289,7 +288,7 @@ mod tests {
 
         let events = event_manager
             .find_events(EventOwner {
-                session_id: 1,
+                session_id: String::from("1"),
                 task_id: 1,
             })
             .unwrap();

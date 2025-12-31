@@ -67,7 +67,7 @@ impl DataExpr {
         };
         let data = bincode::encode_to_vec(data_expr, config::standard())
             .map_err(|e| FlameError::Internal(e.to_string()))?;
-        
+
         Ok(Bytes::from(data))
     }
 

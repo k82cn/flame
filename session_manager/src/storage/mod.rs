@@ -113,7 +113,7 @@ impl Storage {
     pub async fn load_data(&self) -> Result<(), FlameError> {
         let ssn_list = self.engine.find_session().await?;
         for ssn in ssn_list {
-            let task_list = self.engine.find_tasks(ssn.id).await?;
+            let task_list = self.engine.find_tasks(ssn.id.clone()).await?;
             let mut ssn = ssn.clone();
             for task in task_list {
                 let task = match task.state {
@@ -125,7 +125,7 @@ impl Storage {
             }
 
             let mut ssn_map = lock_ptr!(self.sessions)?;
-            ssn_map.insert(ssn.id, SessionPtr::new(ssn.into()));
+            ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.into()));
         }
 
         let app_list = self.engine.find_application().await?;
@@ -167,7 +167,7 @@ impl Storage {
                     resreq: exec.resreq.clone(),
                     slots: exec.slots,
                     task_id: exec.task_id,
-                    ssn_id: exec.ssn_id,
+                    ssn_id: exec.ssn_id.clone(),
                     creation_time: exec.creation_time,
                     state: exec.state,
                 });
@@ -187,15 +187,19 @@ impl Storage {
 
     pub async fn create_session(
         &self,
+        id: SessionID,
         app: String,
         slots: u32,
         common_data: Option<CommonData>,
     ) -> Result<Session, FlameError> {
         trace_fn!("Storage::create_session");
-        let ssn = self.engine.create_session(app, slots, common_data).await?;
+        let ssn = self
+            .engine
+            .create_session(id, app, slots, common_data)
+            .await?;
 
         let mut ssn_map = lock_ptr!(self.sessions)?;
-        ssn_map.insert(ssn.id, SessionPtr::new(ssn.clone().into()));
+        ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
 
         Ok(ssn)
     }
@@ -262,7 +266,7 @@ impl Storage {
     }
 
     pub async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {
-        let ssn = self.engine.delete_session(id).await?;
+        let ssn = self.engine.delete_session(id.clone()).await?;
 
         let mut ssn_map = lock_ptr!(self.sessions)?;
         ssn_map.remove(&ssn.id);
@@ -302,9 +306,9 @@ impl Storage {
         task_input: Option<TaskInput>,
     ) -> Result<Task, FlameError> {
         trace_fn!("Storage::create_task");
-        let task = self.engine.create_task(ssn_id, task_input).await?;
+        let task = self.engine.create_task(ssn_id.clone(), task_input).await?;
 
-        let ssn = self.get_session_ptr(ssn_id)?;
+        let ssn = self.get_session_ptr(ssn_id.clone())?;
         let mut ssn = lock_ptr!(ssn)?;
         ssn.update_task(&task)?;
 
@@ -429,7 +433,7 @@ impl Storage {
         let gid = TaskGID {
             ssn_id: {
                 let ssn_ptr = lock_ptr!(ssn)?;
-                ssn_ptr.id
+                ssn_ptr.id.clone()
             },
             task_id: {
                 let task_ptr = lock_ptr!(task)?;
@@ -467,7 +471,7 @@ impl Storage {
         let gid = TaskGID {
             ssn_id: {
                 let ssn_ptr = lock_ptr!(ssn)?;
-                ssn_ptr.id
+                ssn_ptr.id.clone()
             },
             task_id: {
                 let task_ptr = lock_ptr!(task)?;
@@ -498,7 +502,7 @@ impl Storage {
         ssn_id: SessionID,
     ) -> Result<Executor, FlameError> {
         trace_fn!("Storage::create_executor");
-        let ssn = self.get_session_ptr(ssn_id)?;
+        let ssn = self.get_session_ptr(ssn_id.clone())?;
 
         let (resreq, slots) = {
             let ssn = lock_ptr!(ssn)?;

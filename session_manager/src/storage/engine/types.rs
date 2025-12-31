@@ -92,7 +92,7 @@ impl TryFrom<&SessionDao> for Session {
 
     fn try_from(ssn: &SessionDao) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: ssn.id,
+            id: ssn.id.clone(),
             application: ssn.application.clone(),
             slots: ssn.slots as u32,
             version: ssn.version,
@@ -130,7 +130,7 @@ impl TryFrom<&TaskDao> for Task {
     fn try_from(task: &TaskDao) -> Result<Self, Self::Error> {
         Ok(Self {
             id: task.id,
-            ssn_id: task.ssn_id,
+            ssn_id: task.ssn_id.clone(),
             version: task.version,
             input: task.input.clone().map(Bytes::from),
             output: task.output.clone().map(Bytes::from),

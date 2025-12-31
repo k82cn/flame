@@ -55,6 +55,7 @@ async fn test_create_session() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
     let ssn_attr = SessionAttributes {
+        id: String::from("ssn-1-test-create-session"),
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
@@ -74,8 +75,9 @@ async fn test_create_multiple_sessions() -> Result<(), FlameError> {
 
     let ssn_num = 10;
 
-    for _ in 0..ssn_num {
+    for i in 0..ssn_num {
         let ssn_attr = SessionAttributes {
+            id: format!("ssn-1-test-create-multiple-sessions-{}", i),
             application: FLAME_DEFAULT_APP.to_string(),
             slots: 1,
             common_data: None,
@@ -95,6 +97,7 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
     let ssn_attr = SessionAttributes {
+        id: String::from("ssn-1-test-create-session-with-tasks"),
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
@@ -151,15 +154,22 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
 async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
-    let ssn_attr = SessionAttributes {
+    let ssn_1_attr = SessionAttributes {
+        id: String::from("ssn-1-test-create-multiple-sessions-with-tasks"),
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
     };
-    let ssn_1 = conn.create_session(&ssn_attr).await?;
+    let ssn_1 = conn.create_session(&ssn_1_attr).await?;
     assert_eq!(ssn_1.state, SessionState::Open);
 
-    let ssn_2 = conn.create_session(&ssn_attr).await?;
+    let ssn_2_attr = SessionAttributes {
+        id: String::from("ssn-2-test-create-multiple-sessions-with-tasks"),
+        application: FLAME_DEFAULT_APP.to_string(),
+        slots: 1,
+        common_data: None,
+    };
+    let ssn_2 = conn.create_session(&ssn_2_attr).await?;
     assert_eq!(ssn_2.state, SessionState::Open);
 
     let informer = new_ptr(DefaultTaskInformer {

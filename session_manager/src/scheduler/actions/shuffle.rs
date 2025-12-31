@@ -66,7 +66,7 @@ impl Action for ShuffleAction {
                     ssn.id.clone()
                 );
 
-                let target_ssn = match e.ssn_id {
+                let target_ssn = match e.ssn_id.clone() {
                     Some(ssn_id) => Some(ss.get_session(&ssn_id)?),
                     None => None,
                 };

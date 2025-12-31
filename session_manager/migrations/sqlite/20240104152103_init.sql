@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS sessions (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              TEXT PRIMARY KEY,
     application     TEXT NOT NULL,
     slots           INTEGER NOT NULL,
 
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS tasks (
     id              INTEGER NOT NULL,
-    ssn_id          INTEGER NOT NULL,
+    ssn_id          TEXT NOT NULL,
 
     input           BLOB,
     output          BLOB,

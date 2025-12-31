@@ -136,9 +136,9 @@ impl Plugin for FairShare {
                 desired = desired.min((app.max_instances * ssn.slots) as f64);
 
                 self.ssn_map.insert(
-                    ssn.id,
+                    ssn.id.clone(),
                     SSNInfo {
-                        id: ssn.id,
+                        id: ssn.id.clone(),
                         desired,
                         slots: ssn.slots,
                         ..SSNInfo::default()
@@ -180,7 +180,7 @@ impl Plugin for FairShare {
             if exe.state != ExecutorState::Bound {
                 continue;
             }
-            if let Some(ssn_id) = exe.ssn_id {
+            if let Some(ssn_id) = exe.ssn_id.clone() {
                 if let Some(ssn) = self.ssn_map.get_mut(&ssn_id) {
                     ssn.allocated += ssn.slots as f64;
                 }
@@ -299,7 +299,7 @@ impl Plugin for FairShare {
     }
 
     fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Option<bool> {
-        match exec.ssn_id {
+        match exec.ssn_id.clone() {
             Some(ssn_id) => self
                 .ssn_map
                 .get(&ssn_id)
