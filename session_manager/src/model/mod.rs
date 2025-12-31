@@ -15,15 +15,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
-
-use rpc::flame as rpc;
+use stdng::{lock_ptr, MutexPtr};
 
 use common::apis::{
     Application, ExecutorID, ExecutorState, Node, NodeState, ResourceRequirement, Session,
     SessionID, SessionState, Task, TaskID, TaskState,
 };
-use common::MutexPtr;
-use common::{lock_ptr, FlameError};
+use common::FlameError;
+use rpc::flame as rpc;
 
 pub type SessionInfoPtr = Arc<SessionInfo>;
 pub type ExecutorInfoPtr = Arc<ExecutorInfo>;

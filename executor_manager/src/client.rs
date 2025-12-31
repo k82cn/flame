@@ -12,6 +12,7 @@ limitations under the License.
 */
 use std::time::Duration;
 
+use stdng::{lock_ptr, MutexPtr};
 use tonic::transport::Channel;
 
 use rpc::backend_client::BackendClient as FlameBackendClient;
@@ -29,7 +30,7 @@ use common::apis::{
     TaskContext, TaskResult,
 };
 use common::ctx::FlameContext;
-use common::{lock_ptr, FlameError};
+use common::FlameError;
 
 const DEFAULT_PORT: u16 = 8080;
 

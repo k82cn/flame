@@ -16,13 +16,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use chrono::{DateTime, Duration, Utc};
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use crate::model::ExecutorPtr;
 use common::apis::{
     ExecutorState, SessionPtr, SessionState, Task, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
-use common::{lock_ptr, FlameError};
+use common::FlameError;
 
 use crate::controller::states::States;
 use crate::storage::StoragePtr;

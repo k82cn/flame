@@ -11,14 +11,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use crate::controller::states::States;
 use crate::model::ExecutorPtr;
 use crate::storage::StoragePtr;
 
 use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult};
-use common::{lock_ptr, FlameError};
+use common::FlameError;
 
 pub struct IdleState {
     pub storage: StoragePtr,

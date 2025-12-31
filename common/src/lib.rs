@@ -108,24 +108,10 @@ impl From<std::io::Error> for FlameError {
     }
 }
 
-pub type MutexPtr<T> = Arc<std::sync::Mutex<T>>;
 pub type AsyncMutexPtr<T> = Arc<tokio::sync::Mutex<T>>;
-
-pub fn new_ptr<T>(t: T) -> MutexPtr<T> {
-    Arc::new(std::sync::Mutex::new(t))
-}
 
 pub fn new_async_ptr<T>(t: T) -> AsyncMutexPtr<T> {
     Arc::new(tokio::sync::Mutex::new(t))
-}
-
-#[macro_export]
-macro_rules! lock_ptr {
-    ( $mutex_arc:expr ) => {
-        $mutex_arc
-            .lock()
-            .map_err(|_| FlameError::Internal("mutex ptr".to_string()))
-    };
 }
 
 pub const FLAME_WORKING_DIRECTORY: &str = "/tmp/flame";

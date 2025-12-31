@@ -17,12 +17,12 @@ use std::{env, fmt};
 use chrono::{DateTime, Duration, Utc};
 #[cfg(target_os = "linux")]
 use rustix::system;
+use stdng::{lock_ptr, MutexPtr};
 
 use ::rpc::flame::ApplicationSpec;
 use rpc::flame as rpc;
 
 use crate::FlameError;
-use crate::{lock_ptr, MutexPtr};
 
 pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
 pub const DEFAULT_DELAY_RELEASE: Duration = Duration::seconds(60);

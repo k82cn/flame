@@ -22,8 +22,8 @@ use common::apis::{
     TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 
-use common::{lock_ptr, FlameError};
-use stdng::{logs::TraceFn, trace_fn};
+use common::FlameError;
+use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use crate::model::{Executor, ExecutorPtr, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
 use crate::storage::StoragePtr;

@@ -17,7 +17,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use stdng::{logs::TraceFn, trace_fn};
+use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, Event,
@@ -25,8 +25,8 @@ use common::apis::{
     SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult,
     TaskState,
 };
-use common::{self, MutexPtr};
-use common::{ctx::FlameContext, lock_ptr, FlameError};
+use common::ctx::FlameContext;
+use common::FlameError;
 
 use crate::model::{
     AppInfo, Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo,
@@ -55,10 +55,10 @@ pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
     Ok(Arc::new(Storage {
         context: config.clone(),
         engine: engine::connect(&config.cluster.storage).await?,
-        sessions: common::new_ptr(HashMap::new()),
-        executors: common::new_ptr(HashMap::new()),
-        nodes: common::new_ptr(HashMap::new()),
-        applications: common::new_ptr(HashMap::new()),
+        sessions: stdng::new_ptr(HashMap::new()),
+        executors: stdng::new_ptr(HashMap::new()),
+        nodes: stdng::new_ptr(HashMap::new()),
+        applications: stdng::new_ptr(HashMap::new()),
         event_manager: Arc::new(EventManager::new(None)?),
     }))
 }
@@ -140,7 +140,7 @@ impl Storage {
     pub async fn register_node(&self, node: &Node) -> Result<(), FlameError> {
         trace_fn!("Storage::register_node");
         let mut node_map = lock_ptr!(self.nodes)?;
-        node_map.insert(node.name.clone(), common::new_ptr(node.clone()));
+        node_map.insert(node.name.clone(), stdng::new_ptr(node.clone()));
         Ok(())
     }
 
@@ -152,7 +152,7 @@ impl Storage {
         // trace_fn!("Storage::sync_node");
 
         let mut node_map = lock_ptr!(self.nodes)?;
-        node_map.insert(node.name.clone(), common::new_ptr(node.clone()));
+        node_map.insert(node.name.clone(), stdng::new_ptr(node.clone()));
 
         let mut res = vec![];
 
@@ -375,7 +375,7 @@ impl Storage {
         // just lock the sessions to avoid cache mismatch.
         let _unused = lock_ptr!(self.sessions)?;
 
-        app_map.insert(app.name.clone(), common::new_ptr(app.clone()));
+        app_map.insert(app.name.clone(), stdng::new_ptr(app.clone()));
 
         Ok(())
     }
@@ -409,7 +409,7 @@ impl Storage {
         let app = self.engine.update_application(name.clone(), attr).await?;
 
         let mut app_map = lock_ptr!(self.applications)?;
-        app_map.insert(name.clone(), common::new_ptr(app.clone()));
+        app_map.insert(name.clone(), stdng::new_ptr(app.clone()));
 
         Ok(())
     }

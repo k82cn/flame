@@ -21,7 +21,8 @@ use crate::storage::StoragePtr;
 
 use crate::model::ExecutorPtr;
 use common::apis::{ExecutorID, ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult};
-use common::{lock_ptr, FlameError};
+use common::FlameError;
+use stdng::{lock_ptr, new_ptr, MutexPtr};
 
 mod binding;
 mod bound;
