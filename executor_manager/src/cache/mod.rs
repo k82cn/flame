@@ -12,10 +12,12 @@ limitations under the License.
 */
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use regex::Regex;
 
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use async_trait::async_trait;
 use network_interface::NetworkInterface;
 use network_interface::NetworkInterfaceConfig;
@@ -23,229 +25,190 @@ use stdng::{lock_ptr, new_ptr, MutexPtr};
 use tonic::{transport::Server, Request, Response, Status};
 use url::Url;
 
-use self::rpc::{
-    object_cache_server::{ObjectCache, ObjectCacheServer},
-    DeleteObjectRequest, GetObjectRequest, PutObjectRequest, Result as RpcResult,
-};
-use ::rpc::flame as rpc;
-
+use common::apis::SessionID;
 use common::ctx::FlameCache;
 use common::FlameError;
 
-mod client;
 mod types;
+pub use types::{CacheEndpoint, Object, ObjectMetadata};
 
-pub use client::ObjectCacheClient;
-pub use types::{Object, ObjectEndpoint, ObjectMetadata};
 
-struct FlameObjectCache {
-    endpoint: ObjectEndpoint,
-    objects: MutexPtr<HashMap<String, Object>>,
+struct ObjectCache {
+    endpoint: CacheEndpoint,
+    objects: MutexPtr<HashMap<SessionID, HashMap<String, Object>>>,
 }
 
-#[async_trait]
-impl ObjectCache for FlameObjectCache {
+impl ObjectCache {
     async fn put(
         &self,
-        request: Request<PutObjectRequest>,
-    ) -> Result<Response<rpc::ObjectMetadata>, Status> {
-        let req = request.into_inner();
-
+        session_id: SessionID,
+        data: Vec<u8>,
+    ) -> Result<ObjectMetadata, FlameError> {
         let uuid = uuid::Uuid::new_v4().to_string();
         let object = Object {
             uuid: uuid.clone(),
-            name: req.name.clone(),
+            session_id: session_id.clone(),
             version: 1,
-            data: req.data,
+            data,
         };
 
-        let endpoint = format!(
-            "{}://{}:{}/{}",
-            self.endpoint.scheme, self.endpoint.host, self.endpoint.port, uuid
-        );
+        let endpoint = self.endpoint.object_endpoint(&session_id, &uuid);
         let metadata = ObjectMetadata {
             endpoint: endpoint.clone(),
             version: 1,
             size: object.data.len() as u64,
         };
 
-        let mut objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
-        objects.insert(uuid.clone(), object);
+        let mut objects = lock_ptr!(self.objects)?;
+        objects
+            .entry(session_id.clone())
+            .or_default()
+            .insert(uuid.clone(), object);
+
         tracing::debug!("Object put: {}", endpoint);
-        Ok(Response::new(metadata.into()))
+
+        Ok(metadata)
     }
 
-    async fn get(
-        &self,
-        request: Request<GetObjectRequest>,
-    ) -> Result<Response<rpc::Object>, Status> {
-        let req = request.into_inner();
-        let objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
-        if let Some(obj) = objects.get(&req.uuid) {
-            tracing::debug!("Object get: {}", req.uuid);
-            Ok(Response::new(obj.clone().into()))
-        } else {
-            tracing::debug!("Object not found: {}", req.uuid);
-            Err(Status::not_found("Object not found"))
-        }
+    async fn get(&self, session_id: SessionID, uuid: String) -> Result<Object, FlameError> {
+        let objects = lock_ptr!(self.objects)?;
+        let objects = objects
+            .get(&session_id)
+            .ok_or(FlameError::NotFound(format!(
+                "session <{session_id}> not found"
+            )))?;
+        let object = objects
+            .get(&uuid)
+            .ok_or(FlameError::NotFound(format!("object <{uuid}> not found")))?;
+
+        tracing::debug!(
+            "Object get: {}",
+            self.endpoint.object_endpoint(&session_id, &uuid)
+        );
+
+        Ok(object.clone())
     }
 
     async fn update(
         &self,
-        request: Request<rpc::Object>,
-    ) -> Result<Response<rpc::ObjectMetadata>, Status> {
-        let mut obj = request.into_inner();
-        let mut objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
+        session_id: SessionID,
+        object: Object,
+    ) -> Result<ObjectMetadata, FlameError> {
+        let mut objects = lock_ptr!(self.objects)?;
+        let mut objects = objects
+            .get_mut(&session_id)
+            .ok_or(FlameError::NotFound(format!(
+                "session <{session_id}> not found"
+            )))?;
+        let object = objects
+            .get(&object.uuid)
+            .ok_or(FlameError::NotFound(format!(
+                "object <{}> not found",
+                object.uuid
+            )))?;
 
-        if objects.contains_key(&obj.uuid) {
-            let Some(object) = objects.get(&obj.uuid) else {
-                return Err(Status::not_found("Object not found"));
-            };
+        let mut object = object.clone();
 
-            if object.version > obj.version {
-                return Err(Status::failed_precondition("Object version is old"));
-            }
-
-            obj.version = object.version + 1;
-            objects.insert(obj.uuid.clone(), obj.clone().into());
-
-            let endpoint = format!(
-                "{}://{}:{}/{}",
-                self.endpoint.scheme, self.endpoint.host, self.endpoint.port, obj.uuid
-            );
-
-            let metadata = ObjectMetadata {
-                endpoint: endpoint.clone(),
-                version: obj.version,
-                size: obj.data.len() as u64,
-            };
-
-            tracing::debug!("Object updated: {}", endpoint);
-
-            Ok(Response::new(metadata.into()))
-        } else {
-            Err(Status::not_found("Object not found"))
+        if object.version > object.version {
+            return Err(FlameError::VersionMismatch(format!(
+                "object <{}> version is old",
+                object.uuid
+            )));
         }
+
+        object.version = object.version + 1;
+        objects.insert(object.uuid.clone(), object.clone());
+
+        let endpoint = self.endpoint.object_endpoint(&session_id, &object.uuid);
+        let metadata = ObjectMetadata {
+            endpoint: endpoint.clone(),
+            version: object.version,
+            size: object.data.len() as u64,
+        };
+
+        tracing::debug!("Object update: {}", endpoint);
+
+        Ok(metadata)
     }
 
-    async fn delete(
-        &self,
-        request: Request<DeleteObjectRequest>,
-    ) -> Result<Response<rpc::Result>, Status> {
-        let req = request.into_inner();
-        let mut objects = lock_ptr!(self.objects).map_err(|e| Status::internal(e.to_string()))?;
-        let existed = objects.remove(&req.uuid).is_some();
+    async fn delete(&self, session_id: SessionID) -> Result<(), FlameError> {
+        let mut objects = lock_ptr!(self.objects)?;
+        objects
+            .remove(&session_id)
+            .ok_or(FlameError::NotFound(format!(
+                "session <{session_id}> not found"
+            )))?;
 
-        tracing::debug!("Object deleted: {}", req.uuid);
+        tracing::debug!("Session deleted: <{session_id}>");
 
-        Ok(Response::new(rpc::Result {
-            return_code: if existed { 0 } else { -1 },
-            message: None,
-        }))
+        Ok(())
     }
 }
 
 pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
-    let endpoint = ObjectEndpoint::try_from(cache_config)?;
+    let endpoint = CacheEndpoint::try_from(cache_config)?;
     let address_str = format!("{}:{}", endpoint.host, endpoint.port);
-    let address = address_str.parse().map_err(|e| {
-        FlameError::InvalidConfig(format!("failed to parse url <{address_str}>: {e}"))
-    })?;
 
-    let cache = FlameObjectCache {
+    let cache = Arc::new(ObjectCache {
         endpoint,
         objects: new_ptr(HashMap::new()),
-    };
+    });
 
     tracing::info!("Listening object cache at {address_str}");
 
-    Server::builder()
-        .tcp_keepalive(Some(Duration::from_secs(1)))
-        .add_service(ObjectCacheServer::new(cache))
-        .serve(address)
-        .await
-        .map_err(|e| {
-            tracing::error!("Object cache server exited with error: {e}");
-            FlameError::Network(e.to_string())
-        })?;
+    let svc = HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(Arc::clone(&cache)))
+            .route(
+                "/objects/{session_id}/{object_id}",
+                web::get().to(get_object),
+            )
+            .route("/objects/{session_id}", web::post().to(put_object))
+            .route("/objects/{session_id}", web::delete().to(delete_session))
+    })
+    .bind(address_str)?;
+
+    svc.run().await?;
 
     Ok(())
 }
 
-#[cfg(test)]
-mod cache_test {
-    use super::*;
+// Handler to get object metadata
+async fn get_object(
+    path: web::Path<(String, String)>,
+    data: web::Data<Arc<ObjectCache>>,
+) -> impl Responder {
+    let (session_id, object_id) = path.into_inner();
+    match data.get(session_id, object_id).await {
+        Ok(object) => HttpResponse::Ok().json(object),
+        Err(e) => HttpResponse::NotFound().body(format!("Error: {:?}", e)),
+    }
+}
 
-    use uuid::Uuid;
+// Handler to put object
+async fn put_object(
+    path: web::Path<String>,
+    body: web::Bytes,
+    data: web::Data<Arc<ObjectCache>>,
+) -> impl Responder {
+    let session_id = path.into_inner();
 
-    use crate::cache::client::ObjectCacheClient;
-    use crate::cache::{Object, ObjectEndpoint};
+    let metadata = data.put(session_id.clone(), body.to_vec()).await;
 
-    #[tokio::test]
-    async fn test_cache() {
-        common::init_logger();
+    match metadata {
+        Ok(metadata) => HttpResponse::Ok().json(metadata),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
 
-        let endpoint_str = String::from("http://127.0.0.1:3456");
-        let endpoint = ObjectEndpoint::try_from(endpoint_str.as_str()).unwrap();
-
-        let network_interfaces = NetworkInterface::show().unwrap();
-        let mut netiface = String::from("eth0");
-        for iface in network_interfaces {
-            let addrs = iface.addr.iter().filter(|addr| addr.ip().is_loopback());
-            if addrs.count() > 0 {
-                netiface = iface.name.clone();
-                break;
-            }
-        }
-
-        let cache_config = FlameCache {
-            endpoint: endpoint_str,
-            network_interface: netiface.to_string(),
-        };
-
-        let cc = cache_config.clone();
-        let _srv = tokio::task::spawn(async move {
-            run(&cc).await.unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_millis(250)).await;
-
-        let mut client = ObjectCacheClient::connect(&cache_config).await.unwrap();
-        let object_info = client
-            .put_object("test".to_string(), vec![1, 2, 3, 4])
-            .await
-            .unwrap();
-
-        assert_eq!(object_info.version, 1);
-        assert_eq!(object_info.size, 4);
-        let endpoint = ObjectEndpoint::try_from(object_info.endpoint.as_str()).unwrap();
-        assert_eq!(endpoint.host, "127.0.0.1");
-        assert_eq!(endpoint.port, 3456);
-        assert_eq!(endpoint.scheme, "http");
-        assert!(endpoint.uuid.is_some());
-
-        let uuid = endpoint.uuid.unwrap();
-        let object = client.get_object(uuid.clone()).await.unwrap();
-        assert_eq!(object.name, "test");
-        assert_eq!(object.version, 1);
-        assert_eq!(object.data, vec![1, 2, 3, 4]);
-        assert_eq!(object.uuid, uuid);
-
-        let mut object = object.clone();
-        object.data = vec![5, 6, 7, 8];
-        let object_info = client.update_object(object).await.unwrap();
-        assert_eq!(object_info.version, 2);
-        assert_eq!(object_info.size, 4);
-        let endpoint = ObjectEndpoint::try_from(object_info.endpoint.as_str()).unwrap();
-        assert_eq!(endpoint.host, "127.0.0.1");
-        assert_eq!(endpoint.port, 3456);
-        assert_eq!(endpoint.scheme, "http");
-        assert!(endpoint.uuid.is_some());
-        assert_eq!(endpoint.uuid.unwrap(), uuid);
-        let object = client.get_object(uuid.clone()).await.unwrap();
-        assert_eq!(object.name, "test");
-        assert_eq!(object.version, 2);
-        assert_eq!(object.data, vec![5, 6, 7, 8]);
-        assert_eq!(object.uuid, uuid);
+// Handler to delete session
+async fn delete_session(
+    path: web::Path<String>,
+    data: web::Data<Arc<ObjectCache>>,
+) -> impl Responder {
+    let session_id = path.into_inner();
+    match data.delete(session_id).await {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => HttpResponse::NotFound().body(format!("Error: {:?}", e)),
     }
 }
