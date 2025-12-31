@@ -18,11 +18,13 @@ use std::time::Instant;
 
 use byte_unit::Byte;
 use clap::Parser;
+use comfy_table::presets::NOTHING;
+use comfy_table::Table;
 use flame_rs::apis::FlameError;
 use flame_rs::client::{SessionAttributes, Task, TaskInformer};
 use futures::future::try_join_all;
 use indicatif::HumanCount;
-use stdng::new_ptr;
+use stdng::{lock_ptr, new_ptr};
 
 use crate::apis::{PingRequest, PingResponse};
 
@@ -111,6 +113,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .duration_since(tasks_creations_start_time)
         .as_millis();
 
+    {
+        let info = lock_ptr!(info)?;
+        info.print();
+    }
+
     println!(
         "\n\n<{}> tasks was completed in <{} ms>.\n",
         HumanCount(task_num as u64),
@@ -122,13 +129,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-struct OutputInfor {}
+struct OutputInfor {
+    table: Table,
+}
 
 impl OutputInfor {
     fn new() -> Self {
-        println!("{:<10}{:<10}{:<15}Output", "Session", "Task", "State");
+        let mut table = Table::new();
 
-        Self {}
+        table
+            .load_preset(NOTHING)
+            .set_header(vec!["Session", "Task", "State", "Output"]);
+
+        Self { table }
     }
 }
 
@@ -137,15 +150,23 @@ impl TaskInformer for OutputInfor {
         if task.is_completed() {
             let output = task.output.unwrap_or_default();
             if let Ok(output) = <PingResponse>::try_from(output) {
-                println!(
-                    "{:<10}{:<10}{:<15}{:?}",
-                    task.ssn_id, task.id, task.state, output.message
-                );
+                self.table.add_row(vec![
+                    task.ssn_id.to_string(),
+                    task.id.to_string(),
+                    task.state.to_string(),
+                    output.message.to_string(),
+                ]);
             }
         }
     }
 
     fn on_error(&mut self, _: FlameError) {
         print!("Got an error")
+    }
+}
+
+impl OutputInfor {
+    fn print(&self) {
+        println!("{}", self.table);
     }
 }
