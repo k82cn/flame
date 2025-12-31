@@ -345,7 +345,7 @@ class Connection:
             common_data=attrs.common_data,
         )
 
-        request = CreateSessionRequest(session=session_spec)
+        request = CreateSessionRequest(session_id=attrs.id, session=session_spec)
 
         try:
             response = await self._frontend.CreateSession(request)
