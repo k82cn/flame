@@ -31,6 +31,6 @@ impl Drop for TraceFn {
 #[macro_export]
 macro_rules! trace_fn {
     ($e:expr) => {
-        let _trace_fn = TraceFn::new($e.to_string());
+        let _trace_fn = $crate::logs::TraceFn::new($e.to_string());
     };
 }

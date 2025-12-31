@@ -14,7 +14,6 @@ limitations under the License.
 mod apis;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use byte_unit::Byte;
@@ -23,11 +22,12 @@ use flame_rs::apis::FlameError;
 use flame_rs::client::{SessionAttributes, Task, TaskInformer};
 use futures::future::try_join_all;
 use indicatif::HumanCount;
+use stdng::new_ptr;
 
 use crate::apis::{PingRequest, PingResponse};
 
 use flame::apis::FlameContext;
-use flame_rs::{self as flame, new_ptr};
+use flame_rs::{self as flame};
 
 #[derive(Parser)]
 #[command(name = "flmping")]
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut tasks = vec![];
     let tasks_creations_start_time = Instant::now();
 
-    let info = new_ptr!(OutputInfor::new());
+    let info = new_ptr(OutputInfor::new());
 
     for _ in 0..task_num {
         let input = PingRequest {

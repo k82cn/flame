@@ -1194,6 +1194,7 @@ dependencies = [
 name = "flame-rs"
 version = "0.5.0"
 dependencies = [
+ "bincode 2.0.1",
  "bytes",
  "chrono",
  "futures",
@@ -1284,6 +1285,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "stdng",
  "tempfile",
  "tokio",
  "tonic",
@@ -1305,6 +1307,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "stdng",
  "tokio",
  "tonic",
  "tracing",
@@ -2592,6 +2595,7 @@ dependencies = [
  "futures",
  "rand 0.9.2",
  "rand_distr",
+ "stdng",
  "tokio",
  "tonic",
  "tracing",
