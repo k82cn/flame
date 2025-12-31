@@ -379,6 +379,7 @@ impl Engine for SqliteEngine {
         let common_data: Option<Vec<u8>> = common_data.map(Bytes::into);
         let sql = r#"INSERT INTO sessions (id, application, slots, common_data, creation_time, state)
             VALUES (
+                ?,
                 (SELECT name FROM applications WHERE name=? AND state=?),
                 ?,
                 ?,
