@@ -80,7 +80,6 @@ impl From<&Executor> for rpc::Executor {
         let metadata = Some(Metadata {
             id: e.id.clone(),
             name: e.id.clone(),
-            owner: None,
         });
 
         let spec = Some(ExecutorSpec {

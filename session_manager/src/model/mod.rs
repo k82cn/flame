@@ -162,7 +162,7 @@ impl From<&Executor> for ExecutorInfo {
             resreq: exec.resreq.clone(),
             slots: exec.slots,
             task_id: exec.task_id,
-            ssn_id: exec.ssn_id,
+            ssn_id: exec.ssn_id.clone(),
             creation_time: exec.creation_time,
             state: exec.state,
         }
@@ -173,7 +173,7 @@ impl From<&Task> for TaskInfo {
     fn from(task: &Task) -> Self {
         TaskInfo {
             id: task.id,
-            ssn_id: task.ssn_id,
+            ssn_id: task.ssn_id.clone(),
             creation_time: task.creation_time,
             completion_time: task.completion_time,
             state: task.state,
@@ -190,7 +190,7 @@ impl From<&Session> for SessionInfo {
         }
 
         SessionInfo {
-            id: ssn.id,
+            id: ssn.id.clone(),
             application: ssn.application.clone(),
             slots: ssn.slots,
             // tasks,
@@ -372,7 +372,7 @@ impl SnapShot {
             if let Some(state) = filter.state {
                 if let Some(ssn_list) = ssn_index.get(&state) {
                     for ssn in ssn_list.values() {
-                        ssns.insert(ssn.id, ssn.clone());
+                        ssns.insert(ssn.id.clone(), ssn.clone());
                     }
                 }
             }
@@ -388,7 +388,7 @@ impl SnapShot {
             let sessions = lock_ptr!(self.sessions)?;
 
             for ssn in sessions.values() {
-                ssns.insert(ssn.id, ssn.clone());
+                ssns.insert(ssn.id.clone(), ssn.clone());
             }
         }
 
@@ -407,7 +407,7 @@ impl SnapShot {
     pub fn add_session(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
         {
             let mut sessions = lock_ptr!(self.sessions)?;
-            sessions.insert(ssn.id, ssn.clone());
+            sessions.insert(ssn.id.clone(), ssn.clone());
         }
 
         {
@@ -415,7 +415,7 @@ impl SnapShot {
             ssn_index.entry(ssn.state).or_default();
 
             if let Some(ssn_list) = ssn_index.get_mut(&ssn.state) {
-                ssn_list.insert(ssn.id, ssn.clone());
+                ssn_list.insert(ssn.id.clone(), ssn.clone());
             }
         }
 
@@ -442,13 +442,13 @@ impl SnapShot {
     pub fn delete_session(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
         {
             let mut sessions = lock_ptr!(self.sessions)?;
-            sessions.remove(&ssn.id);
+            sessions.remove(&ssn.id.clone());
         }
 
         {
             let mut ssn_index = lock_ptr!(self.ssn_index)?;
             for ssn_list in &mut ssn_index.values_mut() {
-                ssn_list.remove(&ssn.id);
+                ssn_list.remove(&ssn.id.clone());
             }
         }
 
@@ -483,7 +483,7 @@ impl SnapShot {
 
             for id in filter.ids {
                 if let Some(e) = executors.get(&id) {
-                    execs.insert(id, e.clone());
+                    execs.insert(id.clone(), e.clone());
                 }
             }
         }
@@ -560,7 +560,7 @@ impl SnapShot {
             resreq: exec.resreq.clone(),
             task_id: exec.task_id,
             slots: exec.slots,
-            ssn_id: exec.ssn_id,
+            ssn_id: exec.ssn_id.clone(),
             creation_time: exec.creation_time,
             state,
         });
@@ -625,7 +625,6 @@ impl From<&Executor> for rpc::Executor {
         let metadata = Some(rpc::Metadata {
             id: e.id.clone(),
             name: e.id.clone(),
-            owner: None,
         });
 
         let spec = Some(rpc::ExecutorSpec {
@@ -636,7 +635,7 @@ impl From<&Executor> for rpc::Executor {
 
         let status = Some(rpc::ExecutorStatus {
             state: rpc::ExecutorState::from(e.state).into(),
-            session_id: e.ssn_id.map(|s| s.to_string()),
+            session_id: e.ssn_id.clone(),
         });
 
         rpc::Executor {

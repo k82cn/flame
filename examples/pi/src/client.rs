@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let conn = flame::client::connect(&current_cluster.endpoint).await?;
     let ssn = conn
         .create_session(&SessionAttributes {
+            id: format!("{app}-{}", stdng::rand::short_name()),
             application: app,
             slots,
             common_data: None,

@@ -68,6 +68,7 @@ pub struct Connection {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SessionAttributes {
+    pub id: SessionID,
     pub application: String,
     pub slots: u32,
     #[serde(with = "serde_message")]
@@ -180,6 +181,7 @@ impl Connection {
         trace_fn!("Connection::create_session");
 
         let create_ssn_req = CreateSessionRequest {
+            session_id: attrs.id.clone(),
             session: Some(SessionSpec {
                 application: attrs.application.clone(),
                 slots: attrs.slots,

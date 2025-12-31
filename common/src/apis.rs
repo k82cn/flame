@@ -27,7 +27,7 @@ use crate::FlameError;
 pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
 pub const DEFAULT_DELAY_RELEASE: Duration = Duration::seconds(60);
 
-pub type SessionID = i64;
+pub type SessionID = String;
 pub type TaskID = i64;
 pub type ExecutorID = String;
 pub type ApplicationID = String;
@@ -172,7 +172,7 @@ pub enum TaskState {
     Failed = 3,
 }
 
-#[derive(Clone, Debug, Default, Copy)]
+#[derive(Clone, Debug, Default)]
 pub struct TaskGID {
     pub ssn_id: SessionID,
     pub task_id: TaskID,
@@ -202,7 +202,7 @@ impl Task {
 
     pub fn gid(&self) -> TaskGID {
         TaskGID {
-            ssn_id: self.ssn_id,
+            ssn_id: self.ssn_id.clone(),
             task_id: self.id,
         }
     }
@@ -473,7 +473,6 @@ impl From<Node> for rpc::Node {
             metadata: Some(rpc::Metadata {
                 id: node.name.clone(),
                 name: node.name.clone(),
-                owner: None,
             }),
             spec: Some(rpc::NodeSpec {}),
             status,
@@ -545,7 +544,7 @@ impl Session {
 impl Clone for Session {
     fn clone(&self) -> Self {
         let mut ssn = Session {
-            id: self.id,
+            id: self.id.clone(),
             application: self.application.clone(),
             slots: self.slots,
             version: self.version,
@@ -710,7 +709,6 @@ impl From<&Task> for rpc::Task {
         let metadata = Some(rpc::Metadata {
             id: task.id.to_string(),
             name: task.id.to_string(),
-            owner: Some(task.ssn_id.to_string()),
         });
 
         let spec = Some(rpc::TaskSpec {
@@ -763,7 +761,6 @@ impl From<&Session> for rpc::Session {
             metadata: Some(rpc::Metadata {
                 id: ssn.id.to_string(),
                 name: ssn.id.to_string(),
-                owner: None,
             }),
             spec: Some(rpc::SessionSpec {
                 application: ssn.application.clone(),
@@ -876,7 +873,6 @@ impl From<&Application> for rpc::Application {
         let metadata = Some(rpc::Metadata {
             id: app.name.clone(),
             name: app.name.clone(),
-            owner: None,
         });
 
         let status = Some(rpc::ApplicationStatus {
@@ -1144,7 +1140,7 @@ impl From<&Task> for EventOwner {
     fn from(task: &Task) -> Self {
         Self {
             task_id: task.id,
-            session_id: task.ssn_id,
+            session_id: task.ssn_id.clone(),
         }
     }
 }
@@ -1153,7 +1149,7 @@ impl From<&TaskGID> for EventOwner {
     fn from(gid: &TaskGID) -> Self {
         Self {
             task_id: gid.task_id,
-            session_id: gid.ssn_id,
+            session_id: gid.ssn_id.clone(),
         }
     }
 }

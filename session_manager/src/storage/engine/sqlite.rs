@@ -107,14 +107,14 @@ impl SqliteEngine {
     ) -> Result<Session, FlameError> {
         let sql = "DELETE FROM tasks WHERE ssn_id=?";
         sqlx::query(sql)
-            .bind(id)
+            .bind(id.clone())
             .execute(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(format!("failed to delete session: {e}")))?;
 
         let sql = "DELETE FROM sessions WHERE id=? AND state=? RETURNING *";
         let ssn: SessionDao = sqlx::query_as(sql)
-            .bind(id)
+            .bind(id.clone())
             .bind(SessionState::Closed as i32)
             .fetch_one(&mut *tx)
             .await
@@ -365,6 +365,7 @@ impl Engine for SqliteEngine {
 
     async fn create_session(
         &self,
+        id: SessionID,
         app: String,
         slots: u32,
         common_data: Option<CommonData>,
@@ -376,8 +377,9 @@ impl Engine for SqliteEngine {
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
         let common_data: Option<Vec<u8>> = common_data.map(Bytes::into);
-        let sql = r#"INSERT INTO sessions (application, slots, common_data, creation_time, state)
+        let sql = r#"INSERT INTO sessions (id, application, slots, common_data, creation_time, state)
             VALUES (
+                ?,
                 (SELECT name FROM applications WHERE name=? AND state=?),
                 ?,
                 ?,
@@ -386,6 +388,7 @@ impl Engine for SqliteEngine {
             )
             RETURNING *"#;
         let ssn: SessionDao = sqlx::query_as(sql)
+            .bind(id.clone())
             .bind(app)
             .bind(ApplicationState::Enabled as i32)
             .bind(slots)
@@ -431,7 +434,7 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let count = self._count_open_tasks(&mut tx, id).await?;
+        let count = self._count_open_tasks(&mut tx, id.clone()).await?;
         if count > 0 {
             return Err(FlameError::Storage(format!(
                 "{count} open tasks in the session"
@@ -461,7 +464,7 @@ impl Engine for SqliteEngine {
         let ssn: SessionDao = sqlx::query_as(sql)
             .bind(SessionState::Closed as i32)
             .bind(Utc::now().timestamp())
-            .bind(id)
+            .bind(id.clone())
             .bind(id)
             .bind(TaskState::Failed as i32)
             .bind(TaskState::Succeed as i32)
@@ -521,7 +524,7 @@ impl Engine for SqliteEngine {
                 ?)
             RETURNING *"#;
         let task: TaskDao = sqlx::query_as(sql)
-            .bind(ssn_id)
+            .bind(ssn_id.clone())
             .bind(ssn_id)
             .bind(SessionState::Open as i32)
             .bind(input)
@@ -733,17 +736,23 @@ mod tests {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
 
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
-        assert_eq!(ssn_1.id, 1);
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
-        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_1.id, 1);
-        let tasks = tokio_test::block_on(storage.find_tasks(ssn_1.id))?;
+        let tasks = tokio_test::block_on(storage.find_tasks(ssn_1.id.clone()))?;
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, 1);
-        assert_eq!(tasks[0].ssn_id, ssn_1.id);
+        assert_eq!(tasks[0].ssn_id, ssn_1.id.clone());
         assert_eq!(tasks[0].state, TaskState::Pending);
         assert_eq!(tasks[0].input, None);
         assert_eq!(tasks[0].output, None);
@@ -754,11 +763,11 @@ mod tests {
             Some("Task succeeded".to_string()),
         ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
-        let tasks = tokio_test::block_on(storage.find_tasks(ssn_1.id))?;
+        let tasks = tokio_test::block_on(storage.find_tasks(ssn_1.id.clone()))?;
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, 1);
-        assert_eq!(tasks[0].ssn_id, ssn_1.id);
+        assert_eq!(tasks[0].ssn_id, ssn_1.id.clone());
         assert_eq!(tasks[0].state, TaskState::Succeed);
 
         Ok(())
@@ -831,8 +840,15 @@ mod tests {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
 
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
-        assert_eq!(ssn_1.id, 1);
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
@@ -854,7 +870,7 @@ mod tests {
         let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
         assert!(res.is_err());
 
-        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        let ssn_1 = tokio_test::block_on(storage.close_session(ssn_1_id.clone()))?;
         assert_eq!(ssn_1.status.state, SessionState::Closed);
 
         let res = tokio_test::block_on(storage.unregister_application("flmexec".to_string()));
@@ -963,16 +979,23 @@ mod tests {
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
 
-        assert_eq!(ssn_1.id, 1);
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
+
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
-        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_1.id, 1);
 
-        let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_2.id, 2);
 
         let task_list = tokio_test::block_on(storage.find_tasks(ssn_1.id))?;
@@ -992,7 +1015,7 @@ mod tests {
         ))?;
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
-        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        let ssn_1 = tokio_test::block_on(storage.close_session(ssn_1_id.clone()))?;
         assert_eq!(ssn_1.status.state, SessionState::Closed);
 
         Ok(())
@@ -1008,16 +1031,23 @@ mod tests {
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
 
-        assert_eq!(ssn_1.id, 1);
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
+
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
-        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_1.id, 1);
 
-        let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_2.id, 2);
 
         let task_1_1 = tokio_test::block_on(storage.update_task_state(
@@ -1034,16 +1064,22 @@ mod tests {
         ))?;
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
-        let ssn_2 = tokio_test::block_on(storage.create_session("flmping".to_string(), 1, None))?;
+        let ssn_2_id = format!("ssn-2-{}", Utc::now().timestamp());
+        let ssn_2 = tokio_test::block_on(storage.create_session(
+            ssn_2_id.clone(),
+            "flmping".to_string(),
+            1,
+            None,
+        ))?;
 
-        assert_eq!(ssn_2.id, 2);
+        assert_eq!(ssn_2.id, ssn_2_id);
         assert_eq!(ssn_2.application, "flmping");
         assert_eq!(ssn_2.status.state, SessionState::Open);
 
-        let task_2_1 = tokio_test::block_on(storage.create_task(ssn_2.id, None))?;
+        let task_2_1 = tokio_test::block_on(storage.create_task(ssn_2.id.clone(), None))?;
         assert_eq!(task_2_1.id, 1);
 
-        let task_2_2 = tokio_test::block_on(storage.create_task(ssn_2.id, None))?;
+        let task_2_2 = tokio_test::block_on(storage.create_task(ssn_2.id.clone(), None))?;
         assert_eq!(task_2_2.id, 2);
 
         let task_2_1 = tokio_test::block_on(storage.update_task_state(
@@ -1063,9 +1099,9 @@ mod tests {
         let ssn_list = tokio_test::block_on(storage.find_session())?;
         assert_eq!(ssn_list.len(), 2);
 
-        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        let ssn_1 = tokio_test::block_on(storage.close_session(ssn_1_id.clone()))?;
         assert_eq!(ssn_1.status.state, SessionState::Closed);
-        let ssn_2 = tokio_test::block_on(storage.close_session(2))?;
+        let ssn_2 = tokio_test::block_on(storage.close_session(ssn_2_id.clone()))?;
         assert_eq!(ssn_2.status.state, SessionState::Closed);
 
         Ok(())
@@ -1081,19 +1117,25 @@ mod tests {
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
 
-        assert_eq!(ssn_1.id, 1);
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
-        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_1.id, 1);
 
         let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
         assert_eq!(task_1_2.id, 2);
 
-        let res = tokio_test::block_on(storage.close_session(1));
+        let res = tokio_test::block_on(storage.close_session(ssn_1_id.clone()));
         assert!(res.is_err());
 
         Ok(())
@@ -1110,9 +1152,15 @@ mod tests {
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
 
-        assert_eq!(ssn_1.id, 1);
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
@@ -1126,7 +1174,7 @@ mod tests {
         ))?;
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
-        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        let ssn_1 = tokio_test::block_on(storage.close_session(ssn_1_id.clone()))?;
         assert_eq!(ssn_1.status.state, SessionState::Closed);
 
         let res = tokio_test::block_on(storage.create_task(ssn_1.id, None));
@@ -1145,17 +1193,23 @@ mod tests {
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
-        let ssn_1 = tokio_test::block_on(storage.create_session("flmexec".to_string(), 1, None))?;
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(
+            ssn_1_id.clone(),
+            "flmexec".to_string(),
+            1,
+            None,
+        ))?;
 
-        assert_eq!(ssn_1.id, 1);
+        assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
 
-        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
         assert_eq!(task_1_1.id, 1);
 
         // It should be failed because the session is open and there are open tasks
-        let res = tokio_test::block_on(storage.delete_session(1));
+        let res = tokio_test::block_on(storage.delete_session(ssn_1_id.clone()));
         assert!(res.is_err());
 
         let task_1_1 = tokio_test::block_on(storage.get_task(task_1_1.gid()))?;
@@ -1169,13 +1223,13 @@ mod tests {
         assert_eq!(task_1_1.state, TaskState::Succeed);
 
         // It should be failed because the session is open
-        let res = tokio_test::block_on(storage.delete_session(1));
+        let res = tokio_test::block_on(storage.delete_session(ssn_1_id.clone()));
         assert!(res.is_err());
 
-        let ssn_1 = tokio_test::block_on(storage.close_session(1))?;
+        let ssn_1 = tokio_test::block_on(storage.close_session(ssn_1_id.clone()))?;
         assert_eq!(ssn_1.status.state, SessionState::Closed);
 
-        let ssn_1 = tokio_test::block_on(storage.delete_session(1))?;
+        let ssn_1 = tokio_test::block_on(storage.delete_session(ssn_1_id.clone()))?;
         assert_eq!(ssn_1.status.state, SessionState::Closed);
 
         Ok(())

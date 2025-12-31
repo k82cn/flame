@@ -81,7 +81,7 @@ impl Context {
         ssn: &SessionInfoPtr,
     ) -> Result<(), FlameError> {
         self.controller
-            .bind_session(exec.id.clone(), ssn.id)
+            .bind_session(exec.id.clone(), ssn.id.clone())
             .await?;
         self.plugins.on_session_bind(ssn.clone())?;
         self.snapshot
@@ -123,7 +123,7 @@ impl Context {
     ) -> Result<(), FlameError> {
         let executor = self
             .controller
-            .create_executor(node.name.clone(), ssn.id)
+            .create_executor(node.name.clone(), ssn.id.clone())
             .await?;
 
         let exec_info = ExecutorInfo::from(&executor);

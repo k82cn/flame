@@ -81,6 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let ssn_creation_start_time = Local::now();
     let ssn_attr = SessionAttributes {
+        id: format!("{DEFAULT_APP}-{}", stdng::rand::short_name()),
         application: DEFAULT_APP.to_string(),
         slots,
         common_data: None,

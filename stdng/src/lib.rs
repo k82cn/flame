@@ -17,6 +17,7 @@ use thiserror::Error;
 
 pub mod collections;
 pub mod logs;
+pub mod rand;
 
 #[derive(Error, Debug)]
 pub enum Error {

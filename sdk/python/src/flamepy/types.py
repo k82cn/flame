@@ -97,6 +97,7 @@ class Event:
 class SessionAttributes:
     """Attributes for creating a session."""
 
+    id: str
     application: str
     slots: int
     common_data: Optional[bytes] = None

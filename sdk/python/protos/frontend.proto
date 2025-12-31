@@ -64,7 +64,8 @@ message ListExecutorRequest {
 }
 
 message CreateSessionRequest {
-  SessionSpec session = 1;
+  string session_id = 1;
+  SessionSpec session = 2;
 }
 
 message DeleteSessionRequest {
