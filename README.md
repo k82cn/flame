@@ -63,17 +63,17 @@ Then, verify the installation with `flmping` in the pod. Additionally, you can e
 root@560624b037c9:/# flmping
 Session <1> was created in <3 ms>, start to run <10> tasks in the session:
 
-Session   Task      State          Output
-1         5         Succeed        b"Task <1/5> is executed on <\"97b4fe83409e\">"
-1         3         Succeed        b"Task <1/3> is executed on <\"97b4fe83409e\">"
-1         10        Succeed        b"Task <1/10> is executed on <\"97b4fe83409e\">"
-1         1         Succeed        b"Task <1/1> is executed on <\"97b4fe83409e\">"
-1         2         Succeed        b"Task <1/2> is executed on <\"97b4fe83409e\">"
-1         6         Succeed        b"Task <1/6> is executed on <\"97b4fe83409e\">"
-1         7         Succeed        b"Task <1/7> is executed on <\"97b4fe83409e\">"
-1         4         Succeed        b"Task <1/4> is executed on <\"97b4fe83409e\">"
-1         8         Succeed        b"Task <1/8> is executed on <\"97b4fe83409e\">"
-1         9         Succeed        b"Task <1/9> is executed on <\"97b4fe83409e\">"
+ Session         Task  State    Output                                                          
+ flmping-UdjmHs  8     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  6     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  10    Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  7     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  2     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  1     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  3     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  5     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  9     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
+ flmping-UdjmHs  4     Succeed  Completed on <fc5afd603feb> in <0> milliseconds with <0> memory 
 
 
 <10> tasks was completed in <473 ms>.
