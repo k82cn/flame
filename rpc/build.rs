@@ -26,7 +26,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "protos/frontend.proto",
                 "protos/backend.proto",
                 "protos/shim.proto",
-                "protos/cache.proto",
             ],
             &["protos"],
         )?;
