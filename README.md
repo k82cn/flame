@@ -83,8 +83,8 @@ You can check session status using `flmctl` as follows. It also includes several
 
 ```shell
 root@560624b037c9:/# flmctl list -s
-ID        State     App            Slots     Pending   Running   Succeed   Failed    Created
-1         Closed    flmping        1         0         0         10        0         01:07:16
+ ID              State   App      Slots  Pending  Running  Succeed  Failed  Created  
+ flmping-UdjmHs  Closed  flmping  1      0        0        10       0       06:57:53
 ```
 
 ## Documentation
