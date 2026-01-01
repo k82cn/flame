@@ -22,10 +22,7 @@ use common::{apis::SessionID, ctx::FlameCache, FlameError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Object {
-    pub uuid: String,
-    pub session_id: SessionID,
     pub version: u64,
-
     pub data: Vec<u8>,
 }
 
