@@ -31,6 +31,9 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn>=0.35.0",
   "pyyaml>=6.0.0",
+  "bson>=0.5",
+  "requests >= 2.32",
+  "httpx >= 0.28",
 ]
 
 [project.optional-dependencies]
@@ -53,7 +56,7 @@ Repository = "https://github.com/xflops/flame"
 Issues = "https://github.com/xflops/flame/issues"
 
 [tool.black]
-line-length = 88
+line-length = 1024
 target-version = ['py38']
 include = '\.pyi?$'
 extend-exclude = '''
@@ -73,7 +76,7 @@ extend-exclude = '''
 [tool.isort]
 profile = "black"
 multi_line_output = 3
-line_length = 88
+line_length = 1024
 known_first_party = ["flame"]
 
 [tool.mypy]

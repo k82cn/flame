@@ -32,7 +32,6 @@ use common::FlameError;
 mod types;
 pub use types::{CacheEndpoint, Object, ObjectMetadata};
 
-
 struct ObjectCache {
     endpoint: CacheEndpoint,
     objects: MutexPtr<HashMap<SessionID, HashMap<String, Object>>>,
@@ -45,12 +44,7 @@ impl ObjectCache {
         data: Vec<u8>,
     ) -> Result<ObjectMetadata, FlameError> {
         let uuid = uuid::Uuid::new_v4().to_string();
-        let object = Object {
-            uuid: uuid.clone(),
-            session_id: session_id.clone(),
-            version: 1,
-            data,
-        };
+        let object = Object { version: 1, data };
 
         let endpoint = self.endpoint.object_endpoint(&session_id, &uuid);
         let metadata = ObjectMetadata {
@@ -92,6 +86,7 @@ impl ObjectCache {
     async fn update(
         &self,
         session_id: SessionID,
+        uuid: String,
         object: Object,
     ) -> Result<ObjectMetadata, FlameError> {
         let mut objects = lock_ptr!(self.objects)?;
@@ -101,25 +96,22 @@ impl ObjectCache {
                 "session <{session_id}> not found"
             )))?;
         let object = objects
-            .get(&object.uuid)
-            .ok_or(FlameError::NotFound(format!(
-                "object <{}> not found",
-                object.uuid
-            )))?;
+            .get(&uuid)
+            .ok_or(FlameError::NotFound(format!("object <{}> not found", uuid)))?;
 
         let mut object = object.clone();
 
         if object.version > object.version {
             return Err(FlameError::VersionMismatch(format!(
                 "object <{}> version is old",
-                object.uuid
+                uuid
             )));
         }
 
         object.version = object.version + 1;
-        objects.insert(object.uuid.clone(), object.clone());
+        objects.insert(uuid.clone(), object.clone());
 
-        let endpoint = self.endpoint.object_endpoint(&session_id, &object.uuid);
+        let endpoint = self.endpoint.object_endpoint(&session_id, &uuid);
         let metadata = ObjectMetadata {
             endpoint: endpoint.clone(),
             version: object.version,
@@ -163,6 +155,10 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
                 "/objects/{session_id}/{object_id}",
                 web::get().to(get_object),
             )
+            .route(
+                "/objects/{session_id}/{object_id}",
+                web::put().to(update_object),
+            )
             .route("/objects/{session_id}", web::post().to(put_object))
             .route("/objects/{session_id}", web::delete().to(delete_session))
     })
@@ -194,6 +190,28 @@ async fn put_object(
     let session_id = path.into_inner();
 
     let metadata = data.put(session_id.clone(), body.to_vec()).await;
+
+    match metadata {
+        Ok(metadata) => HttpResponse::Ok().json(metadata),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
+
+// Handler to update object
+async fn update_object(
+    path: web::Path<(String, String)>,
+    body: web::Bytes,
+    data: web::Data<Arc<ObjectCache>>,
+) -> impl Responder {
+    let (session_id, object_id) = path.into_inner();
+
+    let Ok(object) = serde_json::from_slice(&body) else {
+        return HttpResponse::BadRequest().body("Invalid object");
+    };
+
+    let metadata = data
+        .update(session_id.clone(), object_id.clone(), object)
+        .await;
 
     match metadata {
         Ok(metadata) => HttpResponse::Ok().json(metadata),
