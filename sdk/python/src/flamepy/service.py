@@ -21,7 +21,8 @@ from dataclasses import dataclass
 import logging
 from concurrent import futures
 
-from .types import Shim, FlameError, FlameErrorCode
+from .types import Shim, FlameError, FlameErrorCode, DataExpr
+from .cache import get_object
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from .shim_pb2 import WatchEventResponse as WatchEventResponseProto
 from .types_pb2 import (
@@ -142,12 +143,13 @@ class FlameService:
         pass
 
 
-class FlmInstanceServicer(InstanceServicer):
+class FlameInstanceServicer(InstanceServicer):
     """gRPC servicer implementation for GrpcShim service."""
 
     def __init__(self, service: FlameService):
         self._service = service
         self._queue = asyncio.Queue()
+        self._common_data_expr = None
 
     async def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
@@ -175,13 +177,16 @@ class FlmInstanceServicer(InstanceServicer):
 
             logger.debug(f"app_context: {app_context}")
 
+            self._common_data_expr = DataExpr.from_json(request.common_data) if request.HasField("common_data") else None
+
+            if self._common_data_expr is not None:
+                self._common_data_expr = await get_object(self._common_data_expr)
+
             session_context = SessionContext(
                 _queue=self._queue,
                 session_id=request.session_id,
                 application=app_context,
-                common_data=(
-                    request.common_data if request.HasField("common_data") else None
-                ),
+                common_data=self._common_data_expr.data if self._common_data_expr is not None else None,
             )
 
             logger.debug(f"session_context: {session_context}")
@@ -271,7 +276,7 @@ class FlmInstanceServicer(InstanceServicer):
             raise
 
 
-class FlmInstanceServer:
+class FlameInstanceServer:
     """Server for gRPC shim services."""
 
     def __init__(self, service: FlameService):
@@ -285,7 +290,7 @@ class FlmInstanceServer:
             self._server = grpc.aio.server()
 
             # Add servicer to server
-            shim_servicer = FlmInstanceServicer(self._service)
+            shim_servicer = FlameInstanceServicer(self._service)
             add_InstanceServicer_to_server(shim_servicer, self._server)
 
             # Listen on Unix socket
@@ -326,5 +331,5 @@ def run(service: FlameService):
         service: The shim service implementation
     """
 
-    server = FlmInstanceServer(service)
+    server = FlameInstanceServer(service)
     asyncio.run(server.start())
