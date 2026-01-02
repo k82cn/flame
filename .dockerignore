@@ -1,4 +1,6 @@
 target/
 ci/
 .git/
+.venv/
+__pycache__/
 flame.db*

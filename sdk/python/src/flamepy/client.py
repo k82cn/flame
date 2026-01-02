@@ -16,10 +16,10 @@ from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
 import grpc
 import grpc.aio
-import random
-import string
-
+import asyncio
 from datetime import datetime, timezone
+
+from .cache import put_object
 from .types import (
     Task,
     Application,
@@ -43,6 +43,7 @@ from .types import (
     Response as FlameResponse,
     FlameContext,
     ApplicationSchema,
+    short_name,
 )
 
 from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment
@@ -72,7 +73,9 @@ async def create_session(application: str,
                          common_data: Dict[str, Any] = None,
                          session_id: str = None,
                          slots: int = 1) -> "Session":
-    conn = await ConnectionInstance().instance()
+
+    conn = await ConnectionInstance.instance()
+
     if common_data is None:
         pass
     elif isinstance(common_data, FlameRequest):
@@ -81,10 +84,10 @@ async def create_session(application: str,
         raise ValueError(
             "Invalid common data type, must be a Request or CommonData")
 
-    if session_id is None:
-        alphabet = string.ascii_letters + string.digits
-        short_name = ''.join(random.choice(alphabet) for _ in range(6))
-        session_id = f"{application}-{short_name}"
+    session_id = short_name(application) if session_id is None else session_id
+
+    data_expr = await put_object(session_id, common_data)
+    common_data = CommonData(data_expr.to_json())
 
     session = await conn.create_session(
         SessionAttributes(id=session_id,
@@ -95,61 +98,76 @@ async def create_session(application: str,
 
 
 async def open_session(session_id: SessionID) -> "Session":
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     return await conn.open_session(session_id)
 
 
 async def register_application(
-    name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]
-) -> None:
-    conn = await ConnectionInstance().instance()
+        name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
+    conn = await ConnectionInstance.instance()
     await conn.register_application(name, app_attrs)
 
 
 async def unregister_application(name: str) -> None:
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     await conn.unregister_application(name)
 
 
 async def list_applications() -> List[Application]:
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     return await conn.list_applications()
 
 
 async def get_application(name: str) -> Application:
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     return await conn.get_application(name)
 
 
 async def list_sessions() -> List["Session"]:
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     return await conn.list_sessions()
 
 
 async def get_session(session_id: SessionID) -> "Session":
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     return await conn.get_session(session_id)
 
 
 async def close_session(session_id: SessionID) -> "Session":
-    conn = await ConnectionInstance().instance()
+    conn = await ConnectionInstance.instance()
     return await conn.close_session(session_id)
 
 
 class ConnectionInstance:
     """Connection instance."""
 
+    _lock = asyncio.Lock()
     _connection = None
     _context = None
-    _lock = threading.Lock()
 
-    async def instance(self) -> "Connection":
+    # Singleton instance
+    _instance_lock = asyncio.Lock()
+    _instance = None
+
+    @classmethod
+    async def _get_instance(cls) -> "ConnectionInstance":
+        async with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._context = FlameContext()
+                return cls._instance
+            return cls._instance
+
+    @classmethod
+    async def instance(cls) -> "Connection":
         """Get the connection instance."""
-        with self._lock:
-            if not self._connection:
-                self._context = FlameContext()
-                self._connection = await connect(self._context._endpoint)
-            return self._connection
+        instance = await cls._get_instance()
+        return await connect(instance._context._endpoint)
+
+        # async with instance._lock:
+        #     if instance._connection is None:
+        #         instance._connection = await connect(instance._context._endpoint)
+        #     return instance._connection
 
 
 class Connection:
