@@ -68,16 +68,9 @@ async def connect(addr: str) -> "Connection":
     return await Connection.connect(addr)
 
 
-async def create_session(application: str,
-                         common_data: Any = None,
-                         session_id: Optional[str] = None,
-                         slots: int = 1) -> "Session":
+async def create_session(application: str, common_data: Any = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
     conn = await ConnectionInstance.instance()
-    return await conn.create_session(
-        SessionAttributes(id=session_id,
-                          application=application,
-                          common_data=common_data,
-                          slots=slots))
+    return await conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots))
 
 
 async def open_session(session_id: SessionID) -> "Session":
@@ -85,8 +78,7 @@ async def open_session(session_id: SessionID) -> "Session":
     return await conn.open_session(session_id)
 
 
-async def register_application(
-        name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
+async def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
     conn = await ConnectionInstance.instance()
     await conn.register_application(name, app_attrs)
 
@@ -184,17 +176,13 @@ class Connection:
             return cls(addr, channel, frontend)
 
         except Exception as e:
-            raise FlameError(
-                FlameErrorCode.INVALID_CONFIG, f"failed to connect to {addr}: {str(e)}"
-            )
+            raise FlameError(FlameErrorCode.INVALID_CONFIG, f"failed to connect to {addr}: {str(e)}")
 
     async def close(self) -> None:
         """Close the connection."""
         await self._channel.close()
 
-    async def register_application(
-        self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]
-    ) -> None:
+    async def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
         """Register a new application."""
         if isinstance(app_attrs, dict):
             app_attrs = ApplicationAttributes(**app_attrs)
@@ -275,9 +263,7 @@ class Connection:
                         name=app.metadata.name,
                         shim=Shim(app.spec.shim),
                         state=ApplicationState(app.status.state),
-                        creation_time=datetime.fromtimestamp(
-                            app.status.creation_time / 1000, tz=timezone.utc
-                        ),
+                        creation_time=datetime.fromtimestamp(app.status.creation_time / 1000, tz=timezone.utc),
                         image=app.spec.image,
                         command=app.spec.command,
                         arguments=list(app.spec.arguments),
@@ -292,9 +278,7 @@ class Connection:
             return applications
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to list applications: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to list applications: {e.details()}")
 
     async def get_application(self, name: str) -> Application:
         """Get an application by name."""
@@ -320,9 +304,7 @@ class Connection:
                 name=response.metadata.name,
                 shim=Shim(response.spec.shim),
                 state=ApplicationState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 image=response.spec.image,
                 command=response.spec.command,
                 arguments=list(response.spec.arguments),
@@ -334,9 +316,7 @@ class Connection:
             )
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to get application: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to get application: {e.details()}")
 
     async def create_session(self, attrs: SessionAttributes) -> "Session":
         """Create a new session."""
@@ -364,26 +344,16 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
             )
             return session
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to create session: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to create session: {e.details()}")
 
     async def list_sessions(self) -> List["Session"]:
         """List all sessions."""
@@ -401,29 +371,19 @@ class Connection:
                         application=session.spec.application,
                         slots=session.spec.slots,
                         state=SessionState(session.status.state),
-                        creation_time=datetime.fromtimestamp(
-                            session.status.creation_time / 1000, tz=timezone.utc
-                        ),
+                        creation_time=datetime.fromtimestamp(session.status.creation_time / 1000, tz=timezone.utc),
                         pending=session.status.pending,
                         running=session.status.running,
                         succeed=session.status.succeed,
                         failed=session.status.failed,
-                        completion_time=(
-                            datetime.fromtimestamp(
-                                session.status.completion_time / 1000, tz=timezone.utc
-                            )
-                            if session.status.HasField("completion_time")
-                            else None
-                        ),
+                        completion_time=(datetime.fromtimestamp(session.status.completion_time / 1000, tz=timezone.utc) if session.status.HasField("completion_time") else None),
                     )
                 )
 
             return sessions
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to list sessions: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to list sessions: {e.details()}")
 
     async def open_session(self, session_id: SessionID) -> "Session":
         """Open a session."""
@@ -437,26 +397,16 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
             )
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to open session: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to open session: {e.details()}")
 
     async def get_session(self, session_id: SessionID) -> "Session":
         """Get a session by ID."""
@@ -471,26 +421,16 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
             )
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to get session: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to get session: {e.details()}")
 
     async def close_session(self, session_id: SessionID) -> "Session":
         """Close a session."""
@@ -505,26 +445,16 @@ class Connection:
                 application=response.spec.application,
                 slots=response.spec.slots,
                 state=SessionState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 pending=response.status.pending,
                 running=response.status.running,
                 succeed=response.status.succeed,
                 failed=response.status.failed,
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
             )
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to close session: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to close session: {e.details()}")
 
 
 class Session:
@@ -584,26 +514,21 @@ class Session:
                 id=response.metadata.id,
                 session_id=self.id,
                 state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 input=input_data,
-                completion_time=(datetime.fromtimestamp(
-                    response.status.completion_time / 1000, tz=timezone.utc)
-                                 if response.status.HasField("completion_time")
-                                 else None),
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
                         code=event.code,
                         message=event.message,
-                        creation_time=datetime.fromtimestamp(
-                            event.creation_time / 1000, tz=timezone.utc),
-                    ) for event in response.status.events
+                        creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
+                    )
+                    for event in response.status.events
                 ],
             )
 
         except grpc.RpcError as e:
-            raise FlameError(FlameErrorCode.INTERNAL,
-                             f"failed to create task: {e.details()}")
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to create task: {e.details()}")
 
     async def get_task(self, task_id: TaskID) -> Task:
         """Get a task by ID."""
@@ -616,27 +541,22 @@ class Session:
                 id=response.metadata.id,
                 session_id=self.id,
                 state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc),
-                input=pickle.loads(response.spec.input),
-                output=pickle.loads(response.spec.output),
-                completion_time=(datetime.fromtimestamp(
-                    response.status.completion_time / 1000, tz=timezone.utc)
-                                 if response.status.HasField("completion_time")
-                                 else None),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
+                input=pickle.loads(response.spec.input) if response.spec.input is not None else None,
+                output=pickle.loads(response.spec.output) if response.spec.output is not None else None,
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
                         code=event.code,
                         message=event.message,
-                        creation_time=datetime.fromtimestamp(
-                            event.creation_time / 1000, tz=timezone.utc),
-                    ) for event in response.status.events
+                        creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
+                    )
+                    for event in response.status.events
                 ],
             )
 
         except grpc.RpcError as e:
-            raise FlameError(FlameErrorCode.INTERNAL,
-                             f"failed to get task: {e.details()}")
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to get task: {e.details()}")
 
     async def watch_task(self, task_id: TaskID) -> "TaskWatcher":
         """Watch a task for updates."""
@@ -647,12 +567,9 @@ class Session:
             return TaskWatcher(stream)
 
         except grpc.RpcError as e:
-            raise FlameError(FlameErrorCode.INTERNAL,
-                             f"failed to watch task: {e.details()}")
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
 
-    async def invoke(self,
-                     input_data: Any,
-                     informer: Optional[TaskInformer] = None) -> Any:
+    async def invoke(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
         """Invoke a task with the given input and optional informer."""
         task = await self.create_task(input_data)
         watcher = await self.watch_task(task.id)
@@ -670,8 +587,7 @@ class Session:
             if task.is_failed():
                 for event in task.events:
                     if event.code == TaskState.FAILED:
-                        raise FlameError(FlameErrorCode.INTERNAL,
-                                         f"{event.message}")
+                        raise FlameError(FlameErrorCode.INTERNAL, f"{event.message}")
             # If the task is completed, return the output.
             elif task.is_completed():
                 return task.output
@@ -698,25 +614,15 @@ class TaskWatcher:
                 id=response.metadata.id,
                 session_id=response.spec.session_id,
                 state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
-                input=pickle.loads(response.spec.input),
-                output=pickle.loads(response.spec.output),
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
+                input=pickle.loads(response.spec.input) if response.spec.input is not None else None,
+                output=pickle.loads(response.spec.output) if response.spec.output is not None else None,
+                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
                         code=event.code,
                         message=event.message,
-                        creation_time=datetime.fromtimestamp(
-                            event.creation_time / 1000, tz=timezone.utc
-                        ),
+                        creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
                     )
                     for event in response.status.events
                 ],
