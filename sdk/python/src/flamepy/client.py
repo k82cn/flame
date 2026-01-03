@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import grpc
 import grpc.aio
 import asyncio
+import pickle
 from datetime import datetime, timezone
 
 from .cache import put_object
@@ -39,8 +40,6 @@ from .types import (
     FlameError,
     FlameErrorCode,
     TaskInformer,
-    Request as FlameRequest,
-    Response as FlameResponse,
     FlameContext,
     ApplicationSchema,
     short_name,
@@ -70,31 +69,15 @@ async def connect(addr: str) -> "Connection":
 
 
 async def create_session(application: str,
-                         common_data: Dict[str, Any] = None,
-                         session_id: str = None,
+                         common_data: Any = None,
+                         session_id: Optional[str] = None,
                          slots: int = 1) -> "Session":
-
     conn = await ConnectionInstance.instance()
-
-    if common_data is None:
-        pass
-    elif isinstance(common_data, FlameRequest):
-        common_data = common_data.to_json()
-    elif not isinstance(common_data, CommonData):
-        raise ValueError(
-            "Invalid common data type, must be a Request or CommonData")
-
-    session_id = short_name(application) if session_id is None else session_id
-
-    data_expr = await put_object(session_id, common_data)
-    common_data = CommonData(data_expr.to_json())
-
-    session = await conn.create_session(
+    return await conn.create_session(
         SessionAttributes(id=session_id,
                           application=application,
                           common_data=common_data,
                           slots=slots))
-    return session
 
 
 async def open_session(session_id: SessionID) -> "Session":
@@ -357,13 +340,20 @@ class Connection:
 
     async def create_session(self, attrs: SessionAttributes) -> "Session":
         """Create a new session."""
+
+        session_id = short_name(attrs.application) if attrs.id is None else attrs.id
+
+        common_data_bin = pickle.dumps(attrs.common_data, protocol=pickle.HIGHEST_PROTOCOL)
+
+        data_expr = await put_object(session_id, common_data_bin)
+
         session_spec = SessionSpec(
             application=attrs.application,
             slots=attrs.slots,
-            common_data=attrs.common_data,
+            common_data=data_expr.encode(),
         )
 
-        request = CreateSessionRequest(session_id=attrs.id, session=session_spec)
+        request = CreateSessionRequest(session_id=session_id, session=session_spec)
 
         try:
             response = await self._frontend.CreateSession(request)
@@ -539,7 +529,6 @@ class Connection:
 
 class Session:
     connection: Connection
-
     """Represents a computing session."""
     id: SessionID
     application: str
@@ -551,7 +540,6 @@ class Session:
     succeed: int = 0
     failed: int = 0
     completion_time: Optional[datetime] = None
-
     """Client for session-specific operations."""
 
     def __init__(
@@ -581,9 +569,11 @@ class Session:
         self.completion_time = completion_time
         self.mutex = threading.Lock()
 
-    async def create_task(self, input_data: TaskInput) -> Task:
+    async def create_task(self, input_data: Any) -> Task:
         """Create a new task in the session."""
-        task_spec = TaskSpec(session_id=self.id, input=input_data)
+        input_bin = pickle.dumps(input_data, protocol=pickle.HIGHEST_PROTOCOL)
+
+        task_spec = TaskSpec(session_id=self.id, input=input_bin)
 
         request = CreateTaskRequest(task=task_spec)
 
@@ -595,32 +585,25 @@ class Session:
                 session_id=self.id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
+                    response.status.creation_time / 1000, tz=timezone.utc),
                 input=input_data,
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                completion_time=(datetime.fromtimestamp(
+                    response.status.completion_time / 1000, tz=timezone.utc)
+                                 if response.status.HasField("completion_time")
+                                 else None),
                 events=[
                     Event(
                         code=event.code,
                         message=event.message,
                         creation_time=datetime.fromtimestamp(
-                            event.creation_time / 1000, tz=timezone.utc
-                        ),
-                    )
-                    for event in response.status.events
+                            event.creation_time / 1000, tz=timezone.utc),
+                    ) for event in response.status.events
                 ],
             )
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to create task: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL,
+                             f"failed to create task: {e.details()}")
 
     async def get_task(self, task_id: TaskID) -> Task:
         """Get a task by ID."""
@@ -634,33 +617,26 @@ class Session:
                 session_id=self.id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(
-                    response.status.creation_time / 1000, tz=timezone.utc
-                ),
-                input=response.spec.input,
-                output=response.spec.output,
-                completion_time=(
-                    datetime.fromtimestamp(
-                        response.status.completion_time / 1000, tz=timezone.utc
-                    )
-                    if response.status.HasField("completion_time")
-                    else None
-                ),
+                    response.status.creation_time / 1000, tz=timezone.utc),
+                input=pickle.loads(response.spec.input),
+                output=pickle.loads(response.spec.output),
+                completion_time=(datetime.fromtimestamp(
+                    response.status.completion_time / 1000, tz=timezone.utc)
+                                 if response.status.HasField("completion_time")
+                                 else None),
                 events=[
                     Event(
                         code=event.code,
                         message=event.message,
                         creation_time=datetime.fromtimestamp(
-                            event.creation_time / 1000, tz=timezone.utc
-                        ),
-                    )
-                    for event in response.status.events
+                            event.creation_time / 1000, tz=timezone.utc),
+                    ) for event in response.status.events
                 ],
             )
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to get task: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL,
+                             f"failed to get task: {e.details()}")
 
     async def watch_task(self, task_id: TaskID) -> "TaskWatcher":
         """Watch a task for updates."""
@@ -671,21 +647,13 @@ class Session:
             return TaskWatcher(stream)
 
         except grpc.RpcError as e:
-            raise FlameError(
-                FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}"
-            )
+            raise FlameError(FlameErrorCode.INTERNAL,
+                             f"failed to watch task: {e.details()}")
 
-    async def invoke(
-        self, input_data, informer: Optional[TaskInformer] = None
-    ) -> TaskOutput:
+    async def invoke(self,
+                     input_data: Any,
+                     informer: Optional[TaskInformer] = None) -> Any:
         """Invoke a task with the given input and optional informer."""
-        if input_data is None:
-            pass
-        if isinstance(input_data, FlameRequest):
-            input_data = input_data.to_json()
-        elif not isinstance(input_data, TaskInput):
-            raise ValueError("Invalid input data type, must be a Request or TaskInput")
-
         task = await self.create_task(input_data)
         watcher = await self.watch_task(task.id)
 
@@ -702,7 +670,8 @@ class Session:
             if task.is_failed():
                 for event in task.events:
                     if event.code == TaskState.FAILED:
-                        raise FlameError(FlameErrorCode.INTERNAL, f"{event.message}")
+                        raise FlameError(FlameErrorCode.INTERNAL,
+                                         f"{event.message}")
             # If the task is completed, return the output.
             elif task.is_completed():
                 return task.output
@@ -732,8 +701,8 @@ class TaskWatcher:
                 creation_time=datetime.fromtimestamp(
                     response.status.creation_time / 1000, tz=timezone.utc
                 ),
-                input=response.spec.input,
-                output=response.spec.output,
+                input=pickle.loads(response.spec.input),
+                output=pickle.loads(response.spec.output),
                 completion_time=(
                     datetime.fromtimestamp(
                         response.status.completion_time / 1000, tz=timezone.utc

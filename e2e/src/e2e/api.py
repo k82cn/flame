@@ -11,15 +11,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import flamepy
 from typing import Optional
+from dataclasses import dataclass
 
-class TestContext(flamepy.Request):
+@dataclass
+class TestContext:
     common_data: Optional[str] = None
 
-class TestRequest(flamepy.Request):
+@dataclass
+class TestRequest:
     input: Optional[str] = None
 
-class TestResponse(flamepy.Response):
+@dataclass
+class TestResponse:
     output: Optional[str] = None
     common_data: Optional[str] = None

@@ -101,10 +101,10 @@ class Event:
 class SessionAttributes:
     """Attributes for creating a session."""
 
-    id: str
     application: str
     slots: int
-    common_data: Optional[bytes] = None
+    id: Optional[str] = None
+    common_data: Any = None
 
 
 @dataclass
@@ -141,8 +141,8 @@ class Task:
     session_id: SessionID
     state: TaskState
     creation_time: datetime
-    input: Optional[bytes] = None
-    output: Optional[bytes] = None
+    input: Any = None
+    output: Any = None
     completion_time: Optional[datetime] = None
     events: Optional[List[Event]] = None
 
@@ -186,24 +186,6 @@ class TaskInformer:
     def on_error(self, error: FlameError) -> None:
         """Called when an error occurs."""
         pass
-
-
-class Request(BaseModel):
-    @classmethod
-    def from_json(cls, json_data):
-        return cls.model_validate_json(json_data.decode("utf-8"))
-
-    def to_json(self) -> bytes:
-        return self.model_dump_json().encode("utf-8")
-
-
-class Response(BaseModel):
-    @classmethod
-    def from_json(cls, json_data):
-        return cls.model_validate_json(json_data.decode("utf-8"))
-
-    def to_json(self) -> bytes:
-        return self.model_dump_json().encode("utf-8")
 
 
 def short_name(prefix: str, length: int = 6) -> str:
@@ -263,7 +245,7 @@ class DataExpr:
     version: int = 0
     data: Optional[bytes] = None
 
-    def to_json(self) -> bytes:
+    def encode(self) -> bytes:
         data = asdict(self)
         # For remote data, the data is not included in the JSON
         if self.source == DataSource.REMOTE:
@@ -272,6 +254,6 @@ class DataExpr:
         return bson.dumps(data)
 
     @classmethod
-    def from_json(cls, json_data: bytes) -> "DataExpr":
+    def decode(cls, json_data: bytes) -> "DataExpr":
         data = bson.loads(json_data)
         return cls(**data)

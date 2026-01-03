@@ -15,6 +15,7 @@ import asyncio
 import os
 import time
 import grpc
+import pickle
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
@@ -63,7 +64,7 @@ class SessionContext:
     _queue: asyncio.Queue
     session_id: str
     application: ApplicationContext
-    common_data: Optional[bytes] = None
+    common_data: Any
 
     async def record_event(self, code: int, message: Optional[str] = None):
         """Record an event."""
@@ -83,7 +84,7 @@ class TaskContext:
     _queue: asyncio.Queue
     task_id: str
     session_id: str
-    input: Optional[bytes] = None
+    input: Any
 
     async def record_event(self, code: int, message: Optional[str] = None):
         """Record an event."""
@@ -100,7 +101,7 @@ class TaskContext:
 class TaskOutput:
     """Output from a task."""
 
-    data: Optional[bytes] = None
+    data: Any
 
 
 class FlameService:
@@ -177,16 +178,16 @@ class FlameInstanceServicer(InstanceServicer):
 
             logger.debug(f"app_context: {app_context}")
 
-            self._common_data_expr = DataExpr.from_json(request.common_data) if request.HasField("common_data") else None
+            self._common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
+            self._common_data_expr = await get_object(self._common_data_expr)
 
-            if self._common_data_expr is not None:
-                self._common_data_expr = await get_object(self._common_data_expr)
+            common_data = pickle.loads(self._common_data_expr.data) if self._common_data_expr is not None else None
 
             session_context = SessionContext(
                 _queue=self._queue,
                 session_id=request.session_id,
                 application=app_context,
-                common_data=self._common_data_expr.data if self._common_data_expr is not None else None,
+                common_data=common_data,
             )
 
             logger.debug(f"session_context: {session_context}")
@@ -214,7 +215,7 @@ class FlameInstanceServicer(InstanceServicer):
                 _queue=self._queue,
                 task_id=request.task_id,
                 session_id=request.session_id,
-                input=request.input if request.HasField("input") else None,
+                input=pickle.loads(request.input) if request.HasField("input") else None,
             )
 
             logger.debug(f"task_context: {task_context}")
@@ -224,7 +225,7 @@ class FlameInstanceServicer(InstanceServicer):
             logger.debug("on_task_invoke completed successfully")
 
             # Return task output
-            return TaskResultProto(return_code=0, output=output.data, message=None)
+            return TaskResultProto(return_code=0, output=pickle.dumps(output.data, protocol=pickle.HIGHEST_PROTOCOL), message=None)
 
         except Exception as e:
             logger.error(f"Error in OnTaskInvoke: {e}")

@@ -32,13 +32,6 @@ sys_prompt = """
 You are a helpful assistant.
 """
 
-
-@ins.context
-def sys_context(sp: SysPrompt):
-    global sys_prompt
-    sys_prompt = sp.prompt
-
-
 @ins.entrypoint
 def summarize_blog(bl: Blog) -> Summary:
     global sys_prompt
