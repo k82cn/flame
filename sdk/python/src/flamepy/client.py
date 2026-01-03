@@ -615,8 +615,8 @@ class TaskWatcher:
                 session_id=response.spec.session_id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=pickle.loads(response.spec.input) if response.spec.input is not None else None,
-                output=pickle.loads(response.spec.output) if response.spec.output is not None else None,
+                input=pickle.loads(response.spec.input) if response.spec.HasField("input") else None,
+                output=pickle.loads(response.spec.output) if response.spec.HasField("output") else None,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
