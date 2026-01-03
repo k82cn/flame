@@ -16,7 +16,6 @@ import inspect
 import uvicorn
 import os
 import time
-from pydantic import BaseModel
 from typing import Optional, Dict, Any, Union
 from fastapi import FastAPI, Request as FastAPIRequest, Response as FastAPIResponse
 
@@ -45,9 +44,6 @@ class FlameInstance(FlameService):
 
         self._entrypoint = None
         self._parameter = None
-        self._return_type = None
-        self._input_schema = None
-        self._output_schema = None
 
         self._context: Any = None
 
@@ -64,18 +60,10 @@ class FlameInstance(FlameService):
 
         sig = inspect.signature(func)
         self._entrypoint = func
-        assert len(sig.parameters) == 1 or len(
-            sig.parameters
-        ) == 0, "Entrypoint must have exactly zero or one parameter"
+        assert len(sig.parameters) == 1 or len(sig.parameters) == 0, "Entrypoint must have exactly zero or one parameter"
         for param in sig.parameters.values():
             assert param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, "Parameter must be positional or keyword"
-            if param.annotation is not inspect._empty:
-                self._input_schema = param.annotation.model_json_schema()
             self._parameter = param
-
-        if sig.return_annotation is not inspect._empty:
-            self._return_type = sig.return_annotation
-            self._output_schema = self._return_type.model_json_schema()
 
     async def on_session_enter(self, context: SessionContext):
         logger = logging.getLogger(__name__)
@@ -130,14 +118,14 @@ class FlameInstance(FlameService):
         if self._queue is not None:
             await self._queue.put(
                 WatchEventResponseProto(
-                    owner=EventOwnerProto(session_id=self.session_id,
-                                          task_id=self.task_id),
+                    owner=EventOwnerProto(session_id=self.session_id, task_id=self.task_id),
                     event=EventProto(
                         code=code,
                         message=message,
                         creation_time=int(time.time() * 1000),
                     ),
-                ))
+                )
+            )
 
     def run(self):
         logger = logging.getLogger(__name__)
