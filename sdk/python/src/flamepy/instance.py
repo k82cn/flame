@@ -68,9 +68,6 @@ class FlameInstance(FlameService):
     async def on_session_enter(self, context: SessionContext):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_enter")
-        if self._context is None:
-            logger.warning("No context function defined")
-            return
 
         self.session_id = context.session_id
         if self._queue is None:

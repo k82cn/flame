@@ -20,7 +20,9 @@ instance = flamepy.FlameInstance()
 @instance.entrypoint
 def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
     cxt = instance.context()
-    return TestResponse(output=req.input, common_data=cxt.common_data)
+    data = cxt.common_data if cxt is not None else None
+
+    return TestResponse(output=req.input, common_data=data)
 
 if __name__ == "__main__":
     instance.run()
