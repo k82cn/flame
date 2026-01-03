@@ -20,7 +20,7 @@ class Object(BaseModel):
     """Object."""
 
     version: int
-    data: list 
+    data: list
 
 class ObjectMetadata(BaseModel):
     """Object metadata."""
@@ -45,8 +45,12 @@ async def put_object(session_id: str, data: bytes) -> "DataExpr":
 
     return DataExpr(source=DataSource.REMOTE, url=metadata.endpoint, data=data, version=metadata.version)
 
+
 async def get_object(de: DataExpr) -> "DataExpr":
     """Get an object from the cache."""
+    if de is None:
+        return None
+
     if de.source != DataSource.REMOTE:
         return de
 
@@ -63,6 +67,9 @@ async def get_object(de: DataExpr) -> "DataExpr":
 
 async def update_object(de: DataExpr) -> "DataExpr":
     """Update an object in the cache."""
+    if de is None:
+        return None
+
     if de.source != DataSource.REMOTE:
         return de
 

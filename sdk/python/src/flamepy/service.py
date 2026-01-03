@@ -15,6 +15,7 @@ import asyncio
 import os
 import time
 import grpc
+import pickle
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
@@ -37,8 +38,9 @@ logger = logging.getLogger(__name__)
 
 FLAME_INSTANCE_ENDPOINT = "FLAME_INSTANCE_ENDPOINT"
 
+
 class TraceFn:
-    def __init__(self, name:str):
+    def __init__(self, name: str):
         self.name = name
         logger.debug(f"{name} Enter")
 
@@ -63,15 +65,13 @@ class SessionContext:
     _queue: asyncio.Queue
     session_id: str
     application: ApplicationContext
-    common_data: Optional[bytes] = None
+    common_data: Any
 
     async def record_event(self, code: int, message: Optional[str] = None):
         """Record an event."""
         event = WatchEventResponseProto(
             owner=EventOwnerProto(session_id=self.session_id, task_id=None),
-            event=EventProto(
-                code=code, message=message, creation_time=int(time.time() * 1000)
-            ),
+            event=EventProto(code=code, message=message, creation_time=int(time.time() * 1000)),
         )
         await self._queue.put(event)
 
@@ -83,15 +83,13 @@ class TaskContext:
     _queue: asyncio.Queue
     task_id: str
     session_id: str
-    input: Optional[bytes] = None
+    input: Any
 
     async def record_event(self, code: int, message: Optional[str] = None):
         """Record an event."""
         event = WatchEventResponseProto(
             owner=EventOwnerProto(session_id=self.session_id, task_id=self.task_id),
-            event=EventProto(
-                code=code, message=message, creation_time=int(time.time() * 1000)
-            ),
+            event=EventProto(code=code, message=message, creation_time=int(time.time() * 1000)),
         )
         await self._queue.put(event)
 
@@ -100,7 +98,7 @@ class TaskContext:
 class TaskOutput:
     """Output from a task."""
 
-    data: Optional[bytes] = None
+    data: Any
 
 
 class FlameService:
@@ -163,30 +161,22 @@ class FlameInstanceServicer(InstanceServicer):
             app_context = ApplicationContext(
                 name=request.application.name,
                 shim=Shim(request.application.shim),
-                image=(
-                    request.application.image
-                    if request.application.HasField("image")
-                    else None
-                ),
-                command=(
-                    request.application.command
-                    if request.application.HasField("command")
-                    else None
-                ),
+                image=(request.application.image if request.application.HasField("image") else None),
+                command=(request.application.command if request.application.HasField("command") else None),
             )
 
             logger.debug(f"app_context: {app_context}")
 
-            self._common_data_expr = DataExpr.from_json(request.common_data) if request.HasField("common_data") else None
+            self._common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
+            self._common_data_expr = await get_object(self._common_data_expr)
 
-            if self._common_data_expr is not None:
-                self._common_data_expr = await get_object(self._common_data_expr)
+            common_data = pickle.loads(self._common_data_expr.data) if self._common_data_expr is not None else None
 
             session_context = SessionContext(
                 _queue=self._queue,
                 session_id=request.session_id,
                 application=app_context,
-                common_data=self._common_data_expr.data if self._common_data_expr is not None else None,
+                common_data=common_data,
             )
 
             logger.debug(f"session_context: {session_context}")
@@ -214,7 +204,7 @@ class FlameInstanceServicer(InstanceServicer):
                 _queue=self._queue,
                 task_id=request.task_id,
                 session_id=request.session_id,
-                input=request.input if request.HasField("input") else None,
+                input=pickle.loads(request.input) if request.HasField("input") else None,
             )
 
             logger.debug(f"task_context: {task_context}")
@@ -223,8 +213,12 @@ class FlameInstanceServicer(InstanceServicer):
             output = await self._service.on_task_invoke(task_context)
             logger.debug("on_task_invoke completed successfully")
 
+            output_data = None
+            if output is not None and output.data is not None:
+                output_data = pickle.dumps(output.data, protocol=pickle.HIGHEST_PROTOCOL)
+
             # Return task output
-            return TaskResultProto(return_code=0, output=output.data, message=None)
+            return TaskResultProto(return_code=0, output=output_data, message=None)
 
         except Exception as e:
             logger.error(f"Error in OnTaskInvoke: {e}")
@@ -297,13 +291,9 @@ class FlameInstanceServer:
             endpoint = os.getenv(FLAME_INSTANCE_ENDPOINT)
             if endpoint is not None:
                 self._server.add_insecure_port(f"unix://{endpoint}")
-                logger.debug(
-                    f"Flame Python instance service started on Unix socket: {endpoint}"
-                )
+                logger.debug(f"Flame Python instance service started on Unix socket: {endpoint}")
             else:
-                raise FlameError(
-                    FlameErrorCode.INVALID_CONFIG, "FLAME_INSTANCE_ENDPOINT not found"
-                )
+                raise FlameError(FlameErrorCode.INVALID_CONFIG, "FLAME_INSTANCE_ENDPOINT not found")
 
             # Start server
             await self._server.start()

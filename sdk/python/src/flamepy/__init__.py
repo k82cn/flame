@@ -52,8 +52,6 @@ from .types import (
     Application,
     FlameContext,
     TaskInformer,
-    Request,
-    Response,
 )
 
 from .client import (
@@ -113,8 +111,6 @@ __all__ = [
     "Application",
     "FlameContext",
     "TaskInformer",
-    "Request",
-    "Response",
     # Client classes
     "Connection",
     "connect",

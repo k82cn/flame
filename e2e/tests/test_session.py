@@ -36,8 +36,7 @@ class TestTaskInformer(flamepy.TaskInformer):
     def on_update(self, task):
         self.latest_state = task.state
         if task.state == flamepy.TaskState.SUCCEED:
-            resp = TestResponse.from_json(task.output)
-            assert resp.output == self.expected_output
+            assert task.output.output == self.expected_output, f"Task output: {task.output.output}, Expected: {self.expected_output}"
         elif task.state == flamepy.TaskState.FAILED:
             for event in task.events:
                 if event.code == flamepy.TaskState.FAILED:
@@ -99,8 +98,7 @@ async def test_invoke_task_without_common_data():
 
     input = random_string()
 
-    resp = await session.invoke(TestRequest(input=input))
-    output = TestResponse.from_json(resp)
+    output = await session.invoke(TestRequest(input=input))
     assert output.output == input
     assert output.common_data is None
 
@@ -122,8 +120,7 @@ async def test_invoke_task_with_common_data():
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
-    resp = await session.invoke(TestRequest(input=input))
-    output = TestResponse.from_json(resp)
+    output = await session.invoke(TestRequest(input=input))
     assert output.output == input
     assert output.common_data == sys_context
 
