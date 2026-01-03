@@ -36,7 +36,7 @@ class TestTaskInformer(flamepy.TaskInformer):
     def on_update(self, task):
         self.latest_state = task.state
         if task.state == flamepy.TaskState.SUCCEED:
-            assert task.output == self.expected_output
+            assert task.output.output == self.expected_output, f"Task output: {task.output.output}, Expected: {self.expected_output}"
         elif task.state == flamepy.TaskState.FAILED:
             for event in task.events:
                 if event.code == flamepy.TaskState.FAILED:
