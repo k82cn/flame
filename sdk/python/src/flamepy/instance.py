@@ -39,20 +39,21 @@ debug_service = None
 class FlameInstance(FlameService):
 
     def __init__(self):
-        self.session_id = None
-        self.task_id = None
-
         self._entrypoint = None
         self._parameter = None
 
-        self._context: Any = None
-
-        self._queue = None
+        self._context: SessionContext = None
 
     def context(self) -> Any:
-        logger = logging.getLogger(__name__)
-        logger.debug(f"context: {self._context}")
-        return self._context
+        if self._context is None:
+            return None
+        return self._context.common_data
+
+    def update_context(self, data: Any):
+        if self._context is None:
+            return
+
+        self._context.update_common_data(data)
 
     def entrypoint(self, func):
         logger = logging.getLogger(__name__)
@@ -69,11 +70,7 @@ class FlameInstance(FlameService):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_enter")
 
-        self.session_id = context.session_id
-        if self._queue is None:
-            self._queue = context._queue
-
-        self._context = context.common_data
+        self._context = context
 
     async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         logger = logging.getLogger(__name__)
@@ -81,11 +78,6 @@ class FlameInstance(FlameService):
         if self._entrypoint is None:
             logger.warning("No entrypoint function defined")
             return
-
-        self.task_id = context.task_id
-
-        if self._queue is None:
-            self._queue = context._queue
 
         if self._parameter is not None:
             if inspect.iscoroutinefunction(self._entrypoint):
@@ -100,29 +92,13 @@ class FlameInstance(FlameService):
 
         logger.debug(f"on_task_invoke: {res}")
 
-        self.task_id = None
-
         return TaskOutput(data=res)
 
     async def on_session_leave(self):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_leave")
 
-        self.session_id = None
-        self.task_id = None
-
-    async def record_event(self, code: int, message: Optional[str] = None):
-        if self._queue is not None:
-            await self._queue.put(
-                WatchEventResponseProto(
-                    owner=EventOwnerProto(session_id=self.session_id, task_id=self.task_id),
-                    event=EventProto(
-                        code=code,
-                        message=message,
-                        creation_time=int(time.time() * 1000),
-                    ),
-                )
-            )
+        self._context = None
 
     def run(self):
         logger = logging.getLogger(__name__)
