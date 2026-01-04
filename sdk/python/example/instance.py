@@ -12,29 +12,37 @@ Example usage of the Flame Python SDK instance functionality.
 
 import flamepy
 
+from dataclasses import dataclass
 
-class SysPrompt(flamepy.Request):
+
+@dataclass
+class SysPrompt:
     prompt: str
 
 
-class Blog(flamepy.Request):
+@dataclass
+class Blog:
     url: str
 
 
-class Summary(flamepy.Response):
+@dataclass
+class Summary:
     url: str
     summary: str
 
 
 ins = flamepy.FlameInstance()
 
-sys_prompt = """
-You are a helpful assistant.
-"""
 
 @ins.entrypoint
 def summarize_blog(bl: Blog) -> Summary:
-    global sys_prompt
+    sys_prompt = """
+    You are a helpful assistant.
+    """
+
+    ctx = ins.context()
+    if ctx is not None and isinstance(ctx, SysPrompt):
+        sys_prompt = ctx.prompt
 
     summary = f"Summary of {bl.url}: {sys_prompt}"
 

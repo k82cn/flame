@@ -16,11 +16,13 @@ from pydantic import BaseModel
 
 from .types import DataExpr, DataSource, FlameContext
 
+
 class Object(BaseModel):
     """Object."""
 
     version: int
     data: list
+
 
 class ObjectMetadata(BaseModel):
     """Object metadata."""
@@ -30,33 +32,26 @@ class ObjectMetadata(BaseModel):
     size: int
 
 
-async def put_object(session_id: str, data: bytes) -> "DataExpr":
+def put_object(session_id: str, data: bytes) -> "DataExpr":
     """Put an object into the cache."""
     context = FlameContext()
     if context._cache_endpoint is None or data is None:
         return DataExpr(source=DataSource.LOCAL, data=data)
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{context._cache_endpoint}/objects/{session_id}", data=data)
-        response.raise_for_status()
+    response = httpx.post(f"{context._cache_endpoint}/objects/{session_id}", data=data)
+    response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
-
     return DataExpr(source=DataSource.REMOTE, url=metadata.endpoint, data=data, version=metadata.version)
 
 
-async def get_object(de: DataExpr) -> "DataExpr":
+def get_object(de: DataExpr) -> "DataExpr":
     """Get an object from the cache."""
-    if de is None:
-        return None
-
     if de.source != DataSource.REMOTE:
         return de
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(de.url)
-        response.raise_for_status()
+    response = httpx.get(de.url)
+    response.raise_for_status()
 
     obj = Object.model_validate(response.json())
 
@@ -65,20 +60,17 @@ async def get_object(de: DataExpr) -> "DataExpr":
 
     return de
 
-async def update_object(de: DataExpr) -> "DataExpr":
-    """Update an object in the cache."""
-    if de is None:
-        return None
 
+def update_object(de: DataExpr) -> "DataExpr":
+    """Update an object in the cache."""
     if de.source != DataSource.REMOTE:
         return de
 
-    obj = Object(version = de.version, data = list(de.data))
+    obj = Object(version=de.version, data=list(de.data))
     data = obj.model_dump_json()
 
-    async with httpx.AsyncClient() as client:
-        response = await client.put(de.url, data=data)
-        response.raise_for_status()
+    response = httpx.put(de.url, data=data)
+    response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
 
