@@ -14,7 +14,7 @@ import argparse
 from typing import Optional
 
 import flamepy
-from apis import SysPrompt, Question
+from apis import MyContext, Question
 
 OPENAI_APP_NAME = "openai-agent"
 
@@ -24,7 +24,7 @@ async def main(message: str, ssn_id: Optional[str] = None):
         session = await flamepy.open_session(ssn_id)
     else:
         session = await flamepy.create_session(
-            OPENAI_APP_NAME, SysPrompt(prompt="You are a weather forecaster.")
+            OPENAI_APP_NAME, MyContext(prompt="You are a weather forecaster.")
         )
 
     output = await session.invoke(Question(question=message))
