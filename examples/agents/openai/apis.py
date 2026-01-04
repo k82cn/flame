@@ -10,11 +10,12 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-
+from typing import List
 
 @dataclass
-class SysPrompt:
+class MyContext:
     prompt: str
+    messages: List[str] = None
 
 
 @dataclass
