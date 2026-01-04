@@ -14,33 +14,36 @@ import argparse
 from typing import Optional
 
 import flamepy
-from apis import SysPrompt, Question, Answer
+from apis import SysPrompt, Question
 
 OPENAI_APP_NAME = "openai-agent"
+
 
 async def main(message: str, ssn_id: Optional[str] = None):
     if ssn_id:
         session = await flamepy.open_session(ssn_id)
     else:
-        session = await flamepy.create_session(OPENAI_APP_NAME, SysPrompt(prompt="You are a weather forecaster."))
+        session = await flamepy.create_session(
+            OPENAI_APP_NAME, SysPrompt(prompt="You are a weather forecaster.")
+        )
 
     output = await session.invoke(Question(question=message))
-    answer = Answer.from_json(output)
 
-    print(answer.answer)
+    print(output.answer)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-s",
-                        "--session",
-                        type=str,
-                        default=None,
-                        help="The session to open")
-    parser.add_argument("-m",
-                        "--message",
-                        type=str,
-                        required=True,
-                        help="The message to send to the agent")
+    parser.add_argument(
+        "-s", "--session", type=str, default=None, help="The session to open"
+    )
+    parser.add_argument(
+        "-m",
+        "--message",
+        type=str,
+        required=True,
+        help="The message to send to the agent",
+    )
     args = parser.parse_args()
 
     asyncio.run(main(args.message, args.session))

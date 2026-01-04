@@ -9,13 +9,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import flamepy
+from dataclasses import dataclass
 
-class SysPrompt(flamepy.Request):
+
+@dataclass
+class SysPrompt:
     prompt: str
 
-class Question(flamepy.Request):
+
+@dataclass
+class Question:
     question: str
 
-class Answer(flamepy.Response):
+
+@dataclass
+class Answer:
     answer: str

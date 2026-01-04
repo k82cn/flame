@@ -68,26 +68,17 @@ class MyCustomSession(SessionABC):
         self._events.clear()
 
 
-@ins.context
-async def my_context(sp: SysPrompt):
-    global session
-    global agent
-
-    agent.instructions = sp.prompt
-
-
 @ins.entrypoint
 async def my_agent(q: Question) -> Answer:
-    global session
     global agent
 
     session = MyCustomSession()
 
-    result = await Runner.run(
-        agent,
-        q.question,
-        session=session
-    )
+    ctx = ins.context()
+    if ctx is not None and isinstance(ctx, SysPrompt):
+        agent.instructions = ctx.prompt
+
+    result = await Runner.run(agent, q.question, session=session)
 
     await ins.record_event(299, "Agent finished")
 
