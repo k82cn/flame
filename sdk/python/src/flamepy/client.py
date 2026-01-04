@@ -20,7 +20,7 @@ import asyncio
 import pickle
 from datetime import datetime, timezone
 
-from .cache import put_object
+from .cache import put_object, get_object
 from .types import (
     Task,
     Application,
@@ -43,6 +43,7 @@ from .types import (
     FlameContext,
     ApplicationSchema,
     short_name,
+    DataExpr,
 )
 
 from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment
@@ -337,6 +338,7 @@ class Connection:
 
         try:
             response = await self._frontend.CreateSession(request)
+            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             session = Session(
                 connection=self,
@@ -350,6 +352,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
+                common_data=common_data_expr,
             )
             return session
         except grpc.RpcError as e:
@@ -364,6 +367,8 @@ class Connection:
 
             sessions = []
             for session in response.sessions:
+                common_data_expr = DataExpr.decode(session.spec.common_data) if session.spec.HasField("common_data") else None
+
                 sessions.append(
                     Session(
                         connection=self,
@@ -377,6 +382,7 @@ class Connection:
                         succeed=session.status.succeed,
                         failed=session.status.failed,
                         completion_time=(datetime.fromtimestamp(session.status.completion_time / 1000, tz=timezone.utc) if session.status.HasField("completion_time") else None),
+                        common_data=common_data_expr,
                     )
                 )
 
@@ -391,6 +397,8 @@ class Connection:
 
         try:
             response = await self._frontend.OpenSession(request)
+            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+
             return Session(
                 connection=self,
                 id=response.metadata.id,
@@ -403,6 +411,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
+                common_data=common_data_expr,
             )
 
         except grpc.RpcError as e:
@@ -415,6 +424,8 @@ class Connection:
         try:
             response = await self._frontend.GetSession(request)
 
+            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+
             return Session(
                 connection=self,
                 id=response.metadata.id,
@@ -427,6 +438,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
+                common_data=common_data_expr,
             )
 
         except grpc.RpcError as e:
@@ -439,6 +451,8 @@ class Connection:
         try:
             response = await self._frontend.CloseSession(request)
 
+            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+
             return Session(
                 connection=self,
                 id=response.metadata.id,
@@ -451,6 +465,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
+                common_data=common_data_expr,
             )
 
         except grpc.RpcError as e:
@@ -470,6 +485,7 @@ class Session:
     succeed: int = 0
     failed: int = 0
     completion_time: Optional[datetime] = None
+    _common_data: Optional[DataExpr] = None
     """Client for session-specific operations."""
 
     def __init__(
@@ -485,6 +501,7 @@ class Session:
         succeed: int,
         failed: int,
         completion_time: Optional[datetime],
+        common_data: Optional[DataExpr] = None,
     ):
         self.connection = connection
         self.id = id
@@ -498,6 +515,13 @@ class Session:
         self.failed = failed
         self.completion_time = completion_time
         self.mutex = threading.Lock()
+        self._common_data = common_data
+
+    def common_data(self) -> Any:
+        """Get the common data of Session."""
+        self._common_data = get_object(self._common_data)
+
+        return pickle.loads(self._common_data.data) if self._common_data is not None else None
 
     async def create_task(self, input_data: Any) -> Task:
         """Create a new task in the session."""

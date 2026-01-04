@@ -24,12 +24,22 @@ async def main(message: str, ssn_id: Optional[str] = None):
         session = await flamepy.open_session(ssn_id)
     else:
         session = await flamepy.create_session(
-            OPENAI_APP_NAME, MyContext(prompt="You are a weather forecaster.")
-        )
+            OPENAI_APP_NAME, MyContext(prompt="You are a weather forecaster."))
 
     output = await session.invoke(Question(question=message))
 
     print(output.answer)
+
+    cxt = session.common_data()
+    print(f"{'=' * 30}")
+    print(f"Session History")
+    print(f"{'=' * 30}")
+    if cxt is not None and isinstance(cxt, MyContext):
+        print(f"The history of the session: {cxt.messages}")
+    else:
+        print("No history!")
+
+
 
 
 if __name__ == "__main__":
