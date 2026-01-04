@@ -23,7 +23,7 @@ import logging
 from concurrent import futures
 
 from .types import Shim, FlameError, FlameErrorCode, DataExpr
-from .cache import get_object
+from .cache import get_object, update_object
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from .shim_pb2 import WatchEventResponse as WatchEventResponseProto
 from .types_pb2 import (
@@ -62,36 +62,29 @@ class ApplicationContext:
 class SessionContext:
     """Context for a session."""
 
-    _queue: asyncio.Queue
+    _data_expr: DataExpr
+
     session_id: str
     application: ApplicationContext
     common_data: Any
 
-    async def record_event(self, code: int, message: Optional[str] = None):
-        """Record an event."""
-        event = WatchEventResponseProto(
-            owner=EventOwnerProto(session_id=self.session_id, task_id=None),
-            event=EventProto(code=code, message=message, creation_time=int(time.time() * 1000)),
-        )
-        await self._queue.put(event)
+    def update_common_data(self, data: Any):
+        """Update the common data."""
+        if self._data_expr is None:
+            return
+
+        self._data_expr.data = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+        self._data_expr = update_object(self._data_expr)
+        self.common_data = data
 
 
 @dataclass
 class TaskContext:
     """Context for a task."""
 
-    _queue: asyncio.Queue
     task_id: str
     session_id: str
     input: Any
-
-    async def record_event(self, code: int, message: Optional[str] = None):
-        """Record an event."""
-        event = WatchEventResponseProto(
-            owner=EventOwnerProto(session_id=self.session_id, task_id=self.task_id),
-            event=EventProto(code=code, message=message, creation_time=int(time.time() * 1000)),
-        )
-        await self._queue.put(event)
 
 
 @dataclass
@@ -146,8 +139,6 @@ class FlameInstanceServicer(InstanceServicer):
 
     def __init__(self, service: FlameService):
         self._service = service
-        self._queue = asyncio.Queue()
-        self._common_data_expr = None
 
     async def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
@@ -167,13 +158,13 @@ class FlameInstanceServicer(InstanceServicer):
 
             logger.debug(f"app_context: {app_context}")
 
-            self._common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
-            self._common_data_expr = get_object(self._common_data_expr)
+            common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
+            common_data_expr = get_object(common_data_expr)
 
-            common_data = pickle.loads(self._common_data_expr.data) if self._common_data_expr is not None else None
+            common_data = pickle.loads(common_data_expr.data) if common_data_expr is not None else None
 
             session_context = SessionContext(
-                _queue=self._queue,
+                _data_expr=common_data_expr,
                 session_id=request.session_id,
                 application=app_context,
                 common_data=common_data,
@@ -201,7 +192,6 @@ class FlameInstanceServicer(InstanceServicer):
         try:
             # Convert protobuf request to TaskContext
             task_context = TaskContext(
-                _queue=self._queue,
                 task_id=request.task_id,
                 session_id=request.session_id,
                 input=pickle.loads(request.input) if request.HasField("input") else None,
@@ -233,12 +223,6 @@ class FlameInstanceServicer(InstanceServicer):
             await self._service.on_session_leave()
             logger.debug("on_session_leave completed successfully")
 
-            # Put None to the queue to signal the queue is shutting down
-            self._queue.put_nowait(None)
-
-            # Wait for the queue to be empty
-            await self._queue.join()
-
             logger.debug("All events processed, exiting OnSessionLeave")
 
             # Return result
@@ -254,17 +238,7 @@ class FlameInstanceServicer(InstanceServicer):
         """Watch events from the service."""
         try:
             while True:
-                event = await self._queue.get()
-                logger.debug(f"Event: {event}")
-
-                # Mark the event as processed
-                self._queue.task_done()
-
-                # If the event is None, it means the queue is shutting down
-                if event is None:
-                    return
-
-                yield event
+                yield None
         except Exception as e:
             logger.error(f"Error in WatchEvents: {e}")
             raise
