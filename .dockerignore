@@ -1,6 +1,19 @@
+# Ignore test data
+flame.db*
+
+# Ignore local build & ci
 target/
 ci/
 .git/
+
+# Ignore logs
+*.log
+
+# Ignore Python related stuff
 .venv/
 __pycache__/
-flame.db*
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache

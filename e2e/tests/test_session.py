@@ -1,4 +1,3 @@
-
 """
 Copyright 2025 The Flame Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,8 +22,10 @@ import random
 
 FLM_TEST_APP = "flme2e"
 
+
 def random_string(size=8, chars=string.ascii_uppercase + string.digits) -> str:
-    return ''.join(random.choice(chars) for _ in range(size))
+    return "".join(random.choice(chars) for _ in range(size))
+
 
 class TestTaskInformer(flamepy.TaskInformer):
     expected_output = None
@@ -36,36 +37,44 @@ class TestTaskInformer(flamepy.TaskInformer):
     def on_update(self, task):
         self.latest_state = task.state
         if task.state == flamepy.TaskState.SUCCEED:
-            assert task.output.output == self.expected_output, f"Task output: {task.output.output}, Expected: {self.expected_output}"
+            assert (
+                task.output.output == self.expected_output
+            ), f"Task output: {task.output.output}, Expected: {self.expected_output}"
         elif task.state == flamepy.TaskState.FAILED:
             for event in task.events:
                 if event.code == flamepy.TaskState.FAILED:
-                    raise flamepy.FlameError(flamepy.FlameErrorCode.INTERNAL, f"{event.message}")
+                    raise flamepy.FlameError(
+                        flamepy.FlameErrorCode.INTERNAL, f"{event.message}"
+                    )
 
     def on_error(self, error):
         assert False, f"Task failed: {error}"
 
+
 @pytest.fixture(autouse=True)
 def setup_test_env():
-    asyncio.run(flamepy.register_application(FLM_TEST_APP, flamepy.ApplicationAttributes(
-        shim=flamepy.Shim.Host,
-        command="uv",
-        working_directory="/opt/e2e",
-        environments={
-            "FLAME_LOG_LEVEL": "DEBUG"
-        },
-        arguments=["run", "src/e2e/service.py", "src/e2e/api.py"],
-    )))
+    asyncio.run(
+        flamepy.register_application(
+            FLM_TEST_APP,
+            flamepy.ApplicationAttributes(
+                shim=flamepy.Shim.Host,
+                command="uv",
+                working_directory="/opt/e2e",
+                environments={"FLAME_LOG_LEVEL": "DEBUG"},
+                arguments=["run", "src/e2e/service.py", "src/e2e/api.py"],
+            ),
+        )
+    )
 
     yield
 
     asyncio.run(flamepy.unregister_application(FLM_TEST_APP))
 
+
 @pytest.mark.asyncio
 async def test_create_session():
     session = await flamepy.create_session(
-        application=FLM_TEST_APP,
-        common_data=TestContext()
+        application=FLM_TEST_APP, common_data=TestContext()
     )
 
     ssn_list = await flamepy.list_sessions()
@@ -85,10 +94,7 @@ async def test_create_session():
 
 @pytest.mark.asyncio
 async def test_invoke_task_without_common_data():
-    session = await flamepy.create_session(
-        application=FLM_TEST_APP,
-        common_data=None
-    )
+    session = await flamepy.create_session(application=FLM_TEST_APP, common_data=None)
 
     ssn_list = await flamepy.list_sessions()
     assert len(ssn_list) == 1
@@ -104,14 +110,14 @@ async def test_invoke_task_without_common_data():
 
     await session.close()
 
+
 @pytest.mark.asyncio
 async def test_invoke_task_with_common_data():
     sys_context = random_string()
     input = random_string()
 
     session = await flamepy.create_session(
-        application=FLM_TEST_APP,
-        common_data=TestContext(common_data=sys_context)
+        application=FLM_TEST_APP, common_data=TestContext(common_data=sys_context)
     )
 
     ssn_list = await flamepy.list_sessions()
@@ -130,10 +136,7 @@ async def test_invoke_task_with_common_data():
 @pytest.mark.asyncio
 async def test_invoke_multiple_tasks_without_common_data():
 
-    session = await flamepy.create_session(
-        application = FLM_TEST_APP,
-        common_data = None
-    )
+    session = await flamepy.create_session(application=FLM_TEST_APP, common_data=None)
 
     ssn_list = await flamepy.list_sessions()
     assert len(ssn_list) == 1
@@ -157,3 +160,29 @@ async def test_invoke_multiple_tasks_without_common_data():
 
     await session.close()
 
+
+@pytest.mark.asyncio
+async def test_update_common_data():
+    sys_context = random_string()
+    input_data = random_string()
+
+    session = await flamepy.create_session(
+        application=FLM_TEST_APP, common_data=TestContext(common_data=sys_context)
+    )
+
+    ssn_list = await flamepy.list_sessions()
+    assert len(ssn_list) == 1
+    assert ssn_list[0].id == session.id
+    assert ssn_list[0].application == FLM_TEST_APP
+    assert ssn_list[0].state == SessionState.OPEN
+
+    output = await session.invoke(
+        TestRequest(input=input_data, update_common_data=True)
+    )
+    assert output.output == input_data
+    assert output.common_data == sys_context
+
+    cxt = session.common_data()
+    assert cxt.common_data == input_data
+
+    await session.close()
