@@ -87,7 +87,7 @@ impl ObjectCache {
         &self,
         session_id: SessionID,
         uuid: String,
-        object: Object,
+        new_object: Object,
     ) -> Result<ObjectMetadata, FlameError> {
         let mut objects = lock_ptr!(self.objects)?;
         let mut objects = objects
@@ -95,27 +95,26 @@ impl ObjectCache {
             .ok_or(FlameError::NotFound(format!(
                 "session <{session_id}> not found"
             )))?;
-        let object = objects
+        let old_object = objects
             .get(&uuid)
             .ok_or(FlameError::NotFound(format!("object <{}> not found", uuid)))?;
 
-        let mut object = object.clone();
-
-        if object.version > object.version {
+        if old_object.version > new_object.version {
             return Err(FlameError::VersionMismatch(format!(
                 "object <{}> version is old",
                 uuid
             )));
         }
 
-        object.version = object.version + 1;
-        objects.insert(uuid.clone(), object.clone());
+        let mut new_object = new_object.clone();
+        new_object.version = old_object.version + 1;
+        objects.insert(uuid.clone(), new_object.clone());
 
         let endpoint = self.endpoint.object_endpoint(&session_id, &uuid);
         let metadata = ObjectMetadata {
             endpoint: endpoint.clone(),
-            version: object.version,
-            size: object.data.len() as u64,
+            version: new_object.version,
+            size: new_object.data.len() as u64,
         };
 
         tracing::debug!("Object update: {}", endpoint);
