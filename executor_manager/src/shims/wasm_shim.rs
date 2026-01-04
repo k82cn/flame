@@ -23,7 +23,7 @@ use wasmtime_wasi::preview2::{command, Table, WasiCtx, WasiCtxBuilder, WasiView}
 
 use crate::executor::Executor;
 use crate::shims::wasm_shim::exports::component::flame::service;
-use crate::shims::{EventHandler, EventHandlerPtr, Shim, ShimPtr};
+use crate::shims::{Shim, ShimPtr};
 use common::{self, apis, FlameError};
 
 wasmtime::component::bindgen!({
@@ -154,12 +154,6 @@ impl Shim for WasmShim {
             .map_err(|e| common::FlameError::Internal(e.to_string()))?;
 
         Ok(())
-    }
-
-    async fn watch_event(&mut self, event_handler: EventHandlerPtr) -> Result<(), FlameError> {
-        trace_fn!("WasmShim::watch_event");
-
-        todo!()
     }
 }
 

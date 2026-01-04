@@ -19,8 +19,6 @@ import time
 from typing import Optional, Dict, Any, Union
 from fastapi import FastAPI, Request as FastAPIRequest, Response as FastAPIResponse
 
-from .shim_pb2 import WatchEventResponse as WatchEventResponseProto
-from .types_pb2 import Event as EventProto, EventOwner as EventOwnerProto
 from .service import (
     FlameService,
     SessionContext,

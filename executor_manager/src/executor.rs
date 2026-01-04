@@ -16,7 +16,7 @@ use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 use tokio::task::JoinHandle;
 
 use crate::client::BackendClient;
-use crate::shims::{EventHandler, ShimPtr};
+use crate::shims::ShimPtr;
 use ::rpc::flame::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
 
 use crate::states;

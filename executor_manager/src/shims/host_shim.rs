@@ -41,7 +41,7 @@ use uuid::Uuid;
 
 use crate::executor::Executor;
 use crate::shims::grpc_shim::GrpcShim;
-use crate::shims::{EventHandler, EventHandlerPtr, Shim, ShimPtr};
+use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
 use common::{FlameError, FLAME_CACHE_ENDPOINT, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY};
 
@@ -168,11 +168,5 @@ impl Shim for HostShim {
         trace_fn!("HostShim::on_session_leave");
 
         self.instance_client.on_session_leave().await
-    }
-
-    async fn watch_event(&mut self, event_handler: EventHandlerPtr) -> Result<(), FlameError> {
-        trace_fn!("HostShim::watch_event");
-
-        self.instance_client.watch_event(event_handler).await
     }
 }

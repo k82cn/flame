@@ -11,14 +11,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
-use chrono::Utc;
-use futures::Stream;
-use stdng::collections::AsyncQueue;
 use tokio::net::UnixListener;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -39,16 +34,12 @@ pub struct SessionContext {
     pub session_id: String,
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
-
-    event_queue: AsyncQueue<rpc::WatchEventResponse>,
 }
 
 pub struct TaskContext {
     pub task_id: String,
     pub session_id: String,
     pub input: Option<TaskInput>,
-
-    event_queue: AsyncQueue<rpc::WatchEventResponse>,
 }
 
 #[tonic::async_trait]
@@ -62,14 +53,10 @@ pub type FlameServicePtr = Arc<dyn FlameService>;
 
 struct ShimService {
     service: FlameServicePtr,
-    event_queue: AsyncQueue<rpc::WatchEventResponse>,
 }
 
 #[tonic::async_trait]
 impl Instance for ShimService {
-    type WatchEventStream =
-        Pin<Box<dyn Stream<Item = Result<rpc::WatchEventResponse, Status>> + Send>>;
-
     async fn on_session_enter(
         &self,
         req: Request<rpc::SessionContext>,
@@ -77,10 +64,9 @@ impl Instance for ShimService {
         tracing::debug!("ShimService::on_session_enter");
 
         let req = req.into_inner();
-        let event_queue = self.event_queue.clone();
         let resp = self
             .service
-            .on_session_enter(SessionContext::from((req, event_queue)))
+            .on_session_enter(SessionContext::from(req))
             .await;
 
         match resp {
@@ -101,11 +87,7 @@ impl Instance for ShimService {
     ) -> Result<Response<rpc::TaskResult>, Status> {
         tracing::debug!("ShimService::on_task_invoke");
         let req = req.into_inner();
-        let event_queue = self.event_queue.clone();
-        let resp = self
-            .service
-            .on_task_invoke(TaskContext::from((req, event_queue)))
-            .await;
+        let resp = self.service.on_task_invoke(TaskContext::from(req)).await;
 
         match resp {
             Ok(data) => Ok(Response::new(rpc::TaskResult {
@@ -128,11 +110,6 @@ impl Instance for ShimService {
         tracing::debug!("ShimService::on_session_leave");
         let resp = self.service.on_session_leave().await;
 
-        self.event_queue
-            .close()
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
-
         match resp {
             Ok(_) => Ok(Response::new(rpc::Result {
                 return_code: 0,
@@ -144,45 +121,11 @@ impl Instance for ShimService {
             })),
         }
     }
-
-    async fn watch_event(
-        &self,
-        _: Request<rpc::EmptyRequest>,
-    ) -> Result<Response<Self::WatchEventStream>, Status> {
-        tracing::debug!("ShimService::watch_event");
-
-        let (tx, rx) = mpsc::channel(128);
-
-        let event_queue = self.event_queue.clone();
-
-        tokio::spawn(async move {
-            loop {
-                let event = event_queue.pop_front().await;
-                match event {
-                    Some(event) => {
-                        if let Err(e) = tx.send(Result::<_, Status>::Ok(event)).await {
-                            tracing::debug!("Failed to send Event: {e}");
-                            break;
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                }
-            }
-        });
-
-        let output_stream = ReceiverStream::new(rx);
-        Ok(Response::new(
-            Box::pin(output_stream) as Self::WatchEventStream
-        ))
-    }
 }
 
 pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::Error>> {
     let shim_service = ShimService {
         service: Arc::new(service),
-        event_queue: AsyncQueue::new(),
     };
 
     let endpoint = std::env::var(FLAME_INSTANCE_ENDPOINT)
@@ -208,62 +151,22 @@ impl From<rpc::ApplicationContext> for ApplicationContext {
     }
 }
 
-impl From<(rpc::SessionContext, AsyncQueue<rpc::WatchEventResponse>)> for SessionContext {
-    fn from(
-        (ctx, event_queue): (rpc::SessionContext, AsyncQueue<rpc::WatchEventResponse>),
-    ) -> Self {
+impl From<rpc::SessionContext> for SessionContext {
+    fn from(ctx: rpc::SessionContext) -> Self {
         SessionContext {
             session_id: ctx.session_id.clone(),
             application: ctx.application.map(ApplicationContext::from).unwrap(),
             common_data: ctx.common_data.map(|data| data.into()),
-            event_queue,
         }
     }
 }
 
-impl From<(rpc::TaskContext, AsyncQueue<rpc::WatchEventResponse>)> for TaskContext {
-    fn from((ctx, event_queue): (rpc::TaskContext, AsyncQueue<rpc::WatchEventResponse>)) -> Self {
+impl From<rpc::TaskContext> for TaskContext {
+    fn from(ctx: rpc::TaskContext) -> Self {
         TaskContext {
             task_id: ctx.task_id.clone(),
             session_id: ctx.session_id.clone(),
             input: ctx.input.map(|data| data.into()),
-            event_queue,
         }
-    }
-}
-
-impl TaskContext {
-    pub fn record_event(&self, code: i32, message: Option<String>) -> Result<(), FlameError> {
-        self.event_queue.push_back(rpc::WatchEventResponse {
-            owner: Some(rpc::EventOwner {
-                session_id: self.session_id.clone(),
-                task_id: Some(self.task_id.clone()),
-            }),
-            event: Some(rpc::Event {
-                code,
-                message,
-                creation_time: Utc::now().timestamp(),
-            }),
-        })?;
-
-        Ok(())
-    }
-}
-
-impl SessionContext {
-    pub fn record_event(&self, code: i32, message: Option<String>) -> Result<(), FlameError> {
-        self.event_queue.push_back(rpc::WatchEventResponse {
-            owner: Some(rpc::EventOwner {
-                session_id: self.session_id.clone(),
-                task_id: None,
-            }),
-            event: Some(rpc::Event {
-                code,
-                message,
-                creation_time: Utc::now().timestamp(),
-            }),
-        })?;
-
-        Ok(())
     }
 }

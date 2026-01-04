@@ -26,15 +26,8 @@ message TaskContext {
     optional bytes input = 4;
 }
 
-message WatchEventResponse {
-    EventOwner owner = 1;
-    Event event = 2;
-}
-
 service Instance {
     rpc OnSessionEnter(SessionContext) returns (Result) {}
     rpc OnTaskInvoke(TaskContext) returns (TaskResult) {}
     rpc OnSessionLeave(EmptyRequest) returns (Result) {}
-
-    rpc WatchEvent(EmptyRequest) returns (stream WatchEventResponse) {}
 }
