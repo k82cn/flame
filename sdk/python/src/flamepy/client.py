@@ -325,7 +325,7 @@ class Connection:
 
         common_data_bin = pickle.dumps(attrs.common_data, protocol=pickle.HIGHEST_PROTOCOL)
 
-        data_expr = await put_object(session_id, common_data_bin)
+        data_expr = put_object(session_id, common_data_bin)
 
         session_spec = SessionSpec(
             application=attrs.application,

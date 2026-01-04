@@ -19,9 +19,7 @@ class MyTaskInformer(flamepy.TaskInformer):
 
 async def main():
     print("Creating session...")
-    session = await flamepy.create_session(
-        application="flmtest", common_data=b"shared data"
-    )
+    session = await flamepy.create_session(application="flmtest", common_data=b"shared data")
     print(f"Created session: {session.id}")
 
     # Invoke task

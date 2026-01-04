@@ -168,7 +168,7 @@ class FlameInstanceServicer(InstanceServicer):
             logger.debug(f"app_context: {app_context}")
 
             self._common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
-            self._common_data_expr = await get_object(self._common_data_expr)
+            self._common_data_expr = get_object(self._common_data_expr)
 
             common_data = pickle.loads(self._common_data_expr.data) if self._common_data_expr is not None else None
 
