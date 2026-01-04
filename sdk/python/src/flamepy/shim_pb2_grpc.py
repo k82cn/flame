@@ -50,11 +50,6 @@ class InstanceStub(object):
                 request_serializer=types__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=types__pb2.Result.FromString,
                 _registered_method=True)
-        self.WatchEvent = channel.unary_stream(
-                '/flame.Instance/WatchEvent',
-                request_serializer=types__pb2.EmptyRequest.SerializeToString,
-                response_deserializer=shim__pb2.WatchEventResponse.FromString,
-                _registered_method=True)
 
 
 class InstanceServicer(object):
@@ -78,12 +73,6 @@ class InstanceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def WatchEvent(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
 
 def add_InstanceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -101,11 +90,6 @@ def add_InstanceServicer_to_server(servicer, server):
                     servicer.OnSessionLeave,
                     request_deserializer=types__pb2.EmptyRequest.FromString,
                     response_serializer=types__pb2.Result.SerializeToString,
-            ),
-            'WatchEvent': grpc.unary_stream_rpc_method_handler(
-                    servicer.WatchEvent,
-                    request_deserializer=types__pb2.EmptyRequest.FromString,
-                    response_serializer=shim__pb2.WatchEventResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -189,33 +173,6 @@ class Instance(object):
             '/flame.Instance/OnSessionLeave',
             types__pb2.EmptyRequest.SerializeToString,
             types__pb2.Result.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def WatchEvent(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/flame.Instance/WatchEvent',
-            types__pb2.EmptyRequest.SerializeToString,
-            shim__pb2.WatchEventResponse.FromString,
             options,
             channel_credentials,
             insecure,

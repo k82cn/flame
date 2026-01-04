@@ -25,13 +25,10 @@ from concurrent import futures
 from .types import Shim, FlameError, FlameErrorCode, DataExpr
 from .cache import get_object, update_object
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
-from .shim_pb2 import WatchEventResponse as WatchEventResponseProto
 from .types_pb2 import (
     Result,
     EmptyRequest,
     TaskResult as TaskResultProto,
-    Event as EventProto,
-    EventOwner as EventOwnerProto,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,8 +220,6 @@ class FlameInstanceServicer(InstanceServicer):
             await self._service.on_session_leave()
             logger.debug("on_session_leave completed successfully")
 
-            logger.debug("All events processed, exiting OnSessionLeave")
-
             # Return result
             return Result(
                 return_code=0,
@@ -233,15 +228,6 @@ class FlameInstanceServicer(InstanceServicer):
         except Exception as e:
             logger.error(f"Error in OnSessionLeave: {e}")
             return Result(return_code=-1, message=f"{str(e)}")
-
-    async def WatchEvent(self, request, context):
-        """Watch events from the service."""
-        try:
-            while True:
-                yield None
-        except Exception as e:
-            logger.error(f"Error in WatchEvents: {e}")
-            raise
 
 
 class FlameInstanceServer:

@@ -19,9 +19,9 @@ use tonic::{Request, Response, Status};
 use self::rpc::backend_server::Backend;
 use self::rpc::{
     BindExecutorCompletedRequest, BindExecutorRequest, BindExecutorResponse, CompleteTaskRequest,
-    LaunchTaskRequest, LaunchTaskResponse, RecordEventRequest, RegisterExecutorRequest,
-    RegisterNodeRequest, ReleaseNodeRequest, SyncNodeRequest, SyncNodeResponse,
-    UnbindExecutorCompletedRequest, UnbindExecutorRequest, UnregisterExecutorRequest,
+    LaunchTaskRequest, LaunchTaskResponse, RegisterExecutorRequest, RegisterNodeRequest,
+    ReleaseNodeRequest, SyncNodeRequest, SyncNodeResponse, UnbindExecutorCompletedRequest,
+    UnbindExecutorRequest, UnregisterExecutorRequest,
 };
 use ::rpc::flame as rpc;
 
@@ -30,7 +30,7 @@ use crate::model::{
     Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr,
     SnapShot, SnapShotPtr,
 };
-use common::apis::{Application, Event, EventOwner, ExecutorState, Node, Session, TaskResult};
+use common::apis::{Application, ExecutorState, Node, Session, TaskResult};
 use common::FlameError;
 
 #[async_trait]
@@ -227,27 +227,6 @@ impl Backend for Flame {
         self.controller
             .complete_task(req.executor_id.clone(), TaskResult::from(task_result))
             .await?;
-
-        Ok(Response::new(rpc::Result::default()))
-    }
-
-    async fn record_event(
-        &self,
-        req: Request<RecordEventRequest>,
-    ) -> Result<Response<rpc::Result>, Status> {
-        trace_fn!("Backend::record_event");
-        let req = req.into_inner();
-        let owner = EventOwner::try_from(
-            req.owner
-                .ok_or(FlameError::InvalidConfig("owner is required".to_string()))?,
-        )?;
-
-        let event = Event::from(
-            req.event
-                .ok_or(FlameError::InvalidConfig("event is required".to_string()))?,
-        );
-
-        self.controller.record_event(owner, event).await?;
 
         Ok(Response::new(rpc::Result::default()))
     }

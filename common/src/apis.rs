@@ -1166,32 +1166,6 @@ impl From<TaskGID> for EventOwner {
     }
 }
 
-impl TryFrom<rpc::EventOwner> for EventOwner {
-    type Error = FlameError;
-    fn try_from(owner: rpc::EventOwner) -> Result<Self, Self::Error> {
-        let task_id = owner.task_id.unwrap_or(String::from("0"));
-
-        Ok(Self {
-            task_id: task_id
-                .parse::<TaskID>()
-                .map_err(|e| FlameError::InvalidConfig(format!("invalid task id: {e}")))?,
-            session_id: owner
-                .session_id
-                .parse::<SessionID>()
-                .map_err(|e| FlameError::InvalidConfig(format!("invalid session id: {e}")))?,
-        })
-    }
-}
-
-impl From<EventOwner> for rpc::EventOwner {
-    fn from(owner: EventOwner) -> Self {
-        Self {
-            task_id: Some(owner.task_id.to_string()),
-            session_id: owner.session_id.to_string(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
