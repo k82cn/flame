@@ -242,7 +242,6 @@ impl Storage {
 
     pub fn get_session_ptr(&self, id: SessionID) -> Result<SessionPtr, FlameError> {
         let ssn_map = lock_ptr!(self.sessions)?;
-        tracing::debug!("Getting session <{:?}> in map <{:?}>", id, ssn_map);
 
         ssn_map
             .get(&id)

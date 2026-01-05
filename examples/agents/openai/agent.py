@@ -11,7 +11,6 @@
 
 import os
 import logging
-import json
 
 from openai import AsyncOpenAI
 from agents import (
@@ -24,12 +23,7 @@ from agents import (
 )
 
 import flamepy
-from apis import MyContext, Question, Answer
-
-from agents.memory.session import SessionABC
-from agents.items import TResponseInputItem
-from typing import List
-
+from apis import MyContext, Question, Answer, MyCustomSession
 
 logger = logging.getLogger(__name__)
 
@@ -50,36 +44,6 @@ agent = Agent(
     name="openai-agent-example",
     model="deepseek-chat",
 )
-
-
-class MyCustomSession(SessionABC):
-    """Custom session implementation following the Session protocol."""
-
-    def __init__(self, ctx: MyContext):
-        self._messages: List[TResponseInputItem] = []
-        if ctx.messages is not None:
-            for message in ctx.messages:
-                self._messages.append(json.loads(message))
-
-    async def get_items(self, limit: int | None = None) -> List[TResponseInputItem]:
-        """Retrieve conversation history for this session."""
-        return self._messages[:limit] if limit is not None else self._messages
-
-    async def add_items(self, items: List[TResponseInputItem]) -> None:
-        """Store new items for this session."""
-        self._messages.extend(items)
-
-    async def pop_item(self) -> TResponseInputItem | None:
-        """Remove and return the most recent item from this session."""
-        return self._messages.pop()
-
-    async def clear_session(self) -> None:
-        """Clear all items for this session."""
-        self._messages.clear()
-
-    def history(self) -> List[str]:
-        """Get the history of this session."""
-        return [json.dumps(item) for item in self._messages]
 
 
 @ins.entrypoint

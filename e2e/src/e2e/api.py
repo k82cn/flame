@@ -20,6 +20,7 @@ class TestContext:
 
 @dataclass
 class TestRequest:
+    update_common_data: bool = False
     input: Optional[str] = None
 
 @dataclass

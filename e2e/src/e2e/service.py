@@ -13,7 +13,7 @@ limitations under the License.
 
 import flamepy
 
-from e2e.api import TestRequest, TestResponse
+from e2e.api import TestRequest, TestResponse, TestContext
 
 instance = flamepy.FlameInstance()
 
@@ -21,6 +21,9 @@ instance = flamepy.FlameInstance()
 def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
     cxt = instance.context()
     data = cxt.common_data if cxt is not None else None
+
+    if req.update_common_data:
+        instance.update_context(TestContext(common_data=req.input))
 
     return TestResponse(output=req.input, common_data=data)
 
