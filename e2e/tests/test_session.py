@@ -164,7 +164,6 @@ async def test_invoke_multiple_tasks_without_common_data():
 @pytest.mark.asyncio
 async def test_update_common_data():
     sys_context = random_string()
-    input_data = random_string()
 
     session = await flamepy.create_session(
         application=FLM_TEST_APP, common_data=TestContext(common_data=sys_context)
@@ -176,13 +175,18 @@ async def test_update_common_data():
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
-    output = await session.invoke(
-        TestRequest(input=input_data, update_common_data=True)
-    )
-    assert output.output == input_data
-    assert output.common_data == sys_context
+    previous_common_data = sys_context
+    for _ in range(5):
+        new_input_data = random_string()
+        output = await session.invoke(
+            TestRequest(input=new_input_data, update_common_data=True)
+        )
+        assert output.output == new_input_data
+        assert output.common_data == previous_common_data
 
-    cxt = session.common_data()
-    assert cxt.common_data == input_data
+        cxt = session.common_data()
+        assert cxt.common_data == new_input_data
+
+        previous_common_data = new_input_data
 
     await session.close()

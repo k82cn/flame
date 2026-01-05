@@ -10,10 +10,27 @@ ci/
 *.log
 
 # Ignore Python related stuff
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-.pytest_cache
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/.pytest_cache
+**/*.egg-info/
+
+# Ignore build related stuff
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+
+# Ignore IDE related stuff
+.vscode/
+.idea/
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
