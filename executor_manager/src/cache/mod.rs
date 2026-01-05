@@ -183,7 +183,10 @@ async fn get_object(
     let (session_id, object_id) = path.into_inner();
     match data.get(session_id, object_id).await {
         Ok(object) => HttpResponse::Ok().json(object),
-        Err(e) => HttpResponse::NotFound().body(format!("Error: {:?}", e)),
+        Err(e) => {
+            tracing::error!("get_object error: {:?}", e);
+            HttpResponse::NotFound().body(format!("Error: {:?}", e))
+        }
     }
 }
 
@@ -199,7 +202,10 @@ async fn put_object(
 
     match metadata {
         Ok(metadata) => HttpResponse::Ok().json(metadata),
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+        Err(e) => {
+            tracing::error!("put_object error: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+        }
     }
 }
 
@@ -212,6 +218,7 @@ async fn update_object(
     let (session_id, object_id) = path.into_inner();
 
     let Ok(object) = serde_json::from_slice(&body) else {
+        tracing::error!("update_object invalid object");
         return HttpResponse::BadRequest().body("Invalid object");
     };
 
@@ -221,7 +228,10 @@ async fn update_object(
 
     match metadata {
         Ok(metadata) => HttpResponse::Ok().json(metadata),
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+        Err(e) => {
+            tracing::error!("update_object error: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+        }
     }
 }
 
@@ -233,6 +243,9 @@ async fn delete_session(
     let session_id = path.into_inner();
     match data.delete(session_id).await {
         Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => HttpResponse::NotFound().body(format!("Error: {:?}", e)),
+        Err(e) => {
+            tracing::error!("delete_session error: {:?}", e);
+            HttpResponse::NotFound().body(format!("Error: {:?}", e))
+        }
     }
 }

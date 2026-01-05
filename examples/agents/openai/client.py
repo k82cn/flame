@@ -34,8 +34,9 @@ async def main(message: str, ssn_id: Optional[str] = None):
     print(f"{'=' * 30}")
     print(f"Session History")
     print(f"{'=' * 30}")
-    if cxt is not None and isinstance(cxt, MyContext):
-        print(f"The history of the session: {cxt.messages}")
+    if cxt is not None and isinstance(cxt, MyContext) and cxt.messages is not None:
+        for msg in cxt.messages:
+            print(f"{msg}")
     else:
         print("No history!")
 

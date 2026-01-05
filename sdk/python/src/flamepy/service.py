@@ -63,7 +63,12 @@ class SessionContext:
 
     session_id: str
     application: ApplicationContext
-    common_data: Any
+
+    @property
+    def common_data(self) -> Any:
+        """Get the common data."""
+        self._data_expr = get_object(self._data_expr)
+        return pickle.loads(self._data_expr.data) if self._data_expr is not None else None
 
     def update_common_data(self, data: Any):
         """Update the common data."""
@@ -72,7 +77,6 @@ class SessionContext:
 
         self._data_expr.data = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
         self._data_expr = update_object(self._data_expr)
-        self.common_data = data
 
 
 @dataclass
@@ -156,15 +160,11 @@ class FlameInstanceServicer(InstanceServicer):
             logger.debug(f"app_context: {app_context}")
 
             common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
-            common_data_expr = get_object(common_data_expr)
-
-            common_data = pickle.loads(common_data_expr.data) if common_data_expr is not None else None
 
             session_context = SessionContext(
                 _data_expr=common_data_expr,
                 session_id=request.session_id,
                 application=app_context,
-                common_data=common_data,
             )
 
             logger.debug(f"session_context: {session_context}")
