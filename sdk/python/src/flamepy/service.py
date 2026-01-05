@@ -64,7 +64,6 @@ class SessionContext:
     session_id: str
     application: ApplicationContext
 
-    @property
     def common_data(self) -> Any:
         """Get the common data."""
         self._data_expr = get_object(self._data_expr)
