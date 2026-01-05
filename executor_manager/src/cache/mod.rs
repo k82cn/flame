@@ -106,15 +106,22 @@ impl ObjectCache {
             )));
         }
 
-        let mut new_object = new_object.clone();
-        new_object.version = old_object.version + 1;
-        objects.insert(uuid.clone(), new_object.clone());
+        let new_version = old_object.version + 1;
+        let data_size = new_object.data.len() as u64;
+
+        objects.insert(
+            uuid.clone(),
+            Object {
+                version: new_version,
+                data: new_object.data,
+            },
+        );
 
         let endpoint = self.endpoint.object_endpoint(&session_id, &uuid);
         let metadata = ObjectMetadata {
             endpoint: endpoint.clone(),
-            version: new_object.version,
-            size: new_object.data.len() as u64,
+            version: new_version,
+            size: data_size,
         };
 
         tracing::debug!("Object update: {}", endpoint);
