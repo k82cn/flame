@@ -43,7 +43,7 @@ class FlameInstance(FlameService):
         self._context: SessionContext = None
 
     def context(self) -> Any:
-        return self._context.common_data if self._context is not None else None
+        return self._context.common_data() if self._context is not None else None
 
     def update_context(self, data: Any):
         if self._context is None:
