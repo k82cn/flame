@@ -1,11 +1,10 @@
-
 import flamepy
 
 from langchain_deepseek import ChatDeepSeek
 from langchain.agents import create_agent
-from langchain.messages import HumanMessage
+from langchain.messages import HumanMessage, SystemMessage
 
-from apis import SysPrompt, Question, Answer
+from apis import Question, Answer, SysPrompt
 
 ins = flamepy.FlameInstance()
 
@@ -21,15 +20,17 @@ agent = create_agent(
     model=llm,
 )
 
-@ins.context
-def sys_context(sp: SysPrompt):
-    agent.system_prompt = sp.prompt
-
 @ins.entrypoint
-def weather_agent(q: Question) -> Answer:
-    output = agent.invoke({
-        "messages": [HumanMessage(q.question)]
-    })
+def my_agent(q: Question) -> Answer:
+    messages = []
+
+    cxt = ins.context()
+    if cxt is not None and isinstance(cxt, SysPrompt):
+        messages.append(SystemMessage(content=cxt.prompt))
+
+    messages.append(HumanMessage(content=q.question))
+
+    output = agent.invoke({"messages": messages})
 
     aimsgs = output["messages"][-1]
 
