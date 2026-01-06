@@ -1,7 +1,7 @@
 
 import flamepy
 import asyncio
-from apis import SysPrompt, Question, Answer
+from apis import SysPrompt, Question
 
 LANGCHAIN_AGENT_NAME = "langchain-agent"
 
@@ -11,9 +11,8 @@ async def ask_agent():
 
     agent = await flamepy.create_session(LANGCHAIN_AGENT_NAME, sys_prompt)
     output = await agent.invoke(question)
-    answer = Answer.from_json(output)
 
-    print(answer.answer)
+    print(output.answer)
 
 if __name__ == "__main__":
     asyncio.run(ask_agent())

@@ -2,7 +2,7 @@
 import flamepy
 import asyncio
 
-from api import WebPage, Summary
+from apis import WebPage, Summary
 
 CRAWLER_APP_NAME = "crawler-app"
 
@@ -11,7 +11,7 @@ class CrawlerInformer(flamepy.TaskInformer):
         if task.is_failed():
             print(task.events)
         elif task.is_completed():
-            summary = Summary.from_json(task.output)
+            summary = task.output
             with open(f"task_{task.id}.txt", "w") as f:
                 f.write("\n".join(summary.links))
                 f.write("\n")

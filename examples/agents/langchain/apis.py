@@ -1,11 +1,16 @@
+from dataclasses import dataclass
 
-import flamepy
 
-class SysPrompt(flamepy.Request):
+@dataclass
+class SysPrompt:
     prompt: str
 
-class Question(flamepy.Request):
+
+@dataclass
+class Question:
     question: str
 
-class Answer(flamepy.Response):
+
+@dataclass
+class Answer:
     answer: str

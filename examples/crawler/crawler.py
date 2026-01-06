@@ -7,7 +7,7 @@ import re
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 
-from api import WebPage, Summary
+from apis import WebPage, Summary
 
 ins = flamepy.FlameInstance()
 

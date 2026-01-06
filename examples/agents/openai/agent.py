@@ -11,11 +11,13 @@
 
 import os
 import logging
+from typing_extensions import TypedDict
 
 from openai import AsyncOpenAI
 from agents import (
     Agent,
     Runner,
+    function_tool,
     set_tracing_disabled,
     enable_verbose_stdout_logging,
     set_default_openai_client,
@@ -39,10 +41,28 @@ set_default_openai_api("chat_completions")
 # Creat a FlameInstance
 ins = flamepy.FlameInstance()
 
+
+class Location(TypedDict):
+    lat: float
+    long: float
+
+
+@function_tool
+async def fetch_weather(location: Location) -> str:
+    """Fetch the weather for a given location.
+
+    Args:
+        location: The location to fetch the weather for.
+    """
+    # In real life, we'd fetch the weather from a weather API
+    return "sunny"
+
+
 # Create agent
 agent = Agent(
     name="openai-agent-example",
     model="deepseek-chat",
+    tools=[fetch_weather],
 )
 
 
