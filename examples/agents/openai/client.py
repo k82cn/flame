@@ -43,7 +43,7 @@ async def main(message: str, ssn_id: Optional[str] = None):
     print(f"{'=' * 30}")
     print(f"Session History")
     print(f"{'=' * 30}")
-    if getattr(cxt, "messages", None):
+    if getattr(cxt, "messages", None) is not None:
         for msg in cxt.messages:
             print(msg)
     else:
