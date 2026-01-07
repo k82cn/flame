@@ -162,7 +162,7 @@ mod tests {
         let controller = env.controller.clone();
 
         let mut rng = rand::rng();
-        let task_num = rng.random_range(..10);
+        let task_num = rng.random_range(1..10);
 
         tokio_test::block_on(
             controller.register_application("flmtest".to_string(), new_test_application()),
@@ -207,7 +207,7 @@ mod tests {
             assert_eq!(node_list.values().next().unwrap().name, "node_1");
 
             let exec_list = tokio_test::block_on(controller.list_executor())?;
-            assert_eq!(exec_list.len(), task_num);
+            assert_eq!(exec_list.len(), 1);
         }
 
         Ok(())

@@ -244,6 +244,11 @@ pub const BOUND_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
     ids: vec![],
 });
 
+pub const BINDING_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
+    state: Some(ExecutorState::Binding),
+    ids: vec![],
+});
+
 pub const ALL_EXECUTOR: Option<ExecutorFilter> = None;
 
 pub struct AppFilter {
