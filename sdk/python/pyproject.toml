@@ -24,8 +24,8 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
 ]
 dependencies = [
-  "grpcio>=1.50.0",
-  "grpcio-tools>=1.50.0",
+  "grpcio>=1.76",
+  "grpcio-tools>=1.76",
   "protobuf>=4.21.0",
   "pydantic>=2.11.0",
   "fastapi>=0.115.0",
