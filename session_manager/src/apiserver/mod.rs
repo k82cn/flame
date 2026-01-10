@@ -48,16 +48,18 @@ struct FrontendRunner {
 #[async_trait::async_trait]
 impl FlameThread for FrontendRunner {
     async fn run(&self, ctx: FlameContext) -> Result<(), FlameError> {
-        let url = url::Url::parse(&ctx.cluster.endpoint)
-            .map_err(|_| FlameError::InvalidConfig("invalid endpoint".to_string()))?;
+        let url = url::Url::parse(&ctx.cluster.endpoint).map_err(|_| {
+            FlameError::InvalidConfig(format!("invalid endpoint <{}>", ctx.cluster.endpoint))
+        })?;
+
         let port = url.port().unwrap_or(DEFAULT_PORT);
 
         // The fsm will bind to all addresses of host directly.
         let address_str = format!("{ALL_HOST_ADDRESS}:{port}");
         tracing::info!("Listening apiserver frontend at {}", address_str);
-        let address = address_str
-            .parse()
-            .map_err(|_| FlameError::InvalidConfig("failed to parse url".to_string()))?;
+        let address = address_str.parse().map_err(|_| {
+            FlameError::InvalidConfig(format!("failed to parse url <{address_str}>"))
+        })?;
 
         let frontend_service = Flame {
             controller: self.controller.clone(),
