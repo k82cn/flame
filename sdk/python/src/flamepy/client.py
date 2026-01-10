@@ -43,7 +43,7 @@ from .types import (
     FlameContext,
     ApplicationSchema,
     short_name,
-    DataExpr,
+    ObjectExpr,
 )
 
 from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment
@@ -338,7 +338,7 @@ class Connection:
 
         try:
             response = await self._frontend.CreateSession(request)
-            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             session = Session(
                 connection=self,
@@ -367,7 +367,7 @@ class Connection:
 
             sessions = []
             for session in response.sessions:
-                common_data_expr = DataExpr.decode(session.spec.common_data) if session.spec.HasField("common_data") else None
+                common_data_expr = ObjectExpr.decode(session.spec.common_data) if session.spec.HasField("common_data") else None
 
                 sessions.append(
                     Session(
@@ -397,7 +397,7 @@ class Connection:
 
         try:
             response = await self._frontend.OpenSession(request)
-            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
                 connection=self,
@@ -424,7 +424,7 @@ class Connection:
         try:
             response = await self._frontend.GetSession(request)
 
-            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
                 connection=self,
@@ -451,7 +451,7 @@ class Connection:
         try:
             response = await self._frontend.CloseSession(request)
 
-            common_data_expr = DataExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
                 connection=self,
@@ -485,7 +485,7 @@ class Session:
     succeed: int = 0
     failed: int = 0
     completion_time: Optional[datetime] = None
-    _common_data: Optional[DataExpr] = None
+    _common_data: Optional[ObjectExpr] = None
     """Client for session-specific operations."""
 
     def __init__(
@@ -501,7 +501,7 @@ class Session:
         succeed: int,
         failed: int,
         completion_time: Optional[datetime],
-        common_data: Optional[DataExpr] = None,
+        common_data: Optional[ObjectExpr] = None,
     ):
         self.connection = connection
         self.id = id

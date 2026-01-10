@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import logging
 from concurrent import futures
 
-from .types import Shim, FlameError, FlameErrorCode, DataExpr
+from .types import Shim, FlameError, FlameErrorCode, ObjectExpr
 from .cache import get_object, update_object
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from .types_pb2 import (
@@ -59,7 +59,7 @@ class ApplicationContext:
 class SessionContext:
     """Context for a session."""
 
-    _data_expr: DataExpr
+    _data_expr: ObjectExpr
 
     session_id: str
     application: ApplicationContext
@@ -158,7 +158,7 @@ class FlameInstanceServicer(InstanceServicer):
 
             logger.debug(f"app_context: {app_context}")
 
-            common_data_expr = DataExpr.decode(request.common_data) if request.HasField("common_data") else None
+            common_data_expr = ObjectExpr.decode(request.common_data) if request.HasField("common_data") else None
 
             session_context = SessionContext(
                 _data_expr=common_data_expr,
