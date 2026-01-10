@@ -237,8 +237,8 @@ class DataSource(IntEnum):
 
 
 @dataclass
-class DataExpr:
-    """Data expression."""
+class ObjectExpr:
+    """Object expression."""
 
     source: DataSource
     url: Optional[str] = None
@@ -254,6 +254,6 @@ class DataExpr:
         return bson.dumps(data)
 
     @classmethod
-    def decode(cls, json_data: bytes) -> "DataExpr":
+    def decode(cls, json_data: bytes) -> "ObjectExpr":
         data = bson.loads(json_data)
         return cls(**data)

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 import logging
 import contextlib
 
-from .types import DataExpr, DataSource, FlameContext
+from .types import ObjectExpr, DataSource, FlameContext
 
 
 @contextlib.contextmanager
@@ -52,21 +52,21 @@ class ObjectMetadata(BaseModel):
     size: int
 
 
-def put_object(session_id: str, data: bytes) -> "DataExpr":
+def put_object(session_id: str, data: bytes) -> "ObjectExpr":
     """Put an object into the cache."""
     context = FlameContext()
     if context._cache_endpoint is None or data is None:
-        return DataExpr(source=DataSource.LOCAL, data=data)
+        return ObjectExpr(source=DataSource.LOCAL, data=data)
 
     with suppress_dependency_logs():
         response = httpx.post(f"{context._cache_endpoint}/objects/{session_id}", data=data)
         response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
-    return DataExpr(source=DataSource.REMOTE, url=metadata.endpoint, data=data, version=metadata.version)
+    return ObjectExpr(source=DataSource.REMOTE, url=metadata.endpoint, data=data, version=metadata.version)
 
 
-def get_object(de: DataExpr) -> "DataExpr":
+def get_object(de: ObjectExpr) -> "ObjectExpr":
     """Get an object from the cache."""
     if de.source != DataSource.REMOTE:
         return de
@@ -83,7 +83,7 @@ def get_object(de: DataExpr) -> "DataExpr":
     return de
 
 
-def update_object(de: DataExpr) -> "DataExpr":
+def update_object(de: ObjectExpr) -> "ObjectExpr":
     """Update an object in the cache."""
     if de.source != DataSource.REMOTE:
         return de
