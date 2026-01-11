@@ -119,29 +119,14 @@ class ConnectionInstance:
     _connection = None
     _context = None
 
-    # Singleton instance
-    _instance_lock = threading.Lock()
-    _instance = None
-
-    @classmethod
-    def _get_instance(cls) -> "ConnectionInstance":
-        with cls._instance_lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._context = FlameContext()
-                return cls._instance
-            return cls._instance
-
     @classmethod
     def instance(cls) -> "Connection":
         """Get the connection instance."""
-        instance = cls._get_instance()
-        return connect(instance._context._endpoint)
-
-        # with instance._lock:
-        #     if instance._connection is None:
-        #         instance._connection = connect(instance._context._endpoint)
-        #     return instance._connection
+        with cls._lock:
+            if cls._connection is None:
+                cls._context = FlameContext()
+                cls._connection = connect(cls._context._endpoint)
+            return cls._connection
 
 
 class Connection:

@@ -75,16 +75,11 @@ class FlameInstance(FlameService):
             logger.warning("No entrypoint function defined")
             return
 
-        if self._parameter is not None:
-            if inspect.iscoroutinefunction(self._entrypoint):
-                res = asyncio.run(self._entrypoint(context.input))
-            else:
-                res = self._entrypoint(context.input)
+        args = (context.input,) if self._parameter is not None else ()
+        if inspect.iscoroutinefunction(self._entrypoint):
+            res = asyncio.run(self._entrypoint(*args))
         else:
-            if inspect.iscoroutinefunction(self._entrypoint):
-                res = asyncio.run(self._entrypoint())
-            else:
-                res = self._entrypoint()
+            res = self._entrypoint(*args)
 
         logger.debug(f"on_task_invoke: {res}")
 
