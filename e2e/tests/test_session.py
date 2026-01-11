@@ -175,9 +175,9 @@ def test_run_multiple_tasks_with_futures():
     futures = []
     inputs = []
     for _ in range(10):
-        input = random_string()
-        inputs.append(input)
-        future = session.run(TestRequest(input=input))
+        input_str = random_string()
+        inputs.append(input_str)
+        future = session.run(TestRequest(input=input_str))
         futures.append(future)
 
     # Wait for all tasks to complete
