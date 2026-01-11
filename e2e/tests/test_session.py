@@ -18,6 +18,7 @@ from e2e.api import TestRequest, TestResponse, TestContext
 import string
 import random
 import threading
+from concurrent.futures import wait
 
 FLM_TEST_APP = "flme2e"
 
@@ -156,6 +157,37 @@ def test_invoke_multiple_tasks_without_common_data():
 
     for informer in informers:
         assert informer.latest_state == flamepy.TaskState.SUCCEED
+
+    session.close()
+
+
+def test_run_multiple_tasks_with_futures():
+
+    session = flamepy.create_session(application=FLM_TEST_APP, common_data=None)
+
+    ssn_list = flamepy.list_sessions()
+    assert len(ssn_list) == 1
+    assert ssn_list[0].id == session.id
+    assert ssn_list[0].application == FLM_TEST_APP
+    assert ssn_list[0].state == SessionState.OPEN
+
+    # Run multiple tasks in parallel using futures
+    futures = []
+    inputs = []
+    for _ in range(10):
+        input_str = random_string()
+        inputs.append(input_str)
+        future = session.run(TestRequest(input=input_str))
+        futures.append(future)
+
+    # Wait for all tasks to complete
+    wait(futures)
+    
+    # Verify results
+    for i, future in enumerate(futures):
+        result = future.result()
+        assert result.output == inputs[i]
+        assert result.common_data is None
 
     session.close()
 

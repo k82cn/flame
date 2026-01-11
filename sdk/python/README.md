@@ -49,8 +49,19 @@ session.close()
 Represents individual computing tasks within a session.
 
 ```python
-# Create and run a task
+from concurrent.futures import wait
+
+# Run a task synchronously (blocks until complete)
 result = session.invoke(b"input data")
+
+# Run a task asynchronously (returns Future immediately)
+future = session.run(b"input data")
+result = future.result()  # Wait for completion
+
+# Run multiple tasks in parallel
+futures = [session.run(f"input {i}".encode()) for i in range(10)]
+wait(futures)  # Wait for all tasks to complete
+results = [f.result() for f in futures]
 
 # Create a task and get task object
 task = session.create_task(b"input data")

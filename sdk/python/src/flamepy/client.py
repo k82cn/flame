@@ -14,6 +14,7 @@ limitations under the License.
 import threading
 from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
+from concurrent.futures import Future, ThreadPoolExecutor
 import grpc
 import pickle
 from datetime import datetime, timezone
@@ -136,6 +137,7 @@ class Connection:
         self.addr = addr
         self._channel = channel
         self._frontend = frontend
+        self._executor = ThreadPoolExecutor(max_workers=10)
 
     @classmethod
     def connect(cls, addr: str) -> "Connection":
@@ -167,6 +169,7 @@ class Connection:
 
     def close(self) -> None:
         """Close the connection."""
+        self._executor.shutdown(wait=True)
         self._channel.close()
 
     def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
@@ -580,7 +583,50 @@ class Session:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
 
     def invoke(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
-        """Invoke a task with the given input and optional informer."""
+        """Invoke a task with the given input and optional informer (synchronous).
+        
+        This method blocks until the task completes or fails.
+        
+        Args:
+            input_data: The input data for the task
+            informer: Optional task informer for monitoring task progress
+            
+        Returns:
+            The task output (or None if informer is provided)
+            
+        Example:
+            >>> result = session.invoke(b"input data")
+            >>> print(result)
+        """
+        return self._invoke_impl(input_data, informer)
+    
+    def run(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Future:
+        """Run a task asynchronously and return a Future (async-style execution).
+        
+        This method returns immediately with a Future object that can be used to
+        retrieve the result later or run multiple tasks in parallel.
+        
+        Args:
+            input_data: The input data for the task
+            informer: Optional task informer for monitoring task progress
+            
+        Returns:
+            A Future object that will contain the result when the task completes
+            
+        Example (single task):
+            >>> future = session.run(b"input data")
+            >>> result = future.result()  # Wait for completion
+            
+        Example (parallel execution):
+            >>> from concurrent.futures import wait
+            >>> futures = [session.run(f"input {i}".encode()) for i in range(10)]
+            >>> wait(futures)
+            >>> results = [f.result() for f in futures]
+        """
+        return self.connection._executor.submit(self._invoke_impl, input_data, informer)
+    
+    def _invoke_impl(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
+        """Internal implementation of invoke/run."""
         task = self.create_task(input_data)
         watcher = self.watch_task(task.id)
 
