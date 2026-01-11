@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Flame Python SDK provides a high-level interface for interacting with the Flame distributed computing framework. It supports async/await patterns and provides comprehensive error handling.
+The Flame Python SDK provides a high-level interface for interacting with the Flame distributed computing framework. It uses synchronous gRPC clients and provides comprehensive error handling.
 
 ## Core Classes
 
@@ -26,7 +26,7 @@ Establishes a connection to the Flame service.
 
 **Example:**
 ```python
-conn = await Connection.connect("http://localhost:8080")
+conn = Connection.connect("http://localhost:8080")
 ```
 
 ##### `close() -> None`
@@ -34,7 +34,7 @@ Closes the connection to the Flame service.
 
 **Example:**
 ```python
-await conn.close()
+conn.close()
 ```
 
 ##### `register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None`
@@ -46,7 +46,7 @@ Registers a new application with the Flame service.
 
 **Example:**
 ```python
-await conn.register_application("my-app", {
+conn.register_application("my-app", {
     "shim": Shim.SHELL,
     "command": "python",
     "arguments": ["script.py"]
@@ -252,7 +252,7 @@ Custom exception for Flame SDK errors.
 **Example:**
 ```python
 try:
-    conn = await Connection.connect("invalid://address")
+    conn = Connection.connect("invalid://address")
 except FlameError as e:
     if e.code == FlameErrorCode.INVALID_CONFIG:
         print(f"Configuration error: {e.message}")
@@ -278,16 +278,16 @@ class MyTaskInformer(TaskInformer):
         print(f"Error: {error}")
 
 informer = MyTaskInformer()
-await session_client.run_task(b"input data", informer)
+session_client.run_task(b"input data", informer)
 ```
 
 ### TaskWatcher
 
-Async iterator for watching task updates.
+Iterator for watching task updates.
 
 **Example:**
 ```python
-async for update in session_client.watch_task(task.id):
+for update in session_client.watch_task(task.id):
     print(f"Task state: {update.state}")
     if update.is_completed():
         break
