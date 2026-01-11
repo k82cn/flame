@@ -19,7 +19,7 @@ class ExampleService(flamepy.FlameService):
         self._session_context = None
         self._task_count = 0
 
-    async def on_session_enter(self, context: flamepy.SessionContext) -> bool:
+    def on_session_enter(self, context: flamepy.SessionContext) -> bool:
         """Handle session enter."""
         print(f"🟢 Entering session: {context.session_id}")
         print(f"   Application: {context.application.name}")
@@ -31,7 +31,7 @@ class ExampleService(flamepy.FlameService):
 
         return True
 
-    async def on_task_invoke(self, context: flamepy.TaskContext) -> flamepy.TaskOutput:
+    def on_task_invoke(self, context: flamepy.TaskContext) -> flamepy.TaskOutput:
         """Handle task invoke."""
         self._task_count += 1
         print(f"🟡 Invoking task {self._task_count}: {context.task_id}")
@@ -52,7 +52,7 @@ class ExampleService(flamepy.FlameService):
 
         return flamepy.TaskOutput(data=output_data)
 
-    async def on_session_leave(self) -> bool:
+    def on_session_leave(self) -> bool:
         """Handle session leave."""
         print(f"🔴 Leaving session")
         print(f"   Total tasks processed: {self._task_count}")

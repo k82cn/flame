@@ -11,24 +11,23 @@ pip install flamepy
 ## Quick Start
 
 ```python
-import asyncio
 import flamepy
 
-async def main():
+def main():
     # Create a session with the application, e.g. Agent
-    session = await flamepy.create_session("flmping")
+    session = flamepy.create_session("flmping")
     
     # Create and run a task
-    resp = await session.invoke(b"task input data")
+    resp = session.invoke(b"task input data")
 
     # Handle the output of task
-    print(resp.output)
+    print(resp)
 
     # Close session
-    await session.close()
+    session.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
 ```
 
 ## API Reference
@@ -39,10 +38,10 @@ Represents a computing session with application, e.g. Agent, Tools.
 
 ```python
 # Create a session
-session = await flamepy.create_session("my-app")
+session = flamepy.create_session("my-app")
 
 # Close a session
-await session.close()
+session.close()
 ```
 
 ### Task
@@ -50,14 +49,17 @@ await session.close()
 Represents individual computing tasks within a session.
 
 ```python
-# Create a task
-task = await session.invoke(b"input data")
+# Create and run a task
+result = session.invoke(b"input data")
+
+# Create a task and get task object
+task = session.create_task(b"input data")
 
 # Get task status
-task = await session.get_task(task.id)
+task = session.get_task(task.id)
 
 # Watch task progress
-async for update in session.watch_task(task.id):
+for update in session.watch_task(task.id):
     print(f"Task state: {update.state}")
     if update.is_completed():
         break
@@ -71,7 +73,7 @@ The SDK provides custom exception types for different error scenarios:
 from flamepy import FlameError, FlameErrorCode
 
 try:
-    session = await flamepy.create_session("flmping")
+    session = flamepy.create_session("flmping")
 except FlameError as e:
     if e.code == FlameErrorCode.INVALID_CONFIG:
         print("Configuration error:", e.message)

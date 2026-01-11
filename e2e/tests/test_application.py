@@ -12,27 +12,23 @@ limitations under the License.
 """
 
 import pytest
-import asyncio
-import pytest_asyncio
 import flamepy
 
-@pytest.mark.asyncio
-async def test_register_application():
-    await flamepy.register_application("flmtestapp", flamepy.ApplicationAttributes(
+def test_register_application():
+    flamepy.register_application("flmtestapp", flamepy.ApplicationAttributes(
         shim=flamepy.Shim.Host,
     ))
 
-    app = await flamepy.get_application("flmtestapp")
+    app = flamepy.get_application("flmtestapp")
     assert app.name == "flmtestapp"
     assert app.shim == flamepy.Shim.Host
     assert app.state == flamepy.ApplicationState.ENABLED
 
-    await flamepy.unregister_application("flmtestapp")
+    flamepy.unregister_application("flmtestapp")
 
 
-@pytest.mark.asyncio
-async def test_list_application():
-    apps = await flamepy.list_applications()
+def test_list_application():
+    apps = flamepy.list_applications()
     assert len(apps) == 2
 
     for app in apps:

@@ -15,8 +15,6 @@ import threading
 from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
 import grpc
-import grpc.aio
-import asyncio
 import pickle
 from datetime import datetime, timezone
 
@@ -64,70 +62,70 @@ from .frontend_pb2 import (
 from .frontend_pb2_grpc import FrontendStub
 
 
-async def connect(addr: str) -> "Connection":
+def connect(addr: str) -> "Connection":
     """Connect to the Flame service."""
-    return await Connection.connect(addr)
+    return Connection.connect(addr)
 
 
-async def create_session(application: str, common_data: Any = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
-    conn = await ConnectionInstance.instance()
-    return await conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots))
+def create_session(application: str, common_data: Any = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
+    conn = ConnectionInstance.instance()
+    return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots))
 
 
-async def open_session(session_id: SessionID) -> "Session":
-    conn = await ConnectionInstance.instance()
-    return await conn.open_session(session_id)
+def open_session(session_id: SessionID) -> "Session":
+    conn = ConnectionInstance.instance()
+    return conn.open_session(session_id)
 
 
-async def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
-    conn = await ConnectionInstance.instance()
-    await conn.register_application(name, app_attrs)
+def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
+    conn = ConnectionInstance.instance()
+    conn.register_application(name, app_attrs)
 
 
-async def unregister_application(name: str) -> None:
-    conn = await ConnectionInstance.instance()
-    await conn.unregister_application(name)
+def unregister_application(name: str) -> None:
+    conn = ConnectionInstance.instance()
+    conn.unregister_application(name)
 
 
-async def list_applications() -> List[Application]:
-    conn = await ConnectionInstance.instance()
-    return await conn.list_applications()
+def list_applications() -> List[Application]:
+    conn = ConnectionInstance.instance()
+    return conn.list_applications()
 
 
-async def get_application(name: str) -> Application:
-    conn = await ConnectionInstance.instance()
-    return await conn.get_application(name)
+def get_application(name: str) -> Application:
+    conn = ConnectionInstance.instance()
+    return conn.get_application(name)
 
 
-async def list_sessions() -> List["Session"]:
-    conn = await ConnectionInstance.instance()
-    return await conn.list_sessions()
+def list_sessions() -> List["Session"]:
+    conn = ConnectionInstance.instance()
+    return conn.list_sessions()
 
 
-async def get_session(session_id: SessionID) -> "Session":
-    conn = await ConnectionInstance.instance()
-    return await conn.get_session(session_id)
+def get_session(session_id: SessionID) -> "Session":
+    conn = ConnectionInstance.instance()
+    return conn.get_session(session_id)
 
 
-async def close_session(session_id: SessionID) -> "Session":
-    conn = await ConnectionInstance.instance()
-    return await conn.close_session(session_id)
+def close_session(session_id: SessionID) -> "Session":
+    conn = ConnectionInstance.instance()
+    return conn.close_session(session_id)
 
 
 class ConnectionInstance:
     """Connection instance."""
 
-    _lock = asyncio.Lock()
+    _lock = threading.Lock()
     _connection = None
     _context = None
 
     # Singleton instance
-    _instance_lock = asyncio.Lock()
+    _instance_lock = threading.Lock()
     _instance = None
 
     @classmethod
-    async def _get_instance(cls) -> "ConnectionInstance":
-        async with cls._instance_lock:
+    def _get_instance(cls) -> "ConnectionInstance":
+        with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance._context = FlameContext()
@@ -135,27 +133,27 @@ class ConnectionInstance:
             return cls._instance
 
     @classmethod
-    async def instance(cls) -> "Connection":
+    def instance(cls) -> "Connection":
         """Get the connection instance."""
-        instance = await cls._get_instance()
-        return await connect(instance._context._endpoint)
+        instance = cls._get_instance()
+        return connect(instance._context._endpoint)
 
-        # async with instance._lock:
+        # with instance._lock:
         #     if instance._connection is None:
-        #         instance._connection = await connect(instance._context._endpoint)
+        #         instance._connection = connect(instance._context._endpoint)
         #     return instance._connection
 
 
 class Connection:
     """Connection to the Flame service."""
 
-    def __init__(self, addr: str, channel: grpc.aio.Channel, frontend: FrontendStub):
+    def __init__(self, addr: str, channel: grpc.Channel, frontend: FrontendStub):
         self.addr = addr
         self._channel = channel
         self._frontend = frontend
 
     @classmethod
-    async def connect(cls, addr: str) -> "Connection":
+    def connect(cls, addr: str) -> "Connection":
         """Establish a connection to the Flame service."""
         if not addr:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "address cannot be empty")
@@ -166,10 +164,13 @@ class Connection:
             port = parsed_addr.port or 8080
 
             # Create insecure channel
-            channel = grpc.aio.insecure_channel(f"{host}:{port}")
+            channel = grpc.insecure_channel(f"{host}:{port}")
 
-            # Wait for channel to be ready
-            await channel.channel_ready()
+            # Wait for channel to be ready (with timeout)
+            try:
+                grpc.channel_ready_future(channel).result(timeout=10)
+            except grpc.FutureTimeoutError:
+                raise FlameError(FlameErrorCode.INVALID_CONFIG, f"timeout connecting to {addr}")
 
             # Create frontend stub
             frontend = FrontendStub(channel)
@@ -179,11 +180,11 @@ class Connection:
         except Exception as e:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, f"failed to connect to {addr}: {str(e)}")
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """Close the connection."""
-        await self._channel.close()
+        self._channel.close()
 
-    async def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
+    def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
         """Register a new application."""
         if isinstance(app_attrs, dict):
             app_attrs = ApplicationAttributes(**app_attrs)
@@ -218,31 +219,31 @@ class Connection:
         request = RegisterApplicationRequest(name=name, application=app_spec)
 
         try:
-            await self._frontend.RegisterApplication(request)
+            self._frontend.RegisterApplication(request)
         except grpc.RpcError as e:
             raise FlameError(
                 FlameErrorCode.INTERNAL,
                 f"failed to register application: {e.details()}",
             )
 
-    async def unregister_application(self, name: str) -> None:
+    def unregister_application(self, name: str) -> None:
         """Unregister an application."""
         request = UnregisterApplicationRequest(name=name)
 
         try:
-            await self._frontend.UnregisterApplication(request)
+            self._frontend.UnregisterApplication(request)
         except grpc.RpcError as e:
             raise FlameError(
                 FlameErrorCode.INTERNAL,
                 f"failed to unregister application: {e.details()}",
             )
 
-    async def list_applications(self) -> List[Application]:
+    def list_applications(self) -> List[Application]:
         """List all applications."""
         request = ListApplicationRequest()
 
         try:
-            response = await self._frontend.ListApplication(request)
+            response = self._frontend.ListApplication(request)
 
             applications = []
             for app in response.applications:
@@ -281,12 +282,12 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list applications: {e.details()}")
 
-    async def get_application(self, name: str) -> Application:
+    def get_application(self, name: str) -> Application:
         """Get an application by name."""
         request = GetApplicationRequest(name=name)
 
         try:
-            response = await self._frontend.GetApplication(request)
+            response = self._frontend.GetApplication(request)
             schema = None
             if response.spec.schema is not None:
                 schema = ApplicationSchema(
@@ -319,7 +320,7 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get application: {e.details()}")
 
-    async def create_session(self, attrs: SessionAttributes) -> "Session":
+    def create_session(self, attrs: SessionAttributes) -> "Session":
         """Create a new session."""
 
         session_id = short_name(attrs.application) if attrs.id is None else attrs.id
@@ -337,7 +338,7 @@ class Connection:
         request = CreateSessionRequest(session_id=session_id, session=session_spec)
 
         try:
-            response = await self._frontend.CreateSession(request)
+            response = self._frontend.CreateSession(request)
             common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             session = Session(
@@ -358,12 +359,12 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to create session: {e.details()}")
 
-    async def list_sessions(self) -> List["Session"]:
+    def list_sessions(self) -> List["Session"]:
         """List all sessions."""
         request = ListSessionRequest()
 
         try:
-            response = await self._frontend.ListSession(request)
+            response = self._frontend.ListSession(request)
 
             sessions = []
             for session in response.sessions:
@@ -391,12 +392,12 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list sessions: {e.details()}")
 
-    async def open_session(self, session_id: SessionID) -> "Session":
+    def open_session(self, session_id: SessionID) -> "Session":
         """Open a session."""
         request = OpenSessionRequest(session_id=session_id)
 
         try:
-            response = await self._frontend.OpenSession(request)
+            response = self._frontend.OpenSession(request)
             common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
@@ -417,12 +418,12 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to open session: {e.details()}")
 
-    async def get_session(self, session_id: SessionID) -> "Session":
+    def get_session(self, session_id: SessionID) -> "Session":
         """Get a session by ID."""
         request = GetSessionRequest(session_id=session_id)
 
         try:
-            response = await self._frontend.GetSession(request)
+            response = self._frontend.GetSession(request)
 
             common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
@@ -444,12 +445,12 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get session: {e.details()}")
 
-    async def close_session(self, session_id: SessionID) -> "Session":
+    def close_session(self, session_id: SessionID) -> "Session":
         """Close a session."""
         request = CloseSessionRequest(session_id=session_id)
 
         try:
-            response = await self._frontend.CloseSession(request)
+            response = self._frontend.CloseSession(request)
 
             common_data_expr = ObjectExpr.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
@@ -523,7 +524,7 @@ class Session:
 
         return pickle.loads(self._common_data.data) if self._common_data is not None else None
 
-    async def create_task(self, input_data: Any) -> Task:
+    def create_task(self, input_data: Any) -> Task:
         """Create a new task in the session."""
         input_bin = pickle.dumps(input_data, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -532,7 +533,7 @@ class Session:
         request = CreateTaskRequest(task=task_spec)
 
         try:
-            response = await self.connection._frontend.CreateTask(request)
+            response = self.connection._frontend.CreateTask(request)
 
             return Task(
                 id=response.metadata.id,
@@ -554,12 +555,12 @@ class Session:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to create task: {e.details()}")
 
-    async def get_task(self, task_id: TaskID) -> Task:
+    def get_task(self, task_id: TaskID) -> Task:
         """Get a task by ID."""
         request = GetTaskRequest(task_id=task_id, session_id=self.id)
 
         try:
-            response = await self.connection._frontend.GetTask(request)
+            response = self.connection._frontend.GetTask(request)
 
             return Task(
                 id=response.metadata.id,
@@ -582,7 +583,7 @@ class Session:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get task: {e.details()}")
 
-    async def watch_task(self, task_id: TaskID) -> "TaskWatcher":
+    def watch_task(self, task_id: TaskID) -> "TaskWatcher":
         """Watch a task for updates."""
         request = WatchTaskRequest(task_id=task_id, session_id=self.id)
 
@@ -593,12 +594,12 @@ class Session:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
 
-    async def invoke(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
+    def invoke(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
         """Invoke a task with the given input and optional informer."""
-        task = await self.create_task(input_data)
-        watcher = await self.watch_task(task.id)
+        task = self.create_task(input_data)
+        watcher = self.watch_task(task.id)
 
-        async for task in watcher:
+        for task in watcher:
             # If informer is provided, use it to update the task and
             # return None to indicate that the task is handled by the informer.
             if informer is not None:
@@ -616,23 +617,23 @@ class Session:
             elif task.is_completed():
                 return task.output
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """Close the session."""
-        await self.connection.close_session(self.id)
+        self.connection.close_session(self.id)
 
 
 class TaskWatcher:
-    """Async iterator for watching task updates."""
+    """Iterator for watching task updates."""
 
     def __init__(self, stream):
         self._stream = stream
 
-    def __aiter__(self):
+    def __iter__(self):
         return self
 
-    async def __anext__(self) -> Task:
+    def __next__(self) -> Task:
         try:
-            response = await self._stream.read()
+            response = next(self._stream)
 
             return Task(
                 id=response.metadata.id,
@@ -652,7 +653,7 @@ class TaskWatcher:
                 ],
             )
 
-        except StopAsyncIteration:
+        except StopIteration:
             raise
         except Exception as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {str(e)}")

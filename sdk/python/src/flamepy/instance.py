@@ -11,7 +11,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import asyncio
 import inspect
 import uvicorn
 import os
@@ -62,13 +61,13 @@ class FlameInstance(FlameService):
             assert param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD, "Parameter must be positional or keyword"
             self._parameter = param
 
-    async def on_session_enter(self, context: SessionContext):
+    def on_session_enter(self, context: SessionContext):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_enter")
 
         self._context = context
 
-    async def on_task_invoke(self, context: TaskContext) -> TaskOutput:
+    def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         logger = logging.getLogger(__name__)
         logger.debug("on_task_invoke")
         if self._entrypoint is None:
@@ -76,21 +75,15 @@ class FlameInstance(FlameService):
             return
 
         if self._parameter is not None:
-            if inspect.iscoroutinefunction(self._entrypoint):
-                res = await self._entrypoint(context.input)
-            else:
-                res = self._entrypoint(context.input)
+            res = self._entrypoint(context.input)
         else:
-            if inspect.iscoroutinefunction(self._entrypoint):
-                res = await self._entrypoint()
-            else:
-                res = self._entrypoint()
+            res = self._entrypoint()
 
         logger.debug(f"on_task_invoke: {res}")
 
         return TaskOutput(data=res)
 
-    async def on_session_leave(self):
+    def on_session_leave(self):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_leave")
 
@@ -136,7 +129,7 @@ async def entrypoint_local_api(s: FastAPIRequest):
     instance = s.app.state.instance
     body_str = await s.body()
 
-    output = await instance.on_task_invoke(
+    output = instance.on_task_invoke(
         TaskContext(
             task_id=s.query_params.get("task_id") or "0",
             session_id=s.query_params.get("session_id") or "0",
