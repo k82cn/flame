@@ -137,6 +137,7 @@ class Connection:
         self.addr = addr
         self._channel = channel
         self._frontend = frontend
+        self._executor = ThreadPoolExecutor(max_workers=10)
 
     @classmethod
     def connect(cls, addr: str) -> "Connection":
@@ -168,6 +169,7 @@ class Connection:
 
     def close(self) -> None:
         """Close the connection."""
+        self._executor.shutdown(wait=True)
         self._channel.close()
 
     def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
@@ -474,9 +476,6 @@ class Session:
     completion_time: Optional[datetime] = None
     _common_data: Optional[ObjectExpr] = None
     """Client for session-specific operations."""
-    
-    # Thread pool executor for async invoke operations
-    _executor = ThreadPoolExecutor(max_workers=10)
 
     def __init__(
         self,
@@ -624,7 +623,7 @@ class Session:
             >>> wait(futures)
             >>> results = [f.result() for f in futures]
         """
-        return self._executor.submit(self._invoke_impl, input_data, informer)
+        return self.connection._executor.submit(self._invoke_impl, input_data, informer)
     
     def _invoke_impl(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
         """Internal implementation of invoke/run."""
