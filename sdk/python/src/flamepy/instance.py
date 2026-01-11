@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import asyncio
 import inspect
 import uvicorn
 import os
@@ -74,10 +75,11 @@ class FlameInstance(FlameService):
             logger.warning("No entrypoint function defined")
             return
 
-        if self._parameter is not None:
-            res = self._entrypoint(context.input)
+        args = (context.input,) if self._parameter is not None else ()
+        if inspect.iscoroutinefunction(self._entrypoint):
+            res = asyncio.run(self._entrypoint(*args))
         else:
-            res = self._entrypoint()
+            res = self._entrypoint(*args)
 
         logger.debug(f"on_task_invoke: {res}")
 

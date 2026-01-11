@@ -1,5 +1,4 @@
-import flame
-import asyncio
+import flamepy
 from openai import OpenAI
 import os
 import json
@@ -38,8 +37,8 @@ def send_messages(messages):
     )
     return response.choices[0].message
 
-async def main():
-    session = await flame.create_session("flmexec")    
+def main():
+    session = flamepy.create_session("flmexec")    
 
     # 1. Ask DeepSeek to generate a script
     messages = [{"role": "user", "content": "Provided a Python snippet that computes and prints the sum of integers from 1 to 100."}]
@@ -57,12 +56,12 @@ async def main():
 
     # 3. Call the tool to run the script and get the result for DeepSeek to see
     input = tool.function.arguments.encode("utf-8")
-    task = await session.invoke(input)
+    result = session.invoke(input)
 
     # 4. Ask DeepSeek to summarize the result
-    messages.append({"role": "tool", "tool_call_id": tool.id, "content": task.output.decode("utf-8")})
+    messages.append({"role": "tool", "tool_call_id": tool.id, "content": result.decode("utf-8")})
     message = send_messages(messages)
     print(f"Model>\t {message.content}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
