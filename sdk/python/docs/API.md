@@ -129,17 +129,81 @@ Watches a task for updates.
 - `task_id` (TaskID): The task ID
 
 **Returns:**
-- `TaskWatcher`: Async iterator for task updates
+- `TaskWatcher`: Iterator for task updates
 
-##### `run_task(input_data: TaskInput, informer: Optional[TaskInformer] = None) -> Task`
-Runs a task with optional informer.
+##### `invoke(input_data: Any, informer: Optional[TaskInformer] = None) -> Any`
+Invokes a task synchronously with the given input and optional informer.
+
+This method blocks until the task completes or fails.
 
 **Parameters:**
-- `input_data` (TaskInput): Task input data
-- `informer` (Optional[TaskInformer]): Optional task informer
+- `input_data` (Any): The input data for the task
+- `informer` (Optional[TaskInformer]): Optional task informer for monitoring task progress
 
 **Returns:**
-- `Task`: The task
+- The task output (or None if informer is provided)
+
+**Example:**
+```python
+result = session.invoke(b"input data")
+print(result)
+```
+
+**Example (With Informer):**
+```python
+class MyInformer(flamepy.TaskInformer):
+    def on_update(self, task):
+        print(f"Task {task.id}: {task.state}")
+
+informer = MyInformer()
+session.invoke(b"input data", informer=informer)
+```
+
+##### `run(input_data: Any, informer: Optional[TaskInformer] = None) -> Future`
+Runs a task asynchronously and returns a Future for async-style execution.
+
+This method returns immediately with a Future object that can be used to retrieve the result later or run multiple tasks in parallel.
+
+**Parameters:**
+- `input_data` (Any): The input data for the task
+- `informer` (Optional[TaskInformer]): Optional task informer for monitoring task progress
+
+**Returns:**
+- A `concurrent.futures.Future` object that will contain the result when the task completes
+
+**Example (Single Task):**
+```python
+future = session.run(b"input data")
+# Do other work...
+result = future.result()  # Wait for completion
+print(result)
+```
+
+**Example (Parallel Execution):**
+```python
+from concurrent.futures import wait
+
+# Run multiple tasks in parallel
+futures = [session.run(f"input {i}".encode()) for i in range(10)]
+
+# Wait for all tasks to complete
+wait(futures)
+results = [f.result() for f in futures]
+print(f"Completed {len(results)} tasks")
+```
+
+**Example (With Callbacks):**
+```python
+def task_done_callback(future):
+    try:
+        result = future.result()
+        print(f"Task completed: {result}")
+    except Exception as e:
+        print(f"Task failed: {e}")
+
+future = session.run(b"input data")
+future.add_done_callback(task_done_callback)
+```
 
 ## Data Types
 

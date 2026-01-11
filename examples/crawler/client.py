@@ -1,6 +1,6 @@
 
 import flamepy
-import threading
+from concurrent.futures import wait
 
 from apis import WebPage, Summary
 
@@ -37,18 +37,13 @@ def crawl_web_pages():
         WebPage(url="https://www.tsmc.com/"),
     ]
 
-    threads = []
+    # Run all crawler tasks in parallel using the run() API
+    futures = [crawler.run(web_page, CrawlerInformer()) for web_page in web_pages]
 
-    def invoke_crawler(crawler, web_page):
-        crawler.invoke(web_page, CrawlerInformer())
+    # Wait for all tasks to complete
+    wait(futures)
 
-    for web_page in web_pages:
-        thread = threading.Thread(target=invoke_crawler, args=(crawler, web_page))
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    print(f"Crawled {len(web_pages)} web pages successfully")
 
     crawler.close()
 

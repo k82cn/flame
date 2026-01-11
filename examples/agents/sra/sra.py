@@ -3,7 +3,7 @@ import os
 import qdrant_client
 from qdrant_client.models import VectorParams, Distance
 import logging
-import threading
+from concurrent.futures import wait
 
 from openai import AsyncOpenAI
 from agents import Agent, Runner, function_tool, enable_verbose_stdout_logging, set_tracing_disabled, set_default_openai_client, set_default_openai_api
@@ -99,20 +99,16 @@ async def web_search(topics: list[str]) -> int:
 
         counter = Counter()
 
-        threads = []
-        
-        def invoke_crawler(web_crawler, url, counter):
-            web_crawler.invoke(WebPage(url=url), informer=counter)
-        
+        # Run all crawler tasks in parallel using the run() API
+        futures = []
         for topic in topics:
             items = search.invoke(topic)
             for item in items:
-                thread = threading.Thread(target=invoke_crawler, args=(web_crawler, item["link"], counter))
-                thread.start()
-                threads.append(thread)
+                future = web_crawler.run(WebPage(url=item["link"]), informer=counter)
+                futures.append(future)
 
-        for thread in threads:
-            thread.join()
+        # Wait for all tasks to complete
+        wait(futures)
 
         return counter.succeed
     except Exception as e:
