@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import asyncio
 import inspect
 import uvicorn
 import os
@@ -75,9 +76,15 @@ class FlameInstance(FlameService):
             return
 
         if self._parameter is not None:
-            res = self._entrypoint(context.input)
+            if inspect.iscoroutinefunction(self._entrypoint):
+                res = asyncio.run(self._entrypoint(context.input))
+            else:
+                res = self._entrypoint(context.input)
         else:
-            res = self._entrypoint()
+            if inspect.iscoroutinefunction(self._entrypoint):
+                res = asyncio.run(self._entrypoint())
+            else:
+                res = self._entrypoint()
 
         logger.debug(f"on_task_invoke: {res}")
 

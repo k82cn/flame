@@ -1,6 +1,6 @@
 
 import flamepy
-import asyncio
+import threading
 
 from apis import WebPage, Summary
 
@@ -22,8 +22,8 @@ class CrawlerInformer(flamepy.TaskInformer):
     def on_error(self):
         print("Error")
 
-async def crawl_web_pages():
-    crawler = await flamepy.create_session(CRAWLER_APP_NAME)
+def crawl_web_pages():
+    crawler = flamepy.create_session(CRAWLER_APP_NAME)
 
     web_pages = [
         WebPage(url="https://www.nvidia.com"),
@@ -37,15 +37,20 @@ async def crawl_web_pages():
         WebPage(url="https://www.tsmc.com/"),
     ]
 
-    tasks = []
+    threads = []
+
+    def invoke_crawler(crawler, web_page):
+        crawler.invoke(web_page, CrawlerInformer())
 
     for web_page in web_pages:
-        task = crawler.invoke(web_page, CrawlerInformer())
-        tasks.append(task)
+        thread = threading.Thread(target=invoke_crawler, args=(crawler, web_page))
+        thread.start()
+        threads.append(thread)
 
-    await asyncio.gather(*tasks)
+    for thread in threads:
+        thread.join()
 
-    await crawler.close()
+    crawler.close()
 
 if __name__ == "__main__":
-    asyncio.run(crawl_web_pages())
+    crawl_web_pages()

@@ -1,9 +1,9 @@
 import flamepy
-import asyncio
 import os
 import qdrant_client
 from qdrant_client.models import VectorParams, Distance
 import logging
+import threading
 
 from openai import AsyncOpenAI
 from agents import Agent, Runner, function_tool, enable_verbose_stdout_logging, set_tracing_disabled, set_default_openai_client, set_default_openai_api
@@ -50,9 +50,9 @@ async def run_script(code: str) -> str:
     """
     global script_runner
     if script_runner is None:
-        script_runner = await flamepy.create_session("flmexec")
+        script_runner = flamepy.create_session("flmexec")
 
-    output = await script_runner.invoke(Script(language="python", code=code))
+    output = script_runner.invoke(Script(language="python", code=code))
 
     return output.decode("utf-8")
 
@@ -92,21 +92,27 @@ async def web_search(topics: list[str]) -> int:
     try:
         global web_crawler
         if web_crawler is None:
-            web_crawler = await flamepy.create_session("crawler")
+            web_crawler = flamepy.create_session("crawler")
 
         wrapper = DuckDuckGoSearchAPIWrapper(time="d", max_results=20)
         search = DuckDuckGoSearchResults(api_wrapper=wrapper, source="news", output_format="list")
 
         counter = Counter()
 
-        tasks = []
+        threads = []
+        
+        def invoke_crawler(web_crawler, url, counter):
+            web_crawler.invoke(WebPage(url=url), informer=counter)
+        
         for topic in topics:
             items = search.invoke(topic)
             for item in items:
-                task = web_crawler.invoke(WebPage(url=item["link"]), informer=counter)
-                tasks.append(task)
+                thread = threading.Thread(target=invoke_crawler, args=(web_crawler, item["link"], counter))
+                thread.start()
+                threads.append(thread)
 
-        await asyncio.gather(*tasks)
+        for thread in threads:
+            thread.join()
 
         return counter.succeed
     except Exception as e:

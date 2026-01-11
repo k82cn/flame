@@ -9,7 +9,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import argparse
 from typing import Optional
 
@@ -19,15 +18,15 @@ from apis import MyContext, Question
 OPENAI_APP_NAME = "openai-agent"
 
 
-async def main(message: str, ssn_id: Optional[str] = None):
+def main(message: str, ssn_id: Optional[str] = None):
     if ssn_id:
-        session = await flamepy.open_session(ssn_id)
+        session = flamepy.open_session(ssn_id)
     else:
         sys_prompt = """You are a weather forecaster.
         If you are asked to fetch the weather, you should use the fetch_weather tool after confirming the location with the user.
         """
-        session = await flamepy.create_session(OPENAI_APP_NAME,
-                                               MyContext(prompt=sys_prompt))
+        session = flamepy.create_session(OPENAI_APP_NAME,
+                                         MyContext(prompt=sys_prompt))
 
     print(f"{'=' * 30}")
     print(f"Conversation <{session.id}>")
@@ -35,7 +34,7 @@ async def main(message: str, ssn_id: Optional[str] = None):
 
     print(f"User: {message}")
 
-    output = await session.invoke(Question(question=message))
+    output = session.invoke(Question(question=message))
 
     print(f"Agent: {output.answer}")
 
@@ -64,4 +63,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    asyncio.run(main(args.message, args.session))
+    main(args.message, args.session)
