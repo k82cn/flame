@@ -13,7 +13,7 @@ limitations under the License.
 
 from dataclasses import dataclass, asdict
 from enum import IntEnum
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Tuple
 from datetime import datetime
 from pydantic import BaseModel
 from pathlib import Path
@@ -22,6 +22,7 @@ import os
 import bson
 import string
 import random
+import pickle
 
 
 # Type aliases
@@ -259,3 +260,84 @@ class ObjectExpr:
     def decode(cls, json_data: bytes) -> "ObjectExpr":
         data = bson.loads(json_data)
         return cls(**data)
+
+
+@dataclass
+class RunnerContext:
+    """Context for runner session containing the shared execution object.
+
+    This class encapsulates data shared within a session, including the
+    execution object specific to the session.
+
+    Attributes:
+        execution_object: The execution object for the customized session. This can be
+                          any Python object (function, class instance, etc.) that will
+                          be used to execute tasks within the session.
+    """
+
+    execution_object: Any
+
+
+@dataclass
+class RunnerRequest:
+    """Request for runner task invocation.
+
+    This class defines the input for each task and contains information about
+    which method to invoke and what arguments to pass.
+
+    Attributes:
+        method: The name of the method to invoke within the customized application.
+                Should be None if the execution object itself is a function or callable.
+        args: A tuple containing positional arguments for the method. Optional.
+        kwargs: A dictionary of keyword arguments for the method. Optional.
+        input_object: An ObjectExpr representing the method input, used when the input
+                      is large. Optional.
+
+    Note: Only one of args, kwargs, or input_object should be non-None at a time to
+    avoid ambiguity. If all are None, the method will be called without arguments.
+    """
+
+    method: Optional[str] = None
+    args: Optional[Tuple] = None
+    kwargs: Optional[Dict[str, Any]] = None
+    input_object: Optional[ObjectExpr] = None
+
+    def __post_init__(self):
+        """Validate that only one of args, kwargs, or input_object is set."""
+        non_none_count = sum([
+            self.args is not None,
+            self.kwargs is not None,
+            self.input_object is not None
+        ])
+
+        if non_none_count > 1:
+            raise ValueError(
+                "Only one of 'args', 'kwargs', or 'input_object' can be set at a time. "
+                f"Found {non_none_count} non-None values."
+            )
+
+    def set_object(self, session_id: str, obj: Any) -> None:
+        """Pickle and cache a large object as the method input.
+
+        This method serializes the provided object using pickle and caches it,
+        updating the input_object field with an ObjectExpr. The service will then
+        unpickle and load the object as input as needed.
+
+        Args:
+            session_id: The session ID for caching the object.
+            obj: The object to pickle and cache as method input.
+
+        Raises:
+            ValueError: If args or kwargs are already set.
+        """
+        if self.args is not None or self.kwargs is not None:
+            raise ValueError(
+                "Cannot set input_object when 'args' or 'kwargs' are already set. "
+                "Only one input method can be used at a time."
+            )
+
+        # Import here to avoid circular dependency
+        from .cache import put_object
+
+        pickled_data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+        self.input_object = put_object(session_id, pickled_data)

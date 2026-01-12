@@ -52,6 +52,8 @@ from .types import (
     Application,
     FlameContext,
     TaskInformer,
+    RunnerContext,
+    RunnerRequest,
 )
 
 from .client import (
@@ -111,6 +113,8 @@ __all__ = [
     "Application",
     "FlameContext",
     "TaskInformer",
+    "RunnerContext",
+    "RunnerRequest",
     # Client classes
     "Connection",
     "connect",
