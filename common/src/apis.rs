@@ -99,6 +99,7 @@ pub struct Application {
     pub max_instances: u32,
     pub delay_release: Duration,
     pub schema: Option<ApplicationSchema>,
+    pub url: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -114,6 +115,7 @@ pub struct ApplicationAttributes {
     pub max_instances: u32,
     pub delay_release: Duration,
     pub schema: Option<ApplicationSchema>,
+    pub url: Option<String>,
 }
 
 impl Default for ApplicationAttributes {
@@ -130,6 +132,7 @@ impl Default for ApplicationAttributes {
             max_instances: DEFAULT_MAX_INSTANCES,
             delay_release: DEFAULT_DELAY_RELEASE,
             schema: Some(ApplicationSchema::default()),
+            url: None,
         }
     }
 }
@@ -244,6 +247,7 @@ pub struct ApplicationContext {
     pub arguments: Vec<String>,
     pub working_directory: Option<String>,
     pub environments: HashMap<String, String>,
+    pub url: Option<String>,
 
     pub shim: Shim,
 }
@@ -638,6 +642,7 @@ impl TryFrom<rpc::Application> for ApplicationContext {
                 .into_iter()
                 .map(|e| (e.name, e.value))
                 .collect(),
+            url: spec.url.clone(),
             shim: Shim::try_from(spec.shim)
                 .map_err(|_| FlameError::InvalidConfig("shim".to_string()))?,
         })
@@ -672,6 +677,7 @@ impl From<ApplicationContext> for rpc::ApplicationContext {
             shim: ctx.shim.into(),
             command: ctx.command.clone(),
             working_directory: ctx.working_directory.clone(),
+            url: ctx.url.clone(),
         }
     }
 }
@@ -840,6 +846,7 @@ impl TryFrom<&rpc::Application> for Application {
                 .map(Duration::seconds)
                 .unwrap_or(DEFAULT_DELAY_RELEASE),
             schema: spec.schema.map(ApplicationSchema::from),
+            url: spec.url.clone(),
         })
     }
 }
@@ -869,6 +876,7 @@ impl From<&Application> for rpc::Application {
             max_instances: Some(app.max_instances),
             delay_release: Some(app.delay_release.num_seconds()),
             schema: app.schema.clone().map(rpc::ApplicationSchema::from),
+            url: app.url.clone(),
         });
         let metadata = Some(rpc::Metadata {
             id: app.name.clone(),
@@ -909,6 +917,7 @@ impl From<rpc::ApplicationSpec> for ApplicationAttributes {
                 .map(Duration::seconds)
                 .unwrap_or(DEFAULT_DELAY_RELEASE),
             schema: spec.schema.map(ApplicationSchema::from),
+            url: spec.url.clone(),
         }
     }
 }

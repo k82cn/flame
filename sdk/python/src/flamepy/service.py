@@ -52,6 +52,7 @@ class ApplicationContext:
     shim: Shim
     image: Optional[str] = None
     command: Optional[str] = None
+    url: Optional[str] = None
 
 
 @dataclass
@@ -153,6 +154,7 @@ class FlameInstanceServicer(InstanceServicer):
                 shim=Shim(request.application.shim),
                 image=(request.application.image if request.application.HasField("image") else None),
                 command=(request.application.command if request.application.HasField("command") else None),
+                url=(request.application.url if request.application.HasField("url") else None),
             )
 
             logger.debug(f"app_context: {app_context}")

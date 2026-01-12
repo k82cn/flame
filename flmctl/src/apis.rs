@@ -47,6 +47,7 @@ pub struct SpecYaml {
     pub max_instances: Option<u32>,
     pub delay_release: Option<i64>,
     pub schema: Option<SchemaYaml>,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +85,7 @@ impl TryFrom<&ApplicationYaml> for ApplicationAttributes {
             max_instances: yaml.spec.max_instances,
             delay_release: yaml.spec.delay_release.map(Duration::seconds),
             schema: yaml.spec.schema.clone().map(ApplicationSchema::from),
+            url: yaml.spec.url.clone(),
         })
     }
 }
