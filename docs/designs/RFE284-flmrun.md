@@ -26,7 +26,7 @@ This common Python application introduces two classes to facilitate communicatio
 
 The `RunnerContext` encapsulates data shared within the session, including the execution object specific to the session.  
 
-- `object`: The execution object for the customized session. This field is required.
+- `execution_object`: The execution object for the customized session. This field is required.
 
 #### RunnerRequest
 
@@ -35,9 +35,9 @@ The `RunnerRequest` defines the input for each task and contains the following f
 - `method`: The name of the method to invoke within the customized application. This field is optional; it should be `None` if the execution object itself is a function or callable.
 - `args`: A tuple containing positional arguments for the method. Optional.
 - `kwargs`: A dictionary of keyword arguments for the method. Optional.
-- `object`: An `ObjectExpr` representing the method input, used when the input is large. Optional.
+- `input_object`: An `ObjectExpr` representing the method input, used when the input is large. Optional.
 
-Note: The fields `args`, `kwargs`, and `object` may all be `None`, indicating that the method has no input. However, if any of these fields are provided, only one should be non-`None` at a time to avoid ambiguity.
+Note: The fields `args`, `kwargs`, and `input_object` may all be `None`, indicating that the method has no input. However, if any of these fields are provided, only one should be non-`None` at a time to avoid ambiguity. This constraint is enforced by a `__post_init__` validation method that raises a `ValueError` if multiple input fields are set.
 
 ### Service
 
@@ -68,17 +68,19 @@ To support the introduction of the new `url` field in the application configurat
 
 The `RunnerContext` and `RunnerRequest` classes are integral parts of the `flamepy` module, and are made available to users developing custom applications.
 
-- **RunnerContext** encapsulates the session-wide shared execution object. Its `object` field holds a Python object directly. This allows flexible sharing of state or functions for all tasks within a session, leveraging `ObjectExpr` to optimize data transfer.
+- **RunnerContext** encapsulates the session-wide shared execution object. Its `execution_object` field holds a Python object directly. This allows flexible sharing of state or functions for all tasks within a session, leveraging `ObjectExpr` to optimize data transfer.
   
 - **RunnerRequest** represents the per-task invocation input. It includes the following fields:
   - `method`: the method name to invoke on the execution object; `None` indicates that the execution object itself is directly callable.
   - `args`: tuple of positional arguments (optional).
   - `kwargs`: dictionary of keyword arguments (optional).
-  - `object`: an `ObjectExpr` to encapsulate large method arguments (optional).
+  - `input_object`: an `ObjectExpr` to encapsulate large method arguments (optional).
 
-  The `RunnerRequest` provides a `set_object()` method to pickle and cache large objects, updating the `object` field with an `ObjectExpr`. The service then unpickles and loads the object as input as needed.
+  The `RunnerRequest` provides a `set_object()` method to pickle and cache large objects, updating the `input_object` field with an `ObjectExpr`. The service then unpickles and loads the object as input as needed.
+  
+  A `__post_init__` validation method ensures that only one of `args`, `kwargs`, or `input_object` is set at initialization time, raising a `ValueError` if multiple input fields are provided. The `set_object()` method also validates that `args` or `kwargs` are not already set before updating `input_object`.
 
-**Usage Note:** Only one of `args`, `kwargs`, or `object` should be non-`None` to prevent ambiguity. If none are supplied, the method should be called without arguments.
+**Usage Note:** Only one of `args`, `kwargs`, or `input_object` should be non-`None` to prevent ambiguity. If none are supplied, the method should be called without arguments. This constraint is enforced programmatically through validation.
 
 ### Services
 
@@ -98,10 +100,10 @@ The `on_session_enter` handler in `FlameRunpyService` is responsible for initial
 
 Within `on_task_invoke`, the following steps occur:
 
-1. Retrieve the execution object from `_ssn_ctx.common_data().object`.
+1. Retrieve the execution object from `_ssn_ctx.common_data().execution_object`.
 2. Deserialize the incoming request from `TaskContext.input`, which contains a pickled `RunnerRequest`.
 3. Determine invocation input:
-   - If `object` is set, unpickle its data for method input.
+   - If `input_object` is set, unpickle its data for method input.
    - If `args` or `kwargs` are set, use them directly as invocation parameters.
 4. Execute the requested method on the execution object using the resolved input.
 5. Cache the result as needed and return an `ObjectExpr` within the `TaskOutput`.
@@ -162,12 +164,12 @@ spec:
    ```
 2. Create a session with `RunnerContext` and `sum`
     ```python
-    ctx = RunnerContext(sum)
+    ctx = RunnerContext(execution_object=sum)
     ssn = flamepy.create_session("flmrun", ctx)
     ```
 3. Invoke the `sum` function remotely
     ```python
-    req = RunnerRequest(method = None, args = (1, 2))
+    req = RunnerRequest(method=None, args=(1, 2))
     result = ssn.invoke(req)
     ```
 
