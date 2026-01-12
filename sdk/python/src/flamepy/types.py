@@ -131,6 +131,7 @@ class ApplicationAttributes:
     max_instances: Optional[int] = None
     delay_release: Optional[int] = None
     schema: Optional[ApplicationSchema] = None
+    url: Optional[str] = None
 
 
 @dataclass
@@ -174,6 +175,7 @@ class Application:
     max_instances: Optional[int] = None
     delay_release: Optional[int] = None
     schema: Optional[ApplicationSchema] = None
+    url: Optional[str] = None
 
 
 class TaskInformer:

@@ -1,0 +1,36 @@
+# Rust build artifacts
+target/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Log files
+*.log
+
+# Work directory
+work/
+
+# Dependencies (if using vendored deps)
+vendor/
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Docker volumes and temp files
+supervisord.pid
+
+# Documentation build output
+docs/_build/

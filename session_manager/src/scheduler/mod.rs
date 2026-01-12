@@ -90,6 +90,7 @@ mod tests {
             max_instances: 10,
             delay_release: Duration::seconds(0),
             schema: None,
+            url: None,
         }
     }
 

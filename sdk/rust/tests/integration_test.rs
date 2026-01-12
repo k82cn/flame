@@ -233,6 +233,7 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
                     output: Some(string_schema.to_string()),
                     common_data: None,
                 }),
+                url: None,
             },
         ),
         (
@@ -249,6 +250,7 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
                 max_instances: None,
                 delay_release: None,
                 schema: None,
+                url: None,
             },
         ),
     ];

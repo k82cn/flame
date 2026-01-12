@@ -53,6 +53,7 @@ pub struct ApplicationDao {
     pub max_instances: i64,
     pub delay_release: i64,
     pub schema: Option<Json<AppSchemaDao>>,
+    pub url: Option<String>,
 
     pub shim: i32,
     pub creation_time: i64,
@@ -191,6 +192,7 @@ impl TryFrom<&ApplicationDao> for Application {
             max_instances: app.max_instances as u32,
             delay_release: Duration::seconds(app.delay_release),
             schema: app.schema.clone().map(|arg| arg.0.into()),
+            url: app.url.clone(),
         })
     }
 }

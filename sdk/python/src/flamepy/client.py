@@ -202,6 +202,7 @@ class Connection:
             max_instances=app_attrs.max_instances,
             delay_release=app_attrs.delay_release,
             schema=schema,
+            url=app_attrs.url,
         )
 
         request = RegisterApplicationRequest(name=name, application=app_spec)
@@ -262,6 +263,7 @@ class Connection:
                         max_instances=app.spec.max_instances,
                         delay_release=app.spec.delay_release,
                         schema=schema,
+                        url=app.spec.url if app.spec.HasField("url") else None,
                     )
                 )
 
@@ -303,6 +305,7 @@ class Connection:
                 max_instances=response.spec.max_instances,
                 delay_release=response.spec.delay_release,
                 schema=schema,
+                url=response.spec.url if response.spec.HasField("url") else None,
             )
 
         except grpc.RpcError as e:

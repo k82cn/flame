@@ -107,6 +107,7 @@ message ApplicationSpec {
   optional uint32 max_instances = 9;
   optional int64 delay_release = 10;
   optional ApplicationSchema schema = 11;
+  optional string url = 12;
 }
 
 message Application {

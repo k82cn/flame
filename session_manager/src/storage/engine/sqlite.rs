@@ -200,9 +200,10 @@ impl Engine for SqliteEngine {
                 max_instances, 
                 delay_release, 
                 schema, 
+                url,
                 creation_time, 
                 state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"#;
         let app: ApplicationDao = sqlx::query_as(sql)
             .bind(name)
@@ -216,6 +217,7 @@ impl Engine for SqliteEngine {
             .bind(attr.max_instances)
             .bind(attr.delay_release.num_seconds())
             .bind(schema)
+            .bind(attr.url)
             .bind(Utc::now().timestamp())
             .bind(ApplicationState::Enabled as i32)
             .fetch_one(&mut *tx)
@@ -262,6 +264,7 @@ impl Engine for SqliteEngine {
                         working_directory=?,
                         max_instances=?,
                         delay_release=?,
+                        url=?,
                         version=version+1
                     WHERE name=?
                     RETURNING *"#;
@@ -276,6 +279,7 @@ impl Engine for SqliteEngine {
             .bind(attr.working_directory)
             .bind(attr.max_instances)
             .bind(attr.delay_release.num_seconds())
+            .bind(attr.url)
             .bind(name)
             .fetch_one(&mut *tx)
             .await
@@ -803,6 +807,7 @@ mod tests {
                 max_instances: 10,
                 delay_release: Duration::seconds(0),
                 schema: None,
+                url: None,
             },
         ))?;
         assert_eq!(app_2.name, "flmexec");
@@ -917,6 +922,7 @@ mod tests {
                         output: Some(string_schema.to_string()),
                         common_data: None,
                     }),
+                    url: None,
                 },
             ),
             (
@@ -933,6 +939,7 @@ mod tests {
                     max_instances: 10,
                     delay_release: Duration::seconds(0),
                     schema: None,
+                    url: None,
                 },
             ),
         ];
@@ -965,6 +972,159 @@ mod tests {
 
         assert_eq!(app_1.name, "flmexec");
         assert_eq!(app_1.state, ApplicationState::Enabled);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_register_application_with_url() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_register_app_with_url_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        let test_url = "file:///opt/test-package.whl".to_string();
+        
+        // Register application with URL
+        let app = tokio_test::block_on(storage.register_application(
+            "flmtestapp-url".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Host,
+                image: None,
+                description: Some("Test application with URL".to_string()),
+                labels: vec!["test".to_string()],
+                command: Some("/usr/bin/uv".to_string()),
+                arguments: vec!["run".to_string(), "-n".to_string(), "flamepy.runpy".to_string()],
+                environments: HashMap::new(),
+                working_directory: "/tmp".to_string(),
+                max_instances: 5,
+                delay_release: Duration::seconds(10),
+                schema: None,
+                url: Some(test_url.clone()),
+            },
+        ))?;
+
+        // Verify application was registered with URL
+        assert_eq!(app.name, "flmtestapp-url");
+        assert_eq!(app.url, Some(test_url.clone()));
+        assert_eq!(app.description, Some("Test application with URL".to_string()));
+        assert_eq!(app.state, ApplicationState::Enabled);
+
+        // Retrieve and verify URL persisted
+        let retrieved_app = tokio_test::block_on(storage.get_application("flmtestapp-url".to_string()))?;
+        assert_eq!(retrieved_app.name, "flmtestapp-url");
+        assert_eq!(retrieved_app.url, Some(test_url));
+        assert_eq!(retrieved_app.description, Some("Test application with URL".to_string()));
+        assert_eq!(retrieved_app.state, ApplicationState::Enabled);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_register_application_without_url() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_register_app_without_url_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        // Register application without URL (backward compatibility test)
+        let app = tokio_test::block_on(storage.register_application(
+            "flmtestapp-no-url".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Host,
+                image: None,
+                description: Some("Test application without URL".to_string()),
+                labels: vec!["test".to_string()],
+                command: Some("/usr/bin/test".to_string()),
+                arguments: vec![],
+                environments: HashMap::new(),
+                working_directory: "/tmp".to_string(),
+                max_instances: 5,
+                delay_release: Duration::seconds(10),
+                schema: None,
+                url: None,
+            },
+        ))?;
+
+        // Verify application was registered without URL
+        assert_eq!(app.name, "flmtestapp-no-url");
+        assert_eq!(app.url, None);
+        assert_eq!(app.description, Some("Test application without URL".to_string()));
+        assert_eq!(app.state, ApplicationState::Enabled);
+
+        // Retrieve and verify URL is None
+        let retrieved_app = tokio_test::block_on(storage.get_application("flmtestapp-no-url".to_string()))?;
+        assert_eq!(retrieved_app.name, "flmtestapp-no-url");
+        assert_eq!(retrieved_app.url, None);
+        assert_eq!(retrieved_app.state, ApplicationState::Enabled);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_application_with_url() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_update_application_with_url_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+
+        // Register initial application without URL
+        tokio_test::block_on(storage.register_application(
+            "flmtestapp-update".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Host,
+                image: None,
+                description: Some("Initial description".to_string()),
+                labels: vec![],
+                command: Some("/usr/bin/test".to_string()),
+                arguments: vec![],
+                environments: HashMap::new(),
+                working_directory: "/tmp".to_string(),
+                max_instances: 5,
+                delay_release: Duration::seconds(10),
+                schema: None,
+                url: None,
+            },
+        ))?;
+
+        let app_before = tokio_test::block_on(storage.get_application("flmtestapp-update".to_string()))?;
+        assert_eq!(app_before.url, None);
+
+        // Update application with URL
+        let test_url = "file:///opt/updated-package.whl".to_string();
+        let updated_app = tokio_test::block_on(storage.update_application(
+            "flmtestapp-update".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Host,
+                image: Some("updated-image".to_string()),
+                description: Some("Updated description".to_string()),
+                labels: vec!["updated".to_string()],
+                command: Some("/usr/bin/uv".to_string()),
+                arguments: vec!["run".to_string()],
+                environments: HashMap::from([("ENV".to_string(), "test".to_string())]),
+                working_directory: "/opt".to_string(),
+                max_instances: 10,
+                delay_release: Duration::seconds(20),
+                schema: None,
+                url: Some(test_url.clone()),
+            },
+        ))?;
+
+        // Verify update including URL
+        assert_eq!(updated_app.name, "flmtestapp-update");
+        assert_eq!(updated_app.url, Some(test_url.clone()));
+        assert_eq!(updated_app.description, Some("Updated description".to_string()));
+        // Note: image field is not updated by update_application method
+        assert_eq!(updated_app.working_directory, "/opt".to_string());
+        assert_eq!(updated_app.max_instances, 10);
+
+        // Retrieve and verify URL persisted after update
+        let retrieved_app = tokio_test::block_on(storage.get_application("flmtestapp-update".to_string()))?;
+        assert_eq!(retrieved_app.url, Some(test_url));
+        assert_eq!(retrieved_app.description, Some("Updated description".to_string()));
 
         Ok(())
     }
