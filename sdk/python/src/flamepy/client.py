@@ -202,6 +202,7 @@ class Connection:
             max_instances=app_attrs.max_instances,
             delay_release=app_attrs.delay_release,
             schema=schema,
+            url=app_attrs.url,
         )
 
         request = RegisterApplicationRequest(name=name, application=app_spec)
