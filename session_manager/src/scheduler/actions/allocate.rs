@@ -16,7 +16,7 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{ALL_NODE, BINDING_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION, VOID_EXECUTOR, SessionInfoPtr, SnapShot};
+use crate::model::{SessionInfoPtr, SnapShot, ALL_NODE, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::node_order_fn;
 use crate::scheduler::plugins::ssn_order_fn;
@@ -66,14 +66,13 @@ impl Action for AllocateAction {
                 continue;
             }
 
-            // if there are some exectors could be allocated to a session (VOID, IDLE, BINDING)
-            // skip allocate new executor to the session
-            // TODO(jinzhejz): this is a temporary solution, schedule only allocate ONE executor to a session each time.
-            let dispatch_done = self.is_dispatch_executor_done(ss.clone(), ssn.clone())?;
-            if !dispatch_done {
+            // If there're still some executors in pipeline, skip allocate new executor to the session.
+            let pipelined_executors = ss.pipelined_executors(ssn.clone())?;
+            if !pipelined_executors.is_empty() {
                 tracing::debug!(
-                    "Skip allocate resources for session <{}> because there are some exectors could be allocated to it.", 
-                    ssn.id
+                    "Skip allocate resources for session <{}> because there are <{}> exectors in pipeline.", 
+                    ssn.id,
+                    pipelined_executors.len()
                 );
                 continue;
             }
@@ -99,32 +98,5 @@ impl Action for AllocateAction {
         }
 
         Ok(())
-    }
-}
-
-impl AllocateAction {
-    fn is_dispatch_executor_done(&self, ss: Arc<SnapShot>, ssn: SessionInfoPtr) -> Result<bool, FlameError> {
-        let void_exec = ss.find_executors(VOID_EXECUTOR)?;
-        for exec in void_exec.iter() {
-           if ssn.slots == exec.1.slots {
-                return Ok(false);
-            }
-        }
-
-        let idle_execs = ss.find_executors(IDLE_EXECUTOR)?;
-        for exec in idle_execs.iter() {
-            if ssn.slots == exec.1.slots {
-                return Ok(false);
-            }
-        }
-
-        let binding_execs = ss.find_executors(BINDING_EXECUTOR)?;
-        for exec in binding_execs.iter() {
-            if ssn.slots == exec.1.slots {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
     }
 }

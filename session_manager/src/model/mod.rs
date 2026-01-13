@@ -575,6 +575,44 @@ impl SnapShot {
 
         Ok(())
     }
+
+    /*
+     * Get the executors that maybe assigned to the session later, depending on the scheduler algorithm.
+     * The pipelined executors are the executors that are not bound to any other session and
+     * meet the session's resource requirements.
+     *
+     * @param ssn: The session to get the pipelined executors.
+     * @return: The pipelined executors.
+     */
+    pub fn pipelined_executors(
+        &self,
+        ssn: SessionInfoPtr,
+    ) -> Result<Vec<ExecutorInfoPtr>, FlameError> {
+        let mut executors = Vec::new();
+
+        let void_exec = self.find_executors(VOID_EXECUTOR)?;
+        for exec in void_exec.values() {
+            if ssn.slots == exec.slots {
+                executors.push(exec.clone());
+            }
+        }
+
+        let idle_execs = self.find_executors(IDLE_EXECUTOR)?;
+        for exec in idle_execs.values() {
+            if ssn.slots == exec.slots {
+                executors.push(exec.clone());
+            }
+        }
+
+        // let binding_execs = self.find_executors(BINDING_EXECUTOR)?;
+        // for exec in binding_execs.values() {
+        //     if ssn.slots == exec.slots {
+        //         executors.push(exec.clone());
+        //     }
+        // }
+
+        Ok(executors)
+    }
 }
 
 #[derive(Clone, Debug)]
