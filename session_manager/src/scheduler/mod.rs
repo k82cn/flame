@@ -139,7 +139,6 @@ mod tests {
                     storage: format!("sqlite:///{url}"),
                     ..Default::default()
                 },
-
                 ..Default::default()
             };
 

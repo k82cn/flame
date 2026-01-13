@@ -206,7 +206,8 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
             ApplicationAttributes {
                 shim: Shim::Host,
                 description: Some(
-                    "The Flame Runner application for executing customized Python applications.".to_string(),
+                    "The Flame Runner application for executing customized Python applications."
+                        .to_string(),
                 ),
                 working_directory: "/tmp".to_string(),
                 command: Some("/usr/bin/uv".to_string()),

@@ -985,7 +985,7 @@ mod tests {
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         let test_url = "file:///opt/test-package.whl".to_string();
-        
+
         // Register application with URL
         let app = tokio_test::block_on(storage.register_application(
             "flmtestapp-url".to_string(),
@@ -995,7 +995,11 @@ mod tests {
                 description: Some("Test application with URL".to_string()),
                 labels: vec!["test".to_string()],
                 command: Some("/usr/bin/uv".to_string()),
-                arguments: vec!["run".to_string(), "-n".to_string(), "flamepy.runpy".to_string()],
+                arguments: vec![
+                    "run".to_string(),
+                    "-n".to_string(),
+                    "flamepy.runpy".to_string(),
+                ],
                 environments: HashMap::new(),
                 working_directory: "/tmp".to_string(),
                 max_instances: 5,
@@ -1008,14 +1012,21 @@ mod tests {
         // Verify application was registered with URL
         assert_eq!(app.name, "flmtestapp-url");
         assert_eq!(app.url, Some(test_url.clone()));
-        assert_eq!(app.description, Some("Test application with URL".to_string()));
+        assert_eq!(
+            app.description,
+            Some("Test application with URL".to_string())
+        );
         assert_eq!(app.state, ApplicationState::Enabled);
 
         // Retrieve and verify URL persisted
-        let retrieved_app = tokio_test::block_on(storage.get_application("flmtestapp-url".to_string()))?;
+        let retrieved_app =
+            tokio_test::block_on(storage.get_application("flmtestapp-url".to_string()))?;
         assert_eq!(retrieved_app.name, "flmtestapp-url");
         assert_eq!(retrieved_app.url, Some(test_url));
-        assert_eq!(retrieved_app.description, Some("Test application with URL".to_string()));
+        assert_eq!(
+            retrieved_app.description,
+            Some("Test application with URL".to_string())
+        );
         assert_eq!(retrieved_app.state, ApplicationState::Enabled);
 
         Ok(())
@@ -1051,11 +1062,15 @@ mod tests {
         // Verify application was registered without URL
         assert_eq!(app.name, "flmtestapp-no-url");
         assert_eq!(app.url, None);
-        assert_eq!(app.description, Some("Test application without URL".to_string()));
+        assert_eq!(
+            app.description,
+            Some("Test application without URL".to_string())
+        );
         assert_eq!(app.state, ApplicationState::Enabled);
 
         // Retrieve and verify URL is None
-        let retrieved_app = tokio_test::block_on(storage.get_application("flmtestapp-no-url".to_string()))?;
+        let retrieved_app =
+            tokio_test::block_on(storage.get_application("flmtestapp-no-url".to_string()))?;
         assert_eq!(retrieved_app.name, "flmtestapp-no-url");
         assert_eq!(retrieved_app.url, None);
         assert_eq!(retrieved_app.state, ApplicationState::Enabled);
@@ -1090,7 +1105,8 @@ mod tests {
             },
         ))?;
 
-        let app_before = tokio_test::block_on(storage.get_application("flmtestapp-update".to_string()))?;
+        let app_before =
+            tokio_test::block_on(storage.get_application("flmtestapp-update".to_string()))?;
         assert_eq!(app_before.url, None);
 
         // Update application with URL
@@ -1116,15 +1132,22 @@ mod tests {
         // Verify update including URL
         assert_eq!(updated_app.name, "flmtestapp-update");
         assert_eq!(updated_app.url, Some(test_url.clone()));
-        assert_eq!(updated_app.description, Some("Updated description".to_string()));
+        assert_eq!(
+            updated_app.description,
+            Some("Updated description".to_string())
+        );
         // Note: image field is not updated by update_application method
         assert_eq!(updated_app.working_directory, "/opt".to_string());
         assert_eq!(updated_app.max_instances, 10);
 
         // Retrieve and verify URL persisted after update
-        let retrieved_app = tokio_test::block_on(storage.get_application("flmtestapp-update".to_string()))?;
+        let retrieved_app =
+            tokio_test::block_on(storage.get_application("flmtestapp-update".to_string()))?;
         assert_eq!(retrieved_app.url, Some(test_url));
-        assert_eq!(retrieved_app.description, Some("Updated description".to_string()));
+        assert_eq!(
+            retrieved_app.description,
+            Some("Updated description".to_string())
+        );
 
         Ok(())
     }
