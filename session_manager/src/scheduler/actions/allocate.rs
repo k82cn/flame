@@ -69,11 +69,7 @@ impl Action for AllocateAction {
             // If there're still some executors in pipeline, skip allocate new executor to the session.
             let pipelined_executors = ss.pipelined_executors(ssn.clone())?;
             if !pipelined_executors.is_empty() {
-                tracing::debug!(
-                    "Skip allocate resources for session <{}> because there are <{}> exectors in pipeline.", 
-                    ssn.id,
-                    pipelined_executors.len()
-                );
+                tracing::debug!("Skip allocate resources for session <{}> because there are <{}> exectors in pipeline.", ssn.id, pipelined_executors.len());
                 continue;
             }
 

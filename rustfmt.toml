@@ -1,1 +1,5 @@
 newline_style = "Unix"
+hard_tabs = false
+tab_spaces = 4
+use_field_init_shorthand = true
+fn_params_layout = "Tall"
