@@ -15,16 +15,11 @@ import pytest
 import flamepy
 from flamepy import SessionState
 from e2e.api import TestRequest, TestResponse, TestContext
-import string
-import random
+from tests.utils import random_string
 import threading
 from concurrent.futures import wait
 
 FLM_TEST_APP = "flme2e"
-
-
-def random_string(size=8, chars=string.ascii_uppercase + string.digits) -> str:
-    return "".join(random.choice(chars) for _ in range(size))
 
 
 class TestTaskInformer(flamepy.TaskInformer):
@@ -51,7 +46,7 @@ class TestTaskInformer(flamepy.TaskInformer):
         assert False, f"Task failed: {error}"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def setup_test_env():
     flamepy.register_application(
         FLM_TEST_APP,
@@ -60,12 +55,20 @@ def setup_test_env():
             command="uv",
             working_directory="/opt/e2e",
             environments={"FLAME_LOG_LEVEL": "DEBUG"},
-            arguments=["run", "src/e2e/service.py", "src/e2e/api.py"],
+            arguments=["run", "src/e2e/instance_svc.py", "src/e2e/api.py"],
         ),
     )
 
     yield
 
+    # Clean up all sessions before unregistering
+    sessions = flamepy.list_sessions()
+    for sess in sessions:
+        try:
+            flamepy.close_session(sess.id)
+        except:
+            pass
+    
     flamepy.unregister_application(FLM_TEST_APP)
 
 
@@ -74,7 +77,7 @@ def test_create_session():
         application=FLM_TEST_APP, common_data=TestContext()
     )
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP
@@ -82,7 +85,7 @@ def test_create_session():
 
     session.close()
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP
@@ -92,7 +95,7 @@ def test_create_session():
 def test_invoke_task_without_common_data():
     session = flamepy.create_session(application=FLM_TEST_APP, common_data=None)
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP
@@ -115,7 +118,7 @@ def test_invoke_task_with_common_data():
         application=FLM_TEST_APP, common_data=TestContext(common_data=sys_context)
     )
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP
@@ -132,7 +135,7 @@ def test_invoke_multiple_tasks_without_common_data():
 
     session = flamepy.create_session(application=FLM_TEST_APP, common_data=None)
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP
@@ -165,7 +168,7 @@ def test_run_multiple_tasks_with_futures():
 
     session = flamepy.create_session(application=FLM_TEST_APP, common_data=None)
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP
@@ -199,7 +202,7 @@ def test_update_common_data():
         application=FLM_TEST_APP, common_data=TestContext(common_data=sys_context)
     )
 
-    ssn_list = flamepy.list_sessions()
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == session.id
     assert ssn_list[0].application == FLM_TEST_APP

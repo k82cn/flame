@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 @dataclass
@@ -19,11 +19,47 @@ class TestContext:
     common_data: Optional[str] = None
 
 @dataclass
+class ApplicationContextInfo:
+    """Information about the application context."""
+    name: Optional[str] = None
+    shim: Optional[str] = None
+    image: Optional[str] = None
+    command: Optional[str] = None
+    working_directory: Optional[str] = None
+    url: Optional[str] = None
+
+@dataclass
+class SessionContextInfo:
+    """Information about the session context."""
+    session_id: Optional[str] = None
+    application: Optional[ApplicationContextInfo] = None
+    has_common_data: bool = False
+    common_data_type: Optional[str] = None
+
+@dataclass
+class TaskContextInfo:
+    """Information about the task context."""
+    task_id: Optional[str] = None
+    session_id: Optional[str] = None
+    has_input: bool = False
+    input_type: Optional[str] = None
+
+@dataclass
 class TestRequest:
     update_common_data: bool = False
     input: Optional[str] = None
+    # Flags to control what context information to return
+    request_task_context: bool = False
+    request_session_context: bool = False
+    request_application_context: bool = False
 
 @dataclass
 class TestResponse:
     output: Optional[str] = None
     common_data: Optional[str] = None
+    # Context information fields
+    task_context: Optional[TaskContextInfo] = None
+    session_context: Optional[SessionContextInfo] = None
+    application_context: Optional[ApplicationContextInfo] = None
+    # Service state information
+    service_state: Optional[Dict[str, Any]] = None

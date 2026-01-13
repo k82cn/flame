@@ -52,6 +52,7 @@ class ApplicationContext:
     shim: Shim
     image: Optional[str] = None
     command: Optional[str] = None
+    working_directory: Optional[str] = None
     url: Optional[str] = None
 
 
@@ -154,6 +155,7 @@ class FlameInstanceServicer(InstanceServicer):
                 shim=Shim(request.application.shim),
                 image=(request.application.image if request.application.HasField("image") else None),
                 command=(request.application.command if request.application.HasField("command") else None),
+                working_directory=(request.application.working_directory if request.application.HasField("working_directory") else None),
                 url=(request.application.url if request.application.HasField("url") else None),
             )
 
