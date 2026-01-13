@@ -196,7 +196,26 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
             "flmping".to_string(),
             ApplicationAttributes {
                 shim: Shim::Host,
+                url: Some("file:///opt/flame/bin/flmping-service".to_string()),
                 command: Some("/usr/local/flame/bin/flmping-service".to_string()),
+                ..ApplicationAttributes::default()
+            },
+        ),
+        (
+            "flmrun".to_string(),
+            ApplicationAttributes {
+                shim: Shim::Host,
+                description: Some(
+                    "The Flame Runner application for executing customized Python applications.".to_string(),
+                ),
+                working_directory: "/usr/local/flame/work/flmrun".to_string(),
+                command: Some("/usr/bin/uv".to_string()),
+                arguments: vec![
+                    "run".to_string(),
+                    "-n".to_string(),
+                    "-m".to_string(),
+                    "flamepy.runpy".to_string(),
+                ],
                 ..ApplicationAttributes::default()
             },
         ),

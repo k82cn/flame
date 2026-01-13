@@ -1,0 +1,13 @@
+[project]
+name = "flmrun"
+version = "0.1.0"
+description = "Flame Runner Service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "flamepy",
+  "pip",
+]
+
+[tool.uv.sources]
+flamepy = { path = "/usr/local/flame/sdk/python" }
