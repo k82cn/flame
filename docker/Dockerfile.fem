@@ -25,6 +25,5 @@ COPY --from=builder /usr/local/cargo/bin/flmexec-service /usr/local/flame/bin/fl
 RUN chmod +x /usr/local/flame/bin/*
 
 COPY ./sdk/python /usr/local/flame/sdk/python
-COPY ./flmrun /usr/local/flame/work/flmrun
 
 ENTRYPOINT ["/usr/local/flame/bin/flame-executor-manager"]

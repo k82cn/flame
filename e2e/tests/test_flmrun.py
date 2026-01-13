@@ -74,7 +74,7 @@ def test_flmrun_application_registered():
     assert flmrun.shim == flamepy.Shim.Host
     assert flmrun.state == flamepy.ApplicationState.ENABLED
     assert flmrun.command == "/usr/bin/uv"
-    assert flmrun.working_directory == "/usr/local/flame/work/flmrun"
+    assert flmrun.working_directory == "/tmp"
 
 
 def test_flmrun_sum_function():
