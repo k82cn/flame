@@ -20,8 +20,4 @@ RUN chmod +x /usr/local/bin/*
 
 COPY ./sdk/python /usr/local/flame/sdk/python
 
-# Create work directory and copy flmrun
-RUN mkdir -p /usr/local/flame/work
-COPY ./flmrun /usr/local/flame/work/flmrun
-
 CMD ["service", "ssh", "start", "-D"]

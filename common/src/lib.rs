@@ -208,11 +208,15 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                 description: Some(
                     "The Flame Runner application for executing customized Python applications.".to_string(),
                 ),
-                working_directory: "/usr/local/flame/work/flmrun".to_string(),
+                working_directory: "/tmp".to_string(),
                 command: Some("/usr/bin/uv".to_string()),
                 arguments: vec![
                     "run".to_string(),
-                    "-n".to_string(),
+                    "--with".to_string(),
+                    "pip".to_string(),
+                    "--with".to_string(),
+                    "flamepy @ file:///usr/local/flame/sdk/python".to_string(),
+                    "python".to_string(),
                     "-m".to_string(),
                     "flamepy.runpy".to_string(),
                 ],
