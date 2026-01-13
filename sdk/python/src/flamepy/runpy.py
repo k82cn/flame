@@ -240,6 +240,13 @@ class FlameRunpyService(FlameService):
             logger.info(f"Task {context.task_id} completed successfully")
             logger.debug(f"Result type: {type(result)}")
             
+            # Update common data with the modified execution object to persist state
+            # This is important for stateful classes where instance variables change
+            logger.debug("Updating common data with modified execution object")
+            updated_context = RunnerContext(execution_object=execution_object)
+            self._ssn_ctx.update_common_data(updated_context)
+            logger.debug("Common data updated successfully")
+
             # Return the result as TaskOutput
             return TaskOutput(data=result)
             
