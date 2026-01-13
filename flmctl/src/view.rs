@@ -138,6 +138,11 @@ async fn view_application(
         "Image:",
         application.attributes.image.unwrap_or_default()
     );
+    println!(
+        "{:<15}{}",
+        "URL:",
+        application.attributes.url.unwrap_or_default()
+    );
     println!("{:<15}", "Labels:");
     for label in application.attributes.labels {
         println!("\t{label}");

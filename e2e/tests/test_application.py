@@ -29,10 +29,10 @@ def test_register_application():
 
 def test_list_application():
     apps = flamepy.list_applications()
-    assert len(apps) == 2
+    assert len(apps) == 3
 
     for app in apps:
-        assert app.name in ["flmexec", "flmping"]
+        assert app.name in ["flmexec", "flmping", "flmrun"]
         assert app.shim == flamepy.Shim.Host
         assert app.state == flamepy.ApplicationState.ENABLED
 

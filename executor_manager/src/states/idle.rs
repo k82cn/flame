@@ -46,6 +46,12 @@ impl State for IdleState {
         };
 
         tracing::debug!(
+            "Try to bind to session <{}> which is one of application <{:?}>.",
+            &ssn.session_id.clone(),
+            &ssn.application.clone()
+        );
+
+        tracing::debug!(
             "Try to bind Executor <{}> to <{}>.",
             &self.executor.id.clone(),
             &ssn.session_id.clone()

@@ -44,6 +44,7 @@ from .types import (
     ApplicationState,
     Shim,
     FlameErrorCode,
+    DataSource,
     # Classes
     FlameError,
     SessionAttributes,
@@ -54,6 +55,7 @@ from .types import (
     TaskInformer,
     RunnerContext,
     RunnerRequest,
+    ObjectExpr,
 )
 
 from .client import (
