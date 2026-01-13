@@ -13,7 +13,7 @@ limitations under the License.
 
 import pytest
 import flamepy
-from e2e.flmrun_helpers import (
+from e2e.helpers import (
     sum_func,
     multiply_func,
     greet_func,
@@ -66,11 +66,11 @@ def test_flmrun_application_registered():
     """Test that flmrun is registered as a default application."""
     apps = flamepy.list_applications()
     app_names = [app.name for app in apps]
-    assert "flmrun" in app_names, f"flmrun not found in applications: {app_names}"
+    assert FLMRUN_E2E_APP in app_names, f"{FLMRUN_E2E_APP} not found in applications: {app_names}"
     
     # Get the flmrun application and verify its configuration
-    flmrun = flamepy.get_application("flmrun")
-    assert flmrun.name == "flmrun"
+    flmrun = flamepy.get_application(FLMRUN_E2E_APP)
+    assert flmrun.name == FLMRUN_E2E_APP
     assert flmrun.shim == flamepy.Shim.Host
     assert flmrun.state == flamepy.ApplicationState.ENABLED
     assert flmrun.command == "/usr/bin/uv"
@@ -81,7 +81,7 @@ def test_flmrun_sum_function():
     """Test Case 1: Run a simple sum function remotely."""
     # Create a session with RunnerContext and sum function
     ctx = flamepy.RunnerContext(execution_object=sum_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Invoke the sum function remotely with positional arguments
@@ -103,7 +103,7 @@ def test_flmrun_class_method():
     
     # Create a session with the calculator instance
     ctx = flamepy.RunnerContext(execution_object=calc)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test add method
@@ -130,7 +130,7 @@ def test_flmrun_kwargs():
     """Test Case 3: Run a function with keyword arguments."""
     # Create a session with the function
     ctx = flamepy.RunnerContext(execution_object=greet_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test with keyword arguments
@@ -152,7 +152,7 @@ def test_flmrun_no_args():
     """Test Case 4: Run a function with no arguments."""
     # Create a session with the function
     ctx = flamepy.RunnerContext(execution_object=get_message_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Invoke with no arguments (all fields None)
@@ -169,7 +169,7 @@ def test_flmrun_multiple_tasks():
     """Test Case 5: Run multiple tasks in the same session."""
     # Create a session with the function
     ctx = flamepy.RunnerContext(execution_object=multiply_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Run multiple tasks with different inputs
@@ -197,7 +197,7 @@ def test_flmrun_stateful_class():
     
     # Create a session with the counter instance
     ctx = flamepy.RunnerContext(execution_object=counter)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test increment
@@ -229,7 +229,7 @@ def test_flmrun_lambda_function():
     """Test Case 7: Run a lambda function (using module-level function)."""
     # Use module-level function instead of lambda (lambdas can't be pickled)
     ctx = flamepy.RunnerContext(execution_object=square_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test with different values
@@ -248,7 +248,7 @@ def test_flmrun_complex_return_types():
     """Test Case 8: Test functions that return complex types."""
     # Test dict return
     ctx = flamepy.RunnerContext(execution_object=return_dict_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
         req = flamepy.RunnerRequest(method=None, args=("test", 42))
         result = ssn.invoke(req)
@@ -258,7 +258,7 @@ def test_flmrun_complex_return_types():
     
     # Test list return
     ctx = flamepy.RunnerContext(execution_object=return_list_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
         req = flamepy.RunnerRequest(method=None, args=(5,))
         result = ssn.invoke(req)
@@ -268,7 +268,7 @@ def test_flmrun_complex_return_types():
     
     # Test tuple return
     ctx = flamepy.RunnerContext(execution_object=return_tuple_func)
-    ssn = flamepy.create_session("flmrun", ctx)
+    ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
         req = flamepy.RunnerRequest(method=None, args=(123, "test"))
         result = ssn.invoke(req)

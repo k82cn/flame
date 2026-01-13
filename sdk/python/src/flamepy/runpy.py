@@ -15,6 +15,9 @@ import logging
 import pickle
 import os
 import subprocess
+import sys
+import site
+import importlib
 from urllib.parse import urlparse
 from typing import Any
 
@@ -72,14 +75,15 @@ class FlameRunpyService(FlameService):
             raise FileNotFoundError(f"Package path not found: {package_path}")
         
         # Determine if it's a directory or file
+        # Use sys.executable -m pip to install into the current virtual environment
         if os.path.isdir(package_path):
             # Install directory in editable mode
             logger.info(f"Installing directory package in editable mode: {package_path}")
-            install_args = ["uv", "pip", "install", "-e", package_path]
+            install_args = [sys.executable, "-m", "pip", "install", "-e", package_path]
         else:
             # Install package file (wheel, etc.)
             logger.info(f"Installing package file: {package_path}")
-            install_args = ["uv", "pip", "install", package_path]
+            install_args = [sys.executable, "-m", "pip", "install", package_path]
         
         try:
             result = subprocess.run(
@@ -92,6 +96,12 @@ class FlameRunpyService(FlameService):
             if result.stderr:
                 logger.warning(f"Package installation stderr: {result.stderr}")
             logger.info(f"Successfully installed package from: {package_path}")
+            
+            # Reload site packages to make the newly installed package available
+            # This is necessary because the Python interpreter has already started
+            logger.info("Reloading site packages to pick up newly installed package")
+            importlib.reload(site)
+            logger.info(f"Updated sys.path: {sys.path}")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to install package: {e}")
             logger.error(f"stdout: {e.stdout}")
