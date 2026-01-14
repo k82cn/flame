@@ -104,6 +104,13 @@ impl HostShim {
             .clone()
             .unwrap_or(FLAME_WORKING_DIRECTORY.to_string());
 
+        tracing::debug!("Current directory of application instance: {cur_dir}");
+
+        // Create the working directory if it doesn't exist
+        create_dir_all(&cur_dir).map_err(|e| {
+            FlameError::Internal(format!("failed to create working directory {cur_dir}: {e}"))
+        })?;
+
         let log_file = OpenOptions::new()
             .create(true)
             .read(true)
@@ -111,8 +118,6 @@ impl HostShim {
             .truncate(true)
             .open(format!("{cur_dir}/{}.log", executor.id))
             .map_err(|e| FlameError::Internal(format!("failed to open log file: {e}")))?;
-
-        tracing::debug!("Current directory of application instance: {cur_dir}");
 
         let mut child = cmd
             .envs(envs)

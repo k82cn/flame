@@ -86,7 +86,11 @@ def test_flmrun_sum_function():
     try:
         # Invoke the sum function remotely with positional arguments
         req = flamepy.RunnerRequest(method=None, args=(1, 2))
-        result = ssn.invoke(req)
+        result_ref = ssn.invoke(req)
+        
+        # The result is now an ObjectRef, get the actual value from cache
+        from flamepy.cache import get_object
+        result = get_object(result_ref)
         
         # Verify the result
         assert result == 3, f"Expected 3, got {result}"
@@ -98,6 +102,8 @@ def test_flmrun_sum_function():
 
 def test_flmrun_class_method():
     """Test Case 2: Run methods on a class instance."""
+    from flamepy.cache import get_object
+    
     # Create an instance of the calculator
     calc = Calculator()
     
@@ -108,17 +114,17 @@ def test_flmrun_class_method():
     try:
         # Test add method
         req = flamepy.RunnerRequest(method="add", args=(5, 3))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 8, f"Expected 8, got {result}"
         
         # Test multiply method
         req = flamepy.RunnerRequest(method="multiply", args=(4, 7))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 28, f"Expected 28, got {result}"
         
         # Test subtract method
         req = flamepy.RunnerRequest(method="subtract", args=(10, 3))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 7, f"Expected 7, got {result}"
         
     finally:
@@ -128,6 +134,8 @@ def test_flmrun_class_method():
 
 def test_flmrun_kwargs():
     """Test Case 3: Run a function with keyword arguments."""
+    from flamepy.cache import get_object
+    
     # Create a session with the function
     ctx = flamepy.RunnerContext(execution_object=greet_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
@@ -135,12 +143,12 @@ def test_flmrun_kwargs():
     try:
         # Test with keyword arguments
         req = flamepy.RunnerRequest(method=None, kwargs={"name": "World", "greeting": "Hi"})
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == "Hi, World!", f"Expected 'Hi, World!', got {result}"
         
         # Test with partial keyword arguments (uses default)
         req = flamepy.RunnerRequest(method=None, kwargs={"name": "Python"})
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == "Hello, Python!", f"Expected 'Hello, Python!', got {result}"
         
     finally:
@@ -150,6 +158,8 @@ def test_flmrun_kwargs():
 
 def test_flmrun_no_args():
     """Test Case 4: Run a function with no arguments."""
+    from flamepy.cache import get_object
+    
     # Create a session with the function
     ctx = flamepy.RunnerContext(execution_object=get_message_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
@@ -157,7 +167,7 @@ def test_flmrun_no_args():
     try:
         # Invoke with no arguments (all fields None)
         req = flamepy.RunnerRequest(method=None)
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == "Hello from flmrun!", f"Expected 'Hello from flmrun!', got {result}"
         
     finally:
@@ -167,6 +177,8 @@ def test_flmrun_no_args():
 
 def test_flmrun_multiple_tasks():
     """Test Case 5: Run multiple tasks in the same session."""
+    from flamepy.cache import get_object
+    
     # Create a session with the function
     ctx = flamepy.RunnerContext(execution_object=multiply_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
@@ -182,7 +194,7 @@ def test_flmrun_multiple_tasks():
         
         for args, expected in test_cases:
             req = flamepy.RunnerRequest(method=None, args=args)
-            result = ssn.invoke(req)
+            result = get_object(ssn.invoke(req))
             assert result == expected, f"multiply{args} expected {expected}, got {result}"
         
     finally:
@@ -192,6 +204,8 @@ def test_flmrun_multiple_tasks():
 
 def test_flmrun_stateful_class():
     """Test Case 6: Run a stateful class with instance variables."""
+    from flamepy.cache import get_object
+    
     # Create an instance of the counter
     counter = Counter()
     
@@ -202,22 +216,22 @@ def test_flmrun_stateful_class():
     try:
         # Test increment
         req = flamepy.RunnerRequest(method="increment")
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 1, f"Expected 1, got {result}"
         
         # Test increment again
         req = flamepy.RunnerRequest(method="increment")
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 2, f"Expected 2, got {result}"
         
         # Test add
         req = flamepy.RunnerRequest(method="add", args=(5,))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 7, f"Expected 7, got {result}"
         
         # Test get_count
         req = flamepy.RunnerRequest(method="get_count")
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == 7, f"Expected 7, got {result}"
         
     finally:
@@ -227,6 +241,8 @@ def test_flmrun_stateful_class():
 
 def test_flmrun_lambda_function():
     """Test Case 7: Run a lambda function (using module-level function)."""
+    from flamepy.cache import get_object
+    
     # Use module-level function instead of lambda (lambdas can't be pickled)
     ctx = flamepy.RunnerContext(execution_object=square_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
@@ -235,7 +251,7 @@ def test_flmrun_lambda_function():
         # Test with different values
         for x in [2, 5, 10, 15]:
             req = flamepy.RunnerRequest(method=None, args=(x,))
-            result = ssn.invoke(req)
+            result = get_object(ssn.invoke(req))
             expected = x * x
             assert result == expected, f"Expected {expected}, got {result}"
         
@@ -246,12 +262,14 @@ def test_flmrun_lambda_function():
 
 def test_flmrun_complex_return_types():
     """Test Case 8: Test functions that return complex types."""
+    from flamepy.cache import get_object
+    
     # Test dict return
     ctx = flamepy.RunnerContext(execution_object=return_dict_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
         req = flamepy.RunnerRequest(method=None, args=("test", 42))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == {"test": 42}, f"Expected {{'test': 42}}, got {result}"
     finally:
         ssn.close()
@@ -261,7 +279,7 @@ def test_flmrun_complex_return_types():
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
         req = flamepy.RunnerRequest(method=None, args=(5,))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == [0, 1, 2, 3, 4], f"Expected [0, 1, 2, 3, 4], got {result}"
     finally:
         ssn.close()
@@ -271,7 +289,7 @@ def test_flmrun_complex_return_types():
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
         req = flamepy.RunnerRequest(method=None, args=(123, "test"))
-        result = ssn.invoke(req)
+        result = get_object(ssn.invoke(req))
         assert result == (123, "test"), f"Expected (123, 'test'), got {result}"
     finally:
         ssn.close()
