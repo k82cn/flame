@@ -232,28 +232,15 @@ class FlameContext:
             self._cache_endpoint = cache_endpoint
 
 
-class DataSource(IntEnum):
-    """Data location enumeration."""
-
-    LOCAL = 0
-    REMOTE = 1
-
-
 @dataclass
 class ObjectRef:
-    """Object reference."""
+    """Object reference for remote cached objects."""
 
-    source: DataSource
-    url: Optional[str] = None
+    url: str
     version: int = 0
-    data: Optional[bytes] = None
 
     def encode(self) -> bytes:
         data = asdict(self)
-        # For remote data, the data is not included in the JSON
-        if self.source == DataSource.REMOTE:
-            data["data"] = None
-
         return bson.dumps(data)
 
     @classmethod

@@ -67,16 +67,17 @@ class SessionContext:
 
     def common_data(self) -> Any:
         """Get the common data."""
-        self._object_ref = get_object(self._object_ref)
-        return pickle.loads(self._object_ref.data) if self._object_ref is not None else None
+        if self._object_ref is None:
+            return None
+        
+        return get_object(self._object_ref)
 
     def update_common_data(self, data: Any):
         """Update the common data."""
         if self._object_ref is None:
             return
 
-        self._object_ref.data = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
-        self._object_ref = update_object(self._object_ref)
+        self._object_ref = update_object(self._object_ref, data)
 
 
 @dataclass

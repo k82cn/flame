@@ -316,9 +316,7 @@ class Connection:
 
         session_id = short_name(attrs.application) if attrs.id is None else attrs.id
 
-        common_data_bin = pickle.dumps(attrs.common_data, protocol=pickle.HIGHEST_PROTOCOL)
-
-        object_ref = put_object(session_id, common_data_bin)
+        object_ref = put_object(session_id, attrs.common_data)
 
         session_spec = SessionSpec(
             application=attrs.application,
@@ -511,9 +509,10 @@ class Session:
 
     def common_data(self) -> Any:
         """Get the common data of Session."""
-        self._common_data = get_object(self._common_data)
-
-        return pickle.loads(self._common_data.data) if self._common_data is not None else None
+        if self._common_data is None:
+            return None
+        
+        return get_object(self._common_data)
 
     def create_task(self, input_data: Any) -> Task:
         """Create a new task in the session."""

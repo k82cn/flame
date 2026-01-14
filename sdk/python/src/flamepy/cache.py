@@ -15,8 +15,10 @@ import httpx
 from pydantic import BaseModel
 import logging
 import contextlib
+import pickle
+from typing import Any, Optional
 
-from .types import ObjectRef, DataSource, FlameContext
+from .types import ObjectRef, FlameContext
 
 
 @contextlib.contextmanager
@@ -52,51 +54,80 @@ class ObjectMetadata(BaseModel):
     size: int
 
 
-def put_object(session_id: str, data: bytes) -> "ObjectRef":
-    """Put an object into the cache."""
+def put_object(session_id: str, obj: Any) -> "ObjectRef":
+    """Put an object into the cache.
+    
+    Args:
+        session_id: The session ID for the object
+        obj: The object to cache (will be pickled)
+        
+    Returns:
+        ObjectRef pointing to the cached object
+        
+    Raises:
+        Exception: If cache endpoint is not configured or request fails
+    """
     context = FlameContext()
-    if context._cache_endpoint is None or data is None:
-        return ObjectRef(source=DataSource.LOCAL, data=data)
+    if context._cache_endpoint is None:
+        raise Exception("Cache endpoint is not configured")
+    
+    # Serialize the object using pickle
+    data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
 
     with suppress_dependency_logs():
         response = httpx.post(f"{context._cache_endpoint}/objects/{session_id}", data=data)
         response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
-    return ObjectRef(source=DataSource.REMOTE, url=metadata.endpoint, data=data, version=metadata.version)
+    return ObjectRef(url=metadata.endpoint, version=metadata.version)
 
 
-def get_object(de: ObjectRef) -> "ObjectRef":
-    """Get an object from the cache."""
-    if de.source != DataSource.REMOTE:
-        return de
-
+def get_object(ref: ObjectRef) -> Any:
+    """Get an object from the cache.
+    
+    Args:
+        ref: ObjectRef pointing to the cached object
+        
+    Returns:
+        The deserialized object
+        
+    Raises:
+        Exception: If request fails
+    """
     with suppress_dependency_logs():
-        response = httpx.get(de.url)
+        response = httpx.get(ref.url)
         response.raise_for_status()
 
     obj = Object.model_validate(response.json())
+    data = bytes(obj.data)
+    
+    # Deserialize the object using pickle
+    return pickle.loads(data)
 
-    de.data = bytes(obj.data)
-    de.version = obj.version
 
-    return de
-
-
-def update_object(de: ObjectRef) -> "ObjectRef":
-    """Update an object in the cache."""
-    if de.source != DataSource.REMOTE:
-        return de
-
-    obj = Object(version=de.version, data=list(de.data))
+def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
+    """Update an object in the cache.
+    
+    Args:
+        ref: ObjectRef pointing to the cached object to update
+        new_obj: The new object to store (will be pickled)
+        
+    Returns:
+        Updated ObjectRef with new version
+        
+    Raises:
+        Exception: If request fails
+    """
+    # Serialize the new object using pickle
+    new_data = pickle.dumps(new_obj, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    obj = Object(version=ref.version, data=list(new_data))
     data = obj.model_dump_json()
 
     with suppress_dependency_logs():
-        response = httpx.put(de.url, data=data)
+        response = httpx.put(ref.url, data=data)
         response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
 
-    de.version = metadata.version
-
-    return de
+    return ObjectRef(url=ref.url, version=metadata.version)

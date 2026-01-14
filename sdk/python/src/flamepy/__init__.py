@@ -44,7 +44,6 @@ from .types import (
     ApplicationState,
     Shim,
     FlameErrorCode,
-    DataSource,
     # Classes
     FlameError,
     SessionAttributes,
