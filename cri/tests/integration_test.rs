@@ -56,6 +56,7 @@ async fn test_run_pod() -> Result<(), FlameError> {
         environments: HashMap::new(),
         shim: Shim::Host,
         working_directory: None,
+        url: None,
     };
 
     let pod = pm.run_pod(&app).await?;
@@ -85,6 +86,7 @@ async fn test_list_pods() -> Result<(), FlameError> {
         environments: HashMap::new(),
         shim: Shim::Host,
         working_directory: None,
+        url: None,
     };
 
     let _ = pm.run_pod(&app).await?;
