@@ -57,11 +57,10 @@ class FlameRunpyService(FlameService):
         """
         if isinstance(value, ObjectRef):
             logger.debug(f"Resolving ObjectRef: {value}")
-            obj_ref = get_object(value)
-            if obj_ref is None or obj_ref.data is None:
+            resolved_value = get_object(value)
+            if resolved_value is None:
                 raise ValueError(f"Failed to retrieve ObjectRef from cache: {value}")
             
-            resolved_value = pickle.loads(obj_ref.data)
             logger.debug(f"Resolved ObjectRef to type: {type(resolved_value)}")
             return resolved_value
         
