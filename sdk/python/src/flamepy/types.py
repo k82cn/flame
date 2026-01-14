@@ -240,8 +240,8 @@ class DataSource(IntEnum):
 
 
 @dataclass
-class ObjectExpr:
-    """Object expression."""
+class ObjectRef:
+    """Object reference."""
 
     source: DataSource
     url: Optional[str] = None
@@ -257,7 +257,7 @@ class ObjectExpr:
         return bson.dumps(data)
 
     @classmethod
-    def decode(cls, json_data: bytes) -> "ObjectExpr":
+    def decode(cls, json_data: bytes) -> "ObjectRef":
         data = bson.loads(json_data)
         return cls(**data)
 
@@ -290,7 +290,7 @@ class RunnerRequest:
                 Should be None if the execution object itself is a function or callable.
         args: A tuple containing positional arguments for the method. Optional.
         kwargs: A dictionary of keyword arguments for the method. Optional.
-        input_object: An ObjectExpr representing the method input, used when the input
+        input_object: An ObjectRef representing the method input, used when the input
                       is large. Optional.
 
     Note: Only one of args, kwargs, or input_object should be non-None at a time to
@@ -300,7 +300,7 @@ class RunnerRequest:
     method: Optional[str] = None
     args: Optional[Tuple] = None
     kwargs: Optional[Dict[str, Any]] = None
-    input_object: Optional[ObjectExpr] = None
+    input_object: Optional[ObjectRef] = None
 
     def __post_init__(self):
         """Validate that only one of args, kwargs, or input_object is set."""
@@ -320,7 +320,7 @@ class RunnerRequest:
         """Pickle and cache a large object as the method input.
 
         This method serializes the provided object using pickle and caches it,
-        updating the input_object field with an ObjectExpr. The service will then
+        updating the input_object field with an ObjectRef. The service will then
         unpickle and load the object as input as needed.
 
         Args:

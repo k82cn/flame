@@ -196,11 +196,11 @@ class FlameRunpyService(FlameService):
             
             if request.input_object is not None:
                 # Unpickle the large object from cache
-                obj_expr = get_object(request.input_object)
-                if obj_expr is None or obj_expr.data is None:
+                obj_ref = get_object(request.input_object)
+                if obj_ref is None or obj_ref.data is None:
                     raise ValueError("Failed to retrieve input_object from cache")
                 
-                input_data = pickle.loads(obj_expr.data)
+                input_data = pickle.loads(obj_ref.data)
                 logger.debug(f"Loaded input_object from cache: {type(input_data)}")
                 
                 # The input_object should be used as args or kwargs

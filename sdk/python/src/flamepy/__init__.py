@@ -55,7 +55,7 @@ from .types import (
     TaskInformer,
     RunnerContext,
     RunnerRequest,
-    ObjectExpr,
+    ObjectRef,
 )
 
 from .client import (
