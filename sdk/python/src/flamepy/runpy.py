@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 from typing import Any
 
 from .service import FlameService, SessionContext, TaskContext, TaskOutput
-from .types import RunnerRequest, RunnerContext
+from .types import RunnerRequest, RunnerContext, ObjectRef
 from .cache import get_object
 
 logger = logging.getLogger(__name__)
@@ -40,13 +40,38 @@ class FlameRunpyService(FlameService):
     def __init__(self):
         """Initialize the FlameRunpyService."""
         self._ssn_ctx: SessionContext = None
+    
+    def _resolve_object_ref(self, value: Any) -> Any:
+        """
+        Resolve an ObjectRef to its actual value by fetching from cache.
+        
+        Args:
+            value: The value to resolve. If it's an ObjectRef, fetch the data from cache.
+                   Otherwise, return the value as is.
+        
+        Returns:
+            The resolved value (unpickled if it was an ObjectRef).
+            
+        Raises:
+            ValueError: If ObjectRef data cannot be retrieved from cache.
+        """
+        if isinstance(value, ObjectRef):
+            logger.debug(f"Resolving ObjectRef: {value}")
+            obj_ref = get_object(value)
+            if obj_ref is None or obj_ref.data is None:
+                raise ValueError(f"Failed to retrieve ObjectRef from cache: {value}")
+            
+            resolved_value = pickle.loads(obj_ref.data)
+            logger.debug(f"Resolved ObjectRef to type: {type(resolved_value)}")
+            return resolved_value
+        
+        return value
 
     def _install_package_from_url(self, url: str) -> None:
         """
         Install a package from a URL.
 
         Supports file:// URLs pointing to either directories or package files.
-        Directories are installed in editable mode (-e).
 
         Args:
             url: The package URL (e.g., file:///opt/my-package)
@@ -74,16 +99,9 @@ class FlameRunpyService(FlameService):
             logger.error(f"Package path does not exist: {package_path}")
             raise FileNotFoundError(f"Package path not found: {package_path}")
         
-        # Determine if it's a directory or file
         # Use sys.executable -m pip to install into the current virtual environment
-        if os.path.isdir(package_path):
-            # Install directory in editable mode
-            logger.info(f"Installing directory package in editable mode: {package_path}")
-            install_args = [sys.executable, "-m", "pip", "install", "-e", package_path]
-        else:
-            # Install package file (wheel, etc.)
-            logger.info(f"Installing package file: {package_path}")
-            install_args = [sys.executable, "-m", "pip", "install", package_path]
+        logger.info(f"Installing package: {package_path}")
+        install_args = [sys.executable, "-m", "pip", "install", package_path]
         
         try:
             result = subprocess.run(
@@ -145,7 +163,7 @@ class FlameRunpyService(FlameService):
         This method:
         1. Retrieves the execution object from session context
         2. Deserializes the RunnerRequest from task input
-        3. Determines the invocation input (args, kwargs, or input_object)
+        3. Resolves any ObjectRef instances in args/kwargs
         4. Executes the requested method on the execution object
         5. Returns the result as TaskOutput
         
@@ -187,29 +205,24 @@ class FlameRunpyService(FlameService):
             
             logger.debug(f"RunnerRequest: method={request.method}, "
                         f"has_args={request.args is not None}, "
-                        f"has_kwargs={request.kwargs is not None}, "
-                        f"has_input_object={request.input_object is not None}")
+                        f"has_kwargs={request.kwargs is not None}")
             
-            # Determine the invocation input
+            # Resolve ObjectRef instances in args and kwargs
             invoke_args = ()
             invoke_kwargs = {}
             
-            if request.input_object is not None:
-                # Unpickle the large object from cache
-                obj_ref = get_object(request.input_object)
-                if obj_ref is None or obj_ref.data is None:
-                    raise ValueError("Failed to retrieve input_object from cache")
-                
-                input_data = pickle.loads(obj_ref.data)
-                logger.debug(f"Loaded input_object from cache: {type(input_data)}")
-                
-                # The input_object should be used as args or kwargs
-                # For simplicity, treat it as the first positional argument
-                invoke_args = (input_data,)
-            elif request.args is not None:
-                invoke_args = request.args
-            elif request.kwargs is not None:
-                invoke_kwargs = request.kwargs
+            if request.args is not None:
+                # Resolve any ObjectRef instances in args
+                invoke_args = tuple(self._resolve_object_ref(arg) for arg in request.args)
+                logger.debug(f"Resolved args: {len(invoke_args)} arguments")
+            
+            if request.kwargs is not None:
+                # Resolve any ObjectRef instances in kwargs
+                invoke_kwargs = {
+                    key: self._resolve_object_ref(value)
+                    for key, value in request.kwargs.items()
+                }
+                logger.debug(f"Resolved kwargs: {len(invoke_kwargs)} keyword arguments")
             
             # Execute the requested method
             if request.method is None:
