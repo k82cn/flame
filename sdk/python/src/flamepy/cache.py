@@ -68,14 +68,13 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
         Exception: If cache endpoint is not configured or request fails
     """
     context = FlameContext()
-    if context._cache_endpoint is None:
-        raise Exception("Cache endpoint is not configured")
+    cache_endpoint = context.cache_endpoint
     
     # Serialize the object using pickle
     data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
 
     with suppress_dependency_logs():
-        response = httpx.post(f"{context._cache_endpoint}/objects/{session_id}", data=data)
+        response = httpx.post(f"{cache_endpoint}/objects/{session_id}", data=data)
         response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
@@ -100,7 +99,10 @@ def get_object(ref: ObjectRef) -> Any:
 
     obj = Object.model_validate(response.json())
     data = bytes(obj.data)
-    
+
+    # Update the version of the ObjectRef
+    ref.version = obj.version
+
     # Deserialize the object using pickle
     return pickle.loads(data)
 

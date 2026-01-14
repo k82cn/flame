@@ -18,12 +18,16 @@ import subprocess
 import sys
 import site
 import importlib
+import tarfile
+import zipfile
+import shutil
 from urllib.parse import urlparse
 from typing import Any
+from pathlib import Path
 
 from .service import FlameService, SessionContext, TaskContext, TaskOutput
 from .types import RunnerRequest, RunnerContext, ObjectRef
-from .cache import get_object
+from .cache import get_object, put_object
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +70,67 @@ class FlameRunpyService(FlameService):
         
         return value
 
+    def _is_archive(self, file_path: str) -> bool:
+        """
+        Check if a file is an archive that needs to be extracted.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            True if the file is a supported archive format
+        """
+        archive_extensions = ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.zip']
+        return any(file_path.endswith(ext) for ext in archive_extensions)
+    
+    def _extract_archive(self, archive_path: str, extract_to: str) -> str:
+        """
+        Extract an archive to a directory.
+        
+        Args:
+            archive_path: Path to the archive file
+            extract_to: Directory to extract to
+            
+        Returns:
+            Path to the extracted directory
+            
+        Raises:
+            RuntimeError: If extraction fails
+        """
+        logger.info(f"Extracting archive: {archive_path} to {extract_to}")
+        
+        try:
+            # Create extraction directory if it doesn't exist
+            os.makedirs(extract_to, exist_ok=True)
+            
+            # Determine archive type and extract
+            if archive_path.endswith('.zip'):
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    zip_ref.extractall(extract_to)
+                logger.info(f"Extracted zip archive to {extract_to}")
+            elif any(archive_path.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar']):
+                with tarfile.open(archive_path, 'r:*') as tar_ref:
+                    tar_ref.extractall(extract_to)
+                logger.info(f"Extracted tar archive to {extract_to}")
+            else:
+                raise RuntimeError(f"Unsupported archive format: {archive_path}")
+            
+            return extract_to
+            
+        except Exception as e:
+            logger.error(f"Failed to extract archive: {e}", exc_info=True)
+            raise RuntimeError(f"Archive extraction failed: {e}")
+    
     def _install_package_from_url(self, url: str) -> None:
         """
         Install a package from a URL.
 
-        Supports file:// URLs pointing to either directories or package files.
+        Supports file:// URLs pointing to either directories or package files (archives).
+        If the URL points to an archive file (.tar.gz, .zip, etc.), it will be extracted
+        to the working directory first, then installed from the extracted directory.
 
         Args:
-            url: The package URL (e.g., file:///opt/my-package)
+            url: The package URL (e.g., file:///opt/my-package.tar.gz or file:///opt/my-package)
 
         Raises:
             FileNotFoundError: If the package path does not exist
@@ -98,9 +155,27 @@ class FlameRunpyService(FlameService):
             logger.error(f"Package path does not exist: {package_path}")
             raise FileNotFoundError(f"Package path not found: {package_path}")
         
+        # If it's an archive file, extract it first
+        install_path = package_path
+        extracted_dir = None
+        
+        if os.path.isfile(package_path) and self._is_archive(package_path):
+            logger.info(f"Package is an archive file, extracting...")
+            
+            # Get the working directory (default to /tmp if not set)
+            working_dir = os.getcwd()
+            extract_dir = os.path.join(working_dir, f"extracted_{os.path.basename(package_path).split('.')[0]}")
+            
+            # Extract the archive
+            extracted_dir = self._extract_archive(package_path, extract_dir)
+            
+            # Use the extracted directory for installation
+            install_path = extracted_dir
+            logger.info(f"Will install from extracted directory: {install_path}")
+        
         # Use sys.executable -m pip to install into the current virtual environment
-        logger.info(f"Installing package: {package_path}")
-        install_args = [sys.executable, "-m", "pip", "install", package_path]
+        logger.info(f"Installing package: {install_path}")
+        install_args = [sys.executable, "-m", "pip", "install", install_path]
         
         try:
             result = subprocess.run(
@@ -112,18 +187,24 @@ class FlameRunpyService(FlameService):
             logger.info(f"Package installation output: {result.stdout}")
             if result.stderr:
                 logger.warning(f"Package installation stderr: {result.stderr}")
-            logger.info(f"Successfully installed package from: {package_path}")
+            logger.info(f"Successfully installed package from: {install_path}")
             
             # Reload site packages to make the newly installed package available
             # This is necessary because the Python interpreter has already started
             logger.info("Reloading site packages to pick up newly installed package")
             importlib.reload(site)
             logger.info(f"Updated sys.path: {sys.path}")
+            
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to install package: {e}")
             logger.error(f"stdout: {e.stdout}")
             logger.error(f"stderr: {e.stderr}")
             raise RuntimeError(f"Package installation failed: {e}")
+        finally:
+            # Clean up extracted directory if it was created
+            # Note: We keep it for now as it might be needed during the session
+            # Future enhancement could add cleanup in on_session_leave
+            pass
 
     def on_session_enter(self, context: SessionContext) -> bool:
         """
@@ -259,8 +340,14 @@ class FlameRunpyService(FlameService):
             self._ssn_ctx.update_common_data(updated_context)
             logger.debug("Common data updated successfully")
 
-            # Return the result as TaskOutput
-            return TaskOutput(data=result)
+            # Put the result into cache and return ObjectRef
+            # This enables efficient data transfer for large objects
+            logger.debug("Putting result into cache")
+            object_ref = put_object(context.session_id, result)
+            logger.info(f"Result cached with ObjectRef: {object_ref}")
+            
+            # Return the ObjectRef as TaskOutput
+            return TaskOutput(data=object_ref)
             
         except Exception as e:
             logger.error(f"Error in task {context.task_id}: {e}", exc_info=True)

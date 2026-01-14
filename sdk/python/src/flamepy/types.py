@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from enum import IntEnum
 from typing import Optional, List, Dict, Any, Union, Tuple
 from datetime import datetime
@@ -198,11 +198,32 @@ def short_name(prefix: str, length: int = 6) -> str:
     return f"{prefix}-{sn}"
 
 
+@dataclass
+class FlamePackage:
+    """Package configuration for Flame applications.
+    
+    Attributes:
+        storage: The URL specifying where the application package should be persisted.
+                 Currently, only the file:// schema is supported.
+        excludes: A list of custom patterns to exclude from the package.
+                  By default, includes .venv, __pycache__, .gitignore, and *.pyc.
+    """
+    
+    storage: str
+    excludes: List[str] = field(default_factory=lambda: [
+        ".venv",
+        "__pycache__",
+        ".gitignore",
+        "*.pyc",
+    ])
+
+
 class FlameContext:
     """Flame configuration."""
 
     _endpoint = None
     _cache_endpoint = None
+    _package = None
 
     def __init__(self):
         home = Path.home()
@@ -218,6 +239,17 @@ class FlameContext:
                     if cc == cluster["name"]:
                         self._endpoint = cluster.get("endpoint")
                         self._cache_endpoint = cluster.get("cache")
+                        
+                        # Parse package configuration if present
+                        package_config = cluster.get("package")
+                        if package_config is not None:
+                            storage = package_config.get("storage")
+                            if storage is not None:
+                                excludes = package_config.get("excludes", [])
+                                # Merge with default excludes
+                                default_excludes = [".venv", "__pycache__", ".gitignore", "*.pyc"]
+                                all_excludes = list(set(default_excludes + excludes))
+                                self._package = FlamePackage(storage=storage, excludes=all_excludes)
                         break
                 else:
                     raise FlameError(FlameErrorCode.INVALID_CONFIG,
@@ -230,6 +262,16 @@ class FlameContext:
         cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
         if cache_endpoint is not None:
             self._cache_endpoint = cache_endpoint
+    
+    @property
+    def package(self) -> Optional[FlamePackage]:
+        """Get the package configuration."""
+        return self._package
+    
+    @property
+    def cache_endpoint(self) -> str:
+        """Get the cache endpoint, using default if not configured."""
+        return self._cache_endpoint if self._cache_endpoint is not None else DEFAULT_FLAME_CACHE_ENDPOINT
 
 
 @dataclass

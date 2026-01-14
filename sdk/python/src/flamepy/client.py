@@ -45,7 +45,7 @@ from .types import (
     ObjectRef,
 )
 
-from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment
+from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment, ApplicationSchema as ApplicationSchemaProto
 from .frontend_pb2 import (
     RegisterApplicationRequest,
     UnregisterApplicationRequest,
@@ -179,11 +179,17 @@ class Connection:
 
         schema = None
         if app_attrs.schema is not None:
-            schema = ApplicationSchema(
-                input=app_attrs.schema.input,
-                output=app_attrs.schema.output,
-                common_data=app_attrs.schema.common_data,
-            )
+            # Only create schema if at least one field is non-empty
+            has_input = app_attrs.schema.input and app_attrs.schema.input.strip()
+            has_output = app_attrs.schema.output and app_attrs.schema.output.strip()
+            has_common_data = app_attrs.schema.common_data and app_attrs.schema.common_data.strip()
+            
+            if has_input or has_output or has_common_data:
+                schema = ApplicationSchemaProto(
+                    input=app_attrs.schema.input if has_input else None,
+                    output=app_attrs.schema.output if has_output else None,
+                    common_data=app_attrs.schema.common_data if has_common_data else None,
+                )
 
         environments = []
         if app_attrs.environments is not None:

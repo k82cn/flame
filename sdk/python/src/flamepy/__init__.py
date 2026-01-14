@@ -51,6 +51,7 @@ from .types import (
     Task,
     Application,
     FlameContext,
+    FlamePackage,
     TaskInformer,
     RunnerContext,
     RunnerRequest,
@@ -81,6 +82,11 @@ from .service import (
     run,
 )
 from .instance import FlameInstance
+from .runner import (
+    ObjectFuture,
+    RunnerService,
+    Runner,
+)
 
 __version__ = "0.3.0"
 
@@ -113,9 +119,11 @@ __all__ = [
     "Task",
     "Application",
     "FlameContext",
+    "FlamePackage",
     "TaskInformer",
     "RunnerContext",
     "RunnerRequest",
+    "ObjectRef",
     # Client classes
     "Connection",
     "connect",
@@ -136,4 +144,8 @@ __all__ = [
     "CommonData",
     # Instance classes
     "FlameInstance",
+    # Runner classes
+    "ObjectFuture",
+    "RunnerService",
+    "Runner",
 ]

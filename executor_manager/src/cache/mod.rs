@@ -146,6 +146,7 @@ impl ObjectCache {
 pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
     let endpoint = CacheEndpoint::try_from(cache_config)?;
     let address_str = format!("{}:{}", endpoint.host, endpoint.port);
+    let localhost_str = format!("127.0.0.1:{}", endpoint.port);
 
     let cache = Arc::new(ObjectCache {
         endpoint,
@@ -154,7 +155,7 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
 
     tracing::info!("Listening object cache at {address_str}");
 
-    let svc = HttpServer::new(move || {
+    let mut svc = HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&cache)))
             .route(
@@ -168,7 +169,13 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
             .route("/objects/{session_id}", web::post().to(put_object))
             .route("/objects/{session_id}", web::delete().to(delete_session))
     })
-    .bind(address_str)?;
+    .bind(&address_str)?;
+
+    // Also bind to localhost if the configured address is not already localhost
+    if address_str != localhost_str {
+        tracing::info!("Also listening object cache at {localhost_str}");
+        svc = svc.bind(&localhost_str)?;
+    }
 
     svc.run().await?;
 
