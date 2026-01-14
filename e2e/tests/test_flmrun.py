@@ -287,14 +287,14 @@ def test_flmrun_runner_request_validation():
         flamepy.RunnerRequest(
             method=None, 
             args=(1, 2), 
-            input_object=flamepy.ObjectExpr(source=flamepy.DataSource.LOCAL)
+            input_object=flamepy.ObjectRef(source=flamepy.DataSource.LOCAL)
         )
     
     with pytest.raises(ValueError, match="Only one of"):
         flamepy.RunnerRequest(
             method=None, 
             kwargs={"a": 1}, 
-            input_object=flamepy.ObjectExpr(source=flamepy.DataSource.LOCAL)
+            input_object=flamepy.ObjectRef(source=flamepy.DataSource.LOCAL)
         )
     
     # Test that valid single input types work

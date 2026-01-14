@@ -35,7 +35,7 @@ The `RunnerRequest` defines the input for each task and contains the following f
 - `method`: The name of the method to invoke within the customized application. This field is optional; it should be `None` if the execution object itself is a function or callable.
 - `args`: A tuple containing positional arguments for the method. Optional.
 - `kwargs`: A dictionary of keyword arguments for the method. Optional.
-- `input_object`: An `ObjectExpr` representing the method input, used when the input is large. Optional.
+- `input_object`: An `ObjectRef` representing the method input, used when the input is large. Optional.
 
 Note: The fields `args`, `kwargs`, and `input_object` may all be `None`, indicating that the method has no input. However, if any of these fields are provided, only one should be non-`None` at a time to avoid ambiguity. This constraint is enforced by a `__post_init__` validation method that raises a `ValueError` if multiple input fields are set.
 
@@ -68,15 +68,15 @@ To support the introduction of the new `url` field in the application configurat
 
 The `RunnerContext` and `RunnerRequest` classes are integral parts of the `flamepy` module, and are made available to users developing custom applications.
 
-- **RunnerContext** encapsulates the session-wide shared execution object. Its `execution_object` field holds a Python object directly. This allows flexible sharing of state or functions for all tasks within a session, leveraging `ObjectExpr` to optimize data transfer.
+- **RunnerContext** encapsulates the session-wide shared execution object. Its `execution_object` field holds a Python object directly. This allows flexible sharing of state or functions for all tasks within a session, leveraging `ObjectRef` to optimize data transfer.
   
 - **RunnerRequest** represents the per-task invocation input. It includes the following fields:
   - `method`: the method name to invoke on the execution object; `None` indicates that the execution object itself is directly callable.
   - `args`: tuple of positional arguments (optional).
   - `kwargs`: dictionary of keyword arguments (optional).
-  - `input_object`: an `ObjectExpr` to encapsulate large method arguments (optional).
+  - `input_object`: an `ObjectRef` to encapsulate large method arguments (optional).
 
-  The `RunnerRequest` provides a `set_object()` method to pickle and cache large objects, updating the `input_object` field with an `ObjectExpr`. The service then unpickles and loads the object as input as needed.
+  The `RunnerRequest` provides a `set_object()` method to pickle and cache large objects, updating the `input_object` field with an `ObjectRef`. The service then unpickles and loads the object as input as needed.
   
   A `__post_init__` validation method ensures that only one of `args`, `kwargs`, or `input_object` is set at initialization time, raising a `ValueError` if multiple input fields are provided. The `set_object()` method also validates that `args` or `kwargs` are not already set before updating `input_object`.
 
@@ -106,7 +106,7 @@ Within `on_task_invoke`, the following steps occur:
    - If `input_object` is set, unpickle its data for method input.
    - If `args` or `kwargs` are set, use them directly as invocation parameters.
 4. Execute the requested method on the execution object using the resolved input.
-5. Cache the result as needed and return an `ObjectExpr` within the `TaskOutput`.
+5. Cache the result as needed and return an `ObjectRef` within the `TaskOutput`.
 
 #### `on_session_leave`
 

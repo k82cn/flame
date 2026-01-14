@@ -82,7 +82,7 @@ with Runner("test") as rr:
     res_r = cnt_os.get_counter()
     print(res_r.get()) # The out is 14
 
-    cnt_os.add(res_r) # The FlameService also support ObjectExpr for large object
+    cnt_os.add(res_r) # The FlameService also support ObjectRef for large object
     res_r = cnt_os.get_counter()
     print(res_r.get()) # The out is 28
 ```
@@ -101,12 +101,12 @@ A new optional field named `package` will be introduced in `FlameContext` to sup
 
 ### ObjectFuture
 
-To enable efficient management of asynchronous and deferred computation results in runner services, the `ObjectFuture` class is introduced. This class encapsulates a single field, `_future`, which represents a pending computation or its eventual result. The `result()` method of `_future` is expected to always yield an `ObjectExpr` instance.
+To enable efficient management of asynchronous and deferred computation results in runner services, the `ObjectFuture` class is introduced. This class encapsulates a single field, `_future`, which represents a pending computation or its eventual result. The `result()` method of `_future` is expected to always yield an `ObjectRef` instance.
 
 `ObjectFuture` exposes two key methods:
 
-- `ref()`: Returns the `ObjectExpr` by invoking `_future.result()`. This method is primarily intended for internal use within the Flame SDK, providing direct access to the encapsulated object expression.
-- `get()`: Retrieves the concrete object that `ObjectFuture` represents. It does so by fetching the `ObjectExpr` via `_future.result()`, and then utilizing `cache.get_object` to asynchronously or lazily fetch the actual underlying object as needed.
+- `ref()`: Returns the `ObjectRef` by invoking `_future.result()`. This method is primarily intended for internal use within the Flame SDK, providing direct access to the encapsulated object expression.
+- `get()`: Retrieves the concrete object that `ObjectFuture` represents. It does so by fetching the `ObjectRef` via `_future.result()`, and then utilizing `cache.get_object` to asynchronously or lazily fetch the actual underlying object as needed.
 
 This abstraction streamlines the interaction with service-based computations, ensuring seamless integration with both cached and remote results while maintaining a unified interface for accessing computed objects.
 
@@ -124,7 +124,7 @@ Upon instantiation, `RunnerService` performs the following steps:
 
 2. Next, `__init__` inspects all public instance methods of the `execution_object` and, for each, generates a corresponding wrapper function. Each wrapper is responsible for:
     - Submitting a task to the session via `_session.run(...)`. The task input must be constructed as a `RunnerRequest`, as required by the `flamepy.runpy` service.
-    - If any of the wrapper’s arguments are instances of `ObjectFuture`, these arguments are converted to their respective `ObjectExpr` representations by calling their `ref()` method before constructing the `RunnerRequest`.
+    - If any of the wrapper’s arguments are instances of `ObjectFuture`, these arguments are converted to their respective `ObjectRef` representations by calling their `ref()` method before constructing the `RunnerRequest`.
     - The wrapper returns an `ObjectFuture` that is constructed from the `Future` object returned by `_session.run(...)`.
 
 Additionally, `RunnerService` provides a `close()` method for gracefully cleaning up resources, such as closing the underlying session.
