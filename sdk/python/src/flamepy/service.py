@@ -60,23 +60,23 @@ class ApplicationContext:
 class SessionContext:
     """Context for a session."""
 
-    _data_expr: ObjectRef
+    _object_ref: ObjectRef
 
     session_id: str
     application: ApplicationContext
 
     def common_data(self) -> Any:
         """Get the common data."""
-        self._data_expr = get_object(self._data_expr)
-        return pickle.loads(self._data_expr.data) if self._data_expr is not None else None
+        self._object_ref = get_object(self._object_ref)
+        return pickle.loads(self._object_ref.data) if self._object_ref is not None else None
 
     def update_common_data(self, data: Any):
         """Update the common data."""
-        if self._data_expr is None:
+        if self._object_ref is None:
             return
 
-        self._data_expr.data = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
-        self._data_expr = update_object(self._data_expr)
+        self._object_ref.data = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+        self._object_ref = update_object(self._object_ref)
 
 
 @dataclass
@@ -161,10 +161,10 @@ class FlameInstanceServicer(InstanceServicer):
 
             logger.debug(f"app_context: {app_context}")
 
-            common_data_expr = ObjectRef.decode(request.common_data) if request.HasField("common_data") else None
+            common_data_ref = ObjectRef.decode(request.common_data) if request.HasField("common_data") else None
 
             session_context = SessionContext(
-                _data_expr=common_data_expr,
+                _object_ref=common_data_ref,
                 session_id=request.session_id,
                 application=app_context,
             )

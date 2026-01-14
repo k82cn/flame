@@ -318,19 +318,19 @@ class Connection:
 
         common_data_bin = pickle.dumps(attrs.common_data, protocol=pickle.HIGHEST_PROTOCOL)
 
-        data_expr = put_object(session_id, common_data_bin)
+        object_ref = put_object(session_id, common_data_bin)
 
         session_spec = SessionSpec(
             application=attrs.application,
             slots=attrs.slots,
-            common_data=data_expr.encode(),
+            common_data=object_ref.encode(),
         )
 
         request = CreateSessionRequest(session_id=session_id, session=session_spec)
 
         try:
             response = self._frontend.CreateSession(request)
-            common_data_expr = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             session = Session(
                 connection=self,
@@ -344,7 +344,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_expr,
+                common_data=common_data_ref,
             )
             return session
         except grpc.RpcError as e:
@@ -359,7 +359,7 @@ class Connection:
 
             sessions = []
             for session in response.sessions:
-                common_data_expr = ObjectRef.decode(session.spec.common_data) if session.spec.HasField("common_data") else None
+                common_data_ref = ObjectRef.decode(session.spec.common_data) if session.spec.HasField("common_data") else None
 
                 sessions.append(
                     Session(
@@ -374,7 +374,7 @@ class Connection:
                         succeed=session.status.succeed,
                         failed=session.status.failed,
                         completion_time=(datetime.fromtimestamp(session.status.completion_time / 1000, tz=timezone.utc) if session.status.HasField("completion_time") else None),
-                        common_data=common_data_expr,
+                        common_data=common_data_ref,
                     )
                 )
 
@@ -389,7 +389,7 @@ class Connection:
 
         try:
             response = self._frontend.OpenSession(request)
-            common_data_expr = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
                 connection=self,
@@ -403,7 +403,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_expr,
+                common_data=common_data_ref,
             )
 
         except grpc.RpcError as e:
@@ -416,7 +416,7 @@ class Connection:
         try:
             response = self._frontend.GetSession(request)
 
-            common_data_expr = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
                 connection=self,
@@ -430,7 +430,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_expr,
+                common_data=common_data_ref,
             )
 
         except grpc.RpcError as e:
@@ -443,7 +443,7 @@ class Connection:
         try:
             response = self._frontend.CloseSession(request)
 
-            common_data_expr = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
 
             return Session(
                 connection=self,
@@ -457,7 +457,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_expr,
+                common_data=common_data_ref,
             )
 
         except grpc.RpcError as e:
