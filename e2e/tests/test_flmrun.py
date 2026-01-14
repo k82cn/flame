@@ -279,36 +279,22 @@ def test_flmrun_complex_return_types():
 
 def test_flmrun_runner_request_validation():
     """Test Case 9: Test RunnerRequest validation."""
-    # Test that only one input type can be set
-    with pytest.raises(ValueError, match="Only one of"):
-        flamepy.RunnerRequest(method=None, args=(1, 2), kwargs={"a": 1})
-    
-    with pytest.raises(ValueError, match="Only one of"):
-        flamepy.RunnerRequest(
-            method=None, 
-            args=(1, 2), 
-            input_object=flamepy.ObjectRef(source=flamepy.DataSource.LOCAL)
-        )
-    
-    with pytest.raises(ValueError, match="Only one of"):
-        flamepy.RunnerRequest(
-            method=None, 
-            kwargs={"a": 1}, 
-            input_object=flamepy.ObjectRef(source=flamepy.DataSource.LOCAL)
-        )
-    
-    # Test that valid single input types work
+    # Test that args can be set alone
     req = flamepy.RunnerRequest(method=None, args=(1, 2))
     assert req.args == (1, 2)
     assert req.kwargs is None
-    assert req.input_object is None
-    
+
+    # Test that kwargs can be set alone
     req = flamepy.RunnerRequest(method=None, kwargs={"a": 1})
     assert req.args is None
     assert req.kwargs == {"a": 1}
-    assert req.input_object is None
-    
+
+    # Test that both args and kwargs can be set together
+    req = flamepy.RunnerRequest(method=None, args=(1, 2), kwargs={"a": 1})
+    assert req.args == (1, 2)
+    assert req.kwargs == {"a": 1}
+
+    # Test that no arguments is valid
     req = flamepy.RunnerRequest(method=None)
     assert req.args is None
     assert req.kwargs is None
-    assert req.input_object is None

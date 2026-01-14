@@ -289,55 +289,13 @@ class RunnerRequest:
         method: The name of the method to invoke within the customized application.
                 Should be None if the execution object itself is a function or callable.
         args: A tuple containing positional arguments for the method. Optional.
+                Can contain ObjectRef instances that will be resolved at runtime.
         kwargs: A dictionary of keyword arguments for the method. Optional.
-        input_object: An ObjectRef representing the method input, used when the input
-                      is large. Optional.
+                Can contain ObjectRef instances that will be resolved at runtime.
 
-    Note: Only one of args, kwargs, or input_object should be non-None at a time to
-    avoid ambiguity. If all are None, the method will be called without arguments.
+    Note: If both args and kwargs are None, the method will be called without arguments.
     """
 
     method: Optional[str] = None
     args: Optional[Tuple] = None
     kwargs: Optional[Dict[str, Any]] = None
-    input_object: Optional[ObjectRef] = None
-
-    def __post_init__(self):
-        """Validate that only one of args, kwargs, or input_object is set."""
-        non_none_count = sum([
-            self.args is not None,
-            self.kwargs is not None,
-            self.input_object is not None
-        ])
-
-        if non_none_count > 1:
-            raise ValueError(
-                "Only one of 'args', 'kwargs', or 'input_object' can be set at a time. "
-                f"Found {non_none_count} non-None values."
-            )
-
-    def set_object(self, session_id: str, obj: Any) -> None:
-        """Pickle and cache a large object as the method input.
-
-        This method serializes the provided object using pickle and caches it,
-        updating the input_object field with an ObjectRef. The service will then
-        unpickle and load the object as input as needed.
-
-        Args:
-            session_id: The session ID for caching the object.
-            obj: The object to pickle and cache as method input.
-
-        Raises:
-            ValueError: If args or kwargs are already set.
-        """
-        if self.args is not None or self.kwargs is not None:
-            raise ValueError(
-                "Cannot set input_object when 'args' or 'kwargs' are already set. "
-                "Only one input method can be used at a time."
-            )
-
-        # Import here to avoid circular dependency
-        from .cache import put_object
-
-        pickled_data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-        self.input_object = put_object(session_id, pickled_data)
