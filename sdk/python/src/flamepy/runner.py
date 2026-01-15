@@ -31,6 +31,7 @@ from .types import (
     RunnerRequest,
     ApplicationAttributes,
     Shim,
+    RunnerServiceKind,
 )
 from .client import create_session, get_application, register_application, unregister_application
 from .cache import get_object
@@ -94,7 +95,7 @@ class RunnerService:
         _session: The Flame session for task execution
     """
     
-    def __init__(self, app: str, execution_object: Any):
+    def __init__(self, app: str, execution_object: Any, kind: Optional[RunnerServiceKind] = None):
         """Initialize a RunnerService.
         
         Args:
@@ -102,6 +103,7 @@ class RunnerService:
                  The associated service must be flamepy.runpy.
             execution_object: The Python execution object to be managed and
                              exposed as a remote service.
+            kind: The runner service kind, if specified.
         """
         self._app = app
         self._execution_object = execution_object
@@ -109,7 +111,7 @@ class RunnerService:
         
         # Create a session with flamepy.runpy service
         # The common_data is set using a RunnerContext that includes the execution_object
-        runner_context = RunnerContext(execution_object=execution_object)
+        runner_context = RunnerContext(execution_object=execution_object, kind=kind)
         self._session = create_session(application=app, common_data=runner_context)
         
         logger.info(f"Created RunnerService for app '{app}' with session '{self._session.id}'")
@@ -395,7 +397,7 @@ class Runner:
             except Exception as e:
                 logger.error(f"Error removing local package: {e}", exc_info=True)
     
-    def service(self, execution_object: Any) -> RunnerService:
+    def service(self, execution_object: Any, kind: Optional[RunnerServiceKind] = None) -> RunnerService:
         """Create a RunnerService for the given execution object.
         
         If execution_object is a class, it will be instantiated using its default
@@ -403,17 +405,19 @@ class Runner:
         
         Args:
             execution_object: A function, class, or class instance to expose as a service
+            kind: The runner service kind. If None, defaults based on execution_object
             
         Returns:
             A RunnerService instance
         """
+        
         # If it's a class, instantiate it
         if inspect.isclass(execution_object):
             logger.debug(f"Instantiating class {execution_object.__name__}")
             execution_object = execution_object()
         
         # Create the RunnerService
-        runner_service = RunnerService(self._name, execution_object)
+        runner_service = RunnerService(self._name, execution_object, kind=kind)
         self._services.append(runner_service)
         
         logger.info(f"Created service for execution object in Runner '{self._name}'")

@@ -164,7 +164,10 @@ spec:
    ```
 2. Create a session with `RunnerContext` and `sum`
     ```python
-    ctx = RunnerContext(execution_object=sum)
+    ctx = RunnerContext(
+        execution_object=sum,
+        kind=RunnerServiceKind.Stateless,
+    )
     ssn = flamepy.create_session("flmrun", ctx)
     ```
 3. Invoke the `sum` function remotely

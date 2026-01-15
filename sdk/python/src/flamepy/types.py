@@ -14,6 +14,7 @@ limitations under the License.
 from dataclasses import dataclass, asdict, field
 from enum import IntEnum
 from typing import Optional, List, Dict, Any, Union, Tuple
+import inspect
 from datetime import datetime
 from pydantic import BaseModel
 from pathlib import Path
@@ -70,6 +71,12 @@ class Shim(IntEnum):
     Host = 0
     Wasm = 1
 
+
+class RunnerServiceKind(IntEnum):
+    """Runner service kind enumeration."""
+
+    Statefull = 0
+    Stateless = 1
 
 class FlameErrorCode(IntEnum):
     """Flame error code enumeration."""
@@ -302,9 +309,26 @@ class RunnerContext:
         execution_object: The execution object for the customized session. This can be
                           any Python object (function, class instance, etc.) that will
                           be used to execute tasks within the session.
+        kind: The kind of the runner service, if specified.
     """
 
     execution_object: Any
+    kind: Optional[RunnerServiceKind] = None
+
+    def __post_init__(self) -> None:
+        if self.kind is not None:
+            return
+        if (
+            inspect.isfunction(self.execution_object)
+            or inspect.isbuiltin(self.execution_object)
+            or (
+                inspect.isclass(self.execution_object)
+                and self.execution_object.__module__ == "builtins"
+            )
+        ):
+            self.kind = RunnerServiceKind.Stateless
+        else:
+            self.kind = RunnerServiceKind.Statefull
 
 
 @dataclass
