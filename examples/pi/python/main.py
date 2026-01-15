@@ -37,7 +37,7 @@ def main():
         results = [estimator(samples_per_batch) for _ in range(num_batches)]
 
         # Collect results
-        insides = [result.get() for result in results]
+        insides = rr.get(results)
 
     # Calculate final PI estimate
     pi_estimate = 4.0 * sum(insides) / total_samples

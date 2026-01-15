@@ -16,7 +16,7 @@ import os
 import tarfile
 import shutil
 import inspect
-from concurrent.futures import Future
+from concurrent.futures import Future, as_completed
 from pathlib import Path
 from typing import Any, List, Optional, Callable
 from urllib.parse import urlparse
@@ -80,6 +80,22 @@ class ObjectFuture:
         """
         object_ref = self._future.result()
         return get_object(object_ref)
+
+    def wait(self) -> None:
+        """Wait for the future to complete without fetching the result."""
+        self._future.result()
+
+
+class ObjectFutureIterator:
+    """Iterator wrapper over futures that yields ObjectFuture as they complete."""
+
+    def __init__(self, futures: List[ObjectFuture]):
+        """Initialize an iterator from a list of ObjectFuture instances."""
+        self._future_map = {future._future: future for future in futures}
+
+    def __iter__(self):
+        for future in as_completed(self._future_map):
+            yield self._future_map[future]
 
 
 class RunnerService:
@@ -422,6 +438,48 @@ class Runner:
         
         logger.debug(f"Created service for execution object in Runner '{self._name}'")
         return runner_service
+
+    def get(self, futures: List[ObjectFuture]) -> List[Any]:
+        """Resolve multiple ObjectFuture values to their concrete results.
+        
+        Args:
+            futures: List of ObjectFuture instances
+        
+        Returns:
+            List of concrete results corresponding to each ObjectFuture
+        """
+        return [future.get() for future in futures]
+
+    def ref(self, futures: List[ObjectFuture]) -> List[ObjectRef]:
+        """Resolve multiple ObjectFuture values to their ObjectRef references.
+        
+        Args:
+            futures: List of ObjectFuture instances
+        
+        Returns:
+            List of ObjectRef instances corresponding to each ObjectFuture
+        """
+        return [future.ref() for future in futures]
+
+    def wait(self, futures: List[ObjectFuture]) -> None:
+        """Wait for multiple ObjectFuture values to complete.
+        
+        Args:
+            futures: List of ObjectFuture instances
+        """
+        for future in futures:
+            future.wait()
+
+    def select(self, futures: List[ObjectFuture]) -> ObjectFutureIterator:
+        """Return an iterator over futures as they complete.
+        
+        Args:
+            futures: List of ObjectFuture instances
+        
+        Returns:
+            ObjectFutureIterator yielding futures in completion order
+        """
+        return ObjectFutureIterator(futures)
     
     def _create_package(self) -> str:
         """Create a .tar.gz package of the current working directory.
