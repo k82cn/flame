@@ -86,8 +86,7 @@ def main():
     print("-" * 60)
     with Runner("example-counter-class") as rr:
         cnt_s = rr.service(Counter)
-        cnt_s.add(1)
-        cnt_s.add(3)
+        rr.wait([cnt_s.add(1), cnt_s.add(3)])
         result = cnt_s.get_counter()
         print(f"Counter: 0 + 1 + 3 = {result.get()}")
     
@@ -96,8 +95,7 @@ def main():
     print("-" * 60)
     with Runner("example-counter-instance") as rr:
         cnt_os = rr.service(Counter(10))
-        cnt_os.add(1)
-        cnt_os.add(3)
+        rr.wait([cnt_os.add(1), cnt_os.add(3)])
         result = cnt_os.get_counter()
         print(f"Counter: 10 + 1 + 3 = {result.get()}")
     
@@ -106,13 +104,12 @@ def main():
     print("-" * 60)
     with Runner("example-objectfuture") as rr:
         cnt_os = rr.service(Counter(10))
-        cnt_os.add(1)
-        cnt_os.add(3)
+        rr.wait([cnt_os.add(1), cnt_os.add(3)])
         res_r = cnt_os.get_counter()
         
         # Pass ObjectFuture as argument (efficient for large objects)
         print(f"Counter: 10 + 1 + 3 = {res_r.get()}")
-        cnt_os.add(res_r)
+        cnt_os.add(res_r).wait()
         res_r2 = cnt_os.get_counter()
         print(f"Counter: 14 + 14 = {res_r2.get()}")
     
@@ -126,8 +123,9 @@ def main():
         result1 = sum_service(5, 3)
         result2 = calc_service.multiply(4, 7)
         
-        print(f"sum_fn(5, 3) = {result1.get()}")
-        print(f"Calculator.multiply(4, 7) = {result2.get()}")
+        for result in rr.select([result1, result2]):
+            value = result.get()
+            print(f"Result: {value}")
     
     # Example 6: Keyword arguments
     print("\n[Example 6] Keyword Arguments")
@@ -143,8 +141,9 @@ def main():
         result1 = greet_service(name="World", greeting="Hi")
         result2 = greet_service(name="Python")
         
-        print(f"greet(name='World', greeting='Hi') = {result1.get()}")
-        print(f"greet(name='Python') = {result2.get()}")
+        value1, value2 = rr.get([result1, result2])
+        print(f"greet(name='World', greeting='Hi') = {value1}")
+        print(f"greet(name='Python') = {value2}")
     
     print("\n" + "=" * 60)
     print("All examples completed successfully!")

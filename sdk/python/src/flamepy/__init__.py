@@ -85,6 +85,7 @@ from .service import (
 from .instance import FlameInstance
 from .runner import (
     ObjectFuture,
+    ObjectFutureIterator,
     RunnerService,
     Runner,
 )
@@ -148,6 +149,7 @@ __all__ = [
     "FlameInstance",
     # Runner classes
     "ObjectFuture",
+    "ObjectFutureIterator",
     "RunnerService",
     "Runner",
 ]
