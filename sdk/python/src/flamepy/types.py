@@ -75,7 +75,7 @@ class Shim(IntEnum):
 class RunnerServiceKind(IntEnum):
     """Runner service kind enumeration."""
 
-    Statefull = 0
+    Stateful = 0
     Stateless = 1
 
 class FlameErrorCode(IntEnum):
@@ -328,7 +328,7 @@ class RunnerContext:
         ):
             self.kind = RunnerServiceKind.Stateless
         else:
-            self.kind = RunnerServiceKind.Statefull
+            self.kind = RunnerServiceKind.Stateful
 
 
 @dataclass

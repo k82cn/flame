@@ -114,7 +114,7 @@ class RunnerService:
         runner_context = RunnerContext(execution_object=execution_object, kind=kind)
         self._session = create_session(application=app, common_data=runner_context)
         
-        logger.info(f"Created RunnerService for app '{app}' with session '{self._session.id}'")
+        logger.debug(f"Created RunnerService for app '{app}' with session '{self._session.id}'")
         
         # Generate wrapper methods for all public methods of the execution object
         self._generate_wrappers()
@@ -243,7 +243,7 @@ class RunnerService:
         
         This closes the underlying session.
         """
-        logger.info(f"Closing RunnerService for app '{self._app}'")
+        logger.debug(f"Closing RunnerService for app '{self._app}'")
         self._session.close()
 
 
@@ -273,7 +273,7 @@ class Runner:
         self._app_registered = False
         self._context = FlameContext()
         
-        logger.info(f"Initialized Runner '{name}'")
+        logger.debug(f"Initialized Runner '{name}'")
     
     def __enter__(self) -> "Runner":
         """Enter the context manager and set up the application environment.
@@ -290,7 +290,7 @@ class Runner:
         Raises:
             FlameError: If setup fails at any step
         """
-        logger.info(f"Entering Runner context for '{self._name}'")
+        logger.debug(f"Entering Runner context for '{self._name}'")
         
         # Check that package configuration is available
         if self._context.package is None:
@@ -302,16 +302,16 @@ class Runner:
         
         # Step 1: Package the current working directory
         self._package_path = self._create_package()
-        logger.info(f"Created package: {self._package_path}")
+        logger.debug(f"Created package: {self._package_path}")
         
         # Step 2: Upload the package to storage
         storage_url = self._upload_package()
-        logger.info(f"Uploaded package to: {storage_url}")
+        logger.debug(f"Uploaded package to: {storage_url}")
         
         # Step 3: Retrieve the flmrun application template
         try:
             flmrun_app = get_application("flmrun")
-            logger.info(f"Retrieved flmrun application template")
+            logger.debug(f"Retrieved flmrun application template")
         except Exception as e:
             # Clean up the package file
             if self._package_path and os.path.exists(self._package_path):
@@ -343,7 +343,7 @@ class Runner:
             
             register_application(self._name, app_attrs)
             self._app_registered = True
-            logger.info(f"Registered application '{self._name}' with working directory: {working_directory}")
+            logger.debug(f"Registered application '{self._name}' with working directory: {working_directory}")
         except Exception as e:
             # Clean up storage and package file
             self._cleanup_storage()
@@ -369,7 +369,7 @@ class Runner:
             exc_val: Exception value if an exception occurred
             exc_tb: Exception traceback if an exception occurred
         """
-        logger.info(f"Exiting Runner context for '{self._name}'")
+        logger.debug(f"Exiting Runner context for '{self._name}'")
         
         # Step 1: Close all services
         for service in self._services:
@@ -382,7 +382,7 @@ class Runner:
         if self._app_registered:
             try:
                 unregister_application(self._name)
-                logger.info(f"Unregistered application '{self._name}'")
+                logger.debug(f"Unregistered application '{self._name}'")
             except Exception as e:
                 logger.error(f"Error unregistering application: {e}", exc_info=True)
         
@@ -393,7 +393,7 @@ class Runner:
         if self._package_path and os.path.exists(self._package_path):
             try:
                 os.remove(self._package_path)
-                logger.info(f"Removed local package: {self._package_path}")
+                logger.debug(f"Removed local package: {self._package_path}")
             except Exception as e:
                 logger.error(f"Error removing local package: {e}", exc_info=True)
     
@@ -420,7 +420,7 @@ class Runner:
         runner_service = RunnerService(self._name, execution_object, kind=kind)
         self._services.append(runner_service)
         
-        logger.info(f"Created service for execution object in Runner '{self._name}'")
+        logger.debug(f"Created service for execution object in Runner '{self._name}'")
         return runner_service
     
     def _create_package(self) -> str:
@@ -460,7 +460,7 @@ class Runner:
                     tar.add(item_path, arcname=item, recursive=True, 
                            filter=lambda tarinfo: None if self._should_exclude(tarinfo.name, excludes) else tarinfo)
             
-            logger.info(f"Created package: {package_path}")
+            logger.debug(f"Created package: {package_path}")
             return package_path
         
         except Exception as e:
@@ -527,11 +527,11 @@ class Runner:
         
         # Check if package already exists
         if os.path.exists(dest_path):
-            logger.info(f"Package already exists at {dest_path}, skipping upload")
+            logger.debug(f"Package already exists at {dest_path}, skipping upload")
         else:
             try:
                 shutil.copy2(self._package_path, dest_path)
-                logger.info(f"Copied package to {dest_path}")
+                logger.debug(f"Copied package to {dest_path}")
             except Exception as e:
                 raise FlameError(
                     FlameErrorCode.INTERNAL,
@@ -556,7 +556,7 @@ class Runner:
                 
                 if os.path.exists(dest_path):
                     os.remove(dest_path)
-                    logger.info(f"Removed package from storage: {dest_path}")
+                    logger.debug(f"Removed package from storage: {dest_path}")
         
         except Exception as e:
             logger.error(f"Error cleaning up storage: {e}", exc_info=True)

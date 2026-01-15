@@ -1,6 +1,6 @@
 """Monte Carlo PI estimation module."""
 
-import random
+import numpy as np
 
 
 def estimate_batch(num_samples: int) -> int:
@@ -13,15 +13,7 @@ def estimate_batch(num_samples: int) -> int:
     Returns:
         Number of points inside the quarter circle
     """
-    inside_circle = 0
-
-    for _ in range(num_samples):
-        # Generate random point in unit square [0,1] x [0,1]
-        x = random.random()
-        y = random.random()
-
-        # Check if point is inside quarter circle (radius = 1)
-        if x * x + y * y <= 1.0:
-            inside_circle += 1
-
-    return inside_circle
+    x = np.random.rand(num_samples)
+    y = np.random.rand(num_samples)
+    inside_circle = np.sum(x*x + y*y <= 1.0)
+    return int(inside_circle)

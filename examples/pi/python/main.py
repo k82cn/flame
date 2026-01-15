@@ -8,7 +8,7 @@ a quarter circle.
 
 from flamepy import Runner
 from pi import estimate_batch
-
+import math
 
 def main():
     """Run Monte Carlo PI estimation using distributed computing."""
@@ -42,12 +42,12 @@ def main():
     # Calculate final PI estimate
     pi_estimate = 4.0 * sum(insides) / total_samples
 
-    error = abs(pi_estimate - 3.141592653589793)
-    error_percent = (error / 3.141592653589793) * 100
+    error = abs(pi_estimate - math.pi)
+    error_percent = (error / math.pi) * 100
 
     print(f"\nResults:")
     print(f"  Estimated PI: {pi_estimate:.10f}")
-    print(f"  Actual PI:    3.1415926536")
+    print(f"  Actual PI:    {math.pi:.10f}")
     print(f"  Error:        {error:.10f} ({error_percent:.6f}%)")
     print("=" * 60)
 
