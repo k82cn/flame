@@ -222,11 +222,14 @@ with Runner("my-app") as rr:
 
 ### Verify Cache Output
 ```python
-from flamepy import Runner, create_session, RunnerContext, RunnerRequest
+from flamepy import Runner, create_session, RunnerContext, RunnerRequest, RunnerServiceKind
 from flamepy.cache import get_object
 
 # Test that output is ObjectRef
-ctx = RunnerContext(execution_object=lambda x: x * 2)
+ctx = RunnerContext(
+    execution_object=lambda x: x * 2,
+    kind=RunnerServiceKind.Stateless,
+)
 ssn = create_session("flmrun", ctx)
 req = RunnerRequest(method=None, args=(5,))
 result_ref = ssn.invoke(req)

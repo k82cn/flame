@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-flame-rs = { path = "../../sdk/rust" }
-stdng = { path = "../../stdng" }
+flame-rs = { path = "../../../sdk/rust" }
+stdng = { path = "../../../stdng" }
 
 tokio = { workspace = true }
 tonic = { workspace = true }

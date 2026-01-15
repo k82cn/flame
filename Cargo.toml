@@ -9,7 +9,7 @@ members = [
     "executor_manager",
     "rpc",
     "sdk/rust",
-    "examples/pi",
+    "examples/pi/rust",
     "cri",
     "stdng",
 ]

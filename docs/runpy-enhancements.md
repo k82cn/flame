@@ -195,16 +195,19 @@ If you're using `create_session` and `invoke` directly (not through Runner):
 
 **Before**:
 ```python
-ctx = RunnerContext(execution_object=my_func)
+from flamepy import RunnerContext, RunnerServiceKind
+
+ctx = RunnerContext(execution_object=my_func, kind=RunnerServiceKind.Stateless)
 ssn = create_session("flmrun", ctx)
 result = ssn.invoke(request)
 ```
 
 **After**:
 ```python
+from flamepy import RunnerContext, RunnerServiceKind
 from flamepy.cache import get_object
 
-ctx = RunnerContext(execution_object=my_func)
+ctx = RunnerContext(execution_object=my_func, kind=RunnerServiceKind.Stateless)
 ssn = create_session("flmrun", ctx)
 result_ref = ssn.invoke(request)
 result = get_object(result_ref)

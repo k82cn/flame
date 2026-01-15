@@ -43,6 +43,7 @@ from .types import (
     TaskState,
     ApplicationState,
     Shim,
+    RunnerServiceKind,
     FlameErrorCode,
     # Classes
     FlameError,
@@ -104,6 +105,7 @@ __all__ = [
     "TaskState",
     "ApplicationState",
     "Shim",
+    "RunnerServiceKind",
     "FlameErrorCode",
     # Service classes
     "FlameService",
