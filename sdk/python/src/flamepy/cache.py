@@ -15,7 +15,7 @@ import httpx
 from pydantic import BaseModel
 import logging
 import contextlib
-import pickle
+import cloudpickle
 from typing import Any, Optional
 
 from .types import ObjectRef, FlameContext
@@ -70,8 +70,8 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
     context = FlameContext()
     cache_endpoint = context.cache_endpoint
     
-    # Serialize the object using pickle
-    data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    # Serialize the object using cloudpickle
+    data = cloudpickle.dumps(obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     with suppress_dependency_logs():
         response = httpx.post(f"{cache_endpoint}/objects/{session_id}", data=data)
@@ -103,8 +103,8 @@ def get_object(ref: ObjectRef) -> Any:
     # Update the version of the ObjectRef
     ref.version = obj.version
 
-    # Deserialize the object using pickle
-    return pickle.loads(data)
+    # Deserialize the object using cloudpickle
+    return cloudpickle.loads(data)
 
 
 def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
@@ -120,8 +120,8 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
     Raises:
         Exception: If request fails
     """
-    # Serialize the new object using pickle
-    new_data = pickle.dumps(new_obj, protocol=pickle.HIGHEST_PROTOCOL)
+    # Serialize the new object using cloudpickle
+    new_data = cloudpickle.dumps(new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
     
     obj = Object(version=ref.version, data=list(new_data))
     data = obj.model_dump_json()

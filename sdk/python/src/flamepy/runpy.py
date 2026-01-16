@@ -12,7 +12,7 @@ limitations under the License.
 """
 
 import logging
-import pickle
+import cloudpickle
 import os
 import subprocess
 import sys

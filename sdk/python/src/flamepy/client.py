@@ -16,7 +16,7 @@ from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
 from concurrent.futures import Future, ThreadPoolExecutor
 import grpc
-import pickle
+import cloudpickle
 from datetime import datetime, timezone
 
 from .cache import put_object, get_object
@@ -522,7 +522,7 @@ class Session:
 
     def create_task(self, input_data: Any) -> Task:
         """Create a new task in the session."""
-        input_bin = pickle.dumps(input_data, protocol=pickle.HIGHEST_PROTOCOL)
+        input_bin = cloudpickle.dumps(input_data, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
         task_spec = TaskSpec(session_id=self.id, input=input_bin)
 
@@ -563,8 +563,8 @@ class Session:
                 session_id=self.id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=pickle.loads(response.spec.input) if response.spec.input is not None else None,
-                output=pickle.loads(response.spec.output) if response.spec.output is not None else None,
+                input=cloudpickle.loads(response.spec.input) if response.spec.input is not None else None,
+                output=cloudpickle.loads(response.spec.output) if response.spec.output is not None else None,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
@@ -679,8 +679,8 @@ class TaskWatcher:
                 session_id=response.spec.session_id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=pickle.loads(response.spec.input) if response.spec.HasField("input") else None,
-                output=pickle.loads(response.spec.output) if response.spec.HasField("output") else None,
+                input=cloudpickle.loads(response.spec.input) if response.spec.HasField("input") else None,
+                output=cloudpickle.loads(response.spec.output) if response.spec.HasField("output") else None,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(

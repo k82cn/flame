@@ -14,7 +14,7 @@ limitations under the License.
 import os
 import time
 import grpc
-import pickle
+import cloudpickle
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
@@ -194,7 +194,7 @@ class FlameInstanceServicer(InstanceServicer):
             task_context = TaskContext(
                 task_id=request.task_id,
                 session_id=request.session_id,
-                input=pickle.loads(request.input) if request.HasField("input") else None,
+                input=cloudpickle.loads(request.input) if request.HasField("input") else None,
             )
 
             logger.debug(f"task_context: {task_context}")
@@ -205,7 +205,7 @@ class FlameInstanceServicer(InstanceServicer):
 
             output_data = None
             if output is not None and output.data is not None:
-                output_data = pickle.dumps(output.data, protocol=pickle.HIGHEST_PROTOCOL)
+                output_data = cloudpickle.dumps(output.data, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
             # Return task output
             return TaskResultProto(return_code=0, output=output_data, message=None)
