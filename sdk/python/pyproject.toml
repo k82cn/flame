@@ -34,6 +34,7 @@ dependencies = [
   "bson>=0.5",
   "requests >= 2.32",
   "httpx >= 0.28",
+  "cloudpickle >= 3.1"
 ]
 
 [project.optional-dependencies]
