@@ -9,8 +9,7 @@ dependencies = [
     "numpy"
 ]
 
-[tool.setuptools]
-py-modules = ["pi"]
+
 
 [tool.uv.sources]
 flamepy = { path = "/usr/local/flame/sdk/python" }
