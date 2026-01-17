@@ -7,8 +7,25 @@ a quarter circle.
 """
 
 from flamepy import Runner
-from pi import estimate_batch
+import numpy as np
 import math
+
+
+def estimate_batch(num_samples: int) -> int:
+    """
+    Estimate PI using Monte Carlo method with the given number of samples.
+
+    Args:
+        num_samples: Number of random points to sample
+
+    Returns:
+        Number of points inside the quarter circle
+    """
+    x = np.random.rand(num_samples)
+    y = np.random.rand(num_samples)
+    inside_circle = np.sum(x * x + y * y <= 1.0)
+    return int(inside_circle)
+
 
 def main():
     """Run Monte Carlo PI estimation using distributed computing."""
