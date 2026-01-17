@@ -31,7 +31,7 @@ chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 actix-rt = "2"
 nix = { version = "0.30", features = ["signal"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1.19", features = ["v4", "serde"] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }
@@ -47,3 +47,12 @@ sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-native-tls", "sqlit
 url = { version = "2", features = ["serde"] }
 
 bincode = { version = "2" }
+
+# Shared dependencies moved from sub-projects
+thiserror = "1"
+time = { version = "0.3", features = ["macros"] }
+serde_yaml = "0.9"
+tokio-stream = "0.1"
+tempfile = "3"
+comfy-table = "7"
+jsonschema = "0.33.0"
