@@ -19,7 +19,7 @@ import grpc
 import cloudpickle
 from datetime import datetime, timezone
 
-from .cache import put_object, get_object
+from ..cache.cache import put_object, get_object
 from .types import (
     Task,
     Application,

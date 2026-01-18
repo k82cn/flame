@@ -2,8 +2,8 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import flamepy.frontend_pb2 as frontend__pb2
-import flamepy.types_pb2 as types__pb2
+import flamepy.core.frontend_pb2 as frontend__pb2
+import flamepy.core.types_pb2 as types__pb2
 
 
 class FrontendStub(object):

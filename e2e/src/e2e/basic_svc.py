@@ -115,4 +115,4 @@ class BasicTestService(flamepy.FlameService):
 
 
 if __name__ == "__main__":
-    flamepy.service.run(BasicTestService())
+    flamepy.run(BasicTestService())

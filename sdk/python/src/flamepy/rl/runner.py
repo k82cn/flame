@@ -22,7 +22,7 @@ from typing import Any, List, Optional, Callable
 from urllib.parse import urlparse
 from functools import wraps
 
-from .types import (
+from ..core.types import (
     FlameContext,
     FlameError,
     FlameErrorCode,
@@ -33,8 +33,8 @@ from .types import (
     Shim,
     RunnerServiceKind,
 )
-from .client import create_session, get_application, register_application, unregister_application
-from .cache import get_object
+from ..core.client import create_session, get_application, register_application, unregister_application
+from ..cache.cache import get_object
 
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ class ObjectFutureIterator:
 class RunnerService:
     """Encapsulates an execution object for remote invocation within Flame.
     
-    This class creates a session with the flamepy.runpy service and dynamically
+    This class creates a session with the flamepy.rl.runpy service and dynamically
     generates wrapper methods for all public methods of the execution object.
     Each wrapper submits tasks to the session and returns ObjectFuture instances.
     
@@ -116,7 +116,7 @@ class RunnerService:
         
         Args:
             app: The name of the application registered in Flame.
-                 The associated service must be flamepy.runpy.
+                 The associated service must be flamepy.rl.runpy.
             execution_object: The Python execution object to be managed and
                              exposed as a remote service.
             kind: The runner service kind, if specified.
@@ -125,7 +125,7 @@ class RunnerService:
         self._execution_object = execution_object
         self._function_wrapper = None  # For callable functions
         
-        # Create a session with flamepy.runpy service
+        # Create a session with flamepy.rl.runpy service
         # The common_data is set using a RunnerContext that includes the execution_object
         runner_context = RunnerContext(execution_object=execution_object, kind=kind)
         self._session = create_session(application=app, common_data=runner_context)

@@ -25,9 +25,9 @@ from urllib.parse import urlparse
 from typing import Any
 from pathlib import Path
 
-from .service import FlameService, SessionContext, TaskContext, TaskOutput
-from .types import RunnerRequest, RunnerContext, RunnerServiceKind, ObjectRef
-from .cache import get_object, put_object
+from ..core.service import FlameService, SessionContext, TaskContext, TaskOutput
+from ..core.types import RunnerRequest, RunnerContext, RunnerServiceKind, ObjectRef
+from ..cache.cache import get_object, put_object
 
 logger = logging.getLogger(__name__)
 
@@ -384,8 +384,8 @@ class FlameRunpyService(FlameService):
 
 
 def main():
-    """Main entrypoint for the flamepy.runpy module."""
-    from . import run
+    """Main entrypoint for the flamepy.rl.runpy module."""
+    from ..core.service import run
     
     logger.info("Starting FlameRunpyService")
     service = FlameRunpyService()

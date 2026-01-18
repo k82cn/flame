@@ -19,7 +19,7 @@ import time
 from typing import Optional, Dict, Any, Union
 from fastapi import FastAPI, Request as FastAPIRequest, Response as FastAPIResponse
 
-from .service import (
+from ..core.service import (
     FlameService,
     SessionContext,
     TaskContext,
@@ -28,7 +28,7 @@ from .service import (
     ApplicationContext,
     FLAME_INSTANCE_ENDPOINT,
 )
-from .types import Shim
+from ..core.types import Shim
 import logging
 
 debug_service = None

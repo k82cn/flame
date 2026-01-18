@@ -11,26 +11,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import logging
-import os
-
-_log_level_str = os.getenv("FLAME_LOG_LEVEL", "INFO").upper()
-_log_level_map = {
-    "CRITICAL": logging.CRITICAL,
-    "ERROR": logging.ERROR,
-    "WARNING": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-}
-
-_log_level = (
-    _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
-)
-
-logging.basicConfig(level=_log_level)
-
-from .core.types import (
-    # Type aliases
+# Type aliases
+from .types import (
     TaskID,
     SessionID,
     ApplicationID,
@@ -38,33 +20,60 @@ from .core.types import (
     TaskInput,
     TaskOutput,
     CommonData,
-    # Enums
+)
+
+# Constants
+from .types import (
+    DEFAULT_FLAME_CONF,
+    DEFAULT_FLAME_ENDPOINT,
+    DEFAULT_FLAME_CACHE_ENDPOINT,
+)
+
+# Enums
+from .types import (
     SessionState,
     TaskState,
     ApplicationState,
     Shim,
     RunnerServiceKind,
     FlameErrorCode,
-    # Classes
+)
+
+# Exception classes
+from .types import (
     FlameError,
+)
+
+# Data classes
+from .types import (
+    Event,
     SessionAttributes,
+    ApplicationSchema,
     ApplicationAttributes,
     Task,
     Application,
-    FlameContext,
     FlamePackage,
-    TaskInformer,
+    ObjectRef,
     RunnerContext,
     RunnerRequest,
-    ObjectRef,
 )
 
-from .core.client import (
-    Connection,
-    Session,
-    TaskWatcher,
+# Context and utility classes
+from .types import (
+    TaskInformer,
+    FlameContext,
+)
+
+# Utility functions
+from .types import (
+    short_name,
+)
+
+# Client functions
+from .client import (
     connect,
     create_session,
+    open_session,
     register_application,
     unregister_application,
     list_applications,
@@ -72,25 +81,44 @@ from .core.client import (
     list_sessions,
     get_session,
     close_session,
-    open_session,
 )
-from .core.service import (
-    FlameService,
+
+# Client classes
+from .client import (
+    ConnectionInstance,
+    Connection,
+    Session,
+    TaskWatcher,
+)
+
+# Service constants
+from .service import (
+    FLAME_INSTANCE_ENDPOINT,
+)
+
+# Service context classes
+from .service import (
     ApplicationContext,
     SessionContext,
     TaskContext,
     TaskOutput,
-    run,
-)
-from .agent.instance import FlameInstance
-from .rl.runner import (
-    ObjectFuture,
-    ObjectFutureIterator,
-    RunnerService,
-    Runner,
 )
 
-__version__ = "0.3.0"
+# Service base classes
+from .service import (
+    FlameService,
+)
+
+# Service implementation classes
+from .service import (
+    FlameInstanceServicer,
+    FlameInstanceServer,
+)
+
+# Service functions
+from .service import (
+    run,
+)
 
 __all__ = [
     # Type aliases
@@ -101,6 +129,10 @@ __all__ = [
     "TaskInput",
     "TaskOutput",
     "CommonData",
+    # Constants
+    "DEFAULT_FLAME_CONF",
+    "DEFAULT_FLAME_ENDPOINT",
+    "DEFAULT_FLAME_CACHE_ENDPOINT",
     # Enums
     "SessionState",
     "TaskState",
@@ -108,48 +140,52 @@ __all__ = [
     "Shim",
     "RunnerServiceKind",
     "FlameErrorCode",
-    # Service classes
-    "FlameService",
-    "ApplicationContext",
-    "SessionContext",
-    "TaskContext",
-    "TaskOutput",
-    "run",
-    # Classes
+    # Exception classes
     "FlameError",
+    # Data classes
+    "Event",
     "SessionAttributes",
+    "ApplicationSchema",
     "ApplicationAttributes",
     "Task",
     "Application",
-    "FlameContext",
     "FlamePackage",
-    "TaskInformer",
+    "ObjectRef",
     "RunnerContext",
     "RunnerRequest",
-    "ObjectRef",
-    # Client classes
-    "Connection",
+    # Context and utility classes
+    "TaskInformer",
+    "FlameContext",
+    # Utility functions
+    "short_name",
+    # Client functions
     "connect",
     "create_session",
+    "open_session",
     "register_application",
     "unregister_application",
     "list_applications",
     "get_application",
     "list_sessions",
     "get_session",
-    "open_session",
     "close_session",
-    "TaskWatcher",
+    # Client classes
+    "ConnectionInstance",
+    "Connection",
     "Session",
-    "Task",
-    "TaskInput",
+    "TaskWatcher",
+    # Service constants
+    "FLAME_INSTANCE_ENDPOINT",
+    # Service context classes
+    "ApplicationContext",
+    "SessionContext",
+    "TaskContext",
     "TaskOutput",
-    "CommonData",
-    # Instance classes
-    "FlameInstance",
-    # Runner classes
-    "ObjectFuture",
-    "ObjectFutureIterator",
-    "RunnerService",
-    "Runner",
+    # Service base classes
+    "FlameService",
+    # Service implementation classes
+    "FlameInstanceServicer",
+    "FlameInstanceServer",
+    # Service functions
+    "run",
 ]
