@@ -1,4 +1,4 @@
-# RFE306\: Re-org Python SDK to include RL, Agent and Core
+# RFE306: Re-org Python SDK to include RL, Agent and Core
 
 ## Motivation
 
