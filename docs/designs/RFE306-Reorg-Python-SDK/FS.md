@@ -40,7 +40,7 @@ The `rl` module is used to build RL for AI Agent. Its client is defined in `runn
 
 4. Move `cache.py` into the `cache` module, centralizing cache-related client functionality.
 
-## Test Casess
+## Test Cases
 
 1. Update e2e and integrate test accordingly
 2. Update examples accordingly
