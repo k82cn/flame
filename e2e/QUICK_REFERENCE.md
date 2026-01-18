@@ -52,7 +52,7 @@ class BasicTestService(flamepy.FlameService):
         # Cleanup
 
 if __name__ == "__main__":
-    flamepy.service.run(BasicTestService())
+    flamepy.run(BasicTestService())
 ```
 
 **Application Name:** `flme2esvc`
