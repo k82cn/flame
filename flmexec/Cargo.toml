@@ -16,11 +16,11 @@ tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
-futures = "0.3"
-clap = { version = "4.5", features = ["derive"] }
+futures = { workspace = true }
+clap = { workspace = true }
 chrono = { workspace = true }
 indicatif = {version = "*", features = ["rayon"]}
-tempfile = {version = "*"}
+tempfile = { workspace = true }
 rand = { workspace = true }
 
 [[bin]]

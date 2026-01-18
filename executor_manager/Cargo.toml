@@ -30,11 +30,11 @@ serde_json = { workspace = true }
 serde_derive = { workspace = true }
 
 actix-web = "4"
-bytes = "1"
+bytes = { workspace = true }
 wasmtime = "16"
 wasmtime-wasi = "16"
 anyhow = "1"
-tokio-stream = "0.1"
+tokio-stream = { workspace = true }
 network-interface = "2"
 regex = "1"
 

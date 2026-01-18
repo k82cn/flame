@@ -20,7 +20,7 @@ chrono = { workspace = true }
 rand = { workspace = true }
 nix = { workspace = true }
 
-uuid = { version = "1.19.0", features = ["v4"] }
+uuid = { workspace = true }
 
 
 [build-dependencies]
