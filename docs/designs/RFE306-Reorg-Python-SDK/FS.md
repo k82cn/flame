@@ -18,7 +18,7 @@ By default, Flame persists all data—including task inputs, outputs, and common
 
 ### `agent` module
 
-The `agent` module is used to build an AI Agent by Flame. It share the client with `core` right now, and the service is defined in `instance.py` right now.
+The `agent` module is used to build an AI Agent by Flame. It shares the client with `core` right now, and the service is defined in `instance.py` right now.
 
 ### `rl` module
 
