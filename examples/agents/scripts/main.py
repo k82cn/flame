@@ -1,4 +1,5 @@
 import flamepy
+from flamepy.agent import Agent
 from openai import OpenAI
 import os
 import json
@@ -38,7 +39,7 @@ def send_messages(messages):
     return response.choices[0].message
 
 def main():
-    session = flamepy.create_session("flmexec")    
+    agent = Agent("flmexec")    
 
     # 1. Ask DeepSeek to generate a script
     messages = [{"role": "user", "content": "Provided a Python snippet that computes and prints the sum of integers from 1 to 100."}]
@@ -56,12 +57,14 @@ def main():
 
     # 3. Call the tool to run the script and get the result for DeepSeek to see
     input = tool.function.arguments.encode("utf-8")
-    result = session.invoke(input)
+    result = agent.invoke(input)
 
     # 4. Ask DeepSeek to summarize the result
     messages.append({"role": "tool", "tool_call_id": tool.id, "content": result.decode("utf-8")})
     message = send_messages(messages)
     print(f"Model>\t {message.content}")
+    
+    agent.close()
 
 if __name__ == "__main__":
     main()

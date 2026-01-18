@@ -1,4 +1,5 @@
 import flamepy
+from flamepy.agent import Agent
 from apis import SysPrompt, Question
 
 LANGCHAIN_AGENT_NAME = "langchain-agent"
@@ -9,13 +10,15 @@ def ask_agent():
 
     question = Question(question="Who are you?")
 
-    agent = flamepy.create_session(LANGCHAIN_AGENT_NAME, weather_sys_prompt)
+    agent = Agent(LANGCHAIN_AGENT_NAME, ctx=weather_sys_prompt)
     output = agent.invoke(question)
     print(output.answer)
+    agent.close()
 
-    agent = flamepy.create_session(LANGCHAIN_AGENT_NAME, news_sys_prompt)
+    agent = Agent(LANGCHAIN_AGENT_NAME, ctx=news_sys_prompt)
     output = agent.invoke(question)
     print(output.answer)
+    agent.close()
 
 if __name__ == "__main__":
     ask_agent()

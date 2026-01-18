@@ -12,5 +12,6 @@ limitations under the License.
 """
 
 from .instance import FlameInstance
+from .client import Agent
 
-__all__ = ["FlameInstance"]
+__all__ = ["FlameInstance", "Agent"]

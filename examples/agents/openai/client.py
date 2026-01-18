@@ -13,6 +13,7 @@ import argparse
 from typing import Optional
 
 import flamepy
+from flamepy.agent import Agent
 from apis import MyContext, Question
 
 OPENAI_APP_NAME = "openai-agent"
@@ -20,25 +21,24 @@ OPENAI_APP_NAME = "openai-agent"
 
 def main(message: str, ssn_id: Optional[str] = None):
     if ssn_id:
-        session = flamepy.open_session(ssn_id)
+        agent = Agent(session_id=ssn_id)
     else:
         sys_prompt = """You are a weather forecaster.
         If you are asked to fetch the weather, you should use the fetch_weather tool after confirming the location with the user.
         """
-        session = flamepy.create_session(OPENAI_APP_NAME,
-                                         MyContext(prompt=sys_prompt))
+        agent = Agent(OPENAI_APP_NAME, ctx=MyContext(prompt=sys_prompt))
 
     print(f"{'=' * 30}")
-    print(f"Conversation <{session.id}>")
+    print(f"Conversation <{agent.id()}>")
     print(f"{'=' * 30}")
 
     print(f"User: {message}")
 
-    output = session.invoke(Question(question=message))
+    output = agent.invoke(Question(question=message))
 
     print(f"Agent: {output.answer}")
 
-    cxt = session.common_data()
+    cxt = agent.context()
     print(f"{'=' * 30}")
     print(f"Session History")
     print(f"{'=' * 30}")
@@ -47,6 +47,8 @@ def main(message: str, ssn_id: Optional[str] = None):
             print(msg)
     else:
         print("No history!")
+    
+    agent.close()
 
 
 if __name__ == "__main__":
