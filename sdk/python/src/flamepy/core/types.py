@@ -70,12 +70,6 @@ class Shim(IntEnum):
     Wasm = 1
 
 
-class RunnerServiceKind(IntEnum):
-    """Runner service kind enumeration."""
-
-    Stateful = 0
-    Stateless = 1
-
 class FlameErrorCode(IntEnum):
     """Flame error code enumeration."""
 
@@ -279,74 +273,3 @@ class FlameContext:
         return self._cache_endpoint if self._cache_endpoint is not None else DEFAULT_FLAME_CACHE_ENDPOINT
 
 
-@dataclass
-class ObjectRef:
-    """Object reference for remote cached objects."""
-
-    url: str
-    version: int = 0
-
-    def encode(self) -> bytes:
-        data = asdict(self)
-        return bson.dumps(data)
-
-    @classmethod
-    def decode(cls, json_data: bytes) -> "ObjectRef":
-        data = bson.loads(json_data)
-        return cls(**data)
-
-
-@dataclass
-class RunnerContext:
-    """Context for runner session containing the shared execution object.
-
-    This class encapsulates data shared within a session, including the
-    execution object specific to the session.
-
-    Attributes:
-        execution_object: The execution object for the customized session. This can be
-                          any Python object (function, class instance, etc.) that will
-                          be used to execute tasks within the session.
-        kind: The kind of the runner service, if specified.
-    """
-
-    execution_object: Any
-    kind: Optional[RunnerServiceKind] = None
-
-    def __post_init__(self) -> None:
-        if self.kind is not None:
-            return
-        if (
-            inspect.isfunction(self.execution_object)
-            or inspect.isbuiltin(self.execution_object)
-            or (
-                inspect.isclass(self.execution_object)
-                and self.execution_object.__module__ == "builtins"
-            )
-        ):
-            self.kind = RunnerServiceKind.Stateless
-        else:
-            self.kind = RunnerServiceKind.Stateful
-
-
-@dataclass
-class RunnerRequest:
-    """Request for runner task invocation.
-
-    This class defines the input for each task and contains information about
-    which method to invoke and what arguments to pass.
-
-    Attributes:
-        method: The name of the method to invoke within the customized application.
-                Should be None if the execution object itself is a function or callable.
-        args: A tuple containing positional arguments for the method. Optional.
-                Can contain ObjectRef instances that will be resolved at runtime.
-        kwargs: A dictionary of keyword arguments for the method. Optional.
-                Can contain ObjectRef instances that will be resolved at runtime.
-
-    Note: If both args and kwargs are None, the method will be called without arguments.
-    """
-
-    method: Optional[str] = None
-    args: Optional[Tuple] = None
-    kwargs: Optional[Dict[str, Any]] = None

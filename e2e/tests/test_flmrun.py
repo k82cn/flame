@@ -13,6 +13,7 @@ limitations under the License.
 
 import pytest
 import flamepy
+from flamepy import rl
 from e2e.helpers import (
     sum_func,
     multiply_func,
@@ -80,12 +81,12 @@ def test_flmrun_application_registered():
 def test_flmrun_sum_function():
     """Test Case 1: Run a simple sum function remotely."""
     # Create a session with RunnerContext and sum function
-    ctx = flamepy.RunnerContext(execution_object=sum_func)
+    ctx = rl.RunnerContext(execution_object=sum_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Invoke the sum function remotely with positional arguments
-        req = flamepy.RunnerRequest(method=None, args=(1, 2))
+        req = rl.RunnerRequest(method=None, args=(1, 2))
         result_ref = ssn.invoke(req)
         
         # The result is now an ObjectRef, get the actual value from cache
@@ -108,22 +109,22 @@ def test_flmrun_class_method():
     calc = Calculator()
     
     # Create a session with the calculator instance
-    ctx = flamepy.RunnerContext(execution_object=calc)
+    ctx = rl.RunnerContext(execution_object=calc)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test add method
-        req = flamepy.RunnerRequest(method="add", args=(5, 3))
+        req = rl.RunnerRequest(method="add", args=(5, 3))
         result = get_object(ssn.invoke(req))
         assert result == 8, f"Expected 8, got {result}"
         
         # Test multiply method
-        req = flamepy.RunnerRequest(method="multiply", args=(4, 7))
+        req = rl.RunnerRequest(method="multiply", args=(4, 7))
         result = get_object(ssn.invoke(req))
         assert result == 28, f"Expected 28, got {result}"
         
         # Test subtract method
-        req = flamepy.RunnerRequest(method="subtract", args=(10, 3))
+        req = rl.RunnerRequest(method="subtract", args=(10, 3))
         result = get_object(ssn.invoke(req))
         assert result == 7, f"Expected 7, got {result}"
         
@@ -137,17 +138,17 @@ def test_flmrun_kwargs():
     from flamepy.cache import get_object
     
     # Create a session with the function
-    ctx = flamepy.RunnerContext(execution_object=greet_func)
+    ctx = rl.RunnerContext(execution_object=greet_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test with keyword arguments
-        req = flamepy.RunnerRequest(method=None, kwargs={"name": "World", "greeting": "Hi"})
+        req = rl.RunnerRequest(method=None, kwargs={"name": "World", "greeting": "Hi"})
         result = get_object(ssn.invoke(req))
         assert result == "Hi, World!", f"Expected 'Hi, World!', got {result}"
         
         # Test with partial keyword arguments (uses default)
-        req = flamepy.RunnerRequest(method=None, kwargs={"name": "Python"})
+        req = rl.RunnerRequest(method=None, kwargs={"name": "Python"})
         result = get_object(ssn.invoke(req))
         assert result == "Hello, Python!", f"Expected 'Hello, Python!', got {result}"
         
@@ -161,12 +162,12 @@ def test_flmrun_no_args():
     from flamepy.cache import get_object
     
     # Create a session with the function
-    ctx = flamepy.RunnerContext(execution_object=get_message_func)
+    ctx = rl.RunnerContext(execution_object=get_message_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Invoke with no arguments (all fields None)
-        req = flamepy.RunnerRequest(method=None)
+        req = rl.RunnerRequest(method=None)
         result = get_object(ssn.invoke(req))
         assert result == "Hello from flmrun!", f"Expected 'Hello from flmrun!', got {result}"
         
@@ -180,7 +181,7 @@ def test_flmrun_multiple_tasks():
     from flamepy.cache import get_object
     
     # Create a session with the function
-    ctx = flamepy.RunnerContext(execution_object=multiply_func)
+    ctx = rl.RunnerContext(execution_object=multiply_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
@@ -193,7 +194,7 @@ def test_flmrun_multiple_tasks():
         ]
         
         for args, expected in test_cases:
-            req = flamepy.RunnerRequest(method=None, args=args)
+            req = rl.RunnerRequest(method=None, args=args)
             result = get_object(ssn.invoke(req))
             assert result == expected, f"multiply{args} expected {expected}, got {result}"
         
@@ -210,27 +211,27 @@ def test_flmrun_stateful_class():
     counter = Counter()
     
     # Create a session with the counter instance
-    ctx = flamepy.RunnerContext(execution_object=counter)
+    ctx = rl.RunnerContext(execution_object=counter)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test increment
-        req = flamepy.RunnerRequest(method="increment")
+        req = rl.RunnerRequest(method="increment")
         result = get_object(ssn.invoke(req))
         assert result == 1, f"Expected 1, got {result}"
         
         # Test increment again
-        req = flamepy.RunnerRequest(method="increment")
+        req = rl.RunnerRequest(method="increment")
         result = get_object(ssn.invoke(req))
         assert result == 2, f"Expected 2, got {result}"
         
         # Test add
-        req = flamepy.RunnerRequest(method="add", args=(5,))
+        req = rl.RunnerRequest(method="add", args=(5,))
         result = get_object(ssn.invoke(req))
         assert result == 7, f"Expected 7, got {result}"
         
         # Test get_count
-        req = flamepy.RunnerRequest(method="get_count")
+        req = rl.RunnerRequest(method="get_count")
         result = get_object(ssn.invoke(req))
         assert result == 7, f"Expected 7, got {result}"
         
@@ -244,13 +245,13 @@ def test_flmrun_lambda_function():
     from flamepy.cache import get_object
     
     # Use module-level function instead of lambda (lambdas can't be pickled)
-    ctx = flamepy.RunnerContext(execution_object=square_func)
+    ctx = rl.RunnerContext(execution_object=square_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     
     try:
         # Test with different values
         for x in [2, 5, 10, 15]:
-            req = flamepy.RunnerRequest(method=None, args=(x,))
+            req = rl.RunnerRequest(method=None, args=(x,))
             result = get_object(ssn.invoke(req))
             expected = x * x
             assert result == expected, f"Expected {expected}, got {result}"
@@ -265,30 +266,30 @@ def test_flmrun_complex_return_types():
     from flamepy.cache import get_object
     
     # Test dict return
-    ctx = flamepy.RunnerContext(execution_object=return_dict_func)
+    ctx = rl.RunnerContext(execution_object=return_dict_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
-        req = flamepy.RunnerRequest(method=None, args=("test", 42))
+        req = rl.RunnerRequest(method=None, args=("test", 42))
         result = get_object(ssn.invoke(req))
         assert result == {"test": 42}, f"Expected {{'test': 42}}, got {result}"
     finally:
         ssn.close()
     
     # Test list return
-    ctx = flamepy.RunnerContext(execution_object=return_list_func)
+    ctx = rl.RunnerContext(execution_object=return_list_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
-        req = flamepy.RunnerRequest(method=None, args=(5,))
+        req = rl.RunnerRequest(method=None, args=(5,))
         result = get_object(ssn.invoke(req))
         assert result == [0, 1, 2, 3, 4], f"Expected [0, 1, 2, 3, 4], got {result}"
     finally:
         ssn.close()
     
     # Test tuple return
-    ctx = flamepy.RunnerContext(execution_object=return_tuple_func)
+    ctx = rl.RunnerContext(execution_object=return_tuple_func)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, ctx)
     try:
-        req = flamepy.RunnerRequest(method=None, args=(123, "test"))
+        req = rl.RunnerRequest(method=None, args=(123, "test"))
         result = get_object(ssn.invoke(req))
         assert result == (123, "test"), f"Expected (123, 'test'), got {result}"
     finally:
@@ -298,21 +299,21 @@ def test_flmrun_complex_return_types():
 def test_flmrun_runner_request_validation():
     """Test Case 9: Test RunnerRequest validation."""
     # Test that args can be set alone
-    req = flamepy.RunnerRequest(method=None, args=(1, 2))
+    req = rl.RunnerRequest(method=None, args=(1, 2))
     assert req.args == (1, 2)
     assert req.kwargs is None
 
     # Test that kwargs can be set alone
-    req = flamepy.RunnerRequest(method=None, kwargs={"a": 1})
+    req = rl.RunnerRequest(method=None, kwargs={"a": 1})
     assert req.args is None
     assert req.kwargs == {"a": 1}
 
     # Test that both args and kwargs can be set together
-    req = flamepy.RunnerRequest(method=None, args=(1, 2), kwargs={"a": 1})
+    req = rl.RunnerRequest(method=None, args=(1, 2), kwargs={"a": 1})
     assert req.args == (1, 2)
     assert req.kwargs == {"a": 1}
 
     # Test that no arguments is valid
-    req = flamepy.RunnerRequest(method=None)
+    req = rl.RunnerRequest(method=None)
     assert req.args is None
     assert req.kwargs is None

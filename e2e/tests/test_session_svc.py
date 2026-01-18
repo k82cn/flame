@@ -13,7 +13,6 @@ limitations under the License.
 
 import pytest
 import flamepy
-from flamepy import SessionState
 from e2e.api import TestRequest, TestResponse, TestContext
 from tests.utils import random_string
 

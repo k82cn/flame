@@ -12,10 +12,3 @@ limitations under the License.
 """
 
 # This makes the flamepy.rl module executable as a module
-# Usage: python -m flamepy.rl (runs runpy.main)
-# Or: python -m flamepy.rl.runpy (runs runpy directly)
-
-from .runpy import main
-
-if __name__ == "__main__":
-    main()

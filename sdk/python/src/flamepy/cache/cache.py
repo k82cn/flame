@@ -17,8 +17,27 @@ import logging
 import contextlib
 import cloudpickle
 from typing import Any, Optional
+from dataclasses import dataclass, asdict
+import bson
 
-from ..core.types import ObjectRef, FlameContext
+from flamepy.core.types import FlameContext
+
+
+@dataclass
+class ObjectRef:
+    """Object reference for remote cached objects."""
+
+    url: str
+    version: int = 0
+
+    def encode(self) -> bytes:
+        data = asdict(self)
+        return bson.dumps(data)
+
+    @classmethod
+    def decode(cls, json_data: bytes) -> "ObjectRef":
+        data = bson.loads(json_data)
+        return cls(**data)
 
 
 @contextlib.contextmanager

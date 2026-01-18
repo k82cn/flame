@@ -1,6 +1,7 @@
 import markitdown
 import qdrant_client
 import flamepy
+from flamepy import agent
 import requests
 import io
 import uuid
@@ -10,7 +11,7 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 from apis import WebPage, Answer
 from embed import EmbeddingClient
 
-ins = flamepy.FlameInstance()
+ins = agent.FlameInstance()
 
 headers = {
     'User-Agent': 'Xflops Crawler 1.0',

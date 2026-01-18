@@ -1,4 +1,5 @@
 import flamepy
+from flamepy import agent
 import os
 import qdrant_client
 from qdrant_client.models import VectorParams, Distance
@@ -138,7 +139,7 @@ async def collect_data(topic: str) -> list[str]:
 
     return payloads
 
-ins = flamepy.FlameInstance()
+ins = agent.FlameInstance()
 
 sys_prompt = """
 You are a writer agent for research; you will write the research paper based on the research topics and the necessary information from the tools.

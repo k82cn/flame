@@ -35,7 +35,6 @@ from .types import (
     TaskState,
     ApplicationState,
     Shim,
-    RunnerServiceKind,
     FlameErrorCode,
 )
 
@@ -53,9 +52,6 @@ from .types import (
     Task,
     Application,
     FlamePackage,
-    ObjectRef,
-    RunnerContext,
-    RunnerRequest,
 )
 
 # Context and utility classes
@@ -138,7 +134,6 @@ __all__ = [
     "TaskState",
     "ApplicationState",
     "Shim",
-    "RunnerServiceKind",
     "FlameErrorCode",
     # Exception classes
     "FlameError",
@@ -150,9 +145,6 @@ __all__ = [
     "Task",
     "Application",
     "FlamePackage",
-    "ObjectRef",
-    "RunnerContext",
-    "RunnerRequest",
     # Context and utility classes
     "TaskInformer",
     "FlameContext",

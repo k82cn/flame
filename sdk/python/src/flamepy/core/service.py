@@ -21,10 +21,11 @@ from dataclasses import dataclass
 import logging
 from concurrent import futures
 
-from .types import Shim, FlameError, FlameErrorCode, ObjectRef
-from ..cache.cache import get_object, update_object
-from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
-from .types_pb2 import (
+from flamepy.core.types import Shim, FlameError, FlameErrorCode
+from flamepy.cache import ObjectRef
+from flamepy.cache.cache import get_object, update_object
+from flamepy.core.shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
+from flamepy.core.types_pb2 import (
     Result,
     EmptyRequest,
     TaskResult as TaskResultProto,

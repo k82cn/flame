@@ -53,7 +53,7 @@ print([app.name for app in apps])
 ### Example 1: Simple Function
 
 ```python
-from flamepy import Runner
+from flamepy.rl import Runner
 
 def sum_fn(a: int, b: int) -> int:
     return a + b
@@ -73,7 +73,7 @@ with Runner("my-app") as rr:
 ### Example 2: Class with State
 
 ```python
-from flamepy import Runner
+from flamepy.rl import Runner
 
 class Counter:
     def __init__(self, initial: int = 0):
@@ -107,7 +107,7 @@ with Runner("counter-app") as rr:
 For large objects, you can pass `ObjectFuture` instances as arguments to avoid unnecessary data transfer:
 
 ```python
-from flamepy import Runner
+from flamepy.rl import Runner
 
 class Counter:
     def __init__(self, initial: int = 0):
@@ -165,7 +165,7 @@ with Runner("counter-app") as rr:
 - `future`: A Future that resolves to an ObjectRef
 
 **Methods**:
-- `ref() -> ObjectRef`: Get the ObjectRef (for internal use)
+- `ref() -> flamepy.cache.ObjectRef`: Get the ObjectRef (for internal use)
 - `get() -> Any`: Retrieve the concrete object from the cache
 
 ## Package Exclusion Patterns
