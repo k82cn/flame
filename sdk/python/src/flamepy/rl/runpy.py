@@ -384,8 +384,8 @@ class FlameRunpyService(FlameService):
 
 
 def main():
-    """Main entrypoint for the flamepy.runpy module."""
-    from . import run
+    """Main entrypoint for the flamepy.rl.runpy module."""
+    from ..core.service import run
     
     logger.info("Starting FlameRunpyService")
     service = FlameRunpyService()

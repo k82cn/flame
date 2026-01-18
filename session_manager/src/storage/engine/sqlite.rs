@@ -998,7 +998,7 @@ mod tests {
                 arguments: vec![
                     "run".to_string(),
                     "-n".to_string(),
-                    "flamepy.runpy".to_string(),
+                    "flamepy.rl.runpy".to_string(),
                 ],
                 environments: HashMap::new(),
                 working_directory: "/tmp".to_string(),
