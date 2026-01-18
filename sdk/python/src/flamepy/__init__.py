@@ -29,7 +29,7 @@ _log_level = (
 
 logging.basicConfig(level=_log_level)
 
-from .types import (
+from .core.types import (
     # Type aliases
     TaskID,
     SessionID,
@@ -59,7 +59,7 @@ from .types import (
     ObjectRef,
 )
 
-from .client import (
+from .core.client import (
     Connection,
     Session,
     TaskWatcher,
@@ -74,7 +74,7 @@ from .client import (
     close_session,
     open_session,
 )
-from .service import (
+from .core.service import (
     FlameService,
     ApplicationContext,
     SessionContext,
@@ -82,8 +82,8 @@ from .service import (
     TaskOutput,
     run,
 )
-from .instance import FlameInstance
-from .runner import (
+from .agent.instance import FlameInstance
+from .rl.runner import (
     ObjectFuture,
     ObjectFutureIterator,
     RunnerService,

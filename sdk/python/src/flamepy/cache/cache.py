@@ -18,7 +18,7 @@ import contextlib
 import cloudpickle
 from typing import Any, Optional
 
-from .types import ObjectRef, FlameContext
+from ..core.types import ObjectRef, FlameContext
 
 
 @contextlib.contextmanager

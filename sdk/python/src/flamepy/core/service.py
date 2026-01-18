@@ -22,7 +22,7 @@ import logging
 from concurrent import futures
 
 from .types import Shim, FlameError, FlameErrorCode, ObjectRef
-from .cache import get_object, update_object
+from ..cache.cache import get_object, update_object
 from .shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from .types_pb2 import (
     Result,

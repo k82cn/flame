@@ -2,8 +2,8 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import flamepy.shim_pb2 as shim__pb2
-import flamepy.types_pb2 as types__pb2
+import flamepy.core.shim_pb2 as shim__pb2
+import flamepy.core.types_pb2 as types__pb2
 
 
 class InstanceStub(object):

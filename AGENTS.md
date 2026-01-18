@@ -5,6 +5,8 @@
 - The development environment is based on Docker Compose. If Docker is unavailable, Podman is an alternative.
 - Rebuild images using `docker compose build`. Start the Flame cluster with `docker compose up -d`.
 - Always stop the Flame cluster with `docker compose down` before rebuilding any images.
+- The designs and implemention details docuemnts should be in `docs/designs` directory accordingly.
+- All tutorial documentss should be in `docs/tutorials`
 
 ## Testing Instructions
 

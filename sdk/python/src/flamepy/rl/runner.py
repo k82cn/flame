@@ -22,7 +22,7 @@ from typing import Any, List, Optional, Callable
 from urllib.parse import urlparse
 from functools import wraps
 
-from .types import (
+from ..core.types import (
     FlameContext,
     FlameError,
     FlameErrorCode,
@@ -33,8 +33,8 @@ from .types import (
     Shim,
     RunnerServiceKind,
 )
-from .client import create_session, get_application, register_application, unregister_application
-from .cache import get_object
+from ..core.client import create_session, get_application, register_application, unregister_application
+from ..cache.cache import get_object
 
 
 logger = logging.getLogger(__name__)
