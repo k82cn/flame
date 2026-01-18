@@ -13,7 +13,7 @@ limitations under the License.
 
 import pytest
 import flamepy
-from flamepy import SessionState
+from flamepy import SessionState, TaskState, FlameError, FlameErrorCode, TaskInformer
 from e2e.api import TestRequest, TestResponse, TestContext
 from tests.utils import random_string
 import threading
@@ -31,15 +31,15 @@ class TestTaskInformer(flamepy.TaskInformer):
 
     def on_update(self, task):
         self.latest_state = task.state
-        if task.state == flamepy.TaskState.SUCCEED:
+        if task.state == TaskState.SUCCEED:
             assert (
                 task.output.output == self.expected_output
             ), f"Task output: {task.output.output}, Expected: {self.expected_output}"
-        elif task.state == flamepy.TaskState.FAILED:
+        elif task.state == TaskState.FAILED:
             for event in task.events:
-                if event.code == flamepy.TaskState.FAILED:
-                    raise flamepy.FlameError(
-                        flamepy.FlameErrorCode.INTERNAL, f"{event.message}"
+                if event.code == TaskState.FAILED:
+                    raise FlameError(
+                        FlameErrorCode.INTERNAL, f"{event.message}"
                     )
 
     def on_error(self, error):

@@ -25,6 +25,7 @@ from agents import (
 )
 
 import flamepy
+from flamepy import agent
 from apis import MyContext, Question, Answer, MyCustomSession
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ enable_verbose_stdout_logging()
 set_default_openai_api("chat_completions")
 
 # Creat a FlameInstance
-ins = flamepy.FlameInstance()
+ins = agent.FlameInstance()
 
 
 class Location(TypedDict):

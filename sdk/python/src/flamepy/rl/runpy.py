@@ -25,9 +25,10 @@ from urllib.parse import urlparse
 from typing import Any
 from pathlib import Path
 
-from ..core.service import FlameService, SessionContext, TaskContext, TaskOutput
-from ..core.types import RunnerRequest, RunnerContext, RunnerServiceKind, ObjectRef
-from ..cache.cache import get_object, put_object
+from flamepy.core.service import FlameService, SessionContext, TaskContext, TaskOutput
+from flamepy.cache import ObjectRef
+from flamepy.rl.types import RunnerRequest, RunnerContext, RunnerServiceKind
+from flamepy.cache.cache import get_object, put_object
 
 logger = logging.getLogger(__name__)
 

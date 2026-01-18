@@ -19,8 +19,8 @@ import grpc
 import cloudpickle
 from datetime import datetime, timezone
 
-from ..cache.cache import put_object, get_object
-from .types import (
+from flamepy.cache.cache import put_object, get_object
+from flamepy.core.types import (
     Task,
     Application,
     SessionAttributes,
@@ -42,11 +42,11 @@ from .types import (
     FlameContext,
     ApplicationSchema,
     short_name,
-    ObjectRef,
 )
+from flamepy.cache import ObjectRef
 
-from .types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment, ApplicationSchema as ApplicationSchemaProto
-from .frontend_pb2 import (
+from flamepy.core.types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment, ApplicationSchema as ApplicationSchemaProto
+from flamepy.core.frontend_pb2 import (
     RegisterApplicationRequest,
     UnregisterApplicationRequest,
     ListApplicationRequest,
@@ -60,7 +60,7 @@ from .frontend_pb2 import (
     GetApplicationRequest,
     OpenSessionRequest,
 )
-from .frontend_pb2_grpc import FrontendStub
+from flamepy.core.frontend_pb2_grpc import FrontendStub
 
 
 def connect(addr: str) -> "Connection":

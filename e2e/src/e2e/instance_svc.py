@@ -12,10 +12,11 @@ limitations under the License.
 """
 
 import flamepy
+from flamepy import agent
 
 from e2e.api import TestRequest, TestResponse, TestContext
 
-instance = flamepy.FlameInstance()
+instance = agent.FlameInstance()
 
 @instance.entrypoint
 def e2e_service_entrypoint(req: TestRequest) -> TestResponse:

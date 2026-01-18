@@ -11,6 +11,7 @@ Example usage of the Flame Python SDK instance functionality.
 """
 
 import flamepy
+from flamepy import agent
 
 from dataclasses import dataclass
 
@@ -31,7 +32,7 @@ class Summary:
     summary: str
 
 
-ins = flamepy.FlameInstance()
+ins = agent.FlameInstance()
 
 
 @ins.entrypoint

@@ -29,7 +29,8 @@ _log_level = (
 
 logging.basicConfig(level=_log_level)
 
-from .core.types import (
+# Export all core classes/types at top level
+from .core import (
     # Type aliases
     TaskID,
     SessionID,
@@ -38,33 +39,33 @@ from .core.types import (
     TaskInput,
     TaskOutput,
     CommonData,
+    # Constants
+    DEFAULT_FLAME_CONF,
+    DEFAULT_FLAME_ENDPOINT,
+    DEFAULT_FLAME_CACHE_ENDPOINT,
     # Enums
     SessionState,
     TaskState,
     ApplicationState,
     Shim,
-    RunnerServiceKind,
     FlameErrorCode,
-    # Classes
+    # Exception classes
     FlameError,
+    # Data classes
+    Event,
     SessionAttributes,
+    ApplicationSchema,
     ApplicationAttributes,
     Task,
     Application,
-    FlameContext,
     FlamePackage,
+    # Context and utility classes
     TaskInformer,
-    RunnerContext,
-    RunnerRequest,
-    ObjectRef,
-)
-
-from .core.client import (
-    Connection,
-    Session,
-    TaskWatcher,
+    FlameContext,
+    # Client functions
     connect,
     create_session,
+    open_session,
     register_application,
     unregister_application,
     list_applications,
@@ -72,23 +73,26 @@ from .core.client import (
     list_sessions,
     get_session,
     close_session,
-    open_session,
-)
-from .core.service import (
-    FlameService,
+    # Client classes
+    Connection,
+    Session,
+    TaskWatcher,
+    # Service constants
+    FLAME_INSTANCE_ENDPOINT,
+    # Service context classes
     ApplicationContext,
     SessionContext,
     TaskContext,
-    TaskOutput,
+    # Service base classes
+    FlameService,
+    # Service functions
     run,
 )
-from .agent.instance import FlameInstance
-from .rl.runner import (
-    ObjectFuture,
-    ObjectFutureIterator,
-    RunnerService,
-    Runner,
-)
+
+# Import submodules for rl, agent, and cache (only as submodules)
+from . import agent
+from . import rl
+from . import cache
 
 __version__ = "0.3.0"
 
@@ -101,55 +105,56 @@ __all__ = [
     "TaskInput",
     "TaskOutput",
     "CommonData",
+    # Constants
+    "DEFAULT_FLAME_CONF",
+    "DEFAULT_FLAME_ENDPOINT",
+    "DEFAULT_FLAME_CACHE_ENDPOINT",
     # Enums
     "SessionState",
     "TaskState",
     "ApplicationState",
     "Shim",
-    "RunnerServiceKind",
     "FlameErrorCode",
-    # Service classes
-    "FlameService",
-    "ApplicationContext",
-    "SessionContext",
-    "TaskContext",
-    "TaskOutput",
-    "run",
-    # Classes
+    # Exception classes
     "FlameError",
+    # Data classes
+    "Event",
     "SessionAttributes",
+    "ApplicationSchema",
     "ApplicationAttributes",
     "Task",
     "Application",
-    "FlameContext",
     "FlamePackage",
+    # Context and utility classes
     "TaskInformer",
-    "RunnerContext",
-    "RunnerRequest",
-    "ObjectRef",
-    # Client classes
-    "Connection",
+    "FlameContext",
+    # Client functions
     "connect",
     "create_session",
+    "open_session",
     "register_application",
     "unregister_application",
     "list_applications",
     "get_application",
     "list_sessions",
     "get_session",
-    "open_session",
     "close_session",
-    "TaskWatcher",
+    # Client classes
+    "Connection",
     "Session",
-    "Task",
-    "TaskInput",
-    "TaskOutput",
-    "CommonData",
-    # Instance classes
-    "FlameInstance",
-    # Runner classes
-    "ObjectFuture",
-    "ObjectFutureIterator",
-    "RunnerService",
-    "Runner",
+    "TaskWatcher",
+    # Service constants
+    "FLAME_INSTANCE_ENDPOINT",
+    # Service context classes
+    "ApplicationContext",
+    "SessionContext",
+    "TaskContext",
+    # Service base classes
+    "FlameService",
+    # Service functions
+    "run",
+    # Submodules (rl, agent, and cache only)
+    "agent",
+    "rl",
+    "cache",
 ]

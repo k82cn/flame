@@ -6,7 +6,7 @@ randomly sampling points in a unit square and checking if they fall inside
 a quarter circle.
 """
 
-from flamepy import Runner
+from flamepy.rl import Runner
 import numpy as np
 import math
 

@@ -1,6 +1,7 @@
 
 import markitdown
 import flamepy
+from flamepy import agent
 import io
 import requests
 import re
@@ -9,7 +10,7 @@ from urllib.parse import urlparse, urljoin
 
 from apis import WebPage, Summary
 
-ins = flamepy.FlameInstance()
+ins = agent.FlameInstance()
 
 headers = {
     'User-Agent': 'Xflops Crawler 1.0',

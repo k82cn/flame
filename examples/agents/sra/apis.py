@@ -1,15 +1,22 @@
+from dataclasses import dataclass
 
-import flamepy
 
-class Question(flamepy.Request):
+@dataclass
+class Question:
     topic: str
 
-class Answer(flamepy.Response):
+
+@dataclass
+class Answer:
     answer: str
 
-class WebPage(flamepy.Request):
+
+@dataclass
+class WebPage:
     url: str
 
-class Script(flamepy.Request):
+
+@dataclass
+class Script:
     language: str
     code: str

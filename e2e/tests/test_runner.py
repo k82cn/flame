@@ -13,6 +13,7 @@ limitations under the License.
 
 import pytest
 import flamepy
+from flamepy import rl
 import os
 import tempfile
 from pathlib import Path
@@ -49,7 +50,7 @@ def check_flmrun_app():
 def test_runner_context_manager(check_package_config, check_flmrun_app):
     """Test Case 1: Test Runner as a context manager."""
     # Use Runner as a context manager
-    with flamepy.Runner("test-runner-cm") as rr:
+    with rl.Runner("test-runner-cm") as rr:
         # Verify that the application is registered
         apps = flamepy.list_applications()
         app_names = [app.name for app in apps]
@@ -67,7 +68,7 @@ def test_runner_context_manager(check_package_config, check_flmrun_app):
 
 def test_runner_with_function(check_package_config, check_flmrun_app):
     """Test Case 2: Test Runner with a simple function."""
-    with flamepy.Runner("test-runner-func") as rr:
+    with rl.Runner("test-runner-func") as rr:
         # Create a service with a function
         sum_service = rr.service(sum_func)
 
@@ -75,7 +76,7 @@ def test_runner_with_function(check_package_config, check_flmrun_app):
         result = sum_service(1, 3)
 
         # Verify result is an ObjectFuture
-        assert isinstance(result, flamepy.ObjectFuture), (
+        assert isinstance(result, rl.ObjectFuture), (
             f"Expected ObjectFuture, got {type(result)}"
         )
 
@@ -86,7 +87,7 @@ def test_runner_with_function(check_package_config, check_flmrun_app):
 
 def test_runner_with_class(check_package_config, check_flmrun_app):
     """Test Case 3: Test Runner with a class (auto-instantiation)."""
-    with flamepy.Runner("test-runner-class") as rr:
+    with rl.Runner("test-runner-class") as rr:
         # Create a service with a class (should auto-instantiate)
         cnt_s = rr.service(Counter)
 
@@ -101,7 +102,7 @@ def test_runner_with_class(check_package_config, check_flmrun_app):
 
 def test_runner_with_instance(check_package_config, check_flmrun_app):
     """Test Case 4: Test Runner with a class instance."""
-    with flamepy.Runner("test-runner-instance") as rr:
+    with rl.Runner("test-runner-instance") as rr:
         # Create a Counter instance with initial value
         counter = Counter()
         # Set initial count to 10 by adding 10
@@ -121,7 +122,7 @@ def test_runner_with_instance(check_package_config, check_flmrun_app):
 
 def test_runner_with_objectfuture_args(check_package_config, check_flmrun_app):
     """Test Case 5: Test Runner with ObjectFuture as arguments."""
-    with flamepy.Runner("test-runner-objfuture") as rr:
+    with rl.Runner("test-runner-objfuture") as rr:
         # Create a Counter instance with initial value
         counter = Counter()
         counter.add(10)
@@ -144,7 +145,7 @@ def test_runner_with_objectfuture_args(check_package_config, check_flmrun_app):
 
 def test_runner_multiple_services(check_package_config, check_flmrun_app):
     """Test Case 6: Test Runner with multiple services."""
-    with flamepy.Runner("test-runner-multi") as rr:
+    with rl.Runner("test-runner-multi") as rr:
         # Create multiple services
         sum_service = rr.service(sum_func)
         calc_service = rr.service(Calculator())
@@ -162,7 +163,7 @@ def test_runner_multiple_services(check_package_config, check_flmrun_app):
 
 def test_runner_with_kwargs(check_package_config, check_flmrun_app):
     """Test Case 7: Test Runner with keyword arguments."""
-    with flamepy.Runner("test-runner-kwargs") as rr:
+    with rl.Runner("test-runner-kwargs") as rr:
         # Create a service with a function that accepts kwargs
         greet_service = rr.service(greet_func)
 
@@ -196,7 +197,7 @@ def test_runner_package_excludes(check_package_config, check_flmrun_app):
             Path("__pycache__/test.pyc").write_text("compiled")
 
             # Use Runner (should exclude .log, .pkl, __pycache__)
-            with flamepy.Runner("test-runner-excludes") as rr:
+            with rl.Runner("test-runner-excludes") as rr:
                 # Just verify it works - the exclusion is tested by successful packaging
                 pass
 
@@ -207,7 +208,7 @@ def test_runner_package_excludes(check_package_config, check_flmrun_app):
 
 def test_objectfuture_ref_method(check_package_config, check_flmrun_app):
     """Test Case 9: Test ObjectFuture.ref() method."""
-    with flamepy.Runner("test-objectfuture-ref") as rr:
+    with rl.Runner("test-objectfuture-ref") as rr:
         sum_service = rr.service(sum_func)
 
         # Get an ObjectFuture
@@ -217,7 +218,7 @@ def test_objectfuture_ref_method(check_package_config, check_flmrun_app):
         obj_ref = result.ref()
 
         # Verify it's an ObjectRef
-        assert isinstance(obj_ref, flamepy.ObjectRef), (
+        assert isinstance(obj_ref, flamepy.cache.ObjectRef), (
             f"Expected ObjectRef, got {type(obj_ref)}"
         )
         assert obj_ref.url is not None, "ObjectRef URL should not be None"
@@ -225,7 +226,7 @@ def test_objectfuture_ref_method(check_package_config, check_flmrun_app):
 
 def test_objectfuture_iterator(check_package_config, check_flmrun_app):
     """Test Case 10: Test ObjectFutureIterator."""
-    with flamepy.Runner("test-objectfuture-iterator") as rr:
+    with rl.Runner("test-objectfuture-iterator") as rr:
         sum_service = rr.service(sum_func)
 
         results = [
@@ -243,7 +244,7 @@ def test_objectfuture_iterator(check_package_config, check_flmrun_app):
 
 def test_runner_service_close(check_package_config, check_flmrun_app):
     """Test Case 11: Test that RunnerService.close() works."""
-    with flamepy.Runner("test-service-close") as rr:
+    with rl.Runner("test-service-close") as rr:
         sum_service = rr.service(sum_func)
 
         # Use the service
@@ -280,7 +281,7 @@ def test_runner_error_no_package_config():
 
     # Try to use Runner without package config
     with pytest.raises(flamepy.FlameError) as exc_info:
-        with flamepy.Runner("test-no-config") as rr:
+        with rl.Runner("test-no-config") as rr:
             pass
 
     assert exc_info.value.code == flamepy.FlameErrorCode.INVALID_CONFIG

@@ -22,19 +22,21 @@ from typing import Any, List, Optional, Callable
 from urllib.parse import urlparse
 from functools import wraps
 
-from ..core.types import (
+from flamepy.core.types import (
     FlameContext,
     FlameError,
     FlameErrorCode,
-    ObjectRef,
-    RunnerContext,
-    RunnerRequest,
     ApplicationAttributes,
     Shim,
+)
+from flamepy.cache import ObjectRef
+from flamepy.rl.types import (
+    RunnerContext,
+    RunnerRequest,
     RunnerServiceKind,
 )
-from ..core.client import create_session, get_application, register_application, unregister_application
-from ..cache.cache import get_object
+from flamepy.core.client import create_session, get_application, register_application, unregister_application
+from flamepy.cache.cache import get_object
 
 
 logger = logging.getLogger(__name__)

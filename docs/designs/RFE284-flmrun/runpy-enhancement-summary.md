@@ -118,7 +118,7 @@ if os.path.isfile(package_path) and self._is_archive(package_path):
 
 **Before**:
 ```python
-req = flamepy.RunnerRequest(method="add", args=(5, 3))
+req = flamepy.rl.RunnerRequest(method="add", args=(5, 3))
 result = ssn.invoke(req)
 assert result == 8
 ```
@@ -127,7 +127,7 @@ assert result == 8
 ```python
 from flamepy.cache import get_object
 
-req = flamepy.RunnerRequest(method="add", args=(5, 3))
+req = flamepy.rl.RunnerRequest(method="add", args=(5, 3))
 result = get_object(ssn.invoke(req))
 assert result == 8
 ```
@@ -203,7 +203,7 @@ cp my-app.tar.gz /opt/flame/packages/
 
 2. **Use with Runner**:
 ```python
-from flamepy import Runner
+from flamepy.rl import Runner
 
 with Runner("my-app") as rr:
     # Runner creates package and uploads to /opt/flame/packages/my-app.tar.gz
@@ -222,7 +222,8 @@ with Runner("my-app") as rr:
 
 ### Verify Cache Output
 ```python
-from flamepy import Runner, create_session, RunnerContext, RunnerRequest, RunnerServiceKind
+from flamepy.rl import Runner, RunnerContext, RunnerRequest, RunnerServiceKind
+from flamepy import create_session
 from flamepy.cache import get_object
 
 # Test that output is ObjectRef

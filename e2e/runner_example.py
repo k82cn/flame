@@ -26,7 +26,7 @@ Usage:
     uv run python runner_example.py
 """
 
-from flamepy import Runner
+from flamepy.rl import Runner
 
 
 # Example 1: Simple function
