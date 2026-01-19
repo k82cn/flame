@@ -47,6 +47,7 @@ sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-native-tls", "sqlit
 url = { version = "2", features = ["serde"] }
 
 bincode = { version = "2" }
+bson = "2"
 
 # Shared dependencies moved from sub-projects
 thiserror = "1"

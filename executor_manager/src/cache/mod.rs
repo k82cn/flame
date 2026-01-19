@@ -189,7 +189,15 @@ async fn get_object(
 ) -> impl Responder {
     let (session_id, object_id) = path.into_inner();
     match data.get(session_id, object_id).await {
-        Ok(object) => HttpResponse::Ok().json(object),
+        Ok(object) => match bson::to_vec(&object) {
+            Ok(bson_data) => HttpResponse::Ok()
+                .content_type("application/bson")
+                .body(bson_data),
+            Err(e) => {
+                tracing::error!("get_object serialization error: {:?}", e);
+                HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+            }
+        },
         Err(e) => {
             tracing::error!("get_object error: {:?}", e);
             HttpResponse::NotFound().body(format!("Error: {:?}", e))
@@ -208,7 +216,15 @@ async fn put_object(
     let metadata = data.put(session_id.clone(), body.to_vec()).await;
 
     match metadata {
-        Ok(metadata) => HttpResponse::Ok().json(metadata),
+        Ok(metadata) => match bson::to_vec(&metadata) {
+            Ok(bson_data) => HttpResponse::Ok()
+                .content_type("application/bson")
+                .body(bson_data),
+            Err(e) => {
+                tracing::error!("put_object serialization error: {:?}", e);
+                HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+            }
+        },
         Err(e) => {
             tracing::error!("put_object error: {:?}", e);
             HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
@@ -224,7 +240,7 @@ async fn update_object(
 ) -> impl Responder {
     let (session_id, object_id) = path.into_inner();
 
-    let Ok(object) = serde_json::from_slice(&body) else {
+    let Ok(object) = bson::from_slice(&body) else {
         tracing::error!("update_object invalid object");
         return HttpResponse::BadRequest().body("Invalid object");
     };
@@ -234,7 +250,15 @@ async fn update_object(
         .await;
 
     match metadata {
-        Ok(metadata) => HttpResponse::Ok().json(metadata),
+        Ok(metadata) => match bson::to_vec(&metadata) {
+            Ok(bson_data) => HttpResponse::Ok()
+                .content_type("application/bson")
+                .body(bson_data),
+            Err(e) => {
+                tracing::error!("update_object serialization error: {:?}", e);
+                HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+            }
+        },
         Err(e) => {
             tracing::error!("update_object error: {:?}", e);
             HttpResponse::InternalServerError().body(format!("Error: {:?}", e))

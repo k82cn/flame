@@ -19,7 +19,6 @@ from typing import Any, Optional
 import bson
 import cloudpickle
 import httpx
-from pydantic import BaseModel
 
 from flamepy.core.types import FlameContext
 
@@ -59,14 +58,16 @@ def suppress_dependency_logs(level=logging.WARNING):
         httpcore_logger.setLevel(original_httpcore_level)
 
 
-class Object(BaseModel):
+@dataclass
+class Object:
     """Object."""
 
     version: int
     data: list
 
 
-class ObjectMetadata(BaseModel):
+@dataclass
+class ObjectMetadata:
     """Object metadata."""
 
     endpoint: str
@@ -94,10 +95,15 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
     data = cloudpickle.dumps(obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     with suppress_dependency_logs():
-        response = httpx.post(f"{cache_endpoint}/objects/{session_id}", data=data)
+        response = httpx.post(
+            f"{cache_endpoint}/objects/{session_id}",
+            data=data,
+            headers={"Content-Type": "application/octet-stream"},
+        )
         response.raise_for_status()
 
-    metadata = ObjectMetadata.model_validate(response.json())
+    metadata_dict = bson.loads(response.content)
+    metadata = ObjectMetadata(**metadata_dict)
     return ObjectRef(url=metadata.endpoint, version=metadata.version)
 
 
@@ -117,14 +123,14 @@ def get_object(ref: ObjectRef) -> Any:
         response = httpx.get(ref.url)
         response.raise_for_status()
 
-    obj = Object.model_validate(response.json())
-    data = bytes(obj.data)
+    obj_dict = bson.loads(response.content)
+    obj = Object(**obj_dict)
 
     # Update the version of the ObjectRef
     ref.version = obj.version
 
     # Deserialize the object using cloudpickle
-    return cloudpickle.loads(data)
+    return cloudpickle.loads(bytes(obj.data))
 
 
 def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
@@ -144,12 +150,14 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
     new_data = cloudpickle.dumps(new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     obj = Object(version=ref.version, data=list(new_data))
-    data = obj.model_dump_json()
+    # Serialize using BSON
+    data = bson.dumps(asdict(obj))
 
     with suppress_dependency_logs():
-        response = httpx.put(ref.url, data=data)
+        response = httpx.put(ref.url, data=data, headers={"Content-Type": "application/bson"})
         response.raise_for_status()
 
-    metadata = ObjectMetadata.model_validate(response.json())
+    metadata_dict = bson.loads(response.content)
+    metadata = ObjectMetadata(**metadata_dict)
 
     return ObjectRef(url=ref.url, version=metadata.version)
