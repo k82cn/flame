@@ -15,6 +15,13 @@ import pytest
 import flamepy
 from e2e.api import TestRequest, TestResponse, TestContext
 from tests.utils import random_string
+from e2e.helpers import (
+    serialize_common_data,
+    deserialize_common_data,
+    serialize_request,
+    deserialize_response,
+    invoke_task,
+)
 
 FLM_TEST_SVC_APP = "flme2e-svc"
 FLM_TEST_SVC_APP_URL = "file:///opt/e2e"
@@ -55,7 +62,7 @@ def test_basic_service_invoke():
     input_data = random_string()
     request = TestRequest(input=input_data)
     
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     assert response.output == input_data
     assert response.common_data is None
@@ -76,7 +83,7 @@ def test_task_context_info():
         request_task_context=True,
     )
 
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     # Check basic response
     assert response.output == input_data
@@ -100,7 +107,7 @@ def test_session_context_info():
         request_session_context=True,
     )
 
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     # Check session context is present
     assert response.session_context is not None
@@ -120,7 +127,7 @@ def test_application_context_info():
         request_application_context=True,
     )
 
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     # Check application context is present
     assert response.application_context is not None
@@ -146,7 +153,7 @@ def test_all_context_info():
         request_application_context=True,
     )
 
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     # Check output
     assert response.output == input_data
@@ -181,7 +188,7 @@ def test_service_state_tracking():
     num_tasks = 5
     for i in range(1, num_tasks + 1):
         request = TestRequest(input=f"task_{i}")
-        response = session.invoke(request)
+        response = invoke_task(session, request)
         
         # Check service state increments
         assert response.service_state is not None
@@ -195,15 +202,17 @@ def test_service_state_tracking():
 def test_common_data_without_context_request():
     """Test common data handling without requesting context info."""
     sys_context = random_string()
+    test_context = TestContext(common_data=sys_context)
+    common_data_bytes = serialize_common_data(test_context, FLM_TEST_SVC_APP)
+    
     session = flamepy.create_session(
         application=FLM_TEST_SVC_APP, 
-        common_data=TestContext(common_data=sys_context)
+        common_data=common_data_bytes
     )
 
     input_data = random_string()
     request = TestRequest(input=input_data)
-
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     assert response.output == input_data
     assert response.common_data == sys_context
@@ -214,9 +223,11 @@ def test_common_data_without_context_request():
 def test_common_data_with_session_context():
     """Test that common data information is correctly reported in session context."""
     common_data = TestContext(common_data=random_string())
+    common_data_bytes = serialize_common_data(common_data, FLM_TEST_SVC_APP)
+    
     session = flamepy.create_session(
         application=FLM_TEST_SVC_APP, 
-        common_data=common_data
+        common_data=common_data_bytes
     )
 
     request = TestRequest(
@@ -224,7 +235,7 @@ def test_common_data_with_session_context():
         request_session_context=True,
     )
 
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     # Check session context reports common data
     assert response.session_context is not None
@@ -235,27 +246,53 @@ def test_common_data_with_session_context():
 
 
 def test_update_common_data():
-    """Test updating common data through BasicTestService."""
+    """Test updating common data through BasicTestService.
+    
+    Note: Since update_common_data() was removed from SessionContext,
+    this test verifies that the service can read the update request,
+    but the update won't persist across tasks. For persistent updates,
+    recreate the session with new common_data.
+    """
     sys_context = random_string()
+    
+    test_context = TestContext(common_data=sys_context)
+    common_data_bytes = serialize_common_data(test_context, FLM_TEST_SVC_APP)
 
     session = flamepy.create_session(
         application=FLM_TEST_SVC_APP, 
-        common_data=TestContext(common_data=sys_context)
+        common_data=common_data_bytes
     )
 
     previous_common_data = sys_context
-    for _ in range(3):
+    for i in range(3):
         new_input_data = random_string()
         request = TestRequest(
             input=new_input_data, 
             update_common_data=True
         )
-        response = session.invoke(request)
+        response = invoke_task(session, request)
         
         assert response.output == new_input_data
-        assert response.common_data == previous_common_data
+        # Note: The service returns the updated value in response (the new input),
+        # but it doesn't persist. The next call will still see the original common_data.
+        # So the response shows the "updated" value (which is just the input),
+        # but the actual common_data in SessionContext remains unchanged.
+        assert response.common_data == new_input_data
+        
+        # Verify that the original common_data is still in the session context
+        # by checking it in the next iteration (if we request session context)
+        if i < 2:  # Don't check on last iteration
+            # Make a request that reads the session context to verify it's unchanged
+            check_request = TestRequest(
+                input="check",
+                request_session_context=True
+            )
+            check_response = invoke_task(session, check_request)
+            # The session context should still show the original common_data exists
+            assert check_response.session_context.has_common_data is True
 
-        # Verify the update took effect by checking in next iteration
+        # For this test, we expect the response to show the update was processed
+        # but it won't persist to the next iteration
         previous_common_data = new_input_data
 
     session.close()
@@ -268,7 +305,7 @@ def test_multiple_sessions_isolation():
     
     for i in range(3):
         request = TestRequest(input=f"session1_task_{i}")
-        response = session1.invoke(request)
+        response = invoke_task(session1, request)
         assert response.service_state["task_count"] == i + 1
     
     session1.close()
@@ -277,7 +314,7 @@ def test_multiple_sessions_isolation():
     session2 = flamepy.create_session(application=FLM_TEST_SVC_APP, common_data=None)
     
     request = TestRequest(input="session2_task_1")
-    response = session2.invoke(request)
+    response = invoke_task(session2, request)
     
     # Task count should be reset for new session
     assert response.service_state["task_count"] == 1
@@ -297,7 +334,7 @@ def test_context_info_selective_request():
         request_session_context=False,
         request_application_context=False,
     )
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     assert response.task_context is not None
     assert response.session_context is None
@@ -310,7 +347,7 @@ def test_context_info_selective_request():
         request_session_context=True,
         request_application_context=False,
     )
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     assert response.task_context is None
     assert response.session_context is not None
@@ -323,7 +360,7 @@ def test_context_info_selective_request():
         request_session_context=False,
         request_application_context=True,
     )
-    response = session.invoke(request)
+    response = invoke_task(session, request)
     
     assert response.task_context is None
     assert response.session_context is None

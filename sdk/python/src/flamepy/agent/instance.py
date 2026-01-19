@@ -12,12 +12,12 @@ limitations under the License.
 """
 
 import asyncio
+import os
 import inspect
 import uvicorn
-import os
-import time
-from typing import Optional, Dict, Any, Union
+from typing import Any
 from fastapi import FastAPI, Request as FastAPIRequest, Response as FastAPIResponse
+import cloudpickle
 
 from flamepy.core.service import (
     FlameService,
@@ -25,10 +25,10 @@ from flamepy.core.service import (
     TaskContext,
     TaskOutput,
     run as run_service,
-    ApplicationContext,
     FLAME_INSTANCE_ENDPOINT,
 )
-from flamepy.core.types import Shim
+from flamepy.cache import ObjectRef
+from flamepy.cache.cache import get_object, update_object
 import logging
 
 debug_service = None
@@ -40,16 +40,37 @@ class FlameInstance(FlameService):
         self._entrypoint = None
         self._parameter = None
 
-        self._context: SessionContext = None
+        self._object_ref: ObjectRef = None
 
     def context(self) -> Any:
-        return self._context.common_data() if self._context is not None else None
+        """Get the current agent context.
+        
+        For agent module: use stored ObjectRef to get from cache, then deserialize.
+        """
+        if self._object_ref is None:
+            return None
+        
+        # Get from cache using stored ObjectRef (this also updates the version)
+        serialized_ctx = get_object(self._object_ref)
+        # Deserialize using cloudpickle
+        return cloudpickle.loads(serialized_ctx)
 
     def update_context(self, data: Any):
-        if self._context is None:
+        """Update the agent context.
+        
+        Note: SessionContext no longer supports updating common_data directly.
+        This method updates the ObjectRef in cache, but the update won't be reflected
+        in SessionContext until the session is recreated. For persistent updates,
+        recreate the session with new common_data on the client side.
+        """
+        if self._object_ref is None:
             return
 
-        self._context.update_common_data(data)
+        # Serialize the data using cloudpickle
+        serialized_data = cloudpickle.dumps(data, protocol=cloudpickle.DEFAULT_PROTOCOL)
+
+        # Update existing ObjectRef with latest version in cache
+        self._object_ref = update_object(self._object_ref, serialized_data)
 
     def entrypoint(self, func):
         logger = logging.getLogger(__name__)
@@ -66,16 +87,26 @@ class FlameInstance(FlameService):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_enter")
 
-        self._context = context
+        # Decode the common_data bytes to ObjectRef
+        common_data_bytes = context.common_data()
+        if common_data_bytes is not None:
+            self._object_ref = ObjectRef.decode(common_data_bytes)
+        else:
+            self._object_ref = None
 
     def on_task_invoke(self, context: TaskContext) -> TaskOutput:
         logger = logging.getLogger(__name__)
         logger.debug("on_task_invoke")
         if self._entrypoint is None:
             logger.warning("No entrypoint function defined")
-            return
+            return TaskOutput(data=None)
 
-        args = (context.input,) if self._parameter is not None else ()
+        # For agent module: receive bytes from core API, deserialize with cloudpickle
+        input_data = None
+        if context.input is not None:
+            input_data = cloudpickle.loads(context.input)
+
+        args = (input_data,) if self._parameter is not None else ()
         if inspect.iscoroutinefunction(self._entrypoint):
             res = asyncio.run(self._entrypoint(*args))
         else:
@@ -83,13 +114,18 @@ class FlameInstance(FlameService):
 
         logger.debug(f"on_task_invoke: {res}")
 
-        return TaskOutput(data=res)
+        # For agent module: serialize output with cloudpickle, return bytes
+        output_bytes = None
+        if res is not None:
+            output_bytes = cloudpickle.dumps(res, protocol=cloudpickle.DEFAULT_PROTOCOL)
+
+        return TaskOutput(data=output_bytes)
 
     def on_session_leave(self):
         logger = logging.getLogger(__name__)
         logger.debug("on_session_leave")
 
-        self._context = None
+        self._object_ref = None
 
     def run(self):
         logger = logging.getLogger(__name__)

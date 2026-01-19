@@ -80,3 +80,18 @@ class RunnerRequest:
     method: Optional[str] = None
     args: Optional[Tuple] = None
     kwargs: Optional[Dict[str, Any]] = None
+
+    def __post_init__(self):
+        """Validate RunnerRequest fields."""
+        if self.method is not None and not isinstance(self.method, str):
+            raise ValueError(
+                f"method must be a string or None, got {type(self.method)}"
+            )
+        if self.args is not None and not isinstance(self.args, (tuple, list)):
+            raise ValueError(
+                f"args must be a tuple or list, got {type(self.args)}"
+            )
+        if self.kwargs is not None and not isinstance(self.kwargs, dict):
+            raise ValueError(
+                f"kwargs must be a dict, got {type(self.kwargs)}"
+            )
