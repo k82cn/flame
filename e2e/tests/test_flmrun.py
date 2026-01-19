@@ -39,14 +39,14 @@ FLMRUN_E2E_APP = "flmrun-e2e"
 def setup_flmrun_with_e2e():
     """
     Fixture to register a flmrun application with e2e package URL.
-    
+
     This automatically registers a custom flmrun application that installs
     the e2e package when a session starts, making e2e modules available
     to the runner.
     """
     # Get the base flmrun application configuration
     flmrun = flamepy.get_application("flmrun")
-    
+
     # Register a new application with e2e directory URL for package installation
     flamepy.register_application(
         FLMRUN_E2E_APP,
@@ -57,11 +57,11 @@ def setup_flmrun_with_e2e():
             command=flmrun.command,
             arguments=flmrun.arguments,
             description="Flmrun with e2e package installed",
-        )
+        ),
     )
-    
+
     yield
-    
+
     # Clean up: unregister the test application
     flamepy.unregister_application(FLMRUN_E2E_APP)
 
@@ -70,8 +70,10 @@ def test_flmrun_application_registered():
     """Test that flmrun is registered as a default application."""
     apps = flamepy.list_applications()
     app_names = [app.name for app in apps]
-    assert FLMRUN_E2E_APP in app_names, f"{FLMRUN_E2E_APP} not found in applications: {app_names}"
-    
+    assert FLMRUN_E2E_APP in app_names, (
+        f"{FLMRUN_E2E_APP} not found in applications: {app_names}"
+    )
+
     # Get the flmrun application and verify its configuration
     flmrun = flamepy.get_application(FLMRUN_E2E_APP)
     assert flmrun.name == FLMRUN_E2E_APP
@@ -87,21 +89,22 @@ def test_flmrun_sum_function():
     ctx = rl.RunnerContext(execution_object=sum_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Invoke the sum function remotely with positional arguments
         req = rl.RunnerRequest(method=None, args=(1, 2))
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
-        
+
         # The result is bytes (ObjectRef encoded), decode to ObjectRef, then get the actual value from cache
         from flamepy.core import get_object, ObjectRef
+
         result_ref = ObjectRef.decode(result_bytes)
         result = get_object(result_ref)
-        
+
         # Verify the result
         assert result == 3, f"Expected 3, got {result}"
-        
+
     finally:
         # Clean up
         ssn.close()
@@ -110,15 +113,15 @@ def test_flmrun_sum_function():
 def test_flmrun_class_method():
     """Test Case 2: Run methods on a class instance."""
     from flamepy.core import get_object
-    
+
     # Create an instance of the calculator
     calc = Calculator()
-    
+
     # Create a session with the calculator instance
     ctx = rl.RunnerContext(execution_object=calc)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Test add method
         req = rl.RunnerRequest(method="add", args=(5, 3))
@@ -126,21 +129,21 @@ def test_flmrun_class_method():
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 8, f"Expected 8, got {result}"
-        
+
         # Test multiply method
         req = rl.RunnerRequest(method="multiply", args=(4, 7))
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 28, f"Expected 28, got {result}"
-        
+
         # Test subtract method
         req = rl.RunnerRequest(method="subtract", args=(10, 3))
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 7, f"Expected 7, got {result}"
-        
+
     finally:
         # Clean up
         ssn.close()
@@ -149,12 +152,12 @@ def test_flmrun_class_method():
 def test_flmrun_kwargs():
     """Test Case 3: Run a function with keyword arguments."""
     from flamepy.core import get_object
-    
+
     # Create a session with the function
     ctx = rl.RunnerContext(execution_object=greet_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Test with keyword arguments
         req = rl.RunnerRequest(method=None, kwargs={"name": "World", "greeting": "Hi"})
@@ -162,14 +165,14 @@ def test_flmrun_kwargs():
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == "Hi, World!", f"Expected 'Hi, World!', got {result}"
-        
+
         # Test with partial keyword arguments (uses default)
         req = rl.RunnerRequest(method=None, kwargs={"name": "Python"})
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == "Hello, Python!", f"Expected 'Hello, Python!', got {result}"
-        
+
     finally:
         # Clean up
         ssn.close()
@@ -178,20 +181,22 @@ def test_flmrun_kwargs():
 def test_flmrun_no_args():
     """Test Case 4: Run a function with no arguments."""
     from flamepy.core import get_object
-    
+
     # Create a session with the function
     ctx = rl.RunnerContext(execution_object=get_message_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Invoke with no arguments (all fields None)
         req = rl.RunnerRequest(method=None)
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
-        assert result == "Hello from flmrun!", f"Expected 'Hello from flmrun!', got {result}"
-        
+        assert result == "Hello from flmrun!", (
+            f"Expected 'Hello from flmrun!', got {result}"
+        )
+
     finally:
         # Clean up
         ssn.close()
@@ -200,12 +205,12 @@ def test_flmrun_no_args():
 def test_flmrun_multiple_tasks():
     """Test Case 5: Run multiple tasks in the same session."""
     from flamepy.core import get_object
-    
+
     # Create a session with the function
     ctx = rl.RunnerContext(execution_object=multiply_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Run multiple tasks with different inputs
         test_cases = [
@@ -214,14 +219,16 @@ def test_flmrun_multiple_tasks():
             ((10, 10), 100),
             ((7, 8), 56),
         ]
-        
+
         for args, expected in test_cases:
             req = rl.RunnerRequest(method=None, args=args)
             req_bytes = serialize_runner_request(req)
             result_bytes = ssn.invoke(req_bytes)
             result = get_object(ObjectRef.decode(result_bytes))
-            assert result == expected, f"multiply{args} expected {expected}, got {result}"
-        
+            assert result == expected, (
+                f"multiply{args} expected {expected}, got {result}"
+            )
+
     finally:
         # Clean up
         ssn.close()
@@ -230,15 +237,15 @@ def test_flmrun_multiple_tasks():
 def test_flmrun_stateful_class():
     """Test Case 6: Run a stateful class with instance variables."""
     from flamepy.core import get_object
-    
+
     # Create an instance of the counter
     counter = Counter()
-    
+
     # Create a session with the counter instance
     ctx = rl.RunnerContext(execution_object=counter)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Test increment
         req = rl.RunnerRequest(method="increment")
@@ -246,28 +253,28 @@ def test_flmrun_stateful_class():
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 1, f"Expected 1, got {result}"
-        
+
         # Test increment again
         req = rl.RunnerRequest(method="increment")
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 2, f"Expected 2, got {result}"
-        
+
         # Test add
         req = rl.RunnerRequest(method="add", args=(5,))
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 7, f"Expected 7, got {result}"
-        
+
         # Test get_count
         req = rl.RunnerRequest(method="get_count")
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
         assert result == 7, f"Expected 7, got {result}"
-        
+
     finally:
         # Clean up
         ssn.close()
@@ -276,12 +283,12 @@ def test_flmrun_stateful_class():
 def test_flmrun_lambda_function():
     """Test Case 7: Run a lambda function (using module-level function)."""
     from flamepy.core import get_object
-    
+
     # Use module-level function instead of lambda (lambdas can't be pickled)
     ctx = rl.RunnerContext(execution_object=square_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
     ssn = flamepy.create_session(FLMRUN_E2E_APP, common_data_bytes)
-    
+
     try:
         # Test with different values
         for x in [2, 5, 10, 15]:
@@ -291,7 +298,7 @@ def test_flmrun_lambda_function():
             result = get_object(ObjectRef.decode(result_bytes))
             expected = x * x
             assert result == expected, f"Expected {expected}, got {result}"
-        
+
     finally:
         # Clean up
         ssn.close()
@@ -300,7 +307,7 @@ def test_flmrun_lambda_function():
 def test_flmrun_complex_return_types():
     """Test Case 8: Test functions that return complex types."""
     from flamepy.core import get_object
-    
+
     # Test dict return
     ctx = rl.RunnerContext(execution_object=return_dict_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
@@ -313,7 +320,7 @@ def test_flmrun_complex_return_types():
         assert result == {"test": 42}, f"Expected {{'test': 42}}, got {result}"
     finally:
         ssn.close()
-    
+
     # Test list return
     ctx = rl.RunnerContext(execution_object=return_list_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)
@@ -326,7 +333,7 @@ def test_flmrun_complex_return_types():
         assert result == [0, 1, 2, 3, 4], f"Expected [0, 1, 2, 3, 4], got {result}"
     finally:
         ssn.close()
-    
+
     # Test tuple return
     ctx = rl.RunnerContext(execution_object=return_tuple_func)
     common_data_bytes = serialize_runner_context(ctx, FLMRUN_E2E_APP)

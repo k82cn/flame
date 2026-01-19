@@ -17,11 +17,13 @@ import random
 
 def random_string(size=16) -> str:
     """Generate a random string of specified size.
-    
+
     Args:
         size: Length of the random string (default: 16)
-        
+
     Returns:
         A random string of the specified size
     """
-    return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))
+    return "".join(
+        random.choice(string.ascii_letters + string.digits) for _ in range(size)
+    )

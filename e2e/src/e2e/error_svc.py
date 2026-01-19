@@ -34,10 +34,9 @@ class ErrorTestService(flamepy.FlameService):
     def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[TaskOutput]:
         """Handle task invoke by raising an exception."""
         logger.info(
-            f"Task invoked: task_id={context.task_id}, "
-            f"session_id={context.session_id}"
+            f"Task invoked: task_id={context.task_id}, session_id={context.session_id}"
         )
-        
+
         # Raise an exception with a specific error message
         error_message = f"Test error in task {context.task_id}"
         logger.error(f"Raising exception: {error_message}")

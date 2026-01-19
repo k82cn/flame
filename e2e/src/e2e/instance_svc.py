@@ -18,6 +18,7 @@ from e2e.api import TestRequest, TestResponse, TestContext
 
 instance = agent.FlameInstance()
 
+
 @instance.entrypoint
 def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
     cxt = instance.context()
@@ -27,6 +28,7 @@ def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
         instance.update_context(TestContext(common_data=req.input))
 
     return TestResponse(output=req.input, common_data=data)
+
 
 if __name__ == "__main__":
     instance.run()
