@@ -11,14 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import contextlib
+import logging
+from dataclasses import asdict, dataclass
+from typing import Any, Optional
+
+import bson
+import cloudpickle
 import httpx
 from pydantic import BaseModel
-import logging
-import contextlib
-import cloudpickle
-from typing import Any, Optional
-from dataclasses import dataclass, asdict
-import bson
 
 from flamepy.core.types import FlameContext
 
@@ -93,8 +94,7 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
     data = cloudpickle.dumps(obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     with suppress_dependency_logs():
-        response = httpx.post(
-            f"{cache_endpoint}/objects/{session_id}", data=data)
+        response = httpx.post(f"{cache_endpoint}/objects/{session_id}", data=data)
         response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
@@ -141,8 +141,7 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
         Exception: If request fails
     """
     # Serialize the new object using cloudpickle
-    new_data = cloudpickle.dumps(
-        new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
+    new_data = cloudpickle.dumps(new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     obj = Object(version=ref.version, data=list(new_data))
     data = obj.model_dump_json()

@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from .instance import FlameInstance
 from .client import Agent
+from .instance import FlameInstance
 
 __all__ = ["FlameInstance", "Agent"]

@@ -12,23 +12,26 @@ limitations under the License.
 """
 
 import asyncio
-import os
 import inspect
-import uvicorn
-from typing import Any
-from fastapi import FastAPI, Request as FastAPIRequest, Response as FastAPIResponse
-import cloudpickle
+import logging
+import os
+from typing import Any, Optional
 
+import cloudpickle
+import uvicorn
+from fastapi import FastAPI
+from fastapi import Request as FastAPIRequest
+from fastapi import Response as FastAPIResponse
+
+from flamepy.core import ObjectRef, get_object, update_object
 from flamepy.core.service import (
+    FLAME_INSTANCE_ENDPOINT,
     FlameService,
     SessionContext,
     TaskContext,
-    TaskOutput,
-    run as run_service,
-    FLAME_INSTANCE_ENDPOINT,
 )
-from flamepy.core import ObjectRef, get_object, update_object
-import logging
+from flamepy.core.service import run as run_service
+from flamepy.core.types import TaskOutput
 
 debug_service = None
 
@@ -43,12 +46,12 @@ class FlameInstance(FlameService):
 
     def context(self) -> Any:
         """Get the current agent context.
-        
+
         For agent module: use stored ObjectRef to get from cache, then deserialize.
         """
         if self._object_ref is None:
             return None
-        
+
         # Get from cache using stored ObjectRef (this also updates the version)
         serialized_ctx = get_object(self._object_ref)
         # Deserialize using cloudpickle
@@ -56,7 +59,7 @@ class FlameInstance(FlameService):
 
     def update_context(self, data: Any):
         """Update the agent context.
-        
+
         Note: SessionContext no longer supports updating common_data directly.
         This method updates the ObjectRef in cache, but the update won't be reflected
         in SessionContext until the session is recreated. For persistent updates,
@@ -93,12 +96,12 @@ class FlameInstance(FlameService):
         else:
             self._object_ref = None
 
-    def on_task_invoke(self, context: TaskContext) -> TaskOutput:
+    def on_task_invoke(self, context: TaskContext) -> Optional[TaskOutput]:
         logger = logging.getLogger(__name__)
         logger.debug("on_task_invoke")
         if self._entrypoint is None:
             logger.warning("No entrypoint function defined")
-            return TaskOutput(data=None)
+            return None
 
         # For agent module: receive bytes from core API, deserialize with cloudpickle
         input_data = None
@@ -118,7 +121,7 @@ class FlameInstance(FlameService):
         if res is not None:
             output_bytes = cloudpickle.dumps(res, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
-        return TaskOutput(data=output_bytes)
+        return TaskOutput(output_bytes)
 
     def on_session_leave(self):
         logger = logging.getLogger(__name__)

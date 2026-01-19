@@ -10,6 +10,9 @@ Example usage of the Flame Python SDK service functionality.
 """
 
 import flamepy
+from typing import Optional
+
+from flamepy.core.types import TaskOutput
 
 
 class ExampleService(flamepy.FlameService):
@@ -31,7 +34,7 @@ class ExampleService(flamepy.FlameService):
 
         return True
 
-    def on_task_invoke(self, context: flamepy.TaskContext) -> flamepy.TaskOutput:
+    def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[TaskOutput]:
         """Handle task invoke."""
         self._task_count += 1
         print(f"🟡 Invoking task {self._task_count}: {context.task_id}")
@@ -50,7 +53,7 @@ class ExampleService(flamepy.FlameService):
 
         print(f"   Output: {output_data}")
 
-        return flamepy.TaskOutput(data=output_data)
+        return output_data
 
     def on_session_leave(self) -> bool:
         """Handle session leave."""

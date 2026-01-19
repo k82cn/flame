@@ -16,20 +16,20 @@ class InstanceStub(object):
             channel: A grpc.Channel.
         """
         self.OnSessionEnter = channel.unary_unary(
-                '/flame.Instance/OnSessionEnter',
-                request_serializer=shim__pb2.SessionContext.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                )
+            "/flame.Instance/OnSessionEnter",
+            request_serializer=shim__pb2.SessionContext.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+        )
         self.OnTaskInvoke = channel.unary_unary(
-                '/flame.Instance/OnTaskInvoke',
-                request_serializer=shim__pb2.TaskContext.SerializeToString,
-                response_deserializer=types__pb2.TaskResult.FromString,
-                )
+            "/flame.Instance/OnTaskInvoke",
+            request_serializer=shim__pb2.TaskContext.SerializeToString,
+            response_deserializer=types__pb2.TaskResult.FromString,
+        )
         self.OnSessionLeave = channel.unary_unary(
-                '/flame.Instance/OnSessionLeave',
-                request_serializer=types__pb2.EmptyRequest.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                )
+            "/flame.Instance/OnSessionLeave",
+            request_serializer=types__pb2.EmptyRequest.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+        )
 
 
 class InstanceServicer(object):
@@ -38,96 +38,56 @@ class InstanceServicer(object):
     def OnSessionEnter(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def OnTaskInvoke(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def OnSessionLeave(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_InstanceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'OnSessionEnter': grpc.unary_unary_rpc_method_handler(
-                    servicer.OnSessionEnter,
-                    request_deserializer=shim__pb2.SessionContext.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
-            'OnTaskInvoke': grpc.unary_unary_rpc_method_handler(
-                    servicer.OnTaskInvoke,
-                    request_deserializer=shim__pb2.TaskContext.FromString,
-                    response_serializer=types__pb2.TaskResult.SerializeToString,
-            ),
-            'OnSessionLeave': grpc.unary_unary_rpc_method_handler(
-                    servicer.OnSessionLeave,
-                    request_deserializer=types__pb2.EmptyRequest.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
+        "OnSessionEnter": grpc.unary_unary_rpc_method_handler(
+            servicer.OnSessionEnter,
+            request_deserializer=shim__pb2.SessionContext.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
+        "OnTaskInvoke": grpc.unary_unary_rpc_method_handler(
+            servicer.OnTaskInvoke,
+            request_deserializer=shim__pb2.TaskContext.FromString,
+            response_serializer=types__pb2.TaskResult.SerializeToString,
+        ),
+        "OnSessionLeave": grpc.unary_unary_rpc_method_handler(
+            servicer.OnSessionLeave,
+            request_deserializer=types__pb2.EmptyRequest.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
     }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'flame.Instance', rpc_method_handlers)
+    generic_handler = grpc.method_handlers_generic_handler("flame.Instance", rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class Instance(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def OnSessionEnter(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Instance/OnSessionEnter',
-            shim__pb2.SessionContext.SerializeToString,
-            types__pb2.Result.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def OnSessionEnter(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Instance/OnSessionEnter", shim__pb2.SessionContext.SerializeToString, types__pb2.Result.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def OnTaskInvoke(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Instance/OnTaskInvoke',
-            shim__pb2.TaskContext.SerializeToString,
-            types__pb2.TaskResult.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def OnTaskInvoke(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Instance/OnTaskInvoke", shim__pb2.TaskContext.SerializeToString, types__pb2.TaskResult.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def OnSessionLeave(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Instance/OnSessionLeave',
-            types__pb2.EmptyRequest.SerializeToString,
-            types__pb2.Result.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def OnSessionLeave(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Instance/OnSessionLeave", types__pb2.EmptyRequest.SerializeToString, types__pb2.Result.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

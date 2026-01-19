@@ -11,18 +11,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from dataclasses import dataclass, asdict, field
-from enum import IntEnum
-from typing import Optional, List, Dict, Any, Union, Tuple
 import inspect
-from datetime import datetime
-from pathlib import Path
-import yaml
 import os
-import bson
-import string
 import random
+import string
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import IntEnum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import bson
+import yaml
 
 # Type aliases
 TaskID = str
@@ -193,28 +193,30 @@ class TaskInformer:
 def short_name(prefix: str, length: int = 6) -> str:
     """Generate a short name with a prefix."""
     alphabet = string.ascii_letters + string.digits
-    sn = ''.join(random.SystemRandom().choice(alphabet) for _ in range(length))
+    sn = "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
     return f"{prefix}-{sn}"
 
 
 @dataclass
 class FlamePackage:
     """Package configuration for Flame applications.
-    
+
     Attributes:
         storage: The URL specifying where the application package should be persisted.
                  Currently, only the file:// schema is supported.
         excludes: A list of custom patterns to exclude from the package.
                   By default, includes .venv, __pycache__, .gitignore, and *.pyc.
     """
-    
+
     storage: str
-    excludes: List[str] = field(default_factory=lambda: [
-        ".venv",
-        "__pycache__",
-        ".gitignore",
-        "*.pyc",
-    ])
+    excludes: List[str] = field(
+        default_factory=lambda: [
+            ".venv",
+            "__pycache__",
+            ".gitignore",
+            "*.pyc",
+        ]
+    )
 
 
 class FlameContext:
@@ -232,13 +234,12 @@ class FlameContext:
                 config = yaml.safe_load(f)
                 cc = config.get("current-cluster")
                 if cc is None:
-                    raise FlameError(FlameErrorCode.INVALID_CONFIG,
-                                     "current-cluster is not set")
+                    raise FlameError(FlameErrorCode.INVALID_CONFIG, "current-cluster is not set")
                 for cluster in config.get("clusters", []):
                     if cc == cluster["name"]:
                         self._endpoint = cluster.get("endpoint")
                         self._cache_endpoint = cluster.get("cache")
-                        
+
                         # Parse package configuration if present
                         package_config = cluster.get("package")
                         if package_config is not None:
@@ -251,8 +252,7 @@ class FlameContext:
                                 self._package = FlamePackage(storage=storage, excludes=all_excludes)
                         break
                 else:
-                    raise FlameError(FlameErrorCode.INVALID_CONFIG,
-                                     f"cluster <{cc}> not found")
+                    raise FlameError(FlameErrorCode.INVALID_CONFIG, f"cluster <{cc}> not found")
 
         endpoint = os.getenv("FLAME_ENDPOINT")
         if endpoint is not None:
@@ -261,15 +261,13 @@ class FlameContext:
         cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
         if cache_endpoint is not None:
             self._cache_endpoint = cache_endpoint
-    
+
     @property
     def package(self) -> Optional[FlamePackage]:
         """Get the package configuration."""
         return self._package
-    
+
     @property
     def cache_endpoint(self) -> str:
         """Get the cache endpoint, using default if not configured."""
         return self._cache_endpoint if self._cache_endpoint is not None else DEFAULT_FLAME_CACHE_ENDPOINT
-
-

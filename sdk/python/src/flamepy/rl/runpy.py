@@ -11,23 +11,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import importlib
 import logging
-import cloudpickle
 import os
+import shutil
+import site
 import subprocess
 import sys
-import site
-import importlib
 import tarfile
 import zipfile
-import shutil
-from urllib.parse import urlparse
-from typing import Any
 from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
 
-from flamepy.core.service import FlameService, SessionContext, TaskContext, TaskOutput
+import cloudpickle
+
 from flamepy.core import ObjectRef, get_object, put_object, update_object
-from flamepy.rl.types import RunnerRequest, RunnerContext, RunnerServiceKind
+from flamepy.core.service import FlameService, SessionContext, TaskContext
+from flamepy.core.types import TaskOutput
+from flamepy.rl.types import RunnerContext, RunnerRequest, RunnerServiceKind
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +66,11 @@ class FlameRunpyService(FlameService):
             logger.debug(f"Resolving ObjectRef: {value}")
             resolved_value = get_object(value)
             if resolved_value is None:
-                raise ValueError(
-                    f"Failed to retrieve ObjectRef from cache: {value}")
+                raise ValueError(f"Failed to retrieve ObjectRef from cache: {value}")
 
             logger.debug(f"Resolved ObjectRef to type: {type(resolved_value)}")
             return resolved_value
-        
+
         # Handle bytes that might be an encoded ObjectRef
         if isinstance(value, bytes):
             try:
@@ -78,8 +79,7 @@ class FlameRunpyService(FlameService):
                 logger.debug(f"Decoded bytes to ObjectRef: {object_ref}")
                 resolved_value = get_object(object_ref)
                 if resolved_value is None:
-                    raise ValueError(
-                        f"Failed to retrieve ObjectRef from cache: {object_ref}")
+                    raise ValueError(f"Failed to retrieve ObjectRef from cache: {object_ref}")
                 logger.debug(f"Resolved ObjectRef (from bytes) to type: {type(resolved_value)}")
                 return resolved_value
             except Exception as e:
@@ -99,8 +99,7 @@ class FlameRunpyService(FlameService):
         Returns:
             True if the file is a supported archive format
         """
-        archive_extensions = ['.tar.gz', '.tgz',
-                              '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.zip']
+        archive_extensions = [".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".zip"]
         return any(file_path.endswith(ext) for ext in archive_extensions)
 
     def _extract_archive(self, archive_path: str, extract_to: str) -> str:
@@ -124,17 +123,16 @@ class FlameRunpyService(FlameService):
             os.makedirs(extract_to, exist_ok=True)
 
             # Determine archive type and extract
-            if archive_path.endswith('.zip'):
-                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            if archive_path.endswith(".zip"):
+                with zipfile.ZipFile(archive_path, "r") as zip_ref:
                     zip_ref.extractall(extract_to)
                 logger.info(f"Extracted zip archive to {extract_to}")
-            elif any(archive_path.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar']):
-                with tarfile.open(archive_path, 'r:*') as tar_ref:
+            elif any(archive_path.endswith(ext) for ext in [".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar"]):
+                with tarfile.open(archive_path, "r:*") as tar_ref:
                     tar_ref.extractall(extract_to)
                 logger.info(f"Extracted tar archive to {extract_to}")
             else:
-                raise RuntimeError(
-                    f"Unsupported archive format: {archive_path}")
+                raise RuntimeError(f"Unsupported archive format: {archive_path}")
 
             return extract_to
 
@@ -164,9 +162,8 @@ class FlameRunpyService(FlameService):
         parsed_url = urlparse(url)
 
         # Currently only support file:// scheme
-        if parsed_url.scheme != 'file':
-            logger.warning(
-                f"Unsupported URL scheme: {parsed_url.scheme}, skipping package installation")
+        if parsed_url.scheme != "file":
+            logger.warning(f"Unsupported URL scheme: {parsed_url.scheme}, skipping package installation")
             return
 
         package_path = parsed_url.path
@@ -186,28 +183,21 @@ class FlameRunpyService(FlameService):
 
             # Get the working directory (default to /tmp if not set)
             working_dir = os.getcwd()
-            extract_dir = os.path.join(
-                working_dir, f"extracted_{os.path.basename(package_path).split('.')[0]}")
+            extract_dir = os.path.join(working_dir, f"extracted_{os.path.basename(package_path).split('.')[0]}")
 
             # Extract the archive
             extracted_dir = self._extract_archive(package_path, extract_dir)
 
             # Use the extracted directory for installation
             install_path = extracted_dir
-            logger.info(
-                f"Will install from extracted directory: {install_path}")
+            logger.info(f"Will install from extracted directory: {install_path}")
 
         # Use sys.executable -m pip to install into the current virtual environment
         logger.info(f"Installing package: {install_path}")
         install_args = [sys.executable, "-m", "pip", "install", install_path]
 
         try:
-            result = subprocess.run(
-                install_args,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(install_args, capture_output=True, text=True, check=True)
             logger.info(f"Package installation output: {result.stdout}")
             if result.stderr:
                 logger.warning(f"Package installation stderr: {result.stderr}")
@@ -215,8 +205,7 @@ class FlameRunpyService(FlameService):
 
             # Reload site packages to make the newly installed package available
             # This is necessary because the Python interpreter has already started
-            logger.info(
-                "Reloading site packages to pick up newly installed package")
+            logger.info("Reloading site packages to pick up newly installed package")
             importlib.reload(site)
             logger.info(f"Updated sys.path: {sys.path}")
 
@@ -253,17 +242,15 @@ class FlameRunpyService(FlameService):
 
         # Install package if URL is specified
         if context.application.url:
-            logger.info(
-                f"Application URL specified: {context.application.url}")
+            logger.info(f"Application URL specified: {context.application.url}")
             self._install_package_from_url(context.application.url)
         else:
-            logger.info(
-                "No application URL specified, skipping package installation")
+            logger.info("No application URL specified, skipping package installation")
 
         logger.info("Session entered successfully")
         return True
 
-    def on_task_invoke(self, context: TaskContext) -> TaskOutput:
+    def on_task_invoke(self, context: TaskContext) -> Optional[TaskOutput]:
         """
         Handle task invoke event.
 
@@ -272,13 +259,13 @@ class FlameRunpyService(FlameService):
         2. Deserializes the RunnerRequest from task input
         3. Resolves any ObjectRef instances in args/kwargs
         4. Executes the requested method on the execution object
-        5. Returns the result as TaskOutput
+        5. Returns the result as bytes
 
         Args:
             context: Task context containing task ID, session ID, and input
 
         Returns:
-            TaskOutput containing the result of the execution
+            bytes containing the result of the execution, or None if no output
 
         Raises:
             ValueError: If the input format is invalid or execution fails
@@ -300,9 +287,7 @@ class FlameRunpyService(FlameService):
             common_data = cloudpickle.loads(serialized_ctx)
 
             if not isinstance(common_data, RunnerContext):
-                raise ValueError(
-                    f"Expected RunnerContext in common_data, got {type(common_data)}"
-                )
+                raise ValueError(f"Expected RunnerContext in common_data, got {type(common_data)}")
 
             execution_object = common_data.execution_object
             if execution_object is None:
@@ -317,9 +302,7 @@ class FlameRunpyService(FlameService):
 
             request = cloudpickle.loads(context.input)
             if not isinstance(request, RunnerRequest):
-                raise ValueError(
-                    f"Expected RunnerRequest in task input, got {type(request)}"
-                )
+                raise ValueError(f"Expected RunnerRequest in task input, got {type(request)}")
 
             # Ensure __post_init__ validation runs after deserialization
             # This validates that args/kwargs are the correct types
@@ -327,13 +310,9 @@ class FlameRunpyService(FlameService):
 
             # Validate request structure
             if request.method is not None and not isinstance(request.method, str):
-                raise ValueError(
-                    f"request.method must be a string or None, got {type(request.method)}"
-                )
+                raise ValueError(f"request.method must be a string or None, got {type(request.method)}")
 
-            logger.debug(f"RunnerRequest: method={request.method}, "
-                         f"has_args={request.args is not None}, "
-                         f"has_kwargs={request.kwargs is not None}")
+            logger.debug(f"RunnerRequest: method={request.method}, " f"has_args={request.args is not None}, " f"has_kwargs={request.kwargs is not None}")
 
             # Resolve ObjectRef instances in args and kwargs
             invoke_args = ()
@@ -342,74 +321,54 @@ class FlameRunpyService(FlameService):
             if request.args is not None:
                 # Ensure args is iterable (tuple or list)
                 if not isinstance(request.args, (tuple, list)):
-                    raise ValueError(
-                        f"request.args must be a tuple or list, got {type(request.args)}: {request.args}"
-                    )
+                    raise ValueError(f"request.args must be a tuple or list, got {type(request.args)}: {request.args}")
                 # Resolve any ObjectRef instances in args
-                invoke_args = tuple(self._resolve_object_ref(arg)
-                                    for arg in request.args)
+                invoke_args = tuple(self._resolve_object_ref(arg) for arg in request.args)
                 logger.debug(f"Resolved args: {len(invoke_args)} arguments")
 
             if request.kwargs is not None:
                 # Ensure kwargs is a dictionary
                 if not isinstance(request.kwargs, dict):
-                    raise ValueError(
-                        f"request.kwargs must be a dict, got {type(request.kwargs)}: {request.kwargs}"
-                    )
+                    raise ValueError(f"request.kwargs must be a dict, got {type(request.kwargs)}: {request.kwargs}")
                 # Resolve any ObjectRef instances in kwargs
-                invoke_kwargs = {
-                    key: self._resolve_object_ref(value)
-                    for key, value in request.kwargs.items()
-                }
-                logger.debug(
-                    f"Resolved kwargs: {len(invoke_kwargs)} keyword arguments")
+                invoke_kwargs = {key: self._resolve_object_ref(value) for key, value in request.kwargs.items()}
+                logger.debug(f"Resolved kwargs: {len(invoke_kwargs)} keyword arguments")
 
             # Execute the requested method
             if request.method is None:
                 # The execution object itself is callable
                 if not callable(execution_object):
-                    raise ValueError(
-                        f"Execution object is not callable: {type(execution_object)}"
-                    )
-                logger.debug(
-                    f"Invoking callable with args={invoke_args}, kwargs={invoke_kwargs}")
+                    raise ValueError(f"Execution object is not callable: {type(execution_object)}")
+                logger.debug(f"Invoking callable with args={invoke_args}, kwargs={invoke_kwargs}")
                 result = execution_object(*invoke_args, **invoke_kwargs)
             else:
                 # Invoke a specific method on the execution object
                 if not hasattr(execution_object, request.method):
-                    raise ValueError(
-                        f"Execution object has no method '{request.method}'"
-                    )
+                    raise ValueError(f"Execution object has no method '{request.method}'")
 
                 method = getattr(execution_object, request.method)
                 if not callable(method):
-                    raise ValueError(
-                        f"Attribute '{request.method}' is not callable"
-                    )
+                    raise ValueError(f"Attribute '{request.method}' is not callable")
 
-                logger.debug(f"Invoking method '{request.method}' with args={invoke_args}, "
-                             f"kwargs={invoke_kwargs}")
+                logger.debug(f"Invoking method '{request.method}' with args={invoke_args}, " f"kwargs={invoke_kwargs}")
                 result = method(*invoke_args, **invoke_kwargs)
 
             logger.info(f"Task {context.task_id} completed successfully")
             logger.debug(f"Result type: {type(result)}")
 
             if common_data.kind == RunnerServiceKind.Stateless:
-                logger.debug(
-                    "Skipping common data update for stateless runner")
+                logger.debug("Skipping common data update for stateless runner")
             else:
                 # Update common data with the modified execution object to persist state
                 # This is important for stateful classes where instance variables change
-                logger.debug(
-                    "Updating common data with modified execution object")
+                logger.debug("Updating common data with modified execution object")
                 updated_context = RunnerContext(
                     execution_object=execution_object,
                     kind=common_data.kind,
                 )
                 # For RL module: serialize RunnerContext with cloudpickle, update in cache to get ObjectRef,
                 # then encode ObjectRef to bytes for core API
-                serialized_ctx = cloudpickle.dumps(
-                    updated_context, protocol=cloudpickle.DEFAULT_PROTOCOL)
+                serialized_ctx = cloudpickle.dumps(updated_context, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
                 # Update existing ObjectRef with latest version in cache
                 object_ref = update_object(object_ref, serialized_ctx)
@@ -423,11 +382,10 @@ class FlameRunpyService(FlameService):
 
             # For RL module: encode ObjectRef to bytes for core API
             result_bytes = result_object_ref.encode()
-            return TaskOutput(data=result_bytes)
+            return TaskOutput(result_bytes)
 
         except Exception as e:
-            logger.error(
-                f"Error in task {context.task_id}: {e}", exc_info=True)
+            logger.error(f"Error in task {context.task_id}: {e}", exc_info=True)
             raise
 
     def on_session_leave(self) -> bool:
@@ -441,8 +399,7 @@ class FlameRunpyService(FlameService):
         Returns:
             True if successful, False otherwise
         """
-        logger.info(
-            f"Leaving session: {self._ssn_ctx.session_id if self._ssn_ctx else 'unknown'}")
+        logger.info(f"Leaving session: {self._ssn_ctx.session_id if self._ssn_ctx else 'unknown'}")
 
         # Clean up session context
         self._ssn_ctx = None

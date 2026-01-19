@@ -11,34 +11,36 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Optional, Any
+from typing import Any, Optional
+
 import cloudpickle
+
+from flamepy.core import ObjectRef, get_object, put_object
 from flamepy.core.client import (
     Session,
     create_session,
     open_session,
 )
 from flamepy.core.types import short_name
-from flamepy.core import ObjectRef, put_object, get_object
 
 
 class Agent:
     """A streamlined interface for building and interacting with agents.
-    
+
     The Agent class is a thin wrapper around core.Session, where the Agent's name
     corresponds to the application's name.
-    
+
     Example:
         Direct instantiation:
             >>> agent = Agent("test", ctx)
             >>> resp = agent.invoke(req)
             >>> agent.close()
-        
+
         Context manager:
             >>> with Agent("test", ctx) as agent:
             ...     resp = agent.invoke(req)
     """
-    
+
     def __init__(
         self,
         name: Optional[str] = None,
@@ -47,7 +49,7 @@ class Agent:
         slots: int = 1,
     ):
         """Initialize an Agent.
-        
+
         Args:
             name: Optional application name (corresponds to the agent's name).
                   Required if session_id is None. Mutually exclusive with session_id.
@@ -55,7 +57,7 @@ class Agent:
             session_id: Optional session ID. If provided, opens an existing session.
                         Required if name is None. Mutually exclusive with name.
             slots: Number of slots for the session (default: 1). Only used when creating a new session.
-        
+
         Raises:
             ValueError: If both name and session_id are None, or if both are provided.
         """
@@ -66,7 +68,7 @@ class Agent:
 
         self._name = name
         self._session: Optional[Session] = None
-        
+
         if session_id is not None:
             # Open an existing session
             self._session = open_session(session_id)
@@ -96,89 +98,89 @@ class Agent:
                 session_id=temp_session_id,  # Pass None if ctx is None, otherwise use temp_session_id
                 slots=slots,
             )
-    
+
     def invoke(self, req: Any) -> Any:
         """Invoke the agent with a request.
-        
+
         The request and response objects should exactly match the agent's entrypoint
         signature defined on the service side.
-        
+
         Args:
             req: The request object matching the agent's entrypoint signature
-            
+
         Returns:
             The response object matching the agent's entrypoint signature
-            
+
         Example:
             >>> resp = agent.invoke(req)
         """
         if self._session is None:
             raise RuntimeError("Agent session is not initialized")
-        
+
         # For agent module: serialize input with cloudpickle, call core API, then deserialize output
         input_bytes = cloudpickle.dumps(req, protocol=cloudpickle.DEFAULT_PROTOCOL)
         output_bytes = self._session.invoke(input_bytes)
 
         if output_bytes is None:
             return None
-        
+
         # Deserialize output using cloudpickle
         return cloudpickle.loads(output_bytes)
-    
+
     def context(self) -> Any:
         """Get the current agent context.
-        
+
         Returns the session's shared (common) data, which represents the current
         agent context such as a running conversation or environment state.
-        
+
         Returns:
             The common data (context) of the session, or None if not set
-            
+
         Example:
             >>> ctx = agent.context()
         """
         if self._session is None:
             return None
-        
+
         # For agent module: get bytes from core API, decode to ObjectRef, get from cache, then deserialize
         common_data_bytes = self._session.common_data()
         if common_data_bytes is None:
             return None
-        
+
         # Decode bytes to ObjectRef
         object_ref = ObjectRef.decode(common_data_bytes)
         # Get from cache
         serialized_ctx = get_object(object_ref)
         # Deserialize using cloudpickle
         return cloudpickle.loads(serialized_ctx)
-    
+
     def id(self) -> Optional[str]:
         """Get the agent's session ID.
-        
+
         Returns:
             The session ID of the agent, or None if the session is not initialized
-            
+
         Example:
             >>> agent_id = agent.id()
         """
         if self._session is None:
             return None
         return self._session.id
-    
+
     def close(self) -> None:
         """Close the agent and release resources.
-        
+
         This closes the underlying session. After calling close(), the agent
         should not be used anymore.
         """
         if self._session is not None:
             self._session.close()
             self._session = None
-    
+
     def __enter__(self) -> "Agent":
         """Enter the context manager."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and close the agent."""
         self.close()

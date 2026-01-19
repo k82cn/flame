@@ -14,7 +14,7 @@ limitations under the License.
 import inspect
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from flamepy.core import ObjectRef
 
@@ -46,14 +46,7 @@ class RunnerContext:
     def __post_init__(self) -> None:
         if self.kind is not None:
             return
-        if (
-            inspect.isfunction(self.execution_object)
-            or inspect.isbuiltin(self.execution_object)
-            or (
-                inspect.isclass(self.execution_object)
-                and self.execution_object.__module__ == "builtins"
-            )
-        ):
+        if inspect.isfunction(self.execution_object) or inspect.isbuiltin(self.execution_object) or (inspect.isclass(self.execution_object) and self.execution_object.__module__ == "builtins"):
             self.kind = RunnerServiceKind.Stateless
         else:
             self.kind = RunnerServiceKind.Stateful
@@ -84,14 +77,8 @@ class RunnerRequest:
     def __post_init__(self):
         """Validate RunnerRequest fields."""
         if self.method is not None and not isinstance(self.method, str):
-            raise ValueError(
-                f"method must be a string or None, got {type(self.method)}"
-            )
+            raise ValueError(f"method must be a string or None, got {type(self.method)}")
         if self.args is not None and not isinstance(self.args, (tuple, list)):
-            raise ValueError(
-                f"args must be a tuple or list, got {type(self.args)}"
-            )
+            raise ValueError(f"args must be a tuple or list, got {type(self.args)}")
         if self.kwargs is not None and not isinstance(self.kwargs, dict):
-            raise ValueError(
-                f"kwargs must be a dict, got {type(self.kwargs)}"
-            )
+            raise ValueError(f"kwargs must be a dict, got {type(self.kwargs)}")

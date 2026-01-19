@@ -12,52 +12,53 @@ limitations under the License.
 """
 
 import threading
-from typing import Optional, List, Dict, Any, Union
-from urllib.parse import urlparse
 from concurrent.futures import Future, ThreadPoolExecutor
-import grpc
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
-from flamepy.core.types import (
-    Task,
-    Application,
-    SessionAttributes,
-    ApplicationAttributes,
-    Event,
-    SessionID,
-    TaskID,
-    ApplicationID,
-    TaskInput,
-    TaskOutput,
-    CommonData,
-    SessionState,
-    TaskState,
-    ApplicationState,
-    Shim,
-    FlameError,
-    FlameErrorCode,
-    TaskInformer,
-    FlameContext,
-    ApplicationSchema,
-    short_name,
-)
+import grpc
 
-from flamepy.core.types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment, ApplicationSchema as ApplicationSchemaProto
 from flamepy.core.frontend_pb2 import (
+    CloseSessionRequest,
+    CreateSessionRequest,
+    CreateTaskRequest,
+    GetApplicationRequest,
+    GetSessionRequest,
+    GetTaskRequest,
+    ListApplicationRequest,
+    ListSessionRequest,
+    OpenSessionRequest,
     RegisterApplicationRequest,
     UnregisterApplicationRequest,
-    ListApplicationRequest,
-    CreateSessionRequest,
-    ListSessionRequest,
-    GetSessionRequest,
-    CloseSessionRequest,
-    CreateTaskRequest,
     WatchTaskRequest,
-    GetTaskRequest,
-    GetApplicationRequest,
-    OpenSessionRequest,
 )
 from flamepy.core.frontend_pb2_grpc import FrontendStub
+from flamepy.core.types import (
+    Application,
+    ApplicationAttributes,
+    ApplicationID,
+    ApplicationSchema,
+    ApplicationState,
+    CommonData,
+    Event,
+    FlameContext,
+    FlameError,
+    FlameErrorCode,
+    SessionAttributes,
+    SessionID,
+    SessionState,
+    Shim,
+    Task,
+    TaskID,
+    TaskInformer,
+    TaskInput,
+    TaskOutput,
+    TaskState,
+    short_name,
+)
+from flamepy.core.types_pb2 import ApplicationSchema as ApplicationSchemaProto
+from flamepy.core.types_pb2 import ApplicationSpec, Environment, SessionSpec, TaskSpec
 
 
 def connect(addr: str) -> "Connection":
@@ -67,7 +68,7 @@ def connect(addr: str) -> "Connection":
 
 def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
     """Create a new session.
-    
+
     Args:
         application: Application name
         common_data: Common data as bytes (core API works with bytes)
@@ -188,7 +189,7 @@ class Connection:
             has_input = app_attrs.schema.input and app_attrs.schema.input.strip()
             has_output = app_attrs.schema.output and app_attrs.schema.output.strip()
             has_common_data = app_attrs.schema.common_data and app_attrs.schema.common_data.strip()
-            
+
             if has_input or has_output or has_common_data:
                 schema = ApplicationSchemaProto(
                     input=app_attrs.schema.input if has_input else None,
@@ -532,7 +533,7 @@ class Session:
 
     def create_task(self, input_data: bytes) -> Task:
         """Create a new task in the session.
-        
+
         Args:
             input_data: Task input as bytes (core API works with bytes)
         """
@@ -608,39 +609,39 @@ class Session:
 
     def invoke(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
         """Invoke a task with the given input and optional informer (synchronous).
-        
+
         This method blocks until the task completes or fails.
-        
+
         Args:
             input_data: The input data for the task
             informer: Optional task informer for monitoring task progress
-            
+
         Returns:
             The task output (or None if informer is provided)
-            
+
         Example:
             >>> result = session.invoke(b"input data")
             >>> print(result)
         """
         return self._invoke_impl(input_data, informer)
-    
+
     def run(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Future:
         """Run a task asynchronously and return a Future (async-style execution).
-        
+
         This method returns immediately with a Future object that can be used to
         retrieve the result later or run multiple tasks in parallel.
-        
+
         Args:
             input_data: The input data for the task
             informer: Optional task informer for monitoring task progress
-            
+
         Returns:
             A Future object that will contain the result when the task completes
-            
+
         Example (single task):
             >>> future = session.run(b"input data")
             >>> result = future.result()  # Wait for completion
-            
+
         Example (parallel execution):
             >>> from concurrent.futures import wait
             >>> futures = [session.run(f"input {i}".encode()) for i in range(10)]
@@ -648,7 +649,7 @@ class Session:
             >>> results = [f.result() for f in futures]
         """
         return self.connection._executor.submit(self._invoke_impl, input_data, informer)
-    
+
     def _invoke_impl(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
         """Internal implementation of invoke/run."""
         task = self.create_task(input_data)

@@ -13,7 +13,7 @@ limitations under the License.
 
 from .runner import ObjectFuture, ObjectFutureIterator, Runner, RunnerService
 from .runpy import FlameRunpyService
-from .types import RunnerServiceKind, RunnerContext, RunnerRequest
+from .types import RunnerContext, RunnerRequest, RunnerServiceKind
 
 __all__ = [
     "ObjectFuture",
