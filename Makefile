@@ -23,7 +23,7 @@ FEM_DOCKERFILE = docker/Dockerfile.fem
 CONSOLE_DOCKERFILE = docker/Dockerfile.console
 
 # Default target
-.PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e
+.PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e format format-rust format-python
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -56,6 +56,15 @@ sdk-python-clean: ## Clean Python SDK build artifacts
 	cd sdk/python && make clean
 
 sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
+
+# Formatting targets
+format-rust: ## Format Rust code with cargo fmt
+	cargo fmt
+
+format-python: ## Format Python code with black and isort
+	cd sdk/python && make format
+
+format: format-rust format-python ## Format both Rust and Python code
 
 e2e-ci:
 	$(CONTAINER_RUNTIME) compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .

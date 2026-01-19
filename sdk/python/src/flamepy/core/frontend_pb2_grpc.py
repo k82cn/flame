@@ -19,90 +19,90 @@ class FrontendStub(object):
             channel: A grpc.Channel.
         """
         self.RegisterApplication = channel.unary_unary(
-                '/flame.Frontend/RegisterApplication',
-                request_serializer=frontend__pb2.RegisterApplicationRequest.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                )
+            "/flame.Frontend/RegisterApplication",
+            request_serializer=frontend__pb2.RegisterApplicationRequest.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+        )
         self.UnregisterApplication = channel.unary_unary(
-                '/flame.Frontend/UnregisterApplication',
-                request_serializer=frontend__pb2.UnregisterApplicationRequest.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                )
+            "/flame.Frontend/UnregisterApplication",
+            request_serializer=frontend__pb2.UnregisterApplicationRequest.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+        )
         self.UpdateApplication = channel.unary_unary(
-                '/flame.Frontend/UpdateApplication',
-                request_serializer=frontend__pb2.UpdateApplicationRequest.SerializeToString,
-                response_deserializer=types__pb2.Result.FromString,
-                )
+            "/flame.Frontend/UpdateApplication",
+            request_serializer=frontend__pb2.UpdateApplicationRequest.SerializeToString,
+            response_deserializer=types__pb2.Result.FromString,
+        )
         self.GetApplication = channel.unary_unary(
-                '/flame.Frontend/GetApplication',
-                request_serializer=frontend__pb2.GetApplicationRequest.SerializeToString,
-                response_deserializer=types__pb2.Application.FromString,
-                )
+            "/flame.Frontend/GetApplication",
+            request_serializer=frontend__pb2.GetApplicationRequest.SerializeToString,
+            response_deserializer=types__pb2.Application.FromString,
+        )
         self.ListApplication = channel.unary_unary(
-                '/flame.Frontend/ListApplication',
-                request_serializer=frontend__pb2.ListApplicationRequest.SerializeToString,
-                response_deserializer=types__pb2.ApplicationList.FromString,
-                )
+            "/flame.Frontend/ListApplication",
+            request_serializer=frontend__pb2.ListApplicationRequest.SerializeToString,
+            response_deserializer=types__pb2.ApplicationList.FromString,
+        )
         self.ListExecutor = channel.unary_unary(
-                '/flame.Frontend/ListExecutor',
-                request_serializer=frontend__pb2.ListExecutorRequest.SerializeToString,
-                response_deserializer=types__pb2.ExecutorList.FromString,
-                )
+            "/flame.Frontend/ListExecutor",
+            request_serializer=frontend__pb2.ListExecutorRequest.SerializeToString,
+            response_deserializer=types__pb2.ExecutorList.FromString,
+        )
         self.CreateSession = channel.unary_unary(
-                '/flame.Frontend/CreateSession',
-                request_serializer=frontend__pb2.CreateSessionRequest.SerializeToString,
-                response_deserializer=types__pb2.Session.FromString,
-                )
+            "/flame.Frontend/CreateSession",
+            request_serializer=frontend__pb2.CreateSessionRequest.SerializeToString,
+            response_deserializer=types__pb2.Session.FromString,
+        )
         self.DeleteSession = channel.unary_unary(
-                '/flame.Frontend/DeleteSession',
-                request_serializer=frontend__pb2.DeleteSessionRequest.SerializeToString,
-                response_deserializer=types__pb2.Session.FromString,
-                )
+            "/flame.Frontend/DeleteSession",
+            request_serializer=frontend__pb2.DeleteSessionRequest.SerializeToString,
+            response_deserializer=types__pb2.Session.FromString,
+        )
         self.OpenSession = channel.unary_unary(
-                '/flame.Frontend/OpenSession',
-                request_serializer=frontend__pb2.OpenSessionRequest.SerializeToString,
-                response_deserializer=types__pb2.Session.FromString,
-                )
+            "/flame.Frontend/OpenSession",
+            request_serializer=frontend__pb2.OpenSessionRequest.SerializeToString,
+            response_deserializer=types__pb2.Session.FromString,
+        )
         self.CloseSession = channel.unary_unary(
-                '/flame.Frontend/CloseSession',
-                request_serializer=frontend__pb2.CloseSessionRequest.SerializeToString,
-                response_deserializer=types__pb2.Session.FromString,
-                )
+            "/flame.Frontend/CloseSession",
+            request_serializer=frontend__pb2.CloseSessionRequest.SerializeToString,
+            response_deserializer=types__pb2.Session.FromString,
+        )
         self.GetSession = channel.unary_unary(
-                '/flame.Frontend/GetSession',
-                request_serializer=frontend__pb2.GetSessionRequest.SerializeToString,
-                response_deserializer=types__pb2.Session.FromString,
-                )
+            "/flame.Frontend/GetSession",
+            request_serializer=frontend__pb2.GetSessionRequest.SerializeToString,
+            response_deserializer=types__pb2.Session.FromString,
+        )
         self.ListSession = channel.unary_unary(
-                '/flame.Frontend/ListSession',
-                request_serializer=frontend__pb2.ListSessionRequest.SerializeToString,
-                response_deserializer=types__pb2.SessionList.FromString,
-                )
+            "/flame.Frontend/ListSession",
+            request_serializer=frontend__pb2.ListSessionRequest.SerializeToString,
+            response_deserializer=types__pb2.SessionList.FromString,
+        )
         self.CreateTask = channel.unary_unary(
-                '/flame.Frontend/CreateTask',
-                request_serializer=frontend__pb2.CreateTaskRequest.SerializeToString,
-                response_deserializer=types__pb2.Task.FromString,
-                )
+            "/flame.Frontend/CreateTask",
+            request_serializer=frontend__pb2.CreateTaskRequest.SerializeToString,
+            response_deserializer=types__pb2.Task.FromString,
+        )
         self.DeleteTask = channel.unary_unary(
-                '/flame.Frontend/DeleteTask',
-                request_serializer=frontend__pb2.DeleteTaskRequest.SerializeToString,
-                response_deserializer=types__pb2.Task.FromString,
-                )
+            "/flame.Frontend/DeleteTask",
+            request_serializer=frontend__pb2.DeleteTaskRequest.SerializeToString,
+            response_deserializer=types__pb2.Task.FromString,
+        )
         self.GetTask = channel.unary_unary(
-                '/flame.Frontend/GetTask',
-                request_serializer=frontend__pb2.GetTaskRequest.SerializeToString,
-                response_deserializer=types__pb2.Task.FromString,
-                )
+            "/flame.Frontend/GetTask",
+            request_serializer=frontend__pb2.GetTaskRequest.SerializeToString,
+            response_deserializer=types__pb2.Task.FromString,
+        )
         self.WatchTask = channel.unary_stream(
-                '/flame.Frontend/WatchTask',
-                request_serializer=frontend__pb2.WatchTaskRequest.SerializeToString,
-                response_deserializer=types__pb2.Task.FromString,
-                )
+            "/flame.Frontend/WatchTask",
+            request_serializer=frontend__pb2.WatchTaskRequest.SerializeToString,
+            response_deserializer=types__pb2.Task.FromString,
+        )
         self.ListTask = channel.unary_stream(
-                '/flame.Frontend/ListTask',
-                request_serializer=frontend__pb2.ListTaskRequest.SerializeToString,
-                response_deserializer=types__pb2.Task.FromString,
-                )
+            "/flame.Frontend/ListTask",
+            request_serializer=frontend__pb2.ListTaskRequest.SerializeToString,
+            response_deserializer=types__pb2.Task.FromString,
+        )
 
 
 class FrontendServicer(object):
@@ -114,200 +114,199 @@ class FrontendServicer(object):
     def RegisterApplication(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def UnregisterApplication(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def UpdateApplication(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def GetApplication(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def ListApplication(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def ListExecutor(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def CreateSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def DeleteSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def OpenSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def CloseSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def GetSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def ListSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def CreateTask(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def DeleteTask(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def GetTask(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def WatchTask(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def ListTask(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_FrontendServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'RegisterApplication': grpc.unary_unary_rpc_method_handler(
-                    servicer.RegisterApplication,
-                    request_deserializer=frontend__pb2.RegisterApplicationRequest.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
-            'UnregisterApplication': grpc.unary_unary_rpc_method_handler(
-                    servicer.UnregisterApplication,
-                    request_deserializer=frontend__pb2.UnregisterApplicationRequest.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
-            'UpdateApplication': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateApplication,
-                    request_deserializer=frontend__pb2.UpdateApplicationRequest.FromString,
-                    response_serializer=types__pb2.Result.SerializeToString,
-            ),
-            'GetApplication': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetApplication,
-                    request_deserializer=frontend__pb2.GetApplicationRequest.FromString,
-                    response_serializer=types__pb2.Application.SerializeToString,
-            ),
-            'ListApplication': grpc.unary_unary_rpc_method_handler(
-                    servicer.ListApplication,
-                    request_deserializer=frontend__pb2.ListApplicationRequest.FromString,
-                    response_serializer=types__pb2.ApplicationList.SerializeToString,
-            ),
-            'ListExecutor': grpc.unary_unary_rpc_method_handler(
-                    servicer.ListExecutor,
-                    request_deserializer=frontend__pb2.ListExecutorRequest.FromString,
-                    response_serializer=types__pb2.ExecutorList.SerializeToString,
-            ),
-            'CreateSession': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateSession,
-                    request_deserializer=frontend__pb2.CreateSessionRequest.FromString,
-                    response_serializer=types__pb2.Session.SerializeToString,
-            ),
-            'DeleteSession': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteSession,
-                    request_deserializer=frontend__pb2.DeleteSessionRequest.FromString,
-                    response_serializer=types__pb2.Session.SerializeToString,
-            ),
-            'OpenSession': grpc.unary_unary_rpc_method_handler(
-                    servicer.OpenSession,
-                    request_deserializer=frontend__pb2.OpenSessionRequest.FromString,
-                    response_serializer=types__pb2.Session.SerializeToString,
-            ),
-            'CloseSession': grpc.unary_unary_rpc_method_handler(
-                    servicer.CloseSession,
-                    request_deserializer=frontend__pb2.CloseSessionRequest.FromString,
-                    response_serializer=types__pb2.Session.SerializeToString,
-            ),
-            'GetSession': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetSession,
-                    request_deserializer=frontend__pb2.GetSessionRequest.FromString,
-                    response_serializer=types__pb2.Session.SerializeToString,
-            ),
-            'ListSession': grpc.unary_unary_rpc_method_handler(
-                    servicer.ListSession,
-                    request_deserializer=frontend__pb2.ListSessionRequest.FromString,
-                    response_serializer=types__pb2.SessionList.SerializeToString,
-            ),
-            'CreateTask': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateTask,
-                    request_deserializer=frontend__pb2.CreateTaskRequest.FromString,
-                    response_serializer=types__pb2.Task.SerializeToString,
-            ),
-            'DeleteTask': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteTask,
-                    request_deserializer=frontend__pb2.DeleteTaskRequest.FromString,
-                    response_serializer=types__pb2.Task.SerializeToString,
-            ),
-            'GetTask': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetTask,
-                    request_deserializer=frontend__pb2.GetTaskRequest.FromString,
-                    response_serializer=types__pb2.Task.SerializeToString,
-            ),
-            'WatchTask': grpc.unary_stream_rpc_method_handler(
-                    servicer.WatchTask,
-                    request_deserializer=frontend__pb2.WatchTaskRequest.FromString,
-                    response_serializer=types__pb2.Task.SerializeToString,
-            ),
-            'ListTask': grpc.unary_stream_rpc_method_handler(
-                    servicer.ListTask,
-                    request_deserializer=frontend__pb2.ListTaskRequest.FromString,
-                    response_serializer=types__pb2.Task.SerializeToString,
-            ),
+        "RegisterApplication": grpc.unary_unary_rpc_method_handler(
+            servicer.RegisterApplication,
+            request_deserializer=frontend__pb2.RegisterApplicationRequest.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
+        "UnregisterApplication": grpc.unary_unary_rpc_method_handler(
+            servicer.UnregisterApplication,
+            request_deserializer=frontend__pb2.UnregisterApplicationRequest.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
+        "UpdateApplication": grpc.unary_unary_rpc_method_handler(
+            servicer.UpdateApplication,
+            request_deserializer=frontend__pb2.UpdateApplicationRequest.FromString,
+            response_serializer=types__pb2.Result.SerializeToString,
+        ),
+        "GetApplication": grpc.unary_unary_rpc_method_handler(
+            servicer.GetApplication,
+            request_deserializer=frontend__pb2.GetApplicationRequest.FromString,
+            response_serializer=types__pb2.Application.SerializeToString,
+        ),
+        "ListApplication": grpc.unary_unary_rpc_method_handler(
+            servicer.ListApplication,
+            request_deserializer=frontend__pb2.ListApplicationRequest.FromString,
+            response_serializer=types__pb2.ApplicationList.SerializeToString,
+        ),
+        "ListExecutor": grpc.unary_unary_rpc_method_handler(
+            servicer.ListExecutor,
+            request_deserializer=frontend__pb2.ListExecutorRequest.FromString,
+            response_serializer=types__pb2.ExecutorList.SerializeToString,
+        ),
+        "CreateSession": grpc.unary_unary_rpc_method_handler(
+            servicer.CreateSession,
+            request_deserializer=frontend__pb2.CreateSessionRequest.FromString,
+            response_serializer=types__pb2.Session.SerializeToString,
+        ),
+        "DeleteSession": grpc.unary_unary_rpc_method_handler(
+            servicer.DeleteSession,
+            request_deserializer=frontend__pb2.DeleteSessionRequest.FromString,
+            response_serializer=types__pb2.Session.SerializeToString,
+        ),
+        "OpenSession": grpc.unary_unary_rpc_method_handler(
+            servicer.OpenSession,
+            request_deserializer=frontend__pb2.OpenSessionRequest.FromString,
+            response_serializer=types__pb2.Session.SerializeToString,
+        ),
+        "CloseSession": grpc.unary_unary_rpc_method_handler(
+            servicer.CloseSession,
+            request_deserializer=frontend__pb2.CloseSessionRequest.FromString,
+            response_serializer=types__pb2.Session.SerializeToString,
+        ),
+        "GetSession": grpc.unary_unary_rpc_method_handler(
+            servicer.GetSession,
+            request_deserializer=frontend__pb2.GetSessionRequest.FromString,
+            response_serializer=types__pb2.Session.SerializeToString,
+        ),
+        "ListSession": grpc.unary_unary_rpc_method_handler(
+            servicer.ListSession,
+            request_deserializer=frontend__pb2.ListSessionRequest.FromString,
+            response_serializer=types__pb2.SessionList.SerializeToString,
+        ),
+        "CreateTask": grpc.unary_unary_rpc_method_handler(
+            servicer.CreateTask,
+            request_deserializer=frontend__pb2.CreateTaskRequest.FromString,
+            response_serializer=types__pb2.Task.SerializeToString,
+        ),
+        "DeleteTask": grpc.unary_unary_rpc_method_handler(
+            servicer.DeleteTask,
+            request_deserializer=frontend__pb2.DeleteTaskRequest.FromString,
+            response_serializer=types__pb2.Task.SerializeToString,
+        ),
+        "GetTask": grpc.unary_unary_rpc_method_handler(
+            servicer.GetTask,
+            request_deserializer=frontend__pb2.GetTaskRequest.FromString,
+            response_serializer=types__pb2.Task.SerializeToString,
+        ),
+        "WatchTask": grpc.unary_stream_rpc_method_handler(
+            servicer.WatchTask,
+            request_deserializer=frontend__pb2.WatchTaskRequest.FromString,
+            response_serializer=types__pb2.Task.SerializeToString,
+        ),
+        "ListTask": grpc.unary_stream_rpc_method_handler(
+            servicer.ListTask,
+            request_deserializer=frontend__pb2.ListTaskRequest.FromString,
+            response_serializer=types__pb2.Task.SerializeToString,
+        ),
     }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'flame.Frontend', rpc_method_handlers)
+    generic_handler = grpc.method_handlers_generic_handler("flame.Frontend", rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class Frontend(object):
     """
     The frontend service of Flame, which is used to communicate with client sdk,
@@ -315,290 +314,69 @@ class Frontend(object):
     """
 
     @staticmethod
-    def RegisterApplication(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/RegisterApplication',
-            frontend__pb2.RegisterApplicationRequest.SerializeToString,
-            types__pb2.Result.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def RegisterApplication(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/RegisterApplication", frontend__pb2.RegisterApplicationRequest.SerializeToString, types__pb2.Result.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def UnregisterApplication(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/UnregisterApplication',
-            frontend__pb2.UnregisterApplicationRequest.SerializeToString,
-            types__pb2.Result.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def UnregisterApplication(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/UnregisterApplication", frontend__pb2.UnregisterApplicationRequest.SerializeToString, types__pb2.Result.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def UpdateApplication(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/UpdateApplication',
-            frontend__pb2.UpdateApplicationRequest.SerializeToString,
-            types__pb2.Result.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def UpdateApplication(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/UpdateApplication", frontend__pb2.UpdateApplicationRequest.SerializeToString, types__pb2.Result.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def GetApplication(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/GetApplication',
-            frontend__pb2.GetApplicationRequest.SerializeToString,
-            types__pb2.Application.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def GetApplication(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/GetApplication", frontend__pb2.GetApplicationRequest.SerializeToString, types__pb2.Application.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def ListApplication(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/ListApplication',
-            frontend__pb2.ListApplicationRequest.SerializeToString,
-            types__pb2.ApplicationList.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def ListApplication(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/ListApplication", frontend__pb2.ListApplicationRequest.SerializeToString, types__pb2.ApplicationList.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def ListExecutor(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/ListExecutor',
-            frontend__pb2.ListExecutorRequest.SerializeToString,
-            types__pb2.ExecutorList.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def ListExecutor(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/ListExecutor", frontend__pb2.ListExecutorRequest.SerializeToString, types__pb2.ExecutorList.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def CreateSession(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/CreateSession',
-            frontend__pb2.CreateSessionRequest.SerializeToString,
-            types__pb2.Session.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def CreateSession(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/CreateSession", frontend__pb2.CreateSessionRequest.SerializeToString, types__pb2.Session.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def DeleteSession(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/DeleteSession',
-            frontend__pb2.DeleteSessionRequest.SerializeToString,
-            types__pb2.Session.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def DeleteSession(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/DeleteSession", frontend__pb2.DeleteSessionRequest.SerializeToString, types__pb2.Session.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def OpenSession(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/OpenSession',
-            frontend__pb2.OpenSessionRequest.SerializeToString,
-            types__pb2.Session.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def OpenSession(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/OpenSession", frontend__pb2.OpenSessionRequest.SerializeToString, types__pb2.Session.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def CloseSession(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/CloseSession',
-            frontend__pb2.CloseSessionRequest.SerializeToString,
-            types__pb2.Session.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def CloseSession(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/CloseSession", frontend__pb2.CloseSessionRequest.SerializeToString, types__pb2.Session.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def GetSession(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/GetSession',
-            frontend__pb2.GetSessionRequest.SerializeToString,
-            types__pb2.Session.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def GetSession(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/GetSession", frontend__pb2.GetSessionRequest.SerializeToString, types__pb2.Session.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def ListSession(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/ListSession',
-            frontend__pb2.ListSessionRequest.SerializeToString,
-            types__pb2.SessionList.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def ListSession(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/ListSession", frontend__pb2.ListSessionRequest.SerializeToString, types__pb2.SessionList.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def CreateTask(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/CreateTask',
-            frontend__pb2.CreateTaskRequest.SerializeToString,
-            types__pb2.Task.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def CreateTask(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/CreateTask", frontend__pb2.CreateTaskRequest.SerializeToString, types__pb2.Task.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def DeleteTask(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/DeleteTask',
-            frontend__pb2.DeleteTaskRequest.SerializeToString,
-            types__pb2.Task.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def DeleteTask(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/DeleteTask", frontend__pb2.DeleteTaskRequest.SerializeToString, types__pb2.Task.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def GetTask(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/flame.Frontend/GetTask',
-            frontend__pb2.GetTaskRequest.SerializeToString,
-            types__pb2.Task.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def GetTask(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_unary(request, target, "/flame.Frontend/GetTask", frontend__pb2.GetTaskRequest.SerializeToString, types__pb2.Task.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def WatchTask(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(request, target, '/flame.Frontend/WatchTask',
-            frontend__pb2.WatchTaskRequest.SerializeToString,
-            types__pb2.Task.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def WatchTask(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_stream(request, target, "/flame.Frontend/WatchTask", frontend__pb2.WatchTaskRequest.SerializeToString, types__pb2.Task.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def ListTask(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(request, target, '/flame.Frontend/ListTask',
-            frontend__pb2.ListTaskRequest.SerializeToString,
-            types__pb2.Task.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def ListTask(request, target, options=(), channel_credentials=None, call_credentials=None, insecure=False, compression=None, wait_for_ready=None, timeout=None, metadata=None):
+        return grpc.experimental.unary_stream(request, target, "/flame.Frontend/ListTask", frontend__pb2.ListTaskRequest.SerializeToString, types__pb2.Task.FromString, options, channel_credentials, insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

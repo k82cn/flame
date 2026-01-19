@@ -11,23 +11,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import logging
 import os
 import time
-import grpc
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, Union
-from dataclasses import dataclass
-import logging
 from concurrent import futures
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Union
 
-from flamepy.core.types import Shim, FlameError, FlameErrorCode
+import grpc
+
 from flamepy.core.cache import ObjectRef, get_object, update_object
 from flamepy.core.shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
+from flamepy.core.types import FlameError, FlameErrorCode, Shim, TaskOutput
 from flamepy.core.types_pb2 import (
-    Result,
     EmptyRequest,
-    TaskResult as TaskResultProto,
+    Result,
 )
+from flamepy.core.types_pb2 import TaskResult as TaskResultProto
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +79,6 @@ class TaskContext:
     input: Optional[bytes]  # Task input as bytes in core API
 
 
-@dataclass
-class TaskOutput:
-    """Output from a task."""
-
-    data: Optional[bytes]  # Task output as bytes in core API
-
-
 class FlameService:
     """Base class for implementing Flame services."""
 
@@ -102,7 +96,7 @@ class FlameService:
         pass
 
     @abstractmethod
-    def on_task_invoke(self, context: TaskContext) -> TaskOutput:
+    def on_task_invoke(self, context: TaskContext) -> Optional[TaskOutput]:
         """
         Called when a task is invoked.
 
@@ -110,7 +104,7 @@ class FlameService:
             context: Task context information
 
         Returns:
-            Task output
+            Task output as bytes, or None if no output
         """
         pass
 
@@ -183,7 +177,7 @@ class FlameInstanceServicer(InstanceServicer):
             # Convert protobuf request to TaskContext
             # Task input is bytes in core API
             input_bytes = request.input if request.HasField("input") and request.input else None
-            
+
             task_context = TaskContext(
                 task_id=request.task_id,
                 session_id=request.session_id,
@@ -193,13 +187,8 @@ class FlameInstanceServicer(InstanceServicer):
             logger.debug(f"task_context: {task_context}")
 
             # Call the service implementation
-            output = self._service.on_task_invoke(task_context)
+            output_data = self._service.on_task_invoke(task_context)
             logger.debug("on_task_invoke completed successfully")
-
-            # Task output is bytes in core API
-            output_data = None
-            if output is not None and output.data is not None:
-                output_data = output.data
 
             # Return task output
             return TaskResultProto(return_code=0, output=output_data, message=None)

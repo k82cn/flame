@@ -19,13 +19,13 @@ build-protos: ## Generate protobuf Python files
 	uv run -n build_protos.py
 
 format: ## Format code with black and isort
-	black . test/test_flame.py
-	isort . test/test_flame.py
+	uv run -n --extra dev black src
+	uv run -n --extra dev isort src
 
 lint: ## Run linting checks
-	black --check . test/test_flame.py
-	isort --check-only . test/test_flame.py
-	mypy .
+	uv run -n --extra dev black --check src
+	uv run -n --extra dev isort --check-only src
+	uv run -n --extra dev mypy src
 
 check: format lint test ## Run all checks (format, lint, test)
 

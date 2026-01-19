@@ -192,6 +192,34 @@ def serialize_request(request: TestRequest) -> bytes:
     return json.dumps(request_dict).encode('utf-8')
 
 
+def deserialize_request(request_bytes: bytes) -> TestRequest:
+    """
+    Deserialize bytes to TestRequest using JSON.
+    
+    Args:
+        request_bytes: bytes representation of the request
+        
+    Returns:
+        TestRequest object
+    """
+    request_dict = json.loads(request_bytes.decode('utf-8'))
+    return TestRequest(**request_dict)
+
+
+def serialize_response(response: TestResponse) -> bytes:
+    """
+    Serialize a TestResponse to bytes using JSON.
+    
+    Args:
+        response: TestResponse object
+        
+    Returns:
+        bytes representation of the response
+    """
+    response_dict = asdict(response)
+    return json.dumps(response_dict).encode('utf-8')
+
+
 def deserialize_response(response_bytes: bytes) -> TestResponse:
     """
     Deserialize bytes to TestResponse using JSON.

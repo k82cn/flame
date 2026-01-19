@@ -23,75 +23,60 @@ _log_level_map = {
     "DEBUG": logging.DEBUG,
 }
 
-_log_level = (
-    _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
-)
+_log_level = _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
 
 logging.basicConfig(level=_log_level)
 
+# Import submodules for rl and agent (only as submodules)
+from . import agent, rl
+
 # Export all core classes/types at top level
-from .core import (
-    # Type aliases
-    TaskID,
-    SessionID,
-    ApplicationID,
-    Message,
-    TaskInput,
-    TaskOutput,
-    CommonData,
-    # Constants
+from .core import (  # Type aliases; Constants; Enums; Exception classes; Data classes; Context and utility classes; Client functions; Client classes; Service constants; Service context classes; Service base classes; Service functions
+    DEFAULT_FLAME_CACHE_ENDPOINT,
     DEFAULT_FLAME_CONF,
     DEFAULT_FLAME_ENDPOINT,
-    DEFAULT_FLAME_CACHE_ENDPOINT,
-    # Enums
-    SessionState,
-    TaskState,
-    ApplicationState,
-    Shim,
-    FlameErrorCode,
-    # Exception classes
-    FlameError,
-    # Data classes
-    Event,
-    SessionAttributes,
-    ApplicationSchema,
-    ApplicationAttributes,
-    Task,
+    FLAME_INSTANCE_ENDPOINT,
     Application,
-    FlamePackage,
-    # Context and utility classes
-    TaskInformer,
+    ApplicationAttributes,
+    ApplicationContext,
+    ApplicationID,
+    ApplicationSchema,
+    ApplicationState,
+    CommonData,
+    Connection,
+    Event,
     FlameContext,
-    # Client functions
+    FlameError,
+    FlameErrorCode,
+    FlamePackage,
+    FlameService,
+    Message,
+    Session,
+    SessionAttributes,
+    SessionContext,
+    SessionID,
+    SessionState,
+    Shim,
+    Task,
+    TaskContext,
+    TaskID,
+    TaskInformer,
+    TaskInput,
+    TaskOutput,
+    TaskState,
+    TaskWatcher,
+    close_session,
     connect,
     create_session,
+    get_application,
+    get_session,
+    list_applications,
+    list_sessions,
     open_session,
     register_application,
-    unregister_application,
-    list_applications,
-    get_application,
-    list_sessions,
-    get_session,
-    close_session,
-    # Client classes
-    Connection,
-    Session,
-    TaskWatcher,
-    # Service constants
-    FLAME_INSTANCE_ENDPOINT,
-    # Service context classes
-    ApplicationContext,
-    SessionContext,
-    TaskContext,
-    # Service base classes
-    FlameService,
-    # Service functions
     run,
+    unregister_application,
 )
-
-# Import submodules for rl and agent (only as submodules)
-from . import agent
-from . import rl
 
 __version__ = "0.3.0"
 
