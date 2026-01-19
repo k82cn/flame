@@ -21,8 +21,7 @@ import logging
 from concurrent import futures
 
 from flamepy.core.types import Shim, FlameError, FlameErrorCode
-from flamepy.cache import ObjectRef
-from flamepy.cache.cache import get_object, update_object
+from flamepy.core.cache import ObjectRef, get_object, update_object
 from flamepy.core.shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from flamepy.core.types_pb2 import (
     Result,

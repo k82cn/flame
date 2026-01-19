@@ -218,7 +218,7 @@ def test_objectfuture_ref_method(check_package_config, check_flmrun_app):
         obj_ref = result.ref()
 
         # Verify it's an ObjectRef
-        assert isinstance(obj_ref, flamepy.cache.ObjectRef), (
+        assert isinstance(obj_ref, flamepy.core.ObjectRef), (
             f"Expected ObjectRef, got {type(obj_ref)}"
         )
         assert obj_ref.url is not None, "ObjectRef URL should not be None"

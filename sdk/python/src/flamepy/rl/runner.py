@@ -29,7 +29,7 @@ from flamepy.core.types import (
     ApplicationAttributes,
     Shim,
 )
-from flamepy.cache import ObjectRef
+from flamepy.core import ObjectRef, get_object, put_object
 from flamepy.rl.types import (
     RunnerContext,
     RunnerRequest,
@@ -37,7 +37,6 @@ from flamepy.rl.types import (
 )
 from flamepy.core.client import create_session, get_application, register_application, unregister_application
 from flamepy.core.types import short_name
-from flamepy.cache.cache import get_object, put_object
 import cloudpickle
 
 

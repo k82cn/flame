@@ -19,8 +19,7 @@ from flamepy.core.client import (
     open_session,
 )
 from flamepy.core.types import short_name
-from flamepy.cache import ObjectRef
-from flamepy.cache.cache import put_object, get_object
+from flamepy.core import ObjectRef, put_object, get_object
 
 
 class Agent:

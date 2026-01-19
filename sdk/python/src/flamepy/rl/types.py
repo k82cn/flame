@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Optional, Tuple, Dict
 
-from flamepy.cache import ObjectRef
+from flamepy.core import ObjectRef
 
 
 class RunnerServiceKind(IntEnum):
