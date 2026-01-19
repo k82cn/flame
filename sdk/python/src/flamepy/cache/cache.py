@@ -75,25 +75,26 @@ class ObjectMetadata(BaseModel):
 
 def put_object(session_id: str, obj: Any) -> "ObjectRef":
     """Put an object into the cache.
-    
+
     Args:
         session_id: The session ID for the object
         obj: The object to cache (will be pickled)
-        
+
     Returns:
         ObjectRef pointing to the cached object
-        
+
     Raises:
         Exception: If cache endpoint is not configured or request fails
     """
     context = FlameContext()
     cache_endpoint = context.cache_endpoint
-    
+
     # Serialize the object using cloudpickle
     data = cloudpickle.dumps(obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     with suppress_dependency_logs():
-        response = httpx.post(f"{cache_endpoint}/objects/{session_id}", data=data)
+        response = httpx.post(
+            f"{cache_endpoint}/objects/{session_id}", data=data)
         response.raise_for_status()
 
     metadata = ObjectMetadata.model_validate(response.json())
@@ -102,13 +103,13 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
 
 def get_object(ref: ObjectRef) -> Any:
     """Get an object from the cache.
-    
+
     Args:
         ref: ObjectRef pointing to the cached object
-        
+
     Returns:
         The deserialized object
-        
+
     Raises:
         Exception: If request fails
     """
@@ -128,20 +129,21 @@ def get_object(ref: ObjectRef) -> Any:
 
 def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
     """Update an object in the cache.
-    
+
     Args:
         ref: ObjectRef pointing to the cached object to update
         new_obj: The new object to store (will be pickled)
-        
+
     Returns:
         Updated ObjectRef with new version
-        
+
     Raises:
         Exception: If request fails
     """
     # Serialize the new object using cloudpickle
-    new_data = cloudpickle.dumps(new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
-    
+    new_data = cloudpickle.dumps(
+        new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
+
     obj = Object(version=ref.version, data=list(new_data))
     data = obj.model_dump_json()
 

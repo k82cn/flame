@@ -14,7 +14,6 @@ limitations under the License.
 import os
 import time
 import grpc
-import cloudpickle
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
@@ -61,24 +60,14 @@ class ApplicationContext:
 class SessionContext:
     """Context for a session."""
 
-    _object_ref: ObjectRef
+    _common_data: Optional[bytes]
 
     session_id: str
     application: ApplicationContext
 
-    def common_data(self) -> Any:
-        """Get the common data."""
-        if self._object_ref is None:
-            return None
-        
-        return get_object(self._object_ref)
-
-    def update_common_data(self, data: Any):
-        """Update the common data."""
-        if self._object_ref is None:
-            return
-
-        self._object_ref = update_object(self._object_ref, data)
+    def common_data(self) -> Optional[bytes]:
+        """Get the common data as bytes."""
+        return self._common_data
 
 
 @dataclass
@@ -87,14 +76,14 @@ class TaskContext:
 
     task_id: str
     session_id: str
-    input: Any
+    input: Optional[bytes]  # Task input as bytes in core API
 
 
 @dataclass
 class TaskOutput:
     """Output from a task."""
 
-    data: Any
+    data: Optional[bytes]  # Task output as bytes in core API
 
 
 class FlameService:
@@ -163,10 +152,11 @@ class FlameInstanceServicer(InstanceServicer):
 
             logger.debug(f"app_context: {app_context}")
 
-            common_data_ref = ObjectRef.decode(request.common_data) if request.HasField("common_data") else None
+            # Common data is bytes in core API
+            common_data_bytes = request.common_data if request.HasField("common_data") and request.common_data else None
 
             session_context = SessionContext(
-                _object_ref=common_data_ref,
+                _common_data=common_data_bytes,
                 session_id=request.session_id,
                 application=app_context,
             )
@@ -192,10 +182,13 @@ class FlameInstanceServicer(InstanceServicer):
 
         try:
             # Convert protobuf request to TaskContext
+            # Task input is bytes in core API
+            input_bytes = request.input if request.HasField("input") and request.input else None
+            
             task_context = TaskContext(
                 task_id=request.task_id,
                 session_id=request.session_id,
-                input=cloudpickle.loads(request.input) if request.HasField("input") else None,
+                input=input_bytes,
             )
 
             logger.debug(f"task_context: {task_context}")
@@ -204,9 +197,10 @@ class FlameInstanceServicer(InstanceServicer):
             output = self._service.on_task_invoke(task_context)
             logger.debug("on_task_invoke completed successfully")
 
+            # Task output is bytes in core API
             output_data = None
             if output is not None and output.data is not None:
-                output_data = cloudpickle.dumps(output.data, protocol=cloudpickle.DEFAULT_PROTOCOL)
+                output_data = output.data
 
             # Return task output
             return TaskResultProto(return_code=0, output=output_data, message=None)

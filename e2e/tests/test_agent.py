@@ -75,7 +75,7 @@ def test_create_agent():
 
 def test_invoke_task_without_context():
     """Test invoking a task without common data using Agent API."""
-    agent = Agent(FLM_TEST_APP, ctx=None)
+    agent = Agent(name=FLM_TEST_APP, ctx=None)
 
     ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
@@ -200,5 +200,11 @@ def test_agent_validation():
     """Test that Agent raises ValueError when both name and session_id are None."""
     with pytest.raises(ValueError, match="Either 'name' or 'session_id' must be provided"):
         Agent(name=None, session_id=None)
+
+
+def test_agent_validation_both_provided():
+    """Test that Agent raises ValueError when both name and session_id are provided."""
+    with pytest.raises(ValueError, match="Cannot provide both 'name' and 'session_id'"):
+        Agent(name=FLM_TEST_APP, session_id="some-session-id")
 
 

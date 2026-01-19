@@ -12,7 +12,9 @@ limitations under the License.
 """
 
 import flamepy
+import json
 from typing import Optional
+from dataclasses import asdict
 
 from e2e.api import (
     TestRequest,
@@ -22,6 +24,8 @@ from e2e.api import (
     SessionContextInfo,
     TaskContextInfo,
 )
+from flamepy.cache import ObjectRef
+from flamepy.cache.cache import get_object
 
 
 class BasicTestService(flamepy.FlameService):
@@ -43,24 +47,42 @@ class BasicTestService(flamepy.FlameService):
         """Handle task invoke and return response with optional context information."""
         self._task_count += 1
 
-        # Get the request (already deserialized by SDK)
-        request: TestRequest = context.input
+        # Deserialize task input from bytes using JSON
+        request: TestRequest = None
+        if context.input is not None:
+            request_dict = json.loads(context.input.decode('utf-8'))
+            request = TestRequest(**request_dict)
 
-        # Get common data
+        # Get common data - deserialize from bytes using JSON
         common_data = None
         if self._session_context is not None:
-            cxt_data = self._session_context.common_data()
-            if cxt_data is not None:
+            common_data_bytes = self._session_context.common_data()
+            if common_data_bytes is not None:
+                # Decode bytes to ObjectRef, get from cache, then deserialize from JSON
+                object_ref = ObjectRef.decode(common_data_bytes)
+                serialized_ctx = get_object(object_ref)
+                ctx_dict = json.loads(serialized_ctx.decode('utf-8'))
+                cxt_data = TestContext(**ctx_dict)
                 common_data = cxt_data.common_data if hasattr(cxt_data, 'common_data') else None
 
         # Update common data if requested
-        if request.update_common_data and self._session_context is not None:
-            self._session_context.update_common_data(TestContext(common_data=request.input))
+        # Note: Since update_common_data() was removed from SessionContext,
+        # we can't update it directly. This test service stores the update locally
+        # but it won't persist across tasks. For production use, use agent module.
+        updated_context = None
+        if request and request.update_common_data and self._session_context is not None:
+            # Store updated context locally for this response
+            updated_context = TestContext(common_data=request.input)
+            # Note: This won't persist - SessionContext doesn't support updates anymore
+            # For persistent updates, the client should recreate the session with new common_data
 
+        # Use updated context if available, otherwise use original
+        response_common_data = updated_context.common_data if updated_context else common_data
+        
         # Build response
         response = TestResponse(
-            output=request.input,
-            common_data=common_data,
+            output=request.input if request else None,
+            common_data=response_common_data,
             service_state={
                 "task_count": self._task_count,
                 "session_enter_count": self._session_enter_count,
@@ -69,17 +91,25 @@ class BasicTestService(flamepy.FlameService):
         )
 
         # Add task context information if requested
-        if request.request_task_context:
+        if request and request.request_task_context:
             response.task_context = TaskContextInfo(
                 task_id=context.task_id,
                 session_id=context.session_id,
                 has_input=context.input is not None,
-                input_type=type(context.input).__name__ if context.input is not None else None,
+                input_type=type(request).__name__ if request else None,
             )
 
         # Add session context information if requested
-        if request.request_session_context and self._session_context is not None:
-            cxt_data = self._session_context.common_data()
+        if request and request.request_session_context and self._session_context is not None:
+            common_data_bytes = self._session_context.common_data()
+            cxt_data = None
+            if common_data_bytes is not None:
+                # Decode and deserialize to get the actual context object using JSON
+                object_ref = ObjectRef.decode(common_data_bytes)
+                serialized_ctx = get_object(object_ref)
+                ctx_dict = json.loads(serialized_ctx.decode('utf-8'))
+                cxt_data = TestContext(**ctx_dict)
+            
             response.session_context = SessionContextInfo(
                 session_id=self._session_context.session_id,
                 has_common_data=cxt_data is not None,
@@ -87,7 +117,7 @@ class BasicTestService(flamepy.FlameService):
             )
 
         # Add application context information if requested
-        if request.request_application_context and self._session_context is not None:
+        if request and request.request_application_context and self._session_context is not None:
             app_ctx = self._session_context.application
             
             app_info = ApplicationContextInfo(
@@ -105,8 +135,10 @@ class BasicTestService(flamepy.FlameService):
             if response.session_context is not None:
                 response.session_context.application = app_info
 
-        # Return response (SDK will serialize it)
-        return flamepy.TaskOutput(data=response)
+        # Serialize response to bytes using JSON for core API
+        response_dict = asdict(response)
+        response_bytes = json.dumps(response_dict).encode('utf-8')
+        return flamepy.TaskOutput(data=response_bytes)
 
     def on_session_leave(self):
         """Handle session leave."""

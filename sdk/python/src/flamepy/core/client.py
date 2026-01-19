@@ -16,10 +16,8 @@ from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
 from concurrent.futures import Future, ThreadPoolExecutor
 import grpc
-import cloudpickle
 from datetime import datetime, timezone
 
-from flamepy.cache.cache import put_object, get_object
 from flamepy.core.types import (
     Task,
     Application,
@@ -43,7 +41,6 @@ from flamepy.core.types import (
     ApplicationSchema,
     short_name,
 )
-from flamepy.cache import ObjectRef
 
 from flamepy.core.types_pb2 import ApplicationSpec, SessionSpec, TaskSpec, Environment, ApplicationSchema as ApplicationSchemaProto
 from flamepy.core.frontend_pb2 import (
@@ -68,7 +65,15 @@ def connect(addr: str) -> "Connection":
     return Connection.connect(addr)
 
 
-def create_session(application: str, common_data: Any = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
+def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
+    """Create a new session.
+    
+    Args:
+        application: Application name
+        common_data: Common data as bytes (core API works with bytes)
+        session_id: Optional session ID
+        slots: Number of slots
+    """
     conn = ConnectionInstance.instance()
     return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots))
 
@@ -322,19 +327,23 @@ class Connection:
 
         session_id = short_name(attrs.application) if attrs.id is None else attrs.id
 
-        object_ref = put_object(session_id, attrs.common_data)
+        # Common data should be bytes in core API
+        common_data_bytes = attrs.common_data if isinstance(attrs.common_data, bytes) else None
+        if common_data_bytes is None and attrs.common_data is not None:
+            raise FlameError(FlameErrorCode.INVALID_ARGUMENT, "common_data must be bytes in core API")
 
         session_spec = SessionSpec(
             application=attrs.application,
             slots=attrs.slots,
-            common_data=object_ref.encode(),
+            common_data=common_data_bytes if common_data_bytes is not None else b"",
         )
 
         request = CreateSessionRequest(session_id=session_id, session=session_spec)
 
         try:
             response = self._frontend.CreateSession(request)
-            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            # Common data is bytes in core API
+            common_data_bytes = response.spec.common_data if response.spec.HasField("common_data") and response.spec.common_data else None
 
             session = Session(
                 connection=self,
@@ -348,7 +357,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_ref,
+                common_data=common_data_bytes,
             )
             return session
         except grpc.RpcError as e:
@@ -363,7 +372,8 @@ class Connection:
 
             sessions = []
             for session in response.sessions:
-                common_data_ref = ObjectRef.decode(session.spec.common_data) if session.spec.HasField("common_data") else None
+                # Common data is bytes in core API
+                common_data_bytes = session.spec.common_data if session.spec.HasField("common_data") and session.spec.common_data else None
 
                 sessions.append(
                     Session(
@@ -378,7 +388,7 @@ class Connection:
                         succeed=session.status.succeed,
                         failed=session.status.failed,
                         completion_time=(datetime.fromtimestamp(session.status.completion_time / 1000, tz=timezone.utc) if session.status.HasField("completion_time") else None),
-                        common_data=common_data_ref,
+                        common_data=common_data_bytes,
                     )
                 )
 
@@ -393,7 +403,8 @@ class Connection:
 
         try:
             response = self._frontend.OpenSession(request)
-            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            # Common data is bytes in core API
+            common_data_bytes = response.spec.common_data if response.spec.HasField("common_data") and response.spec.common_data else None
 
             return Session(
                 connection=self,
@@ -407,7 +418,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_ref,
+                common_data=common_data_bytes,
             )
 
         except grpc.RpcError as e:
@@ -420,7 +431,8 @@ class Connection:
         try:
             response = self._frontend.GetSession(request)
 
-            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            # Common data is bytes in core API
+            common_data_bytes = response.spec.common_data if response.spec.HasField("common_data") and response.spec.common_data else None
 
             return Session(
                 connection=self,
@@ -434,7 +446,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_ref,
+                common_data=common_data_bytes,
             )
 
         except grpc.RpcError as e:
@@ -447,7 +459,8 @@ class Connection:
         try:
             response = self._frontend.CloseSession(request)
 
-            common_data_ref = ObjectRef.decode(response.spec.common_data) if response.spec.HasField("common_data") else None
+            # Common data is bytes in core API
+            common_data_bytes = response.spec.common_data if response.spec.HasField("common_data") and response.spec.common_data else None
 
             return Session(
                 connection=self,
@@ -461,7 +474,7 @@ class Connection:
                 succeed=response.status.succeed,
                 failed=response.status.failed,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                common_data=common_data_ref,
+                common_data=common_data_bytes,
             )
 
         except grpc.RpcError as e:
@@ -481,7 +494,7 @@ class Session:
     succeed: int = 0
     failed: int = 0
     completion_time: Optional[datetime] = None
-    _common_data: Optional[ObjectRef] = None
+    _common_data: Optional[bytes] = None
     """Client for session-specific operations."""
 
     def __init__(
@@ -497,7 +510,7 @@ class Session:
         succeed: int,
         failed: int,
         completion_time: Optional[datetime],
-        common_data: Optional[ObjectRef] = None,
+        common_data: Optional[bytes] = None,
     ):
         self.connection = connection
         self.id = id
@@ -513,18 +526,21 @@ class Session:
         self.mutex = threading.Lock()
         self._common_data = common_data
 
-    def common_data(self) -> Any:
-        """Get the common data of Session."""
-        if self._common_data is None:
-            return None
+    def common_data(self) -> Optional[bytes]:
+        """Get the common data of Session as bytes."""
+        return self._common_data
+
+    def create_task(self, input_data: bytes) -> Task:
+        """Create a new task in the session.
         
-        return get_object(self._common_data)
+        Args:
+            input_data: Task input as bytes (core API works with bytes)
+        """
+        # Input data should be bytes in core API
+        if not isinstance(input_data, bytes):
+            raise FlameError(FlameErrorCode.INVALID_ARGUMENT, "input_data must be bytes in core API")
 
-    def create_task(self, input_data: Any) -> Task:
-        """Create a new task in the session."""
-        input_bin = cloudpickle.dumps(input_data, protocol=cloudpickle.DEFAULT_PROTOCOL)
-
-        task_spec = TaskSpec(session_id=self.id, input=input_bin)
+        task_spec = TaskSpec(session_id=self.id, input=input_data)
 
         request = CreateTaskRequest(task=task_spec)
 
@@ -563,8 +579,8 @@ class Session:
                 session_id=self.id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=cloudpickle.loads(response.spec.input) if response.spec.input is not None else None,
-                output=cloudpickle.loads(response.spec.output) if response.spec.output is not None else None,
+                input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
+                output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
@@ -679,8 +695,8 @@ class TaskWatcher:
                 session_id=response.spec.session_id,
                 state=TaskState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=cloudpickle.loads(response.spec.input) if response.spec.HasField("input") else None,
-                output=cloudpickle.loads(response.spec.output) if response.spec.HasField("output") else None,
+                input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
+                output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
                 completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
                 events=[
                     Event(
