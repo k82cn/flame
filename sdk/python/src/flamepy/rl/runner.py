@@ -71,7 +71,15 @@ class ObjectFuture:
         Returns:
             The ObjectRef from the completed future
         """
-        return self._future.result()
+        result = self._future.result()
+        # The future returns bytes (ObjectRef encoded), decode it to ObjectRef
+        if isinstance(result, bytes):
+            return ObjectRef.decode(result)
+        # If it's already an ObjectRef, return it as-is
+        if isinstance(result, ObjectRef):
+            return result
+        # Otherwise, assume it's bytes and try to decode
+        return ObjectRef.decode(result)
 
     def get(self) -> Any:
         """Retrieve the concrete object that this ObjectFuture represents.
@@ -82,7 +90,15 @@ class ObjectFuture:
         Returns:
             The deserialized object from the cache
         """
-        object_ref = self._future.result()
+        result = self._future.result()
+        # The future returns bytes (ObjectRef encoded), decode it to ObjectRef
+        if isinstance(result, bytes):
+            object_ref = ObjectRef.decode(result)
+        elif isinstance(result, ObjectRef):
+            object_ref = result
+        else:
+            # Otherwise, assume it's bytes and try to decode
+            object_ref = ObjectRef.decode(result)
         return get_object(object_ref)
 
     def wait(self) -> None:
@@ -190,8 +206,10 @@ class RunnerService:
                 kwargs=converted_kwargs if converted_kwargs else None,
             )
 
+            # For RL module: serialize RunnerRequest with cloudpickle, then call core API
+            request_bytes = cloudpickle.dumps(request, protocol=cloudpickle.DEFAULT_PROTOCOL)
             # Submit task and return ObjectFuture
-            future = self._session.run(request)
+            future = self._session.run(request_bytes)
             return ObjectFuture(future)
 
         # Store the wrapper so __call__ can use it
@@ -241,8 +259,10 @@ class RunnerService:
                 kwargs=converted_kwargs if converted_kwargs and len(converted_kwargs) > 0 else None,
             )
 
+            # For RL module: serialize RunnerRequest with cloudpickle, then call core API
+            request_bytes = cloudpickle.dumps(request, protocol=cloudpickle.DEFAULT_PROTOCOL)
             # Submit task and return ObjectFuture
-            future = self._session.run(request)
+            future = self._session.run(request_bytes)
             return ObjectFuture(future)
 
         return wrapper

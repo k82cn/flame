@@ -52,6 +52,7 @@ class FlameRunpyService(FlameService):
 
         Args:
             value: The value to resolve. If it's an ObjectRef, fetch the data from cache.
+                   If it's bytes that might be an encoded ObjectRef, try to decode it.
                    Otherwise, return the value as is.
 
         Returns:
@@ -69,6 +70,23 @@ class FlameRunpyService(FlameService):
 
             logger.debug(f"Resolved ObjectRef to type: {type(resolved_value)}")
             return resolved_value
+        
+        # Handle bytes that might be an encoded ObjectRef
+        if isinstance(value, bytes):
+            try:
+                # Try to decode as ObjectRef
+                object_ref = ObjectRef.decode(value)
+                logger.debug(f"Decoded bytes to ObjectRef: {object_ref}")
+                resolved_value = get_object(object_ref)
+                if resolved_value is None:
+                    raise ValueError(
+                        f"Failed to retrieve ObjectRef from cache: {object_ref}")
+                logger.debug(f"Resolved ObjectRef (from bytes) to type: {type(resolved_value)}")
+                return resolved_value
+            except Exception as e:
+                # If decoding fails, it's not an ObjectRef, return bytes as-is
+                logger.debug(f"Bytes is not an ObjectRef: {e}")
+                return value
 
         return value
 

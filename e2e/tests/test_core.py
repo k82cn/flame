@@ -15,7 +15,7 @@ import pytest
 import flamepy
 from e2e.api import TestRequest, TestResponse, TestContext
 from tests.utils import random_string
-from tests.helpers import (
+from e2e.helpers import (
     serialize_common_data,
     deserialize_common_data,
     serialize_request,

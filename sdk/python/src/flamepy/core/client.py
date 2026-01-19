@@ -335,7 +335,7 @@ class Connection:
         session_spec = SessionSpec(
             application=attrs.application,
             slots=attrs.slots,
-            common_data=common_data_bytes if common_data_bytes is not None else b"",
+            common_data=common_data_bytes,
         )
 
         request = CreateSessionRequest(session_id=session_id, session=session_spec)
