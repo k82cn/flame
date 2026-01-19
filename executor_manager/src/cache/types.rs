@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use ::rpc::flame as rpc;
+use rpc::flame as rpc;
 
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use regex::Regex;
