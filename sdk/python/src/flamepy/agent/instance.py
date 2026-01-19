@@ -27,8 +27,7 @@ from flamepy.core.service import (
     run as run_service,
     FLAME_INSTANCE_ENDPOINT,
 )
-from flamepy.cache import ObjectRef
-from flamepy.cache.cache import get_object, update_object
+from flamepy.core import ObjectRef, get_object, update_object
 import logging
 
 debug_service = None

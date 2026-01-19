@@ -28,7 +28,7 @@ from e2e.helpers import (
     serialize_runner_context,
     serialize_runner_request,
 )
-from flamepy.cache import ObjectRef
+from flamepy.core import ObjectRef
 
 
 # Application name for flmrun with e2e package installation
@@ -95,7 +95,7 @@ def test_flmrun_sum_function():
         result_bytes = ssn.invoke(req_bytes)
         
         # The result is bytes (ObjectRef encoded), decode to ObjectRef, then get the actual value from cache
-        from flamepy.cache import get_object, ObjectRef
+        from flamepy.core import get_object, ObjectRef
         result_ref = ObjectRef.decode(result_bytes)
         result = get_object(result_ref)
         
@@ -109,7 +109,7 @@ def test_flmrun_sum_function():
 
 def test_flmrun_class_method():
     """Test Case 2: Run methods on a class instance."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Create an instance of the calculator
     calc = Calculator()
@@ -148,7 +148,7 @@ def test_flmrun_class_method():
 
 def test_flmrun_kwargs():
     """Test Case 3: Run a function with keyword arguments."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Create a session with the function
     ctx = rl.RunnerContext(execution_object=greet_func)
@@ -177,7 +177,7 @@ def test_flmrun_kwargs():
 
 def test_flmrun_no_args():
     """Test Case 4: Run a function with no arguments."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Create a session with the function
     ctx = rl.RunnerContext(execution_object=get_message_func)
@@ -199,7 +199,7 @@ def test_flmrun_no_args():
 
 def test_flmrun_multiple_tasks():
     """Test Case 5: Run multiple tasks in the same session."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Create a session with the function
     ctx = rl.RunnerContext(execution_object=multiply_func)
@@ -229,7 +229,7 @@ def test_flmrun_multiple_tasks():
 
 def test_flmrun_stateful_class():
     """Test Case 6: Run a stateful class with instance variables."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Create an instance of the counter
     counter = Counter()
@@ -275,7 +275,7 @@ def test_flmrun_stateful_class():
 
 def test_flmrun_lambda_function():
     """Test Case 7: Run a lambda function (using module-level function)."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Use module-level function instead of lambda (lambdas can't be pickled)
     ctx = rl.RunnerContext(execution_object=square_func)
@@ -299,7 +299,7 @@ def test_flmrun_lambda_function():
 
 def test_flmrun_complex_return_types():
     """Test Case 8: Test functions that return complex types."""
-    from flamepy.cache import get_object
+    from flamepy.core import get_object
     
     # Test dict return
     ctx = rl.RunnerContext(execution_object=return_dict_func)

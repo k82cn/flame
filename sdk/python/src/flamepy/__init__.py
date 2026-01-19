@@ -89,10 +89,9 @@ from .core import (
     run,
 )
 
-# Import submodules for rl, agent, and cache (only as submodules)
+# Import submodules for rl and agent (only as submodules)
 from . import agent
 from . import rl
-from . import cache
 
 __version__ = "0.3.0"
 
@@ -153,8 +152,16 @@ __all__ = [
     "FlameService",
     # Service functions
     "run",
-    # Submodules (rl, agent, and cache only)
+    # Cache classes
+    "ObjectRef",
+    "Object",
+    "ObjectMetadata",
+    # Cache functions
+    "get_object",
+    "put_object",
+    "update_object",
+    "suppress_dependency_logs",
+    # Submodules (rl and agent only)
     "agent",
     "rl",
-    "cache",
 ]

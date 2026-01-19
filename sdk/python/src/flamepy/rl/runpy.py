@@ -26,9 +26,8 @@ from typing import Any
 from pathlib import Path
 
 from flamepy.core.service import FlameService, SessionContext, TaskContext, TaskOutput
-from flamepy.cache import ObjectRef
+from flamepy.core import ObjectRef, get_object, put_object, update_object
 from flamepy.rl.types import RunnerRequest, RunnerContext, RunnerServiceKind
-from flamepy.cache.cache import get_object, put_object, update_object
 
 logger = logging.getLogger(__name__)
 

@@ -116,6 +116,14 @@ from .service import (
     run,
 )
 
+# Cache classes and functions
+from .cache import (
+    ObjectRef,
+    get_object,
+    put_object,
+    update_object,
+)
+
 __all__ = [
     # Type aliases
     "TaskID",
@@ -180,4 +188,10 @@ __all__ = [
     "FlameInstanceServer",
     # Service functions
     "run",
+    # Cache classes
+    "ObjectRef",
+    # Cache functions
+    "get_object",
+    "put_object",
+    "update_object",
 ]

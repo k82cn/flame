@@ -24,8 +24,7 @@ from e2e.api import (
     SessionContextInfo,
     TaskContextInfo,
 )
-from flamepy.cache import ObjectRef
-from flamepy.cache.cache import get_object
+from flamepy.core import ObjectRef, get_object
 
 
 class BasicTestService(flamepy.FlameService):
