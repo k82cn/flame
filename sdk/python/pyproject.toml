@@ -41,8 +41,7 @@ dependencies = [
 dev = [
   "pytest>=7.0.0",
   "pytest-asyncio>=0.21.0",
-  "black>=22.0.0",
-  "isort>=5.0.0",
+  "ruff>=0.1.0",
   "mypy>=1.0.0",
 ]
 
@@ -56,29 +55,31 @@ Homepage = "https://xflops.io"
 Repository = "https://github.com/xflops/flame"
 Issues = "https://github.com/xflops/flame/issues"
 
-[tool.black]
-line-length = 1024
-target-version = ['py38']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+[tool.ruff]
+line-length = 320
+target-version = "py38"
+exclude = [
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "build",
+    "dist",
+    "src/flamepy/proto",
+]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 1024
-known_first_party = ["flame"]
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["flamepy"]
 
 [tool.mypy]
 python_version = "3.8"
@@ -105,6 +106,6 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "black>=25.1.0",
+    "ruff>=0.1.0",
 ]
 

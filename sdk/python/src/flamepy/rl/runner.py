@@ -17,8 +17,6 @@ import os
 import shutil
 import tarfile
 from concurrent.futures import Future, as_completed
-from functools import wraps
-from pathlib import Path
 from typing import Any, Callable, List, Optional
 from urllib.parse import urlparse
 
@@ -31,7 +29,6 @@ from flamepy.core.types import (
     FlameContext,
     FlameError,
     FlameErrorCode,
-    Shim,
     short_name,
 )
 from flamepy.rl.types import (
@@ -204,7 +201,7 @@ class RunnerService:
 
         # Store the wrapper so __call__ can use it
         self._function_wrapper = wrapper
-        logger.debug(f"Created callable wrapper for function execution object")
+        logger.debug("Created callable wrapper for function execution object")
 
     def _create_method_wrappers(self) -> None:
         """Create wrappers for all public methods of a class/instance."""
@@ -269,7 +266,7 @@ class RunnerService:
             TypeError: If the execution object is not a callable function
         """
         if self._function_wrapper is None:
-            raise TypeError(f"RunnerService for app '{self._app}' is not callable. " "The execution object is a class or instance, not a function. " "Call specific methods instead.")
+            raise TypeError(f"RunnerService for app '{self._app}' is not callable. The execution object is a class or instance, not a function. Call specific methods instead.")
         return self._function_wrapper(*args, **kwargs)
 
     def close(self) -> None:
@@ -328,7 +325,7 @@ class Runner:
 
         # Check that package configuration is available
         if self._context.package is None:
-            raise FlameError(FlameErrorCode.INVALID_CONFIG, "Package configuration is not set in FlameContext. " "Please configure the 'package' field in your flame.yaml.")
+            raise FlameError(FlameErrorCode.INVALID_CONFIG, "Package configuration is not set in FlameContext. Please configure the 'package' field in your flame.yaml.")
 
         # Step 1: Package the current working directory
         self._package_path = self._create_package()
@@ -341,7 +338,7 @@ class Runner:
         # Step 3: Retrieve the flmrun application template
         try:
             flmrun_app = get_application("flmrun")
-            logger.debug(f"Retrieved flmrun application template")
+            logger.debug("Retrieved flmrun application template")
         except Exception as e:
             # Clean up the package file
             if self._package_path and os.path.exists(self._package_path):

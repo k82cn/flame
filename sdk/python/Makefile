@@ -18,13 +18,13 @@ clean: ## Clean up generated files
 build-protos: ## Generate protobuf Python files
 	uv run -n build_protos.py
 
-format: ## Format code with black and isort
-	uv run -n --extra dev black src
-	uv run -n --extra dev isort src
+format: ## Format code with ruff
+	uv run -n --extra dev ruff format src
+	uv run -n --extra dev ruff check --fix src
 
 lint: ## Run linting checks
-	uv run -n --extra dev black --check src
-	uv run -n --extra dev isort --check-only src
+	uv run -n --extra dev ruff format --check src
+	uv run -n --extra dev ruff check src
 	uv run -n --extra dev mypy src
 
 check: format lint test ## Run all checks (format, lint, test)

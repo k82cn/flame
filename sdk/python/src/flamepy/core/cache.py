@@ -14,7 +14,7 @@ limitations under the License.
 import contextlib
 import logging
 from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from typing import Any
 
 import bson
 import cloudpickle

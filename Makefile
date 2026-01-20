@@ -61,7 +61,7 @@ sdk-python: sdk-python-generate sdk-python-test ## Build and test the Python SDK
 format-rust: ## Format Rust code with cargo fmt
 	cargo fmt
 
-format-python: ## Format Python code with black and isort
+format-python: ## Format Python code with ruff
 	cd sdk/python && make format
 
 format: format-rust format-python ## Format both Rust and Python code

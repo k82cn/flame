@@ -19,7 +19,26 @@ from urllib.parse import urlparse
 
 import grpc
 
-from flamepy.core.frontend_pb2 import (
+from flamepy.core.types import (
+    Application,
+    ApplicationAttributes,
+    ApplicationSchema,
+    ApplicationState,
+    Event,
+    FlameContext,
+    FlameError,
+    FlameErrorCode,
+    SessionAttributes,
+    SessionID,
+    SessionState,
+    Shim,
+    Task,
+    TaskID,
+    TaskInformer,
+    TaskState,
+    short_name,
+)
+from flamepy.proto.frontend_pb2 import (
     CloseSessionRequest,
     CreateSessionRequest,
     CreateTaskRequest,
@@ -33,32 +52,9 @@ from flamepy.core.frontend_pb2 import (
     UnregisterApplicationRequest,
     WatchTaskRequest,
 )
-from flamepy.core.frontend_pb2_grpc import FrontendStub
-from flamepy.core.types import (
-    Application,
-    ApplicationAttributes,
-    ApplicationID,
-    ApplicationSchema,
-    ApplicationState,
-    CommonData,
-    Event,
-    FlameContext,
-    FlameError,
-    FlameErrorCode,
-    SessionAttributes,
-    SessionID,
-    SessionState,
-    Shim,
-    Task,
-    TaskID,
-    TaskInformer,
-    TaskInput,
-    TaskOutput,
-    TaskState,
-    short_name,
-)
-from flamepy.core.types_pb2 import ApplicationSchema as ApplicationSchemaProto
-from flamepy.core.types_pb2 import ApplicationSpec, Environment, SessionSpec, TaskSpec
+from flamepy.proto.frontend_pb2_grpc import FrontendStub
+from flamepy.proto.types_pb2 import ApplicationSchema as ApplicationSchemaProto
+from flamepy.proto.types_pb2 import ApplicationSpec, Environment, SessionSpec, TaskSpec
 
 
 def connect(addr: str) -> "Connection":
