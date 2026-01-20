@@ -26,13 +26,13 @@ def main():
         if proto_path.exists():
             print(f"Generating Python files from {proto_file}...")
 
-            # Generate Python files
+            # Generate Python files into proto module
             cmd = [
                 sys.executable,
                 "-m",
                 "grpc_tools.protoc",
-                f"--python_out={script_dir}/src/flamepy/",
-                f"--grpc_python_out={script_dir}/src/flamepy/",
+                f"--python_out={script_dir}/src/flamepy/proto/",
+                f"--grpc_python_out={script_dir}/src/flamepy/proto/",
                 f"--proto_path={protos_dir}",
                 str(proto_path),
             ]

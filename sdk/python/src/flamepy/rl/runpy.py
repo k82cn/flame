@@ -14,13 +14,11 @@ limitations under the License.
 import importlib
 import logging
 import os
-import shutil
 import site
 import subprocess
 import sys
 import tarfile
 import zipfile
-from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -179,7 +177,7 @@ class FlameRunpyService(FlameService):
         extracted_dir = None
 
         if os.path.isfile(package_path) and self._is_archive(package_path):
-            logger.info(f"Package is an archive file, extracting...")
+            logger.info("Package is an archive file, extracting...")
 
             # Get the working directory (default to /tmp if not set)
             working_dir = os.getcwd()
@@ -312,7 +310,7 @@ class FlameRunpyService(FlameService):
             if request.method is not None and not isinstance(request.method, str):
                 raise ValueError(f"request.method must be a string or None, got {type(request.method)}")
 
-            logger.debug(f"RunnerRequest: method={request.method}, " f"has_args={request.args is not None}, " f"has_kwargs={request.kwargs is not None}")
+            logger.debug(f"RunnerRequest: method={request.method}, has_args={request.args is not None}, has_kwargs={request.kwargs is not None}")
 
             # Resolve ObjectRef instances in args and kwargs
             invoke_args = ()
@@ -350,7 +348,7 @@ class FlameRunpyService(FlameService):
                 if not callable(method):
                     raise ValueError(f"Attribute '{request.method}' is not callable")
 
-                logger.debug(f"Invoking method '{request.method}' with args={invoke_args}, " f"kwargs={invoke_kwargs}")
+                logger.debug(f"Invoking method '{request.method}' with args={invoke_args}, kwargs={invoke_kwargs}")
                 result = method(*invoke_args, **invoke_kwargs)
 
             logger.info(f"Task {context.task_id} completed successfully")

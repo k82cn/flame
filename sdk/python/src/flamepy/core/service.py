@@ -13,22 +13,19 @@ limitations under the License.
 
 import logging
 import os
-import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Optional
 
 import grpc
 
-from flamepy.core.cache import ObjectRef, get_object, update_object
-from flamepy.core.shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from flamepy.core.types import FlameError, FlameErrorCode, Shim, TaskOutput
-from flamepy.core.types_pb2 import (
-    EmptyRequest,
+from flamepy.proto.shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
+from flamepy.proto.types_pb2 import (
     Result,
 )
-from flamepy.core.types_pb2 import TaskResult as TaskResultProto
+from flamepy.proto.types_pb2 import TaskResult as TaskResultProto
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +127,6 @@ class FlameInstanceServicer(InstanceServicer):
         _trace_fn = TraceFn("OnSessionEnter")
 
         try:
-
             logger.debug(f"OnSessionEnter request: {request}")
 
             # Convert protobuf request to SessionContext

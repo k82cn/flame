@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Dict, Optional, Tuple
 
-from flamepy.core import ObjectRef
-
 
 class RunnerServiceKind(IntEnum):
     """Runner service kind enumeration."""

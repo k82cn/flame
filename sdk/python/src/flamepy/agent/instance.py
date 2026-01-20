@@ -37,7 +37,6 @@ debug_service = None
 
 
 class FlameInstance(FlameService):
-
     def __init__(self):
         self._entrypoint = None
         self._parameter = None
