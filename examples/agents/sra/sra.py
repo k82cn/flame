@@ -7,7 +7,15 @@ import logging
 from concurrent.futures import wait
 
 from openai import AsyncOpenAI
-from agents import Agent, Runner, function_tool, enable_verbose_stdout_logging, set_tracing_disabled, set_default_openai_client, set_default_openai_api
+from agents import (
+    Agent,
+    Runner,
+    function_tool,
+    enable_verbose_stdout_logging,
+    set_tracing_disabled,
+    set_default_openai_client,
+    set_default_openai_api,
+)
 
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
@@ -22,11 +30,14 @@ script_runner = None
 web_crawler = None
 
 # Set the default OpenAI client to the DeepSeek client
-ds_client = AsyncOpenAI(base_url="https://api.deepseek.com", api_key=os.getenv("DEEPSEEK_API_KEY"))
+ds_client = AsyncOpenAI(
+    base_url="https://api.deepseek.com", api_key=os.getenv("DEEPSEEK_API_KEY")
+)
 set_default_openai_client(ds_client)
 set_tracing_disabled(True)
 enable_verbose_stdout_logging()
 set_default_openai_api("chat_completions")
+
 
 @function_tool
 async def run_script(code: str) -> str:
@@ -62,6 +73,7 @@ class Counter(flamepy.TaskInformer):
     """
     Count the number of failed, succeed and error tasks.
     """
+
     def __init__(self):
         super().__init__()
         self.failed = 0
@@ -76,6 +88,7 @@ class Counter(flamepy.TaskInformer):
 
     def on_error(self, _: flamepy.FlameError):
         self.error += 1
+
 
 @function_tool
 async def web_search(topics: list[str]) -> int:
@@ -96,7 +109,9 @@ async def web_search(topics: list[str]) -> int:
             web_crawler = flamepy.create_session("crawler")
 
         wrapper = DuckDuckGoSearchAPIWrapper(time="d", max_results=20)
-        search = DuckDuckGoSearchResults(api_wrapper=wrapper, source="news", output_format="list")
+        search = DuckDuckGoSearchResults(
+            api_wrapper=wrapper, source="news", output_format="list"
+        )
 
         counter = Counter()
 
@@ -115,6 +130,7 @@ async def web_search(topics: list[str]) -> int:
     except Exception as e:
         logger.error(f"Error in web_search: {e}")
         return 0
+
 
 @function_tool
 async def collect_data(topic: str) -> list[str]:
@@ -138,6 +154,7 @@ async def collect_data(topic: str) -> list[str]:
     payloads = [result.payload for result in results.points]
 
     return payloads
+
 
 ins = agent.FlameInstance()
 
@@ -169,12 +186,17 @@ if not client.collection_exists("sra"):
         vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
     )
 
+
 @ins.entrypoint
 async def sra(q: Question) -> Answer:
     result = await Runner.run(agent, q.topic)
 
     return Answer(answer=result.final_output)
 
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     ins.run()

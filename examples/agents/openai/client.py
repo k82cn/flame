@@ -47,7 +47,7 @@ def main(message: str, ssn_id: Optional[str] = None):
             print(msg)
     else:
         print("No history!")
-    
+
     agent.close()
 
 

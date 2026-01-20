@@ -20,29 +20,36 @@ tools = [
                     "code": {
                         "type": "string",
                         "description": "The code of the script to run, e.g. print('Hello, world!')",
-                    }
+                    },
                 },
-                "required": ["language", "code"]
+                "required": ["language", "code"],
             },
-        }
+        },
     },
 ]
 
-client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com"
+)
+
 
 def send_messages(messages):
     response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-        tools=tools
+        model="deepseek-chat", messages=messages, tools=tools
     )
     return response.choices[0].message
 
+
 def main():
-    agent = Agent("flmexec")    
+    agent = Agent("flmexec")
 
     # 1. Ask DeepSeek to generate a script
-    messages = [{"role": "user", "content": "Provided a Python snippet that computes and prints the sum of integers from 1 to 100."}]
+    messages = [
+        {
+            "role": "user",
+            "content": "Provided a Python snippet that computes and prints the sum of integers from 1 to 100.",
+        }
+    ]
     message = send_messages(messages)
     messages.append(message)
     print(f"Model>\t {message.content}")
@@ -60,11 +67,14 @@ def main():
     result = agent.invoke(input)
 
     # 4. Ask DeepSeek to summarize the result
-    messages.append({"role": "tool", "tool_call_id": tool.id, "content": result.decode("utf-8")})
+    messages.append(
+        {"role": "tool", "tool_call_id": tool.id, "content": result.decode("utf-8")}
+    )
     message = send_messages(messages)
     print(f"Model>\t {message.content}")
-    
+
     agent.close()
+
 
 if __name__ == "__main__":
     main()
