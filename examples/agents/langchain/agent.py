@@ -21,6 +21,7 @@ agent = create_agent(
     model=llm,
 )
 
+
 @ins.entrypoint
 def my_agent(q: Question) -> Answer:
     messages = []
@@ -36,6 +37,7 @@ def my_agent(q: Question) -> Answer:
     aimsgs = output["messages"][-1]
 
     return Answer(answer=aimsgs.content)
+
 
 if __name__ == "__main__":
     ins.run()

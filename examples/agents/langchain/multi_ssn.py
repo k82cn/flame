@@ -4,6 +4,7 @@ from apis import SysPrompt, Question
 
 LANGCHAIN_AGENT_NAME = "langchain-agent"
 
+
 def ask_agent():
     weather_sys_prompt = SysPrompt(prompt="You are a weather forecaster.")
     news_sys_prompt = SysPrompt(prompt="You are a news reporter.")
@@ -19,6 +20,7 @@ def ask_agent():
     output = agent.invoke(question)
     print(output.answer)
     agent.close()
+
 
 if __name__ == "__main__":
     ask_agent()
