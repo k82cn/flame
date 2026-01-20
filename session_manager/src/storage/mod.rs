@@ -478,16 +478,28 @@ impl Storage {
             },
         };
 
+        // Extract the message and state before task_result is moved
+        let task_state = task_result.state;
+        let task_message = task_result.message.clone();
+
         let task = self.engine.update_task_result(gid, task_result).await?;
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
         ssn_ptr.update_task(&task)?;
 
+        // Use the error message from task_result for failed tasks, otherwise use generic message
+        let event_message = match task_state {
+            TaskState::Failed => {
+                task_message.unwrap_or_else(|| format!("Task failed with state <{:?}>", task_state))
+            }
+            _ => format!("Task was completed with state <{:?}>", task_state),
+        };
+
         self.event_manager.record_event(
             EventOwner::from(task.gid()),
             Event {
                 code: task.state.into(),
-                message: Some(format!("Task was completed with state <{:?}>", task.state)),
+                message: Some(event_message),
                 creation_time: Utc::now(),
             },
         )?;

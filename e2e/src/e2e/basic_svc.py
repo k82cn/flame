@@ -92,7 +92,11 @@ class BasicTestService(flamepy.FlameService):
             if common_data_bytes is not None:
                 logger.debug(f"Common data bytes found: {len(common_data_bytes)} bytes")
                 cxt_data = deserialize_common_data(common_data_bytes)
-                common_data = cxt_data.common_data if cxt_data and hasattr(cxt_data, 'common_data') else None
+                common_data = (
+                    cxt_data.common_data
+                    if cxt_data and hasattr(cxt_data, "common_data")
+                    else None
+                )
                 logger.debug(f"Common data extracted: {common_data}")
             else:
                 logger.debug("No common data bytes in session context")
@@ -114,9 +118,11 @@ class BasicTestService(flamepy.FlameService):
             logger.warning("Cannot update common data: session context is None")
 
         # Use updated context if available, otherwise use original
-        response_common_data = updated_context.common_data if updated_context else common_data
+        response_common_data = (
+            updated_context.common_data if updated_context else common_data
+        )
         logger.debug(f"Response common data set to: {response_common_data}")
-        
+
         # Build response
         response = TestResponse(
             output=request.input if request else None,
@@ -125,7 +131,7 @@ class BasicTestService(flamepy.FlameService):
                 "task_count": self._task_count,
                 "session_enter_count": self._session_enter_count,
                 "session_leave_count": self._session_leave_count,
-            }
+            },
         )
 
         # Add task context information if requested
@@ -140,15 +146,21 @@ class BasicTestService(flamepy.FlameService):
             logger.debug(f"Task context added: {response.task_context}")
 
         # Add session context information if requested
-        if request and request.request_session_context and self._session_context is not None:
+        if (
+            request
+            and request.request_session_context
+            and self._session_context is not None
+        ):
             logger.debug("Adding session context information to response")
             common_data_bytes = self._session_context.common_data()
             cxt_data = deserialize_common_data(common_data_bytes)
-            
+
             response.session_context = SessionContextInfo(
                 session_id=self._session_context.session_id,
                 has_common_data=cxt_data is not None,
-                common_data_type=type(cxt_data).__name__ if cxt_data is not None else None,
+                common_data_type=type(cxt_data).__name__
+                if cxt_data is not None
+                else None,
             )
             logger.debug(
                 f"Session context added: session_id={response.session_context.session_id}, "
@@ -157,10 +169,14 @@ class BasicTestService(flamepy.FlameService):
             )
 
         # Add application context information if requested
-        if request and request.request_application_context and self._session_context is not None:
+        if (
+            request
+            and request.request_application_context
+            and self._session_context is not None
+        ):
             logger.debug("Adding application context information to response")
             app_ctx = self._session_context.application
-            
+
             app_info = ApplicationContextInfo(
                 name=app_ctx.name,
                 shim=app_ctx.shim.name,
@@ -169,13 +185,13 @@ class BasicTestService(flamepy.FlameService):
                 working_directory=app_ctx.working_directory,
                 url=app_ctx.url,
             )
-            
+
             response.application_context = app_info
             logger.debug(
                 f"Application context added: name={app_info.name}, "
                 f"shim={app_info.shim}, image={app_info.image}"
             )
-            
+
             # Also add to session_context if it exists
             if response.session_context is not None:
                 response.session_context.application = app_info

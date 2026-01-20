@@ -43,7 +43,7 @@ use uuid::Uuid;
 
 use crate::executor::Executor;
 use crate::shims::{Shim, ShimPtr};
-use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskResult};
+use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskResult, TaskState};
 use common::{FlameError, FLAME_WORKING_DIRECTORY};
 use stdng::{logs::TraceFn, trace_fn};
 
@@ -153,11 +153,18 @@ impl Shim for GrpcShim {
             tracing::debug!("req: {:?}", req);
             let resp = client.on_task_invoke(req).await?;
             let output = resp.into_inner();
-            if output.return_code != 0 {
-                return Err(FlameError::Internal(output.message.unwrap_or_default()));
+
+            // Convert rpc::TaskResult to TaskResult
+            // The From trait handles return_code != 0 by setting TaskState::Failed
+            let task_result: TaskResult = output.into();
+
+            // Log error if task failed
+            if task_result.state == TaskState::Failed {
+                let error_msg = task_result.message.as_deref().unwrap_or("Task failed");
+                tracing::error!("Task failed: {}", error_msg);
             }
 
-            return Ok(output.into());
+            return Ok(task_result);
         } else {
             return Err(FlameError::Internal(format!(
                 "no connection to service at <{}>",

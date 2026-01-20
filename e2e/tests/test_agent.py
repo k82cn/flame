@@ -45,7 +45,7 @@ def setup_test_env():
             flamepy.close_session(sess.id)
         except:
             pass
-    
+
     flamepy.unregister_application(FLM_TEST_APP)
 
 
@@ -53,11 +53,16 @@ def setup_test_env():
 # Agent API Tests
 # ============================================================================
 
+
 def test_create_agent():
     """Test creating an Agent with application name."""
     agent = Agent(FLM_TEST_APP, ctx=TestContext())
 
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
+    ssn_list = [
+        s
+        for s in flamepy.list_sessions()
+        if s.application == FLM_TEST_APP and s.state == SessionState.OPEN
+    ]
     assert len(ssn_list) == 1
     agent_id = agent.id()
     assert ssn_list[0].id == agent_id
@@ -77,7 +82,11 @@ def test_invoke_task_without_context():
     """Test invoking a task without common data using Agent API."""
     agent = Agent(name=FLM_TEST_APP, ctx=None)
 
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
+    ssn_list = [
+        s
+        for s in flamepy.list_sessions()
+        if s.application == FLM_TEST_APP and s.state == SessionState.OPEN
+    ]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == agent.id()
     assert ssn_list[0].application == FLM_TEST_APP
@@ -99,7 +108,11 @@ def test_invoke_task_with_context():
 
     agent = Agent(FLM_TEST_APP, ctx=TestContext(common_data=sys_context))
 
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
+    ssn_list = [
+        s
+        for s in flamepy.list_sessions()
+        if s.application == FLM_TEST_APP and s.state == SessionState.OPEN
+    ]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == agent.id()
     assert ssn_list[0].application == FLM_TEST_APP
@@ -118,7 +131,11 @@ def test_update_context():
 
     agent = Agent(FLM_TEST_APP, ctx=TestContext(common_data=sys_context))
 
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
+    ssn_list = [
+        s
+        for s in flamepy.list_sessions()
+        if s.application == FLM_TEST_APP and s.state == SessionState.OPEN
+    ]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == agent.id()
     assert ssn_list[0].application == FLM_TEST_APP
@@ -160,7 +177,11 @@ def test_agent_context_manager():
     input = random_string()
 
     with Agent(FLM_TEST_APP, ctx=None) as agent:
-        ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
+        ssn_list = [
+            s
+            for s in flamepy.list_sessions()
+            if s.application == FLM_TEST_APP and s.state == SessionState.OPEN
+        ]
         assert len(ssn_list) == 1
         agent_id = agent.id()
         assert ssn_list[0].id == agent_id
@@ -169,7 +190,11 @@ def test_agent_context_manager():
         assert output.output == input
 
     # After context exit, session should be closed
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.id == agent_id]
+    ssn_list = [
+        s
+        for s in flamepy.list_sessions()
+        if s.application == FLM_TEST_APP and s.id == agent_id
+    ]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == agent_id
     assert ssn_list[0].state == SessionState.CLOSED
@@ -187,7 +212,11 @@ def test_agent_open_existing_session():
     assert agent2.id() == agent_id
     assert agent2.id() == agent1.id()
 
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.id == agent_id]
+    ssn_list = [
+        s
+        for s in flamepy.list_sessions()
+        if s.application == FLM_TEST_APP and s.id == agent_id
+    ]
     assert len(ssn_list) == 1
     assert ssn_list[0].id == agent_id
     assert ssn_list[0].state == SessionState.OPEN
@@ -198,7 +227,9 @@ def test_agent_open_existing_session():
 
 def test_agent_validation():
     """Test that Agent raises ValueError when both name and session_id are None."""
-    with pytest.raises(ValueError, match="Either 'name' or 'session_id' must be provided"):
+    with pytest.raises(
+        ValueError, match="Either 'name' or 'session_id' must be provided"
+    ):
         Agent(name=None, session_id=None)
 
 
@@ -206,5 +237,3 @@ def test_agent_validation_both_provided():
     """Test that Agent raises ValueError when both name and session_id are provided."""
     with pytest.raises(ValueError, match="Cannot provide both 'name' and 'session_id'"):
         Agent(name=FLM_TEST_APP, session_id="some-session-id")
-
-

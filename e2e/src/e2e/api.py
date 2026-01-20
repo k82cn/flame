@@ -14,13 +14,16 @@ limitations under the License.
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
+
 @dataclass
 class TestContext:
     common_data: Optional[str] = None
 
+
 @dataclass
 class ApplicationContextInfo:
     """Information about the application context."""
+
     name: Optional[str] = None
     shim: Optional[str] = None
     image: Optional[str] = None
@@ -28,21 +31,26 @@ class ApplicationContextInfo:
     working_directory: Optional[str] = None
     url: Optional[str] = None
 
+
 @dataclass
 class SessionContextInfo:
     """Information about the session context."""
+
     session_id: Optional[str] = None
     application: Optional[ApplicationContextInfo] = None
     has_common_data: bool = False
     common_data_type: Optional[str] = None
 
+
 @dataclass
 class TaskContextInfo:
     """Information about the task context."""
+
     task_id: Optional[str] = None
     session_id: Optional[str] = None
     has_input: bool = False
     input_type: Optional[str] = None
+
 
 @dataclass
 class TestRequest:
@@ -52,6 +60,7 @@ class TestRequest:
     request_task_context: bool = False
     request_session_context: bool = False
     request_application_context: bool = False
+
 
 @dataclass
 class TestResponse:

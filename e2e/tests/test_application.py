@@ -14,10 +14,14 @@ limitations under the License.
 import pytest
 import flamepy
 
+
 def test_register_application():
-    flamepy.register_application("flmtestapp", flamepy.ApplicationAttributes(
-        shim=flamepy.Shim.Host,
-    ))
+    flamepy.register_application(
+        "flmtestapp",
+        flamepy.ApplicationAttributes(
+            shim=flamepy.Shim.Host,
+        ),
+    )
 
     app = flamepy.get_application("flmtestapp")
     assert app.name == "flmtestapp"
@@ -40,13 +44,16 @@ def test_list_application():
 def test_application_with_url():
     """Test registering and retrieving an application with URL field."""
     test_url = "file:///opt/test-package.whl"
-    
+
     # Register application with URL
-    flamepy.register_application("flmtestapp-url", flamepy.ApplicationAttributes(
-        shim=flamepy.Shim.Host,
-        url=test_url,
-        description="Test application with URL",
-    ))
+    flamepy.register_application(
+        "flmtestapp-url",
+        flamepy.ApplicationAttributes(
+            shim=flamepy.Shim.Host,
+            url=test_url,
+            description="Test application with URL",
+        ),
+    )
 
     # Retrieve and verify URL field
     app = flamepy.get_application("flmtestapp-url")
@@ -58,15 +65,18 @@ def test_application_with_url():
 
     # Clean up
     flamepy.unregister_application("flmtestapp-url")
-    
-    
+
+
 def test_application_without_url():
     """Test that application without URL field works correctly (backward compatibility)."""
     # Register application without URL
-    flamepy.register_application("flmtestapp-no-url", flamepy.ApplicationAttributes(
-        shim=flamepy.Shim.Host,
-        description="Test application without URL",
-    ))
+    flamepy.register_application(
+        "flmtestapp-no-url",
+        flamepy.ApplicationAttributes(
+            shim=flamepy.Shim.Host,
+            description="Test application without URL",
+        ),
+    )
 
     # Retrieve and verify URL field is None
     app = flamepy.get_application("flmtestapp-no-url")
@@ -78,4 +88,3 @@ def test_application_without_url():
 
     # Clean up
     flamepy.unregister_application("flmtestapp-no-url")
-
