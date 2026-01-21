@@ -23,7 +23,7 @@ This design aims to improve the object cache implementation by leveraging Apache
 
 ### Configuration
 
-**FlameContext for Cluster (flame-conf.yaml):**
+**FlameClusterContext for Cluster (flame-cluster.yaml):**
 - Add a new `storage` field under the `cache` section to specify the local storage path for cache persistence.
 - The storage path should be a directory path where Arrow IPC files will be stored.
 - If not specified, the cache will operate in-memory only (backward compatible behavior).
@@ -129,7 +129,7 @@ class ObjectRef:
 **flame-object-cache binary:**
 - Command: `flame-object-cache [OPTIONS]`
 - Options:
-  - `-c, --config <PATH>`: Path to flame configuration file (default: `~/.flame/flame-conf.yaml`)
+  - `-c, --config <PATH>`: Path to flame cluster configuration file (default: `~/.flame/flame-cluster.yaml`)
 - Exit codes:
   - `0`: Success
   - `1`: Configuration error
@@ -330,7 +330,7 @@ pub struct ObjectMetadata {
 ### Algorithms
 
 **Cache Server Initialization:**
-1. Load configuration from flame-conf.yaml
+1. Load configuration from flame-cluster.yaml
 2. Get network interface name from `cache.network_interface`
 3. Look up public IP address from the network interface
 4. Construct cache service's public endpoint using public IP and port from configuration
@@ -439,7 +439,7 @@ pub struct ObjectMetadata {
 
 **Operational:**
 - Deployment: Standalone binary, can be deployed as systemd service or container
-- Configuration: Via flame-conf.yaml
+- Configuration: Via flame-cluster.yaml
 - Storage management: Manual cleanup required (no automatic eviction)
 - Backup: Standard filesystem backup strategies apply
 - Disaster recovery: Restore from filesystem backup
@@ -456,7 +456,7 @@ pub struct ObjectMetadata {
 - `pyarrow` (Python): Apache Arrow Python bindings (for SDK)
 
 **Internal Dependencies:**
-- `common`: FlameContext, FlameError, SessionID types
+- `common`: FlameClusterContext, FlameError, SessionID types
 - `sdk/python`: Python SDK integration
 
 **Version Requirements:**
@@ -575,7 +575,7 @@ pub struct ObjectMetadata {
 ### Implementation References
 - Code location: `object_cache/` directory
 - Python SDK cache: `sdk/python/src/flamepy/core/cache.py`
-- FlameContext: `common/src/ctx.rs`
+- FlameClusterContext: `common/src/ctx.rs`
 - ObjectRef definition: `sdk/python/src/flamepy/core/cache.py`
 - RL module usage: `sdk/python/src/flamepy/rl/runner.py`
 - Agent module usage: `sdk/python/src/flamepy/agent/instance.py`
