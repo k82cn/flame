@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Server;
 
-use common::ctx::FlameContext;
+use common::ctx::FlameClusterContext;
 use rpc::flame::backend_server::BackendServer;
 use rpc::flame::frontend_server::FrontendServer;
 
@@ -47,7 +47,7 @@ struct FrontendRunner {
 
 #[async_trait::async_trait]
 impl FlameThread for FrontendRunner {
-    async fn run(&self, ctx: FlameContext) -> Result<(), FlameError> {
+    async fn run(&self, ctx: FlameClusterContext) -> Result<(), FlameError> {
         let url = url::Url::parse(&ctx.cluster.endpoint).map_err(|_| {
             FlameError::InvalidConfig(format!("invalid endpoint <{}>", ctx.cluster.endpoint))
         })?;
@@ -82,7 +82,7 @@ struct BackendRunner {
 
 #[async_trait::async_trait]
 impl FlameThread for BackendRunner {
-    async fn run(&self, ctx: FlameContext) -> Result<(), FlameError> {
+    async fn run(&self, ctx: FlameClusterContext) -> Result<(), FlameError> {
         let url = url::Url::parse(&ctx.cluster.endpoint).map_err(|_| {
             FlameError::InvalidConfig(format!("invalid endpoint <{}>", ctx.cluster.endpoint))
         })?;

@@ -21,7 +21,7 @@ use crate::apis::ResourceRequirement;
 use crate::FlameError;
 use crate::Shim;
 
-const DEFAULT_FLAME_CONF: &str = "flame-conf.yaml";
+const DEFAULT_FLAME_CONF: &str = "flame-cluster.yaml";
 const DEFAULT_CONTEXT_NAME: &str = "flame";
 const DEFAULT_FLAME_ENDPOINT: &str = "http://127.0.0.1:8080";
 const DEFAULT_SLOT: &str = "cpu=1,mem=2g";
@@ -33,7 +33,7 @@ const DEFAULT_FLAME_CACHE_ENDPOINT: &str = "http://127.0.0.1:9090";
 const DEFAULT_FLAME_CACHE_NETWORK_INTERFACE: &str = "eth0";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct FlameContextYaml {
+struct FlameClusterContextYaml {
     pub cluster: FlameClusterYaml,
     pub executors: FlameExecutorsYaml,
     pub cache: Option<FlameCacheYaml>,
@@ -66,7 +66,7 @@ struct FlameExecutorLimitsYaml {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct FlameContext {
+pub struct FlameClusterContext {
     pub cluster: FlameCluster,
     pub executors: FlameExecutors,
     pub cache: Option<FlameCache>,
@@ -98,7 +98,7 @@ pub struct FlameExecutorLimits {
     pub max_executors: u32,
 }
 
-impl Display for FlameContext {
+impl Display for FlameClusterContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -108,7 +108,7 @@ impl Display for FlameContext {
     }
 }
 
-impl FlameContext {
+impl FlameClusterContext {
     pub fn from_file(fp: Option<String>) -> Result<Self, FlameError> {
         let fp = match fp {
             None => {
@@ -123,19 +123,19 @@ impl FlameContext {
 
         let contents =
             fs::read_to_string(fp.clone()).map_err(|e| FlameError::Internal(e.to_string()))?;
-        let ctx: FlameContextYaml =
+        let ctx: FlameClusterContextYaml =
             serde_yaml::from_str(&contents).map_err(|e| FlameError::Internal(e.to_string()))?;
 
-        tracing::debug!("Load FrameContext from <{fp}>: {ctx:?}");
+        tracing::debug!("Load FlameClusterContext from <{fp}>: {ctx:?}");
 
-        FlameContext::try_from(ctx)
+        FlameClusterContext::try_from(ctx)
     }
 }
 
-impl TryFrom<FlameContextYaml> for FlameContext {
+impl TryFrom<FlameClusterContextYaml> for FlameClusterContext {
     type Error = FlameError;
-    fn try_from(ctx: FlameContextYaml) -> Result<Self, Self::Error> {
-        Ok(FlameContext {
+    fn try_from(ctx: FlameClusterContextYaml) -> Result<Self, Self::Error> {
+        Ok(FlameClusterContext {
             cluster: ctx.cluster.try_into()?,
             executors: ctx.executors.try_into()?,
             cache: ctx.cache.map(FlameCache::try_from).transpose()?,
@@ -235,11 +235,11 @@ executors:
         "#;
 
         let tmp_dir = TempDir::new().unwrap();
-        let tmp_file = tmp_dir.path().join("flame-conf.yaml");
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
 
         fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
 
-        let ctx = FlameContext::from_file(Some(tmp_file.to_string_lossy().to_string()))
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))
             .map_err(|e| FlameError::Internal(e.to_string()))?;
         assert_eq!(ctx.cluster.name, "flame");
         assert_eq!(ctx.cluster.endpoint, "http://flame-session-manager:8080");

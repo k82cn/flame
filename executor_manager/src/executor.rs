@@ -21,7 +21,7 @@ use ::rpc::flame::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
 
 use crate::states;
 use common::apis::{ExecutorState, ResourceRequirement, SessionContext, TaskContext};
-use common::{ctx::FlameContext, FlameError};
+use common::{ctx::FlameClusterContext, FlameError};
 
 #[derive(Clone)]
 pub struct Executor {
@@ -32,7 +32,7 @@ pub struct Executor {
 
     pub session: Option<SessionContext>,
     pub task: Option<TaskContext>,
-    pub context: Option<FlameContext>,
+    pub context: Option<FlameClusterContext>,
 
     pub shim: Option<ShimPtr>,
 

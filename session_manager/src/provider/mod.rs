@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::controller::ControllerPtr;
 use async_trait::async_trait;
-use common::{ctx::FlameContext, FlameError};
+use common::{ctx::FlameClusterContext, FlameError};
 
 mod k8s;
 mod none;
@@ -24,7 +24,7 @@ pub type ProviderPtr = Arc<dyn Provider>;
 
 #[async_trait]
 pub trait Provider: Send + Sync + 'static {
-    async fn run(&self, ctx: FlameContext) -> Result<(), FlameError>;
+    async fn run(&self, ctx: FlameClusterContext) -> Result<(), FlameError>;
 }
 
 pub fn new(name: &str, controller: ControllerPtr) -> Result<ProviderPtr, FlameError> {

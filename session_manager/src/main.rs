@@ -16,7 +16,7 @@ use futures::future::select_all;
 use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinHandle;
 
-use common::ctx::FlameContext;
+use common::ctx::FlameClusterContext;
 use common::FlameError;
 
 mod apiserver;
@@ -42,7 +42,7 @@ async fn main() -> Result<(), FlameError> {
     common::init_logger()?;
 
     let cli = Cli::parse();
-    let ctx = FlameContext::from_file(cli.flame_conf)?;
+    let ctx = FlameClusterContext::from_file(cli.flame_conf)?;
 
     tracing::info!("flame-session-manager is starting ...");
 
@@ -131,5 +131,5 @@ async fn main() -> Result<(), FlameError> {
 
 #[async_trait::async_trait]
 pub trait FlameThread: Send + Sync + 'static {
-    async fn run(&self, ctx: FlameContext) -> Result<(), FlameError>;
+    async fn run(&self, ctx: FlameClusterContext) -> Result<(), FlameError>;
 }

@@ -16,20 +16,20 @@ use std::sync::{Arc, Mutex};
 use std::{thread, time};
 
 use common::apis::{ExecutorState, Node};
-use common::{ctx::FlameContext, FlameError};
+use common::{ctx::FlameClusterContext, FlameError};
 use stdng::{lock_ptr, MutexPtr};
 
 use crate::client::BackendClient;
 use crate::executor::{self, Executor, ExecutorPtr};
 
 pub struct ExecutorManager {
-    ctx: FlameContext,
+    ctx: FlameClusterContext,
     executors: HashMap<String, ExecutorPtr>,
     client: BackendClient,
 }
 
 impl ExecutorManager {
-    pub async fn new(ctx: &FlameContext) -> Result<Self, FlameError> {
+    pub async fn new(ctx: &FlameClusterContext) -> Result<Self, FlameError> {
         // Create the Flame directory.
         fs::create_dir_all("/tmp/flame/shim")
             .map_err(|e| FlameError::Internal(format!("failed to create shim directory: {e}")))?;
@@ -94,7 +94,7 @@ impl ExecutorManager {
     }
 }
 
-pub async fn run(ctx: &FlameContext) -> Result<(), FlameError> {
+pub async fn run(ctx: &FlameClusterContext) -> Result<(), FlameError> {
     let mut manager = ExecutorManager::new(ctx).await?;
     manager.run().await?;
 

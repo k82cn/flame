@@ -17,7 +17,7 @@ use std::{future::Future, pin::Pin, task::Context, task::Poll, thread::JoinHandl
 use clap::Parser;
 use tokio::runtime::{Builder, Runtime};
 
-use common::ctx::FlameContext;
+use common::ctx::FlameClusterContext;
 use common::FlameError;
 
 mod cache;
@@ -44,7 +44,7 @@ async fn main() -> Result<(), FlameError> {
     common::init_logger();
 
     let cli = Cli::parse();
-    let ctx = FlameContext::from_file(cli.flame_conf)?;
+    let ctx = FlameClusterContext::from_file(cli.flame_conf)?;
 
     let mut handlers = vec![];
     let build_runtime = |name: &str, threads: usize| -> Result<Runtime, FlameError> {
