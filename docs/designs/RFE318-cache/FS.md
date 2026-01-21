@@ -41,7 +41,7 @@ cache:
 - The `endpoint` field specifies the cache server endpoint (e.g., "grpc://127.0.0.1:9090").
 - The `storage` field specifies a local storage path for client-side caching (optional).
 - When `storage` is set, the Python SDK will write data directly to this storage path using Arrow IPC.
-- The client will also double-check with a local cache server (127.0.0.1, same port as endpoint).
+- The client will get flight info to construct an ObjectRef with the cache's remote endpoint.
 - If `storage` is not set, the client will connect to the remote cache server via the endpoint.
 - If the `endpoint` is not set, an exception will be raised.
 
@@ -143,7 +143,7 @@ class ObjectRef:
 1. **put_object(session_id: str, obj: Any) -> ObjectRef**
    - If `cache.storage` is set:
      - Write data to local storage using Arrow IPC
-     - Double-check with local cache server (127.0.0.1, same port as endpoint)
+     - Get flight info to construct an ObjectRef with cache's remote endpoint
    - If `cache.storage` is not set:
      - Connect to remote cache server via endpoint
      - Use Arrow Flight do_put to upload object
@@ -199,7 +199,7 @@ class ObjectRef:
 - **Executor Manager**: May need to access cached objects
 
 **Updates Required:**
-1. **FlameContext (Rust)**: Add `storage` field to `FlameCache` struct and `FlameCacheYaml`
+1. **FlameClusterContext (Rust)**: Add `storage` field to `FlameCache` struct and `FlameCacheYaml`
 2. **FlameContext (Python)**: Change `cache` from string to object with `endpoint` and `storage` fields
 3. **ObjectRef (Python)**: Update structure to include `endpoint`, `key`, and `version`
 4. **Python SDK cache.py**: Replace HTTP-based implementation with Arrow Flight client
@@ -359,10 +359,9 @@ pub struct ObjectMetadata {
 7. Stream FlightData to client
 
 **list_flights Algorithm:**
-1. Get cache service's public IP by looking up the network interface specified in `cache.network_interface` from flame-conf.yaml
-2. Construct cache endpoint using the public IP and port from cache configuration
-3. Iterate through all session directories in storage_path
-4. For each session directory:
+1. Get cache service's public endpoint from ObjectCache (obtained during server construction from flame-cluster.yaml)
+2. Iterate through all session directories in storage_path
+3. For each session directory:
    - List all `.arrow` files
    - For each file:
      - Extract object_id from filename
