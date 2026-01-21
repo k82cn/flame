@@ -27,7 +27,7 @@ use crate::executor::Executor;
 use common::apis::{
     Application, Node, ResourceRequirement, Session, SessionContext, TaskContext, TaskResult,
 };
-use common::ctx::FlameContext;
+use common::ctx::FlameClusterContext;
 use common::FlameError;
 
 const DEFAULT_PORT: u16 = 8080;
@@ -40,7 +40,7 @@ pub struct BackendClient {
 }
 
 impl BackendClient {
-    pub async fn new(ctx: &FlameContext) -> Result<Self, FlameError> {
+    pub async fn new(ctx: &FlameClusterContext) -> Result<Self, FlameError> {
         let url = url::Url::parse(&ctx.cluster.endpoint).map_err(|_| {
             FlameError::InvalidConfig(format!("invalid endpoint <{}>", ctx.cluster.endpoint))
         })?;
