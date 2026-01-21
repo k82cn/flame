@@ -10,7 +10,7 @@ services:
     environment:
       - RUST_LOG=debug
     volumes:
-      - ./ci/flame-conf.yaml:/root/.flame/flame-conf.yaml
+      - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
     ports:
       - 8080:8080
 
@@ -33,7 +33,7 @@ services:
         max_attempts: 3
         window: 120s
     volumes:
-      - ./ci/flame-conf.yaml:/root/.flame/flame-conf.yaml
+      - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
       - flame-packages:/opt/flame/packages

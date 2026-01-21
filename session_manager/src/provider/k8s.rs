@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 use async_trait::async_trait;
-use common::{ctx::FlameContext, FlameError};
+use common::{ctx::FlameClusterContext, FlameError};
 
 use crate::controller::ControllerPtr;
 use crate::provider::Provider;
@@ -29,7 +29,7 @@ impl K8sProvider {
 
 #[async_trait]
 impl Provider for K8sProvider {
-    async fn run(&self, ctx: FlameContext) -> Result<(), FlameError> {
+    async fn run(&self, ctx: FlameClusterContext) -> Result<(), FlameError> {
         // TODO(k82cn): implement the k8s provider for Flame:
         //   - Setup a cache to watch the pods belong to Flame, e.g. 'xflops.io/flame/application=xxx'
         //   - Retrieve the total number of tasks of each application from controller as resource request.

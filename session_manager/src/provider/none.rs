@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 use async_trait::async_trait;
-use common::{ctx::FlameContext, FlameError};
+use common::{ctx::FlameClusterContext, FlameError};
 
 use crate::controller::ControllerPtr;
 use crate::provider::Provider;
@@ -27,7 +27,7 @@ impl NoneProvider {
 
 #[async_trait]
 impl Provider for NoneProvider {
-    async fn run(&self, _: FlameContext) -> Result<(), FlameError> {
+    async fn run(&self, _: FlameClusterContext) -> Result<(), FlameError> {
         Ok(())
     }
 }

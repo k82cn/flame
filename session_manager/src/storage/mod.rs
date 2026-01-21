@@ -25,7 +25,7 @@ use common::apis::{
     SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult,
     TaskState,
 };
-use common::ctx::FlameContext;
+use common::ctx::FlameClusterContext;
 use common::FlameError;
 
 use crate::model::{
@@ -42,7 +42,7 @@ pub type StoragePtr = Arc<Storage>;
 
 #[derive(Clone)]
 pub struct Storage {
-    context: FlameContext,
+    context: FlameClusterContext,
     engine: EnginePtr,
     sessions: MutexPtr<HashMap<SessionID, SessionPtr>>,
     executors: MutexPtr<HashMap<ExecutorID, ExecutorPtr>>,
@@ -51,7 +51,7 @@ pub struct Storage {
     event_manager: EventManagerPtr,
 }
 
-pub async fn new_ptr(config: &FlameContext) -> Result<StoragePtr, FlameError> {
+pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameError> {
     Ok(Arc::new(Storage {
         context: config.clone(),
         engine: engine::connect(&config.cluster.storage).await?,

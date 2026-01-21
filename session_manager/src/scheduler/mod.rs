@@ -19,7 +19,7 @@ use crate::controller::ControllerPtr;
 use crate::scheduler::ctx::Context;
 
 use crate::FlameThread;
-use common::ctx::FlameContext;
+use common::ctx::FlameClusterContext;
 use common::FlameError;
 
 mod actions;
@@ -36,7 +36,7 @@ struct ScheduleRunner {
 
 #[async_trait]
 impl FlameThread for ScheduleRunner {
-    async fn run(&self, _flame_ctx: FlameContext) -> Result<(), FlameError> {
+    async fn run(&self, _flame_ctx: FlameClusterContext) -> Result<(), FlameError> {
         loop {
             let mut ctx = Context::new(self.controller.clone())?;
 
@@ -70,7 +70,7 @@ mod tests {
         Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement, Shim,
     };
     use common::ctx::FlameCluster;
-    use common::ctx::FlameContext;
+    use common::ctx::FlameClusterContext;
     use common::FlameError;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -134,7 +134,7 @@ mod tests {
                 .init();
 
             let url = format!("/tmp/flame_test_env_{}.db", Utc::now().timestamp());
-            let config = FlameContext {
+            let config = FlameClusterContext {
                 cluster: FlameCluster {
                     storage: format!("sqlite:///{url}"),
                     ..Default::default()
