@@ -1,4 +1,20 @@
 services:
+  flame-object-cache:
+    image: xflops/flame-object-cache:latest
+    logging:
+      options:
+        max-size: "100m"
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cache
+    environment:
+      - RUST_LOG=debug
+    volumes:
+      - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
+      - flame-cache-storage:/var/lib/flame/cache
+    ports:
+      - 9090:9090
+
   flame-session-manager:
     image: xflops/flame-session-manager:latest
     logging:
@@ -53,6 +69,8 @@ services:
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
       - flame-packages:/opt/flame/packages
+      - flame-cache-storage:/var/lib/flame/cache
 
 volumes:
   flame-packages:
+  flame-cache-storage:

@@ -35,7 +35,7 @@ CommonData = Message
 # Constants
 DEFAULT_FLAME_CONF = "flame.yaml"
 DEFAULT_FLAME_ENDPOINT = "http://127.0.0.1:8080"
-DEFAULT_FLAME_CACHE_ENDPOINT = "http://127.0.0.1:9090"
+DEFAULT_FLAME_CACHE_ENDPOINT = "grpc://127.0.0.1:9090"
 
 
 class SessionState(IntEnum):
@@ -221,7 +221,7 @@ class FlameContext:
     """Flame configuration."""
 
     _endpoint = None
-    _cache_endpoint = None
+    _cache = None
     _package = None
 
     def __init__(self):
@@ -236,7 +236,7 @@ class FlameContext:
                 for cluster in config.get("clusters", []):
                     if cc == cluster["name"]:
                         self._endpoint = cluster.get("endpoint")
-                        self._cache_endpoint = cluster.get("cache")
+                        self._cache = cluster.get("cache")
 
                         # Parse package configuration if present
                         package_config = cluster.get("package")
@@ -258,7 +258,26 @@ class FlameContext:
 
         cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
         if cache_endpoint is not None:
-            self._cache_endpoint = cache_endpoint
+            # Environment variable overrides config
+            if isinstance(self._cache, dict):
+                self._cache["endpoint"] = cache_endpoint
+            else:
+                self._cache = {"endpoint": cache_endpoint}
+
+        cache_storage = os.getenv("FLAME_CACHE_STORAGE")
+        if cache_storage is not None:
+            # Environment variable overrides config
+            if isinstance(self._cache, dict):
+                self._cache["storage"] = cache_storage
+            elif self._cache is not None:
+                self._cache = {"endpoint": self._cache, "storage": cache_storage}
+            else:
+                self._cache = {"storage": cache_storage}
+
+    @property
+    def endpoint(self) -> str:
+        """Get the Flame cluster endpoint."""
+        return self._endpoint if self._endpoint is not None else DEFAULT_FLAME_ENDPOINT
 
     @property
     def package(self) -> Optional[FlamePackage]:
@@ -266,6 +285,15 @@ class FlameContext:
         return self._package
 
     @property
+    def cache(self) -> Optional[Any]:
+        """Get the cache configuration (dict with endpoint and optional storage, or string for legacy)."""
+        return self._cache if self._cache is not None else {"endpoint": DEFAULT_FLAME_CACHE_ENDPOINT}
+
+    @property
     def cache_endpoint(self) -> str:
-        """Get the cache endpoint, using default if not configured."""
-        return self._cache_endpoint if self._cache_endpoint is not None else DEFAULT_FLAME_CACHE_ENDPOINT
+        """Get the cache endpoint (legacy property for backward compatibility)."""
+        if isinstance(self._cache, dict):
+            return self._cache.get("endpoint", DEFAULT_FLAME_CACHE_ENDPOINT)
+        elif self._cache is not None:
+            return self._cache
+        return DEFAULT_FLAME_CACHE_ENDPOINT

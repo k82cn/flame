@@ -20,7 +20,6 @@ use tokio::runtime::{Builder, Runtime};
 use common::ctx::FlameClusterContext;
 use common::FlameError;
 
-mod cache;
 mod client;
 mod executor;
 mod manager;
@@ -59,34 +58,6 @@ async fn main() -> Result<(), FlameError> {
     // The manager thread will start one thread for each executor.
     let max_executors = ctx.executors.limits.max_executors as usize;
     let manager_rt = build_runtime("manager", max_executors + 1)?;
-    let cache_rt = build_runtime("cache", 3)?;
-
-    // Start the object cache server thread.
-    {
-        let ctx = ctx.clone();
-        let handler = thread::spawn(move || {
-            let _ = cache_rt.block_on(async move {
-                let Some(cache_config) = ctx.cache else {
-                    tracing::warn!(
-                        "No object cache configuration found, skipping object cache thread."
-                    );
-                    return Ok(());
-                };
-
-                match cache::run(&cache_config).await {
-                    Ok(_) => {
-                        tracing::info!("Object cache exited successfully.");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!("Object cache exited with error: {e}");
-                        Err(e)
-                    }
-                }
-            });
-        });
-        handlers.push(handler);
-    }
 
     // Start the executor manager thread.
     {

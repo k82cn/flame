@@ -11,14 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import contextlib
-import logging
+import uuid
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 import bson
 import cloudpickle
-import httpx
+import pyarrow as pa
+import pyarrow.flight as flight
 
 from flamepy.core.types import FlameContext
 
@@ -27,7 +28,8 @@ from flamepy.core.types import FlameContext
 class ObjectRef:
     """Object reference for remote cached objects."""
 
-    url: str
+    endpoint: str  # Cache server endpoint (e.g., "grpc://127.0.0.1:9090")
+    key: str  # Object key in format "session_id/object_id"
     version: int = 0
 
     def encode(self) -> bytes:
@@ -40,39 +42,113 @@ class ObjectRef:
         return cls(**data)
 
 
-@contextlib.contextmanager
-def suppress_dependency_logs(level=logging.WARNING):
+def _serialize_object(obj: Any) -> pa.RecordBatch:
+    """Serialize a Python object to an Arrow RecordBatch.
+
+    Args:
+        obj: The object to serialize
+
+    Returns:
+        RecordBatch with schema {version: uint64, data: binary}
     """
-    A context manager to temporarily suppress httpx and httpcore logs.
+    # Serialize the object using cloudpickle
+    data_bytes = cloudpickle.dumps(obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
+
+    # Create Arrow schema
+    schema = pa.schema(
+        [
+            pa.field("version", pa.uint64()),
+            pa.field("data", pa.binary()),
+        ]
+    )
+
+    # Create RecordBatch
+    version_array = pa.array([0], type=pa.uint64())
+    data_array = pa.array([data_bytes], type=pa.binary())
+
+    batch = pa.RecordBatch.from_arrays([version_array, data_array], schema=schema)
+
+    return batch
+
+
+def _deserialize_object(batch: pa.RecordBatch) -> Any:
+    """Deserialize a Python object from an Arrow RecordBatch.
+
+    Args:
+        batch: RecordBatch with schema {version: uint64, data: binary}
+
+    Returns:
+        The deserialized object
     """
-    httpx_logger = logging.getLogger("httpx")
-    httpcore_logger = logging.getLogger("httpcore")
-    original_httpx_level = httpx_logger.level
-    original_httpcore_level = httpcore_logger.level
-    httpx_logger.setLevel(level)
-    httpcore_logger.setLevel(level)
+    # Extract data from the batch
+    data_array = batch.column("data")
+    data_bytes = data_array[0].as_py()
+
+    # Deserialize using cloudpickle
+    return cloudpickle.loads(data_bytes)
+
+
+def _get_flight_client(endpoint: str) -> flight.FlightClient:
+    """Create a Flight client from endpoint URL.
+
+    Args:
+        endpoint: Cache endpoint (e.g., "grpc://127.0.0.1:9090")
+
+    Returns:
+        FlightClient instance
+    """
+    # Parse endpoint to get location
+    # Format: grpc://host:port or grpc+tls://host:port
+    location = endpoint.replace("grpc://", "grpc://")
+    return flight.FlightClient(location)
+
+
+def _do_put_remote(
+    client: flight.FlightClient, descriptor: flight.FlightDescriptor, batch: pa.RecordBatch
+) -> "ObjectRef":
+    """Perform a remote do_put operation and read the result metadata.
+
+    Args:
+        client: Arrow Flight client
+        descriptor: Flight descriptor for the put operation
+        batch: RecordBatch to upload
+
+    Returns:
+        ObjectRef received from the server
+
+    Raises:
+        ValueError: If metadata cannot be read from server
+    """
+    writer, reader = client.do_put(descriptor, batch.schema)
+
+    # Write batch
+    writer.write_batch(batch)
+
+    # Signal we're done writing
+    writer.done_writing()
+
+    # Read result metadata from PutResult stream before closing
+    # Read metadata messages using read() method (returns Buffer/bytes)
     try:
-        yield
-    finally:
-        httpx_logger.setLevel(original_httpx_level)
-        httpcore_logger.setLevel(original_httpcore_level)
+        while True:
+            metadata_buffer = reader.read()
+            if metadata_buffer is None:
+                break
+            # Extract ObjectRef from metadata buffer (BSON format)
+            obj_ref_data = bson.loads(bytes(metadata_buffer))
+            writer.close()
+            return ObjectRef(
+                endpoint=obj_ref_data["endpoint"],
+                key=obj_ref_data["key"],
+                version=obj_ref_data["version"],
+            )
+    except Exception as e:
+        writer.close()
+        raise ValueError(f"Failed to read metadata from cache server: {e}")
 
-
-@dataclass
-class Object:
-    """Object."""
-
-    version: int
-    data: list
-
-
-@dataclass
-class ObjectMetadata:
-    """Object metadata."""
-
-    endpoint: str
-    version: int
-    size: int
+    # If we get here, no PutResult was received
+    writer.close()
+    raise ValueError("No result metadata received from cache server")
 
 
 def put_object(session_id: str, obj: Any) -> "ObjectRef":
@@ -89,22 +165,76 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
         Exception: If cache endpoint is not configured or request fails
     """
     context = FlameContext()
-    cache_endpoint = context.cache_endpoint
+    cache_config = context.cache
 
-    # Serialize the object using cloudpickle
-    data = cloudpickle.dumps(obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
+    if cache_config is None:
+        raise ValueError("Cache configuration not found")
 
-    with suppress_dependency_logs():
-        response = httpx.post(
-            f"{cache_endpoint}/objects/{session_id}",
-            data=data,
-            headers={"Content-Type": "application/octet-stream"},
-        )
-        response.raise_for_status()
+    # Get endpoint and storage from config
+    if isinstance(cache_config, str):
+        # Legacy format - just endpoint string
+        cache_endpoint = cache_config
+        cache_storage = None
+    else:
+        # New format - dict with endpoint and optional storage
+        cache_endpoint = cache_config.get("endpoint")
+        cache_storage = cache_config.get("storage")
 
-    metadata_dict = bson.loads(response.content)
-    metadata = ObjectMetadata(**metadata_dict)
-    return ObjectRef(url=metadata.endpoint, version=metadata.version)
+    if not cache_endpoint:
+        raise ValueError("Cache endpoint not configured")
+
+    # Serialize object to Arrow RecordBatch
+    batch = _serialize_object(obj)
+
+    # Check if local storage is configured and accessible
+    if cache_storage:
+        storage_path = Path(cache_storage)
+        # Only use local storage if the path exists or can be created
+        try:
+            storage_path.mkdir(parents=True, exist_ok=True)
+            use_local_storage = storage_path.exists() and storage_path.is_dir()
+        except (PermissionError, OSError):
+            # Path not accessible, fall back to remote cache
+            use_local_storage = False
+    else:
+        use_local_storage = False
+
+    if use_local_storage:
+        # Write to local storage (optimization when client has access to cache filesystem)
+        object_id = str(uuid.uuid4())
+        key = f"{session_id}/{object_id}"
+
+        # Create session directory
+        session_dir = storage_path / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write Arrow IPC file
+        object_path = session_dir / f"{object_id}.arrow"
+        writer = pa.ipc.new_file(object_path, batch.schema)
+        writer.write_batch(batch)
+        writer.close()
+
+        # Get flight info to construct ObjectRef with cache server's endpoint
+        client = _get_flight_client(cache_endpoint)
+        descriptor = flight.FlightDescriptor.for_path(key)
+        flight_info = client.get_flight_info(descriptor)
+
+        # Extract endpoint from flight info
+        if flight_info.endpoints:
+            remote_endpoint = flight_info.endpoints[0].locations[0]
+            # Extract URI string from Location object
+            endpoint_str = remote_endpoint.uri.decode("utf-8") if isinstance(remote_endpoint.uri, bytes) else str(remote_endpoint.uri)
+        else:
+            endpoint_str = cache_endpoint
+
+        return ObjectRef(endpoint=endpoint_str, key=key, version=0)
+    else:
+        # Use remote cache via Arrow Flight
+        client = _get_flight_client(cache_endpoint)
+
+        # Encode session_id in FlightDescriptor path
+        upload_descriptor = flight.FlightDescriptor.for_path(session_id)
+        return _do_put_remote(client, upload_descriptor, batch)
 
 
 def get_object(ref: ObjectRef) -> Any:
@@ -119,18 +249,24 @@ def get_object(ref: ObjectRef) -> Any:
     Raises:
         Exception: If request fails
     """
-    with suppress_dependency_logs():
-        response = httpx.get(ref.url)
-        response.raise_for_status()
+    # Connect to cache server using ref.endpoint
+    client = _get_flight_client(ref.endpoint)
 
-    obj_dict = bson.loads(response.content)
-    obj = Object(**obj_dict)
+    # Create ticket from key
+    ticket = flight.Ticket(ref.key.encode())
 
-    # Update the version of the ObjectRef
-    ref.version = obj.version
+    # Get object data
+    reader = client.do_get(ticket)
 
-    # Deserialize the object using cloudpickle
-    return cloudpickle.loads(bytes(obj.data))
+    table = reader.read_all()
+    if table.num_rows == 0:
+        raise ValueError(f"No data received for object {ref.key}")
+
+    # The object is stored as a single RecordBatch
+    batch = table.to_batches()[0]
+
+    # Deserialize object
+    return _deserialize_object(batch)
 
 
 def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
@@ -141,23 +277,22 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
         new_obj: The new object to store (will be pickled)
 
     Returns:
-        Updated ObjectRef with new version
+        Updated ObjectRef (same as input for now, since version is always 0)
 
     Raises:
         Exception: If request fails
     """
-    # Serialize the new object using cloudpickle
-    new_data = cloudpickle.dumps(new_obj, protocol=cloudpickle.DEFAULT_PROTOCOL)
+    # Serialize new object to Arrow RecordBatch
+    batch = _serialize_object(new_obj)
 
-    obj = Object(version=ref.version, data=list(new_data))
-    # Serialize using BSON
-    data = bson.dumps(asdict(obj))
+    # Connect to cache server
+    client = _get_flight_client(ref.endpoint)
 
-    with suppress_dependency_logs():
-        response = httpx.put(ref.url, data=data, headers={"Content-Type": "application/bson"})
-        response.raise_for_status()
+    # Parse key to validate format
+    parts = ref.key.split("/")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid key format: {ref.key}")
 
-    metadata_dict = bson.loads(response.content)
-    metadata = ObjectMetadata(**metadata_dict)
-
-    return ObjectRef(url=ref.url, version=metadata.version)
+    # Use full key (session_id/object_id) in FlightDescriptor to update existing object
+    upload_descriptor = flight.FlightDescriptor.for_path(ref.key)
+    return _do_put_remote(client, upload_descriptor, batch)

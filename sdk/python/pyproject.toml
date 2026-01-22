@@ -34,7 +34,8 @@ dependencies = [
   "bson>=0.5",
   "requests >= 2.32",
   "httpx >= 0.28",
-  "cloudpickle >= 3.1"
+  "cloudpickle >= 3.1",
+  "pyarrow >= 18.1.0"
 ]
 
 [project.optional-dependencies]

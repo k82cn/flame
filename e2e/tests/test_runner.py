@@ -221,7 +221,8 @@ def test_objectfuture_ref_method(check_package_config, check_flmrun_app):
         assert isinstance(obj_ref, flamepy.core.ObjectRef), (
             f"Expected ObjectRef, got {type(obj_ref)}"
         )
-        assert obj_ref.url is not None, "ObjectRef URL should not be None"
+        assert obj_ref.endpoint is not None, "ObjectRef endpoint should not be None"
+        assert obj_ref.key is not None, "ObjectRef key should not be None"
 
 
 def test_objectfuture_iterator(check_package_config, check_flmrun_app):
