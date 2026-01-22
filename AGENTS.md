@@ -1,19 +1,28 @@
 # Flame – A Distributed System for Agentic AI
 
-## Development Environment Tips
+## Tools
+- **Build:** `docker compose build` (compiles all images of Flame); if Docker is unavailable, Podman is an alternative.
+- **DevEnv:** `docker compose up -d` (start Flame cluster after rebuilding); `docker compose down` (stop the cluster)
+- **Test:** `make e2e` (runs all test); `make e2e-py` for python and `make e2e-rs` for rust
+- **Lint:** `make format` (auto-format all codes)
 
-- The development environment is based on Docker Compose. If Docker is unavailable, Podman is an alternative.
-- Rebuild images using `docker compose build`. Start the Flame cluster with `docker compose up -d`.
-- Always stop the Flame cluster with `docker compose down` before rebuilding any images.
-- Run `make format` to automatically format all code before committing changes.
-- For each RFE, all related documents (FS.md, IMPLEMENTATION.md, STATUS.md) should be in the same directory under `docs/designs/RFE<number>-<name>/` to keep design details aligned.
-- All tutorial documents should be in `docs/tutorials`
+## Document Struct
+
+- `docs/designs`: the designs doc of all RFEs and bugs; all related documents (FS.md, IMPLEMENTATION.md, STATUS.md) should be in the same directory under `docs/designs/RFE<number>-<name>/` to keep design details aligned.
+- `docs/tutorials`: the tutorial documents for both user and admin.
+- `docs/blogs`: the blogs of Flame.
+
+## Code style
+
+- Try to avoid duplicated codes by helper functions, const values and so on
+- Try to use design pattern, e.g. factory, state machine
+- Try to avoid large/long function
+- Try to avoid deeply nested if/else blocks and for loops
 
 ## Testing Instructions
 
 - The CI plan can be found in the `.github/workflows` directory.
-- For Python, run end-to-end tests with `make e2e-ci`.
-- For Rust, run E2E tests using `cargo test --workspace --exclude cri-rs -- --nocapture`.
+- Restart the Flame cluster before start the testing.
 - Most tests should complete within 30 seconds. If not, check the logs for the `flame-executor-manager`, `flame-object-cache` and `flame-session-manager` containers.
 - If any code in `sdk/python` is updated, be sure to rebuild both `flame-console` and `flame-executor-manager`.
 

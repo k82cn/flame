@@ -26,7 +26,7 @@ CONSOLE_DOCKERFILE = docker/Dockerfile.console
 CACHE_DOCKERFILE = docker/Dockerfile.cache
 
 # Default target
-.PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e format format-rust format-python
+.PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e e2e-py e2e-rs format format-rust format-python
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -69,8 +69,14 @@ format-python: ## Format Python code with ruff
 
 format: format-rust format-python ## Format both Rust and Python code
 
-e2e-ci:
+# E2E testing targets
+e2e-py: ## Run Python E2E tests
 	$(CONTAINER_RUNTIME) compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .
+
+e2e-rs: ## Run Rust E2E tests
+	cargo test --workspace --exclude cri-rs -- --nocapture
+
+e2e: e2e-py e2e-rs ## Run all E2E tests (Python and Rust)
 
 # Docker build targets
 docker-build-fsm: update_protos ## Build session manager Docker image
