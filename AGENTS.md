@@ -17,7 +17,7 @@
 - Try to avoid duplicated codes by helper functions, const values and so on
 - Try to use design pattern, e.g. factory, state machine
 - Try to avoid large/long function
-- Try to avoid deep nested if/else, and for loop
+- Try to avoid deeply nested if/else blocks and for loops
 
 ## Testing Instructions
 
