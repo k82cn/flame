@@ -58,6 +58,7 @@ struct FlameExecutorsYaml {
 struct FlameCacheYaml {
     pub endpoint: Option<String>,
     pub network_interface: Option<String>,
+    pub storage: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +92,7 @@ pub struct FlameExecutors {
 pub struct FlameCache {
     pub endpoint: String,
     pub network_interface: String,
+    pub storage: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +212,7 @@ impl TryFrom<FlameCacheYaml> for FlameCache {
             network_interface: cache
                 .network_interface
                 .unwrap_or(DEFAULT_FLAME_CACHE_NETWORK_INTERFACE.to_string()),
+            storage: cache.storage,
         })
     }
 }

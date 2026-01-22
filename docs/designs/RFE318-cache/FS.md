@@ -3,12 +3,14 @@
 ## 1. Motivation
 
 **Background:**
-Currently, the object cache in Flame is implemented using an in-memory HashMap in a naive way. This approach has several limitations:
+Previously, the object cache in Flame was implemented as a naive HTTP-based in-memory HashMap within the flame-executor-manager component. This implementation had several limitations:
 
-1. **No Persistence**: Data stored in the cache is lost when the cache server restarts, leading to data loss and requiring clients to re-upload objects.
-2. **Memory Limitations**: All cached objects are stored in memory, which limits the cache capacity and makes it unsuitable for large-scale deployments.
-3. **Performance**: The current implementation lacks efficient serialization and storage mechanisms, which can become a bottleneck for large objects.
-4. **Backward Compatibility**: The current implementation doesn't leverage industry-standard formats, making it harder to integrate with other systems or tools.
+1. **No Persistence**: Data stored in the cache was lost when the cache server restarted, leading to data loss and requiring clients to re-upload objects.
+2. **Memory Limitations**: All cached objects were stored in memory, which limited the cache capacity and made it unsuitable for large-scale deployments.
+3. **Performance**: The implementation lacked efficient serialization and storage mechanisms, which could become a bottleneck for large objects.
+4. **No Standardization**: The implementation didn't leverage industry-standard formats, making it harder to integrate with other systems or tools.
+
+**Note:** The naive cache implementation has been removed from flame-executor-manager as of this RFE. The object cache is now a dedicated standalone service.
 
 **Target:**
 This design aims to improve the object cache implementation by leveraging Apache Arrow to achieve:
@@ -196,7 +198,6 @@ class ObjectRef:
 - **Session Management**: Cache keys are organized by session ID
 - **RL Module**: Uses cache for storing RunnerContext and common data
 - **Agent Module**: Uses cache for storing common data
-- **Executor Manager**: May need to access cached objects
 
 **Updates Required:**
 1. **FlameClusterContext (Rust)**: Add `storage` field to `FlameCache` struct and `FlameCacheYaml`

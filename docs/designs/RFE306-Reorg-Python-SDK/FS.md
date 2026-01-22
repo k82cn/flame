@@ -14,7 +14,9 @@ Similar to Rust SDK, the `core` module is dedicated to the fundamental concepts 
 
 ### `cache` module
 
-By default, Flame persists all data—including task inputs, outputs, and common data—via the `flame-session-manager`. This approach is effective for small-scale data. However, for use cases involving large or frequent data transfers, such as training workloads, persisting all data centrally can become inefficient or impractical. To address this, Flame introduces a caching mechanism in the `flame-executor-manager` on each node, enabling more efficient handling of large or transient data locally. The `cache` module includes the client implementation of the cache, included in `cache.py` right now.
+By default, Flame persists all data—including task inputs, outputs, and common data—via the `flame-session-manager`. This approach is effective for small-scale data. However, for use cases involving large or frequent data transfers, such as training workloads, persisting all data centrally can become inefficient or impractical. To address this, Flame provides a dedicated object cache service (`flame-object-cache`) using Apache Arrow Flight protocol, enabling more efficient handling of large or transient data with persistent storage. The `cache` module includes the client implementation of the cache, included in `cache.py` right now.
+
+**Note:** As of RFE318, the cache is now a standalone service rather than embedded in `flame-executor-manager`.
 
 ### `agent` module
 

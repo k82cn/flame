@@ -1,0 +1,1029 @@
+/*
+Copyright 2025 The Flame Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
+
+use arrow::array::{BinaryArray, RecordBatch, UInt64Array};
+use arrow::compute::concat_batches;
+use arrow::datatypes::{DataType, Field, Schema};
+use arrow::ipc::{reader::FileReader, writer::FileWriter};
+use arrow_flight::{
+    flight_service_server::{FlightService, FlightServiceServer},
+    Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo,
+    HandshakeRequest, HandshakeResponse, Location, PutResult, Result as FlightResult, SchemaResult,
+    Ticket,
+};
+use async_trait::async_trait;
+use base64::Engine;
+use bytes::Bytes;
+use futures::Stream;
+use network_interface::{NetworkInterface, NetworkInterfaceConfig};
+use regex::Regex;
+use stdng::{lock_ptr, new_ptr, MutexPtr};
+use tonic::{Request, Response, Status, Streaming};
+use url::Url;
+
+use common::apis::SessionID;
+use common::ctx::FlameCache;
+use common::FlameError;
+
+#[derive(Debug, Clone)]
+pub struct Object {
+    pub version: u64,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ObjectMetadata {
+    pub endpoint: String,
+    pub key: String,
+    pub version: u64,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheEndpoint {
+    pub scheme: String,
+    pub host: String,
+    pub port: u16,
+}
+
+impl CacheEndpoint {
+    fn get_host(cache_config: &FlameCache) -> Result<String, FlameError> {
+        let network_interfaces =
+            NetworkInterface::show().map_err(|e| FlameError::Network(e.to_string()))?;
+
+        let reg = Regex::new(cache_config.network_interface.as_str())
+            .map_err(|e| FlameError::InvalidConfig(e.to_string()))?;
+        let host = network_interfaces
+            .iter()
+            .find(|iface| reg.is_match(iface.name.as_str()))
+            .ok_or(FlameError::InvalidConfig(format!(
+                "network interface <{}> not found",
+                cache_config.network_interface
+            )))?
+            .clone();
+
+        Ok(host
+            .addr
+            .iter()
+            .find(|ip| ip.ip().is_ipv4())
+            .ok_or(FlameError::InvalidConfig(format!(
+                "network interface <{}> has no IPv4 addresses",
+                cache_config.network_interface
+            )))?
+            .ip()
+            .to_string())
+    }
+}
+
+impl TryFrom<&FlameCache> for CacheEndpoint {
+    type Error = FlameError;
+
+    fn try_from(cache_config: &FlameCache) -> Result<Self, Self::Error> {
+        let endpoint = CacheEndpoint::try_from(&cache_config.endpoint)?;
+        let host = Self::get_host(cache_config)?;
+
+        Ok(Self {
+            scheme: endpoint.scheme,
+            host,
+            port: endpoint.port,
+        })
+    }
+}
+
+impl TryFrom<&String> for CacheEndpoint {
+    type Error = FlameError;
+
+    fn try_from(endpoint: &String) -> Result<Self, Self::Error> {
+        let url = Url::parse(endpoint)
+            .map_err(|_| FlameError::InvalidConfig(format!("invalid endpoint <{}>", endpoint)))?;
+
+        Ok(Self {
+            scheme: url.scheme().to_string(),
+            host: url
+                .host_str()
+                .ok_or(FlameError::InvalidConfig(format!(
+                    "no host in endpoint <{}>",
+                    endpoint
+                )))?
+                .to_string(),
+            port: url.port().unwrap_or(9090),
+        })
+    }
+}
+
+pub(crate) struct ObjectCache {
+    endpoint: CacheEndpoint,
+    storage_path: Option<PathBuf>,
+    objects: MutexPtr<HashMap<String, ObjectMetadata>>, // key -> metadata
+}
+
+impl ObjectCache {
+    fn new(endpoint: CacheEndpoint, storage_path: Option<PathBuf>) -> Result<Self, FlameError> {
+        let cache = Self {
+            endpoint,
+            storage_path: storage_path.clone(),
+            objects: new_ptr(HashMap::new()),
+        };
+
+        // Load existing objects from disk
+        if let Some(storage_path) = &storage_path {
+            cache.load_from_disk(storage_path)?;
+        }
+
+        Ok(cache)
+    }
+
+    fn load_from_disk(&self, storage_path: &Path) -> Result<(), FlameError> {
+        if !storage_path.exists() {
+            tracing::info!("Creating storage directory: {:?}", storage_path);
+            fs::create_dir_all(storage_path).map_err(|e| {
+                FlameError::Internal(format!("Failed to create storage directory: {}", e))
+            })?;
+            return Ok(());
+        }
+
+        tracing::info!("Loading objects from disk: {:?}", storage_path);
+        let mut objects = lock_ptr!(self.objects)?;
+
+        // Iterate through session directories
+        for session_entry in fs::read_dir(storage_path)
+            .map_err(|e| FlameError::Internal(format!("Failed to read storage directory: {}", e)))?
+        {
+            let session_entry = session_entry.map_err(|e| {
+                FlameError::Internal(format!("Failed to read directory entry: {}", e))
+            })?;
+            let session_path = session_entry.path();
+
+            if !session_path.is_dir() {
+                continue;
+            }
+
+            let session_id = session_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| {
+                    FlameError::Internal("Invalid session directory name".to_string())
+                })?;
+
+            // Iterate through object files in session directory
+            for object_entry in fs::read_dir(&session_path).map_err(|e| {
+                FlameError::Internal(format!("Failed to read session directory: {}", e))
+            })? {
+                let object_entry = object_entry.map_err(|e| {
+                    FlameError::Internal(format!("Failed to read file entry: {}", e))
+                })?;
+                let object_path = object_entry.path();
+
+                if !object_path.is_file()
+                    || object_path.extension().and_then(|e| e.to_str()) != Some("arrow")
+                {
+                    continue;
+                }
+
+                let object_id = object_path
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .ok_or_else(|| FlameError::Internal("Invalid object file name".to_string()))?;
+
+                let key = format!("{}/{}", session_id, object_id);
+                let size = fs::metadata(&object_path)
+                    .map_err(|e| {
+                        FlameError::Internal(format!("Failed to get file metadata: {}", e))
+                    })?
+                    .len();
+
+                let metadata = ObjectMetadata {
+                    endpoint: format!(
+                        "{}://{}:{}",
+                        self.endpoint.scheme, self.endpoint.host, self.endpoint.port
+                    ),
+                    key: key.clone(),
+                    version: 0, // Version always 0 for now
+                    size,
+                };
+
+                objects.insert(key.clone(), metadata);
+                tracing::debug!("Loaded object: {}", key);
+            }
+        }
+
+        tracing::info!("Loaded {} objects from disk", objects.len());
+        Ok(())
+    }
+
+    async fn put(
+        &self,
+        session_id: SessionID,
+        object: Object,
+    ) -> Result<ObjectMetadata, FlameError> {
+        self.put_with_id(session_id, None, object).await
+    }
+
+    async fn put_with_id(
+        &self,
+        session_id: SessionID,
+        object_id: Option<String>,
+        object: Object,
+    ) -> Result<ObjectMetadata, FlameError> {
+        let object_id = object_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let key = format!("{}/{}", session_id, object_id);
+
+        // Write to disk if storage is configured
+        if let Some(storage_path) = &self.storage_path {
+            // Create session directory
+            let session_dir = storage_path.join(&session_id);
+            fs::create_dir_all(&session_dir).map_err(|e| {
+                FlameError::Internal(format!("Failed to create session directory: {}", e))
+            })?;
+
+            // Write object to Arrow IPC file
+            let object_path = session_dir.join(format!("{}.arrow", object_id));
+            let batch = object_to_batch(&object)
+                .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
+
+            let file = fs::File::create(&object_path)
+                .map_err(|e| FlameError::Internal(format!("Failed to create file: {}", e)))?;
+            let mut writer = FileWriter::try_new(file, &batch.schema())
+                .map_err(|e| FlameError::Internal(format!("Failed to create writer: {}", e)))?;
+            writer
+                .write(&batch)
+                .map_err(|e| FlameError::Internal(format!("Failed to write batch: {}", e)))?;
+            writer
+                .finish()
+                .map_err(|e| FlameError::Internal(format!("Failed to finish writer: {}", e)))?;
+
+            tracing::debug!("Wrote object to disk: {:?}", object_path);
+        }
+
+        let metadata = ObjectMetadata {
+            endpoint: format!(
+                "{}://{}:{}",
+                self.endpoint.scheme, self.endpoint.host, self.endpoint.port
+            ),
+            key: key.clone(),
+            version: 0, // Version always 0 for now
+            size: object.data.len() as u64,
+        };
+
+        // Update in-memory index
+        let mut objects = lock_ptr!(self.objects)?;
+        objects.insert(key.clone(), metadata.clone());
+
+        tracing::debug!("Object put: {}", key);
+
+        Ok(metadata)
+    }
+
+    async fn get(&self, key: String) -> Result<Object, FlameError> {
+        // Check if object exists in index
+        let exists_in_index = {
+            let objects = lock_ptr!(self.objects)?;
+            objects.contains_key(&key)
+        };
+
+        // If not in index and storage is configured, try to load from disk
+        if !exists_in_index {
+            if let Some(storage_path) = &self.storage_path {
+                let object_path = storage_path.join(format!("{}.arrow", key));
+
+                // Check if file exists on disk
+                if object_path.exists() {
+                    // Load the object and add it to the index
+                    let file = fs::File::open(&object_path).map_err(|e| {
+                        FlameError::NotFound(format!("Object file not found: {}", e))
+                    })?;
+                    let reader = FileReader::try_new(file, None).map_err(|e| {
+                        FlameError::Internal(format!("Failed to create reader: {}", e))
+                    })?;
+
+                    // Read the first (and only) batch
+                    let batch = reader
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| FlameError::Internal("No batches in file".to_string()))?
+                        .map_err(|e| {
+                            FlameError::Internal(format!("Failed to read batch: {}", e))
+                        })?;
+
+                    let object = batch_to_object(&batch).map_err(|e| {
+                        FlameError::Internal(format!("Failed to parse batch: {}", e))
+                    })?;
+
+                    // Add to in-memory index
+                    let metadata = ObjectMetadata {
+                        endpoint: format!(
+                            "{}://{}:{}",
+                            self.endpoint.scheme, self.endpoint.host, self.endpoint.port
+                        ),
+                        key: key.clone(),
+                        version: 0,
+                        size: object.data.len() as u64,
+                    };
+
+                    let mut objects = lock_ptr!(self.objects)?;
+                    objects.insert(key.clone(), metadata);
+
+                    tracing::debug!("Loaded object from disk: {}", key);
+
+                    return Ok(object);
+                }
+            }
+
+            // Object not found in memory or on disk
+            return Err(FlameError::NotFound(format!("object <{}> not found", key)));
+        }
+
+        // Read from disk if storage is configured
+        if let Some(storage_path) = &self.storage_path {
+            let object_path = storage_path.join(format!("{}.arrow", key));
+
+            let file = fs::File::open(&object_path)
+                .map_err(|e| FlameError::NotFound(format!("Object file not found: {}", e)))?;
+            let reader = FileReader::try_new(file, None)
+                .map_err(|e| FlameError::Internal(format!("Failed to create reader: {}", e)))?;
+
+            // Read the first (and only) batch
+            let batch = reader
+                .into_iter()
+                .next()
+                .ok_or_else(|| FlameError::Internal("No batches in file".to_string()))?
+                .map_err(|e| FlameError::Internal(format!("Failed to read batch: {}", e)))?;
+
+            let object = batch_to_object(&batch)
+                .map_err(|e| FlameError::Internal(format!("Failed to parse batch: {}", e)))?;
+
+            tracing::debug!("Object get from disk: {}", key);
+            Ok(object)
+        } else {
+            Err(FlameError::InvalidConfig(
+                "Storage path not configured".to_string(),
+            ))
+        }
+    }
+
+    async fn update(&self, key: String, new_object: Object) -> Result<ObjectMetadata, FlameError> {
+        // For now, update is the same as put (overwrites the file)
+        // Parse key to get session_id
+        let parts: Vec<&str> = key.split('/').collect();
+        if parts.len() != 2 {
+            return Err(FlameError::InvalidConfig(format!(
+                "Invalid key format: {}",
+                key
+            )));
+        }
+        let _session_id = parts[0].to_string();
+        let _object_id = parts[1].to_string();
+
+        // Write to disk if storage is configured
+        if let Some(storage_path) = &self.storage_path {
+            let object_path = storage_path.join(format!("{}.arrow", key));
+            let batch = object_to_batch(&new_object)
+                .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
+
+            let file = fs::File::create(&object_path)
+                .map_err(|e| FlameError::Internal(format!("Failed to create file: {}", e)))?;
+            let mut writer = FileWriter::try_new(file, &batch.schema())
+                .map_err(|e| FlameError::Internal(format!("Failed to create writer: {}", e)))?;
+            writer
+                .write(&batch)
+                .map_err(|e| FlameError::Internal(format!("Failed to write batch: {}", e)))?;
+            writer
+                .finish()
+                .map_err(|e| FlameError::Internal(format!("Failed to finish writer: {}", e)))?;
+
+            tracing::debug!("Updated object on disk: {:?}", object_path);
+        }
+
+        let metadata = ObjectMetadata {
+            endpoint: format!(
+                "{}://{}:{}",
+                self.endpoint.scheme, self.endpoint.host, self.endpoint.port
+            ),
+            key: key.clone(),
+            version: 0, // Version always 0 for now
+            size: new_object.data.len() as u64,
+        };
+
+        // Update in-memory index
+        let mut objects = lock_ptr!(self.objects)?;
+        objects.insert(key.clone(), metadata.clone());
+
+        tracing::debug!("Object update: {}", key);
+
+        Ok(metadata)
+    }
+
+    async fn delete(&self, session_id: SessionID) -> Result<(), FlameError> {
+        // Delete session directory and all objects
+        if let Some(storage_path) = &self.storage_path {
+            let session_dir = storage_path.join(&session_id);
+            if session_dir.exists() {
+                fs::remove_dir_all(&session_dir).map_err(|e| {
+                    FlameError::Internal(format!("Failed to delete session directory: {}", e))
+                })?;
+                tracing::debug!("Deleted session directory: {:?}", session_dir);
+            }
+        }
+
+        // Remove from in-memory index
+        let mut objects = lock_ptr!(self.objects)?;
+        objects.retain(|key, _| !key.starts_with(&format!("{}/", session_id)));
+
+        tracing::debug!("Session deleted: <{}>", session_id);
+
+        Ok(())
+    }
+
+    async fn list_all(&self) -> Result<Vec<ObjectMetadata>, FlameError> {
+        let objects = lock_ptr!(self.objects)?;
+        Ok(objects.values().cloned().collect())
+    }
+}
+
+pub struct FlightCacheServer {
+    cache: Arc<ObjectCache>,
+}
+
+impl FlightCacheServer {
+    pub fn new(cache: Arc<ObjectCache>) -> Self {
+        Self { cache }
+    }
+}
+
+// Helper function to encode schema to IPC format for FlightInfo
+fn encode_schema(schema: &Schema) -> Result<Vec<u8>, Status> {
+    // Encode schema as IPC message using IpcDataGenerator
+    use arrow::ipc::writer::{IpcDataGenerator, IpcWriteOptions};
+
+    let options = IpcWriteOptions::default();
+    let data_gen = IpcDataGenerator::default();
+
+    // Encode the schema
+    let encoded = data_gen.schema_to_bytes(schema, &options);
+
+    Ok(encoded.ipc_message)
+}
+
+// Helper function to convert RecordBatch to FlightData
+fn batch_to_flight_data_vec(batch: &RecordBatch) -> Result<Vec<FlightData>, Status> {
+    use arrow::ipc::writer::{IpcDataGenerator, IpcWriteOptions};
+    use arrow_flight::utils::flight_data_from_arrow_batch;
+
+    tracing::debug!(
+        "batch_to_flight_data_vec: batch rows={}, cols={}",
+        batch.num_rows(),
+        batch.num_columns()
+    );
+
+    // Create IPC write options with alignment to ensure proper encoding
+    let options = IpcWriteOptions::default()
+        .try_with_compression(None)
+        .map_err(|e| Status::internal(format!("Failed to set compression: {}", e)))?;
+
+    let (mut flight_data_vec, _) = flight_data_from_arrow_batch(batch, &options);
+    tracing::debug!(
+        "batch_to_flight_data_vec: generated {} FlightData messages",
+        flight_data_vec.len()
+    );
+
+    // If empty, manually encode the batch
+    if flight_data_vec.is_empty() {
+        tracing::warn!("flight_data_from_arrow_batch returned empty, using manual encoding");
+
+        // First, encode and send schema
+        let mut data_gen = IpcDataGenerator::default();
+        let encoded_schema = data_gen.schema_to_bytes(batch.schema().as_ref(), &options);
+
+        let schema_flight_data = FlightData {
+            flight_descriptor: None,
+            app_metadata: vec![].into(),
+            data_header: encoded_schema.ipc_message.into(),
+            data_body: vec![].into(),
+        };
+        flight_data_vec.push(schema_flight_data);
+
+        // Then, send the batch data
+        let mut dictionary_tracker = arrow::ipc::writer::DictionaryTracker::new(false);
+
+        let (encoded_dictionaries, encoded_batch) = data_gen
+            .encoded_batch(batch, &mut dictionary_tracker, &options)
+            .map_err(|e| Status::internal(format!("Failed to encode batch: {}", e)))?;
+
+        // Add dictionary batches if any
+        for dict_batch in encoded_dictionaries {
+            flight_data_vec.push(dict_batch.into());
+        }
+
+        // Add the data batch
+        flight_data_vec.push(encoded_batch.into());
+    }
+
+    tracing::debug!(
+        "batch_to_flight_data_vec: final {} FlightData messages",
+        flight_data_vec.len()
+    );
+
+    if flight_data_vec.is_empty() {
+        Err(Status::internal("No FlightData generated from batch"))
+    } else {
+        Ok(flight_data_vec)
+    }
+}
+
+// Helper function to create a RecordBatch from object data
+fn object_to_batch(object: &Object) -> Result<RecordBatch, Status> {
+    let schema = Schema::new(vec![
+        Field::new("version", DataType::UInt64, false),
+        Field::new("data", DataType::Binary, false),
+    ]);
+
+    let version_array = UInt64Array::from(vec![object.version]);
+    let data_array = BinaryArray::from(vec![object.data.as_slice()]);
+
+    RecordBatch::try_new(
+        Arc::new(schema),
+        vec![Arc::new(version_array), Arc::new(data_array)],
+    )
+    .map_err(|e| Status::internal(format!("Failed to create RecordBatch: {}", e)))
+}
+
+// Helper function to extract data from RecordBatch
+fn batch_to_object(batch: &RecordBatch) -> Result<Object, Status> {
+    if batch.num_rows() != 1 {
+        return Err(Status::invalid_argument("Expected exactly one row"));
+    }
+
+    let version_col = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<UInt64Array>()
+        .ok_or_else(|| Status::internal("Invalid version column"))?;
+    let data_col = batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<BinaryArray>()
+        .ok_or_else(|| Status::internal("Invalid data column"))?;
+
+    let version = version_col.value(0);
+    let data = data_col.value(0).to_vec();
+
+    Ok(Object { version, data })
+}
+
+#[async_trait]
+impl FlightService for FlightCacheServer {
+    type HandshakeStream = Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>>;
+    type ListFlightsStream = Pin<Box<dyn Stream<Item = Result<FlightInfo, Status>> + Send>>;
+    type DoGetStream = Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>>;
+    type DoPutStream = Pin<Box<dyn Stream<Item = Result<PutResult, Status>> + Send>>;
+    type DoActionStream = Pin<Box<dyn Stream<Item = Result<FlightResult, Status>> + Send>>;
+    type ListActionsStream = Pin<Box<dyn Stream<Item = Result<ActionType, Status>> + Send>>;
+    type DoExchangeStream = Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send>>;
+
+    async fn get_flight_info(
+        &self,
+        request: Request<FlightDescriptor>,
+    ) -> Result<Response<FlightInfo>, Status> {
+        let descriptor = request.into_inner();
+
+        // Extract key from descriptor path
+        let key = if !descriptor.path.is_empty() {
+            descriptor.path.join("/")
+        } else {
+            return Err(Status::invalid_argument("Empty descriptor path"));
+        };
+
+        // Key format: "session_id/object_id"
+        let schema = Schema::new(vec![
+            Field::new("version", DataType::UInt64, false),
+            Field::new("data", DataType::Binary, false),
+        ]);
+
+        // Create endpoint with cache server's public endpoint
+        let endpoint_uri = format!(
+            "{}://{}:{}",
+            self.cache.endpoint.scheme, self.cache.endpoint.host, self.cache.endpoint.port
+        );
+
+        let ticket = Ticket {
+            ticket: Bytes::from(key.as_bytes().to_vec()),
+        };
+
+        let endpoint = FlightEndpoint {
+            ticket: Some(ticket),
+            location: vec![Location { uri: endpoint_uri }],
+            expiration_time: None,
+            app_metadata: Bytes::new(),
+        };
+
+        // Return empty schema - schema will be discovered from FlightData
+        // This avoids compatibility issues with schema encoding between Rust and Python
+        let flight_info = FlightInfo {
+            schema: Bytes::new(),
+            flight_descriptor: Some(FlightDescriptor {
+                r#type: descriptor.r#type,
+                cmd: descriptor.cmd,
+                path: vec![key.clone()],
+            }),
+            endpoint: vec![endpoint],
+            total_records: -1,
+            total_bytes: -1,
+            ordered: false,
+            app_metadata: Bytes::new(),
+        };
+
+        Ok(Response::new(flight_info))
+    }
+
+    async fn do_get(
+        &self,
+        request: Request<Ticket>,
+    ) -> Result<Response<Self::DoGetStream>, Status> {
+        let ticket = request.into_inner();
+        let key = String::from_utf8(ticket.ticket.to_vec())
+            .map_err(|e| Status::invalid_argument(format!("Invalid ticket: {}", e)))?;
+
+        // Key format: "session_id/object_id"
+        let object = self
+            .cache
+            .get(key.clone())
+            .await
+            .map_err(|e| Status::not_found(format!("Object not found: {}", e)))?;
+
+        let batch = object_to_batch(&object)?;
+        tracing::debug!(
+            "do_get: batch has {} rows, {} columns",
+            batch.num_rows(),
+            batch.num_columns()
+        );
+
+        let flight_data_vec = batch_to_flight_data_vec(&batch)?;
+        tracing::debug!(
+            "do_get: generated {} FlightData messages",
+            flight_data_vec.len()
+        );
+
+        let stream = futures::stream::iter(flight_data_vec.into_iter().map(Ok));
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn do_put(
+        &self,
+        request: Request<Streaming<FlightData>>,
+    ) -> Result<Response<Self::DoPutStream>, Status> {
+        // Extract session_id from FlightDescriptor in metadata
+        let descriptor = request
+            .metadata()
+            .get("flight-descriptor")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| {
+                // Try to decode the descriptor from base64 or parse it
+                // For now, we'll extract from the first FlightData's descriptor
+                None::<String>
+            });
+
+        let mut stream = request.into_inner();
+        let mut batches = Vec::new();
+        let mut session_id: Option<String> = None;
+        let mut schema: Option<Arc<Schema>> = None;
+
+        let mut object_id: Option<String> = None;
+
+        while let Some(flight_data) = stream.message().await? {
+            // Extract session_id and optionally object_id from flight descriptor
+            if session_id.is_none() {
+                if let Some(ref desc) = flight_data.flight_descriptor {
+                    if !desc.path.is_empty() {
+                        // Path format can be either "session_id" or "session_id/object_id"
+                        let path_str = &desc.path[0];
+                        if path_str.contains('/') {
+                            let parts: Vec<&str> = path_str.split('/').collect();
+                            if parts.len() == 2 {
+                                session_id = Some(parts[0].to_string());
+                                object_id = Some(parts[1].to_string());
+                            }
+                        } else {
+                            session_id = Some(path_str.clone());
+                        }
+                    }
+                }
+            }
+
+            // Extract schema from data_header in first message
+            if schema.is_none() && !flight_data.data_header.is_empty() {
+                // Decode schema from IPC message in data_header
+                // Use root_as_message to read the IPC message, then convert to Schema
+                use arrow::ipc::root_as_message;
+
+                let message = root_as_message(&flight_data.data_header)
+                    .map_err(|e| Status::internal(format!("Failed to parse IPC message: {}", e)))?;
+
+                let ipc_schema = message
+                    .header_as_schema()
+                    .ok_or_else(|| Status::internal("Message is not a schema"))?;
+
+                let decoded_schema = arrow::ipc::convert::fb_to_schema(ipc_schema);
+                schema = Some(Arc::new(decoded_schema));
+            }
+
+            // Decode batch if we have schema and data_body
+            if let Some(ref schema_ref) = schema {
+                if !flight_data.data_body.is_empty() {
+                    let batch = arrow_flight::utils::flight_data_to_arrow_batch(
+                        &flight_data,
+                        schema_ref.clone(),
+                        &Default::default(),
+                    )
+                    .map_err(|e| Status::internal(format!("Failed to decode batch: {}", e)))?;
+                    batches.push(batch);
+                }
+            }
+        }
+
+        if batches.is_empty() {
+            return Err(Status::invalid_argument("No data received"));
+        }
+
+        let session_id = session_id.ok_or_else(|| {
+            Status::invalid_argument(
+                "session_id must be provided in app_metadata as 'session_id:{id}'",
+            )
+        })?;
+
+        // Combine all batches into one
+        let combined_batch = if batches.len() == 1 {
+            batches.into_iter().next().unwrap()
+        } else {
+            let schema = batches[0].schema();
+            concat_batches(&schema, &batches)
+                .map_err(|e| Status::internal(format!("Failed to concatenate batches: {}", e)))?
+        };
+
+        let object = batch_to_object(&combined_batch)?;
+
+        let metadata = self
+            .cache
+            .put_with_id(session_id, object_id, object)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to put object: {}", e)))?;
+
+        // Create ObjectRef in BSON format
+        let object_ref = bson::doc! {
+            "endpoint": &metadata.endpoint,
+            "key": &metadata.key,
+            "version": metadata.version as i64,
+        };
+
+        let mut bson_bytes = Vec::new();
+        object_ref.to_writer(&mut bson_bytes).map_err(|e| {
+            Status::internal(format!("Failed to serialize ObjectRef to BSON: {}", e))
+        })?;
+
+        let result = PutResult {
+            app_metadata: Bytes::from(bson_bytes),
+        };
+
+        tracing::debug!("do_put: sending PutResult with key: {}", metadata.key);
+        let stream = futures::stream::iter(vec![Ok(result)]);
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn do_action(
+        &self,
+        request: Request<Action>,
+    ) -> Result<Response<Self::DoActionStream>, Status> {
+        let action = request.into_inner();
+        let action_type = action.r#type;
+        let action_body = String::from_utf8(action.body.to_vec())
+            .map_err(|e| Status::invalid_argument(format!("Invalid action body: {}", e)))?;
+
+        let result = match action_type.as_str() {
+            "PUT" => {
+                // Format: "PUT:{session_id}:{data_base64}"
+                let parts: Vec<&str> = action_body.split(':').collect();
+                if parts.len() != 2 {
+                    return Err(Status::invalid_argument("Invalid PUT action format"));
+                }
+                let session_id = parts[0].to_string();
+                let data = base64::engine::general_purpose::STANDARD
+                    .decode(parts[1])
+                    .map_err(|e| Status::invalid_argument(format!("Invalid base64: {}", e)))?;
+
+                let object = Object { version: 0, data };
+                let metadata = self
+                    .cache
+                    .put(session_id, object)
+                    .await
+                    .map_err(|e| Status::internal(format!("Failed to put: {}", e)))?;
+
+                serde_json::to_string(&metadata)
+                    .map_err(|e| Status::internal(format!("Failed to serialize: {}", e)))?
+            }
+            "UPDATE" => {
+                // Format: "UPDATE:{key}:{data_base64}"
+                let parts: Vec<&str> = action_body.splitn(2, ':').collect();
+                if parts.len() != 2 {
+                    return Err(Status::invalid_argument("Invalid UPDATE action format"));
+                }
+                let key = parts[0].to_string();
+                let data = base64::engine::general_purpose::STANDARD
+                    .decode(parts[1])
+                    .map_err(|e| Status::invalid_argument(format!("Invalid base64: {}", e)))?;
+
+                let object = Object { version: 0, data };
+                let metadata = self
+                    .cache
+                    .update(key, object)
+                    .await
+                    .map_err(|e| Status::internal(format!("Failed to update: {}", e)))?;
+
+                serde_json::to_string(&metadata)
+                    .map_err(|e| Status::internal(format!("Failed to serialize: {}", e)))?
+            }
+            "DELETE" => {
+                // Format: "DELETE:{session_id}"
+                self.cache
+                    .delete(action_body)
+                    .await
+                    .map_err(|e| Status::internal(format!("Failed to delete: {}", e)))?;
+                "OK".to_string()
+            }
+            _ => {
+                return Err(Status::invalid_argument(format!(
+                    "Unknown action type: {}",
+                    action_type
+                )))
+            }
+        };
+
+        let flight_result = FlightResult {
+            body: Bytes::from(result.into_bytes()),
+        };
+
+        let stream = futures::stream::iter(vec![Ok(flight_result)]);
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn list_actions(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<Self::ListActionsStream>, Status> {
+        let actions = vec![
+            ActionType {
+                r#type: "PUT".to_string(),
+                description: "Put an object into cache".to_string(),
+            },
+            ActionType {
+                r#type: "UPDATE".to_string(),
+                description: "Update an existing object".to_string(),
+            },
+            ActionType {
+                r#type: "DELETE".to_string(),
+                description: "Delete a session and all its objects".to_string(),
+            },
+        ];
+
+        let stream = futures::stream::iter(actions.into_iter().map(Ok));
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn get_schema(
+        &self,
+        _request: Request<FlightDescriptor>,
+    ) -> Result<Response<SchemaResult>, Status> {
+        let schema = Schema::new(vec![
+            Field::new("version", DataType::UInt64, false),
+            Field::new("data", DataType::Binary, false),
+        ]);
+
+        let schema_result = SchemaResult {
+            schema: Bytes::from(encode_schema(&schema)?),
+        };
+
+        Ok(Response::new(schema_result))
+    }
+
+    async fn handshake(
+        &self,
+        _request: Request<Streaming<HandshakeRequest>>,
+    ) -> Result<Response<Self::HandshakeStream>, Status> {
+        Err(Status::unimplemented("Handshake not implemented"))
+    }
+
+    async fn list_flights(
+        &self,
+        _request: Request<Criteria>,
+    ) -> Result<Response<Self::ListFlightsStream>, Status> {
+        let all_objects = self
+            .cache
+            .list_all()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to list objects: {}", e)))?;
+
+        let schema = Schema::new(vec![
+            Field::new("version", DataType::UInt64, false),
+            Field::new("data", DataType::Binary, false),
+        ]);
+
+        let flight_infos: Vec<Result<FlightInfo, Status>> = all_objects
+            .into_iter()
+            .map(|metadata| {
+                let ticket = Ticket {
+                    ticket: Bytes::from(metadata.key.as_bytes().to_vec()),
+                };
+
+                let endpoint = FlightEndpoint {
+                    ticket: Some(ticket),
+                    location: vec![Location {
+                        uri: metadata.endpoint.clone(),
+                    }],
+                    expiration_time: None,
+                    app_metadata: Bytes::new(),
+                };
+
+                // Return empty schema - schema will be discovered from FlightData
+                let flight_info = FlightInfo {
+                    schema: Bytes::new(),
+                    flight_descriptor: None,
+                    endpoint: vec![endpoint],
+                    total_records: -1,
+                    total_bytes: metadata.size as i64,
+                    ordered: false,
+                    app_metadata: Bytes::new(),
+                };
+
+                Ok(flight_info)
+            })
+            .collect();
+
+        let stream = futures::stream::iter(flight_infos);
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn do_exchange(
+        &self,
+        _request: Request<Streaming<FlightData>>,
+    ) -> Result<Response<Self::DoExchangeStream>, Status> {
+        Err(Status::unimplemented("Do exchange not implemented"))
+    }
+
+    async fn poll_flight_info(
+        &self,
+        _request: Request<FlightDescriptor>,
+    ) -> Result<Response<arrow_flight::PollInfo>, Status> {
+        Err(Status::unimplemented("Poll flight info not implemented"))
+    }
+}
+
+pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
+    let endpoint = CacheEndpoint::try_from(cache_config)?;
+    let address_str = format!("{}:{}", endpoint.host, endpoint.port);
+
+    // Get storage path from config or environment variable
+    let storage_path = if let Some(ref path) = cache_config.storage {
+        Some(PathBuf::from(path))
+    } else if let Ok(path) = std::env::var("FLAME_CACHE_STORAGE") {
+        Some(PathBuf::from(path))
+    } else {
+        None
+    };
+
+    if let Some(ref path) = storage_path {
+        tracing::info!("Using storage path: {:?}", path);
+    } else {
+        tracing::warn!("No storage path configured - cache will not persist");
+    }
+
+    let cache = Arc::new(ObjectCache::new(endpoint.clone(), storage_path)?);
+    let server = FlightCacheServer::new(Arc::clone(&cache));
+
+    tracing::info!("Starting Arrow Flight cache server at {}", address_str);
+
+    let addr = address_str
+        .parse()
+        .map_err(|e| FlameError::InvalidConfig(format!("Invalid address: {}", e)))?;
+
+    tonic::transport::Server::builder()
+        .add_service(FlightServiceServer::new(server))
+        .serve(addr)
+        .await
+        .map_err(|e| FlameError::Internal(format!("Server error: {}", e)))?;
+
+    Ok(())
+}

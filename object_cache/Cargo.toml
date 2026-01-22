@@ -1,0 +1,36 @@
+[package]
+name = "flame-cache"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "flame-cache"
+path = "src/main.rs"
+
+[dependencies]
+common = { path = "../common" }
+stdng = { path = "../stdng" }
+
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_derive = { workspace = true }
+bytes = { workspace = true }
+url = { workspace = true }
+network-interface = "2"
+regex = "1"
+
+arrow = "53"
+arrow-flight = "53"
+arrow-ipc = "53"
+prost = { workspace = true }
+prost-types = { workspace = true }
+base64 = "0.22"
+bson = "2"
+clap = { workspace = true }
