@@ -103,9 +103,7 @@ def _get_flight_client(endpoint: str) -> flight.FlightClient:
     return flight.FlightClient(location)
 
 
-def _do_put_remote(
-    client: flight.FlightClient, descriptor: flight.FlightDescriptor, batch: pa.RecordBatch
-) -> "ObjectRef":
+def _do_put_remote(client: flight.FlightClient, descriptor: flight.FlightDescriptor, batch: pa.RecordBatch) -> "ObjectRef":
     """Perform a remote do_put operation and read the result metadata.
 
     Args:

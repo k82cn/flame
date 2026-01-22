@@ -32,5 +32,5 @@ jobs:
           override: true
       - name: Run Rust E2E Test
         run: |
-          cargo test --workspace --exclude cri-rs -- --nocapture
+          make e2e-rs
 
