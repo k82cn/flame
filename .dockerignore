@@ -7,7 +7,7 @@ ci/
 .git/
 
 # Ignore logs
-*.log
+**/*.log
 
 # Ignore Python related stuff
 **/.venv/

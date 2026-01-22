@@ -103,6 +103,54 @@ def _get_flight_client(endpoint: str) -> flight.FlightClient:
     return flight.FlightClient(location)
 
 
+def _do_put_remote(
+    client: flight.FlightClient, descriptor: flight.FlightDescriptor, batch: pa.RecordBatch
+) -> "ObjectRef":
+    """Perform a remote do_put operation and read the result metadata.
+
+    Args:
+        client: Arrow Flight client
+        descriptor: Flight descriptor for the put operation
+        batch: RecordBatch to upload
+
+    Returns:
+        ObjectRef received from the server
+
+    Raises:
+        ValueError: If metadata cannot be read from server
+    """
+    writer, reader = client.do_put(descriptor, batch.schema)
+
+    # Write batch
+    writer.write_batch(batch)
+
+    # Signal we're done writing
+    writer.done_writing()
+
+    # Read result metadata from PutResult stream before closing
+    # Read metadata messages using read() method (returns Buffer/bytes)
+    try:
+        while True:
+            metadata_buffer = reader.read()
+            if metadata_buffer is None:
+                break
+            # Extract ObjectRef from metadata buffer (BSON format)
+            obj_ref_data = bson.loads(bytes(metadata_buffer))
+            writer.close()
+            return ObjectRef(
+                endpoint=obj_ref_data["endpoint"],
+                key=obj_ref_data["key"],
+                version=obj_ref_data["version"],
+            )
+    except Exception as e:
+        writer.close()
+        raise ValueError(f"Failed to read metadata from cache server: {e}")
+
+    # If we get here, no PutResult was received
+    writer.close()
+    raise ValueError("No result metadata received from cache server")
+
+
 def put_object(session_id: str, obj: Any) -> "ObjectRef":
     """Put an object into the cache.
 
@@ -186,32 +234,7 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
 
         # Encode session_id in FlightDescriptor path
         upload_descriptor = flight.FlightDescriptor.for_path(session_id)
-        writer, reader = client.do_put(upload_descriptor, batch.schema)
-
-    # Write batch
-    writer.write_batch(batch)
-
-    # Signal we're done writing
-    writer.done_writing()
-
-    # Read result metadata from PutResult stream before closing
-    # Read metadata messages using read() method (returns Buffer/bytes)
-    try:
-        while True:
-            metadata_buffer = reader.read()
-            if metadata_buffer is None:
-                break
-            # Extract ObjectRef from metadata buffer (BSON format)
-            obj_ref_data = bson.loads(bytes(metadata_buffer))
-            writer.close()
-            return ObjectRef(endpoint=obj_ref_data["endpoint"], key=obj_ref_data["key"], version=obj_ref_data["version"])
-    except Exception as e:
-        writer.close()
-        raise ValueError(f"Failed to read metadata from cache server: {e}")
-
-    # If we get here, no PutResult was received
-    writer.close()
-    raise ValueError("No result metadata received from cache server")
+        return _do_put_remote(client, upload_descriptor, batch)
 
 
 def get_object(ref: ObjectRef) -> Any:
@@ -235,20 +258,12 @@ def get_object(ref: ObjectRef) -> Any:
     # Get object data
     reader = client.do_get(ticket)
 
-    # Read all batches (should be only one)
-    batches = []
-    for chunk in reader:
-        batches.append(chunk.data)
-
-    if not batches:
+    table = reader.read_all()
+    if table.num_rows == 0:
         raise ValueError(f"No data received for object {ref.key}")
 
-    # Combine batches if needed
-    if len(batches) == 1:
-        batch = batches[0]
-    else:
-        table = pa.Table.from_batches(batches)
-        batch = table.to_batches()[0]
+    # The object is stored as a single RecordBatch
+    batch = table.to_batches()[0]
 
     # Deserialize object
     return _deserialize_object(batch)
@@ -280,29 +295,4 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
 
     # Use full key (session_id/object_id) in FlightDescriptor to update existing object
     upload_descriptor = flight.FlightDescriptor.for_path(ref.key)
-    writer, reader = client.do_put(upload_descriptor, batch.schema)
-
-    # Write batch
-    writer.write_batch(batch)
-
-    # Signal we're done writing
-    writer.done_writing()
-
-    # Read result metadata from PutResult stream before closing
-    # Read metadata messages using read() method (returns Buffer/bytes)
-    try:
-        while True:
-            metadata_buffer = reader.read()
-            if metadata_buffer is None:
-                break
-            # Extract ObjectRef from metadata buffer (BSON format)
-            obj_ref_data = bson.loads(bytes(metadata_buffer))
-            writer.close()
-            return ObjectRef(endpoint=obj_ref_data["endpoint"], key=obj_ref_data["key"], version=obj_ref_data["version"])
-    except Exception as e:
-        writer.close()
-        raise ValueError(f"Failed to read metadata from cache server: {e}")
-
-    # If we get here, no PutResult was received
-    writer.close()
-    raise ValueError("No result metadata received from cache server")
+    return _do_put_remote(client, upload_descriptor, batch)

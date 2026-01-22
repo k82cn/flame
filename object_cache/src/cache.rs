@@ -152,9 +152,7 @@ impl ObjectCache {
     fn load_from_disk(&self, storage_path: &Path) -> Result<(), FlameError> {
         if !storage_path.exists() {
             tracing::info!("Creating storage directory: {:?}", storage_path);
-            fs::create_dir_all(storage_path).map_err(|e| {
-                FlameError::Internal(format!("Failed to create storage directory: {}", e))
-            })?;
+            fs::create_dir_all(storage_path)?;
             return Ok(());
         }
 
@@ -162,12 +160,8 @@ impl ObjectCache {
         let mut objects = lock_ptr!(self.objects)?;
 
         // Iterate through session directories
-        for session_entry in fs::read_dir(storage_path)
-            .map_err(|e| FlameError::Internal(format!("Failed to read storage directory: {}", e)))?
-        {
-            let session_entry = session_entry.map_err(|e| {
-                FlameError::Internal(format!("Failed to read directory entry: {}", e))
-            })?;
+        for session_entry in fs::read_dir(storage_path)? {
+            let session_entry = session_entry?;
             let session_path = session_entry.path();
 
             if !session_path.is_dir() {
@@ -182,12 +176,8 @@ impl ObjectCache {
                 })?;
 
             // Iterate through object files in session directory
-            for object_entry in fs::read_dir(&session_path).map_err(|e| {
-                FlameError::Internal(format!("Failed to read session directory: {}", e))
-            })? {
-                let object_entry = object_entry.map_err(|e| {
-                    FlameError::Internal(format!("Failed to read file entry: {}", e))
-                })?;
+            for object_entry in fs::read_dir(&session_path)? {
+                let object_entry = object_entry?;
                 let object_path = object_entry.path();
 
                 if !object_path.is_file()
@@ -202,11 +192,7 @@ impl ObjectCache {
                     .ok_or_else(|| FlameError::Internal("Invalid object file name".to_string()))?;
 
                 let key = format!("{}/{}", session_id, object_id);
-                let size = fs::metadata(&object_path)
-                    .map_err(|e| {
-                        FlameError::Internal(format!("Failed to get file metadata: {}", e))
-                    })?
-                    .len();
+                let size = fs::metadata(&object_path)?.len();
 
                 let metadata = ObjectMetadata {
                     endpoint: format!(
@@ -248,17 +234,14 @@ impl ObjectCache {
         if let Some(storage_path) = &self.storage_path {
             // Create session directory
             let session_dir = storage_path.join(&session_id);
-            fs::create_dir_all(&session_dir).map_err(|e| {
-                FlameError::Internal(format!("Failed to create session directory: {}", e))
-            })?;
+            fs::create_dir_all(&session_dir)?;
 
             // Write object to Arrow IPC file
             let object_path = session_dir.join(format!("{}.arrow", object_id));
             let batch = object_to_batch(&object)
                 .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
 
-            let file = fs::File::create(&object_path)
-                .map_err(|e| FlameError::Internal(format!("Failed to create file: {}", e)))?;
+            let file = fs::File::create(&object_path)?;
             let mut writer = FileWriter::try_new(file, &batch.schema())
                 .map_err(|e| FlameError::Internal(format!("Failed to create writer: {}", e)))?;
             writer
@@ -396,8 +379,7 @@ impl ObjectCache {
             let batch = object_to_batch(&new_object)
                 .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
 
-            let file = fs::File::create(&object_path)
-                .map_err(|e| FlameError::Internal(format!("Failed to create file: {}", e)))?;
+            let file = fs::File::create(&object_path)?;
             let mut writer = FileWriter::try_new(file, &batch.schema())
                 .map_err(|e| FlameError::Internal(format!("Failed to create writer: {}", e)))?;
             writer
@@ -434,9 +416,7 @@ impl ObjectCache {
         if let Some(storage_path) = &self.storage_path {
             let session_dir = storage_path.join(&session_id);
             if session_dir.exists() {
-                fs::remove_dir_all(&session_dir).map_err(|e| {
-                    FlameError::Internal(format!("Failed to delete session directory: {}", e))
-                })?;
+                fs::remove_dir_all(&session_dir)?;
                 tracing::debug!("Deleted session directory: {:?}", session_dir);
             }
         }
