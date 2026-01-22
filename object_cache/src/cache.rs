@@ -519,14 +519,13 @@ impl FlightCacheServer {
     }
 
     async fn handle_put_action(&self, action_body: &str) -> Result<String, Status> {
-        let parts: Vec<&str> = action_body.split(':').collect();
-        if parts.len() != 2 {
-            return Err(Status::invalid_argument("Invalid PUT action format"));
-        }
+        let (session_id_str, data_b64) = action_body
+            .split_once(':')
+            .ok_or_else(|| Status::invalid_argument("Invalid PUT action format"))?;
 
-        let session_id = parts[0].to_string();
+        let session_id = session_id_str.to_string();
         let data = base64::engine::general_purpose::STANDARD
-            .decode(parts[1])
+            .decode(data_b64)
             .map_err(|e| Status::invalid_argument(format!("Invalid base64: {}", e)))?;
 
         let object = Object { version: 0, data };
