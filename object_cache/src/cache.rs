@@ -191,8 +191,8 @@ impl ObjectCache {
             let size = fs::metadata(&object_path)?.len();
             let metadata = self.create_metadata(key.clone(), size);
 
-            objects.insert(key, metadata);
             tracing::debug!("Loaded object: {}", key);
+            objects.insert(key, metadata);
         }
 
         Ok(())
