@@ -112,7 +112,7 @@ impl PluginManager {
 
         Ok(plugins
             .values()
-            .all(|plugin| plugin.is_available(exec, ssn).unwrap_or(false)))
+            .all(|plugin| plugin.is_available(exec, ssn).unwrap_or(true)))
     }
 
     pub fn is_allocatable(
