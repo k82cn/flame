@@ -137,6 +137,29 @@ impl Default for ApplicationAttributes {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct SessionAttributes {
+    pub id: SessionID,
+    pub application: String,
+    pub slots: u32,
+    pub common_data: Option<CommonData>,
+    pub min_instances: u32,
+    pub max_instances: Option<u32>,
+}
+
+impl Default for SessionAttributes {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            application: String::new(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
 pub enum SessionState {
     #[default]
@@ -164,6 +187,8 @@ pub struct Session {
     pub events: Vec<Event>,
 
     pub status: SessionStatus,
+    pub min_instances: u32,         // Minimum number of instances
+    pub max_instances: Option<u32>, // Maximum number of instances (None means unlimited)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
@@ -559,6 +584,8 @@ impl Clone for Session {
             completion_time: self.completion_time,
             events: self.events.clone(),
             status: self.status.clone(),
+            min_instances: self.min_instances,
+            max_instances: self.max_instances,
         };
 
         for (id, t) in &self.tasks {
@@ -772,6 +799,8 @@ impl From<&Session> for rpc::Session {
                 application: ssn.application.clone(),
                 slots: ssn.slots,
                 common_data: ssn.common_data.clone().map(CommonData::into),
+                min_instances: ssn.min_instances,
+                max_instances: ssn.max_instances,
             }),
             status: Some(status),
         }

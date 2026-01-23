@@ -62,7 +62,7 @@ def connect(addr: str) -> "Connection":
     return Connection.connect(addr)
 
 
-def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1) -> "Session":
+def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1, min_instances: int = 0, max_instances: Optional[int] = None) -> "Session":
     """Create a new session.
 
     Args:
@@ -70,9 +70,11 @@ def create_session(application: str, common_data: Optional[bytes] = None, sessio
         common_data: Common data as bytes (core API works with bytes)
         session_id: Optional session ID
         slots: Number of slots
+        min_instances: Minimum number of instances (default: 0)
+        max_instances: Maximum number of instances (None = unlimited)
     """
     conn = ConnectionInstance.instance()
-    return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots))
+    return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots, min_instances=min_instances, max_instances=max_instances))
 
 
 def open_session(session_id: SessionID) -> "Session":
@@ -333,6 +335,8 @@ class Connection:
             application=attrs.application,
             slots=attrs.slots,
             common_data=common_data_bytes,
+            min_instances=attrs.min_instances,
+            max_instances=attrs.max_instances if attrs.max_instances is not None else None,
         )
 
         request = CreateSessionRequest(session_id=session_id, session=session_spec)

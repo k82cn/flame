@@ -286,3 +286,105 @@ def test_runner_error_no_package_config():
             pass
 
     assert exc_info.value.code == flamepy.FlameErrorCode.INVALID_CONFIG
+
+
+def test_runner_stateful_instance(check_package_config, check_flmrun_app):
+    """Test Case 14: Test Runner with stateful=True for instance."""
+    with rl.Runner("test-runner-stateful") as rr:
+        # Create a Counter instance
+        counter = Counter()
+        
+        # Create a stateful service (state should persist across tasks)
+        cnt_service = rr.service(counter, stateful=True, autoscale=False)
+        
+        # Call methods
+        cnt_service.add(5).wait()
+        cnt_service.increment().wait()
+        result = cnt_service.get_count()
+        
+        # Get the result
+        value = result.get()
+        assert value == 6, f"Expected 6, got {value}"
+
+
+def test_runner_stateless_function(check_package_config, check_flmrun_app):
+    """Test Case 15: Test Runner with stateless function (default behavior)."""
+    with rl.Runner("test-runner-stateless-func") as rr:
+        # Create a service with a function (stateless by default)
+        sum_service = rr.service(sum_func, stateful=False, autoscale=True)
+        
+        # Call the function multiple times
+        results = [sum_service(i, i+1) for i in range(5)]
+        values = rr.get(results)
+        
+        # Verify results
+        expected = [1, 3, 5, 7, 9]
+        assert values == expected, f"Expected {expected}, got {values}"
+
+
+def test_runner_class_single_instance(check_package_config, check_flmrun_app):
+    """Test Case 16: Test Runner with class and autoscale=False (single instance)."""
+    with rl.Runner("test-runner-class-single") as rr:
+        # Create a service with a class, single instance mode
+        calc_service = rr.service(Calculator, stateful=False, autoscale=False)
+        
+        # Call methods
+        result1 = calc_service.add(10, 5)
+        result2 = calc_service.multiply(3, 4)
+        
+        values = rr.get([result1, result2])
+        assert values == [15, 12], f"Expected [15, 12], got {values}"
+
+
+def test_runner_error_stateful_class(check_package_config, check_flmrun_app):
+    """Test Case 17: Test that stateful=True raises error for class."""
+    with rl.Runner("test-runner-stateful-class-error") as rr:
+        # Trying to create a stateful service with a class should raise ValueError
+        with pytest.raises(ValueError) as exc_info:
+            rr.service(Counter, stateful=True)
+        
+        assert "Cannot set stateful=True for a class" in str(exc_info.value)
+
+
+def test_runner_defaults_function(check_package_config, check_flmrun_app):
+    """Test Case 18: Test default parameters for function (stateful=False, autoscale=True)."""
+    with rl.Runner("test-runner-defaults-func") as rr:
+        # Create service with defaults (should be stateful=False, autoscale=True)
+        sum_service = rr.service(sum_func)
+        
+        # Verify it works (defaults should be applied automatically)
+        result = sum_service(100, 200)
+        value = result.get()
+        assert value == 300, f"Expected 300, got {value}"
+
+
+def test_runner_defaults_class(check_package_config, check_flmrun_app):
+    """Test Case 19: Test default parameters for class (stateful=False, autoscale=False)."""
+    with rl.Runner("test-runner-defaults-class") as rr:
+        # Create service with class using defaults (should be stateful=False, autoscale=False)
+        counter_service = rr.service(Counter)
+        
+        # Call methods
+        counter_service.add(10).wait()
+        counter_service.increment().wait()
+        result = counter_service.get_count()
+        
+        value = result.get()
+        assert value == 11, f"Expected 11, got {value}"
+
+
+def test_runner_defaults_instance(check_package_config, check_flmrun_app):
+    """Test Case 20: Test default parameters for instance (stateful=False, autoscale=False)."""
+    with rl.Runner("test-runner-defaults-instance") as rr:
+        # Create an instance
+        calc = Calculator()
+        
+        # Create service with instance using defaults (should be stateful=False, autoscale=False)
+        calc_service = rr.service(calc)
+        
+        # Call methods
+        result1 = calc_service.add(5, 3)
+        result2 = calc_service.subtract(10, 4)
+        
+        values = rr.get([result1, result2])
+        assert values == [8, 6], f"Expected [8, 6], got {values}"

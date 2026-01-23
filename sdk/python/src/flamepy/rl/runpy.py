@@ -12,6 +12,7 @@ limitations under the License.
 """
 
 import importlib
+import inspect
 import logging
 import os
 import site
@@ -27,7 +28,7 @@ import cloudpickle
 from flamepy.core import ObjectRef, get_object, put_object, update_object
 from flamepy.core.service import FlameService, SessionContext, TaskContext
 from flamepy.core.types import TaskOutput
-from flamepy.rl.types import RunnerContext, RunnerRequest, RunnerServiceKind
+from flamepy.rl.types import RunnerContext, RunnerRequest
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ class FlameRunpyService(FlameService):
     def __init__(self):
         """Initialize the FlameRunpyService."""
         self._ssn_ctx: SessionContext = None
+        self._execution_object: Any = None  # Cached execution object
+        self._runner_context: RunnerContext = None  # Configuration
 
     def _resolve_object_ref(self, value: Any) -> Any:
         """
@@ -223,6 +226,7 @@ class FlameRunpyService(FlameService):
         Handle session enter event.
 
         If the application URL is specified, install the package into the current .venv.
+        Loads the RunnerContext and execution object, instantiating classes if needed.
 
         Args:
             context: Session context containing application and session information
@@ -245,7 +249,38 @@ class FlameRunpyService(FlameService):
         else:
             logger.info("No application URL specified, skipping package installation")
 
-        logger.info("Session entered successfully")
+        # Step 1: Load RunnerContext from common_data
+        common_data_bytes = context.common_data()
+        if common_data_bytes is None:
+            raise ValueError("Common data is None in session context")
+
+        # Decode bytes to ObjectRef
+        object_ref = ObjectRef.decode(common_data_bytes)
+        # Get from cache
+        serialized_ctx = get_object(object_ref)
+        # Deserialize using cloudpickle
+        runner_context = cloudpickle.loads(serialized_ctx)
+
+        if not isinstance(runner_context, RunnerContext):
+            raise ValueError(f"Expected RunnerContext in common_data, got {type(runner_context)}")
+
+        # Step 2: Store configuration
+        self._runner_context = runner_context
+
+        # Step 3: Load execution object
+        execution_object = runner_context.execution_object
+        if execution_object is None:
+            raise ValueError("Execution object is None in RunnerContext")
+
+        # Step 4: If it's a class, instantiate it
+        if inspect.isclass(execution_object):
+            logger.info(f"Instantiating class {execution_object.__name__}")
+            execution_object = execution_object()  # Use default constructor
+
+        # Step 5: Store execution object for reuse
+        self._execution_object = execution_object
+
+        logger.info(f"Session entered successfully, execution object loaded (stateful={runner_context.stateful}, autoscale={runner_context.autoscale})")
         return True
 
     def on_task_invoke(self, context: TaskContext) -> Optional[TaskOutput]:
@@ -253,11 +288,12 @@ class FlameRunpyService(FlameService):
         Handle task invoke event.
 
         This method:
-        1. Retrieves the execution object from session context
+        1. Uses the cached execution object from on_session_enter
         2. Deserializes the RunnerRequest from task input
         3. Resolves any ObjectRef instances in args/kwargs
         4. Executes the requested method on the execution object
-        5. Returns the result as bytes
+        5. Persists state if stateful=True
+        6. Returns the result as bytes
 
         Args:
             context: Task context containing task ID, session ID, and input
@@ -271,29 +307,14 @@ class FlameRunpyService(FlameService):
         logger.info(f"Invoking task: {context.task_id}")
 
         try:
-            # Get the execution object from session context
-            # For RL module: get bytes from core API, decode to ObjectRef, get from cache, then deserialize
-            common_data_bytes = self._ssn_ctx.common_data()
-            if common_data_bytes is None:
-                raise ValueError("Common data is None in session context")
-
-            # Decode bytes to ObjectRef
-            object_ref = ObjectRef.decode(common_data_bytes)
-            # Get from cache
-            serialized_ctx = get_object(object_ref)
-            # Deserialize using cloudpickle
-            common_data = cloudpickle.loads(serialized_ctx)
-
-            if not isinstance(common_data, RunnerContext):
-                raise ValueError(f"Expected RunnerContext in common_data, got {type(common_data)}")
-
-            execution_object = common_data.execution_object
+            # Step 1: Use cached execution object (not from common_data)
+            execution_object = self._execution_object
             if execution_object is None:
-                raise ValueError("Execution object is None in RunnerContext")
+                raise ValueError("Execution object is None. Session may not have been entered properly.")
 
             logger.debug(f"Execution object type: {type(execution_object)}")
 
-            # Get the RunnerRequest from task input
+            # Step 2: Get the RunnerRequest from task input
             # For RL module: receive bytes from core API, deserialize with cloudpickle
             if context.input is None:
                 raise ValueError("Task input is None")
@@ -312,7 +333,7 @@ class FlameRunpyService(FlameService):
 
             logger.debug(f"RunnerRequest: method={request.method}, has_args={request.args is not None}, has_kwargs={request.kwargs is not None}")
 
-            # Resolve ObjectRef instances in args and kwargs
+            # Step 3: Resolve ObjectRef instances in args and kwargs
             invoke_args = ()
             invoke_kwargs = {}
 
@@ -332,7 +353,7 @@ class FlameRunpyService(FlameService):
                 invoke_kwargs = {key: self._resolve_object_ref(value) for key, value in request.kwargs.items()}
                 logger.debug(f"Resolved kwargs: {len(invoke_kwargs)} keyword arguments")
 
-            # Execute the requested method
+            # Step 4: Execute the requested method
             if request.method is None:
                 # The execution object itself is callable
                 if not callable(execution_object):
@@ -354,25 +375,27 @@ class FlameRunpyService(FlameService):
             logger.info(f"Task {context.task_id} completed successfully")
             logger.debug(f"Result type: {type(result)}")
 
-            if common_data.kind == RunnerServiceKind.Stateless:
-                logger.debug("Skipping common data update for stateless runner")
-            else:
-                # Update common data with the modified execution object to persist state
-                # This is important for stateful classes where instance variables change
-                logger.debug("Updating common data with modified execution object")
+            # Step 5: Update execution object state if stateful
+            if self._runner_context.stateful:
+                logger.debug("Persisting execution object state")
                 updated_context = RunnerContext(
-                    execution_object=execution_object,
-                    kind=common_data.kind,
+                    execution_object=execution_object,  # Updated object
+                    stateful=self._runner_context.stateful,
+                    autoscale=self._runner_context.autoscale,
                 )
                 # For RL module: serialize RunnerContext with cloudpickle, update in cache to get ObjectRef,
                 # then encode ObjectRef to bytes for core API
                 serialized_ctx = cloudpickle.dumps(updated_context, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
-                # Update existing ObjectRef with latest version in cache
-                object_ref = update_object(object_ref, serialized_ctx)
-                logger.debug("Common data updated successfully in cache")
+                # Get original ObjectRef and update it
+                common_data_bytes = self._ssn_ctx.common_data()
+                object_ref = ObjectRef.decode(common_data_bytes)
+                update_object(object_ref, serialized_ctx)
+                logger.debug("Execution object state persisted successfully in cache")
+            else:
+                logger.debug("Skipping state persistence for non-stateful service")
 
-            # Put the result into cache and return ObjectRef encoded as bytes
+            # Step 6: Put the result into cache and return ObjectRef encoded as bytes
             # This enables efficient data transfer for large objects
             logger.debug("Putting result into cache")
             result_object_ref = put_object(context.session_id, result)

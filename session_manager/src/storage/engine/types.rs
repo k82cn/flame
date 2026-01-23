@@ -72,6 +72,8 @@ pub struct SessionDao {
     pub completion_time: Option<i64>,
 
     pub state: i32,
+    pub min_instances: i64,         // Minimum number of instances
+    pub max_instances: Option<i64>, // Maximum number of instances (NULL means unlimited)
 }
 
 #[derive(Clone, FromRow, Debug)]
@@ -113,6 +115,8 @@ impl TryFrom<&SessionDao> for Session {
                 state: ssn.state.try_into()?,
             },
             events: vec![],
+            min_instances: ssn.min_instances as u32, // Convert i64 to u32
+            max_instances: ssn.max_instances.map(|v| v as u32), // Convert Option<i64> to Option<u32>
         })
     }
 }

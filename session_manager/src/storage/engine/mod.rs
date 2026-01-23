@@ -17,8 +17,8 @@ use async_trait::async_trait;
 
 use crate::FlameError;
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationID, CommonData, Event, Session, SessionID, Task,
-    TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationID, CommonData, Event, Session,
+    SessionAttributes, SessionID, Task, TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
 };
 
 mod sqlite;
@@ -42,13 +42,7 @@ pub trait Engine: Send + Sync + 'static {
     async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError>;
     async fn find_application(&self) -> Result<Vec<Application>, FlameError>;
 
-    async fn create_session(
-        &self,
-        id: SessionID,
-        app: String,
-        slots: u32,
-        common_data: Option<CommonData>,
-    ) -> Result<Session, FlameError>;
+    async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError>;
     async fn get_session(&self, id: SessionID) -> Result<Session, FlameError>;
     async fn close_session(&self, id: SessionID) -> Result<Session, FlameError>;
     async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError>;

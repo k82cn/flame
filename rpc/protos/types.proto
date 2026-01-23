@@ -32,6 +32,8 @@ message SessionSpec {
   string application = 2;
   uint32 slots = 3;
   optional bytes common_data = 4;
+  uint32 min_instances = 5;  // Minimum number of instances (default: 0)
+  optional uint32 max_instances = 6;  // Maximum number of instances (null means unlimited)
 }
 
 message Session {
