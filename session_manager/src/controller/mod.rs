@@ -18,8 +18,8 @@ use std::task::{Context, Poll};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, CommonData, Event, EventOwner, ExecutorID,
-    ExecutorState, Node, NodeState, Session, SessionID, SessionPtr, SessionState, Task, TaskGID,
-    TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
+    ExecutorState, Node, NodeState, Session, SessionAttributes, SessionID, SessionPtr,
+    SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 
 use common::FlameError;
@@ -58,17 +58,9 @@ impl Controller {
         self.storage.release_node(node_name).await
     }
 
-    pub async fn create_session(
-        &self,
-        id: SessionID,
-        app: String,
-        slots: u32,
-        common_data: Option<CommonData>,
-    ) -> Result<Session, FlameError> {
+    pub async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
         trace_fn!("Controller::create_session");
-        self.storage
-            .create_session(id, app, slots, common_data)
-            .await
+        self.storage.create_session(attr).await
     }
 
     pub async fn open_session(&self, id: SessionID) -> Result<Session, FlameError> {

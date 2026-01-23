@@ -13,7 +13,7 @@ limitations under the License.
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use common::apis::ApplicationAttributes;
+use common::apis::{ApplicationAttributes, SessionAttributes};
 use futures::Stream;
 use serde_json::Value;
 use stdng::trace_fn;
@@ -255,18 +255,27 @@ impl Frontend for Flame {
             .parse::<apis::SessionID>()
             .map_err(|_| Status::invalid_argument("invalid session id"))?;
 
-        let common_data = ssn_spec.common_data.map(apis::CommonData::from);
+        let attr = SessionAttributes {
+            id: ssn_id,
+            application: ssn_spec.application,
+            slots: ssn_spec.slots,
+            common_data: ssn_spec.common_data.map(apis::CommonData::from),
+            min_instances: ssn_spec.min_instances,
+            max_instances: ssn_spec.max_instances,
+        };
 
         tracing::debug!(
-            "common_data: {:?}, application: {:?}, slots: {:?}",
-            common_data,
-            ssn_spec.application,
-            ssn_spec.slots
+            "Creating session with attributes: id={}, application={}, slots={}, min_instances={}, max_instances={:?}",
+            attr.id,
+            attr.application,
+            attr.slots,
+            attr.min_instances,
+            attr.max_instances
         );
 
         let ssn = self
             .controller
-            .create_session(ssn_id, ssn_spec.application, ssn_spec.slots, common_data)
+            .create_session(attr)
             .await
             .map(Session::from)
             .map_err(Status::from)?;

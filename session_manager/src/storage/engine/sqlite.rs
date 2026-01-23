@@ -32,9 +32,9 @@ use stdng::{logs::TraceFn, trace_fn};
 use common::{
     apis::{
         Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
-        CommonData, Event, Session, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID,
-        TaskID, TaskInput, TaskOutput, TaskResult, TaskState, DEFAULT_DELAY_RELEASE,
-        DEFAULT_MAX_INSTANCES,
+        CommonData, Event, Session, SessionAttributes, SessionID, SessionState, SessionStatus,
+        Shim, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState,
+        DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
     },
     FlameError,
 };
@@ -367,24 +367,20 @@ impl Engine for SqliteEngine {
             .collect())
     }
 
-    async fn create_session(
-        &self,
-        id: SessionID,
-        app: String,
-        slots: u32,
-        common_data: Option<CommonData>,
-    ) -> Result<Session, FlameError> {
+    async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let common_data: Option<Vec<u8>> = common_data.map(Bytes::into);
-        let sql = r#"INSERT INTO sessions (id, application, slots, common_data, creation_time, state)
+        let common_data: Option<Vec<u8>> = attr.common_data.map(Bytes::into);
+        let sql = r#"INSERT INTO sessions (id, application, slots, common_data, creation_time, state, min_instances, max_instances)
             VALUES (
                 ?,
                 (SELECT name FROM applications WHERE name=? AND state=?),
+                ?,
+                ?,
                 ?,
                 ?,
                 ?,
@@ -392,13 +388,15 @@ impl Engine for SqliteEngine {
             )
             RETURNING *"#;
         let ssn: SessionDao = sqlx::query_as(sql)
-            .bind(id.clone())
-            .bind(app)
+            .bind(attr.id.clone())
+            .bind(attr.application)
             .bind(ApplicationState::Enabled as i32)
-            .bind(slots)
+            .bind(attr.slots)
             .bind(common_data)
             .bind(Utc::now().timestamp())
             .bind(SessionState::Open as i32)
+            .bind(attr.min_instances as i64)
+            .bind(attr.max_instances.map(|v| v as i64))
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;

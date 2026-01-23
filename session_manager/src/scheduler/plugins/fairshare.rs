@@ -30,6 +30,8 @@ struct SSNInfo {
     pub desired: f64,
     pub deserved: f64,
     pub allocated: f64,
+    pub min_instances: u32,         // Minimum number of instances
+    pub max_instances: Option<u32>, // Maximum number of instances (None means unlimited)
 }
 
 impl Eq for SSNInfo {}
@@ -133,14 +135,24 @@ impl Plugin for FairShare {
             }
 
             if let Some(app) = apps.get(&ssn.application) {
-                desired = desired.min((app.max_instances * ssn.slots) as f64);
+                // Cap desired by session's max_instances (already includes app limit from session creation)
+                if let Some(max_instances) = ssn.max_instances {
+                    desired = desired.min((max_instances * ssn.slots) as f64);
+                }
+
+                // Ensure desired is at least min_instances * slots (minimum guarantee)
+                let min_allocation = (ssn.min_instances * ssn.slots) as f64;
+                desired = desired.max(min_allocation);
 
                 self.ssn_map.insert(
                     ssn.id.clone(),
                     SSNInfo {
                         id: ssn.id.clone(),
                         desired,
+                        deserved: min_allocation, // Initialize to min_instances (guaranteed minimum)
                         slots: ssn.slots,
+                        min_instances: ssn.min_instances,
+                        max_instances: ssn.max_instances,
                         ..SSNInfo::default()
                     },
                 );
@@ -167,6 +179,12 @@ impl Plugin for FairShare {
                     allocated: 0.0,
                 },
             );
+        }
+
+        // Reserve slots for guaranteed minimums before fair distribution
+        for ssn in self.ssn_map.values() {
+            let min_allocation = (ssn.min_instances * ssn.slots) as f64;
+            remaining_slots -= min_allocation;
         }
 
         let executors = ss.find_executors(ALL_EXECUTOR)?;

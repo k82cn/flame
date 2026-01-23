@@ -12,16 +12,8 @@ limitations under the License.
 """
 
 import inspect
-from dataclasses import dataclass
-from enum import IntEnum
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
-
-
-class RunnerServiceKind(IntEnum):
-    """Runner service kind enumeration."""
-
-    Stateful = 0
-    Stateless = 1
 
 
 @dataclass
@@ -33,21 +25,35 @@ class RunnerContext:
 
     Attributes:
         execution_object: The execution object for the customized session. This can be
-                          any Python object (function, class instance, etc.) that will
+                          any Python object (function, class, instance, etc.) that will
                           be used to execute tasks within the session.
-        kind: The kind of the runner service, if specified.
+        stateful: If True, persist the execution object state back to flame-cache
+                  after each task. If False, do not persist state.
+        autoscale: If True, create instances dynamically based on pending tasks (min=0, max=None).
+                   If False, create exactly one instance (min=1, max=1).
+        min_instances: Minimum number of instances (computed from autoscale)
+        max_instances: Maximum number of instances (computed from autoscale)
     """
 
     execution_object: Any
-    kind: Optional[RunnerServiceKind] = None
+    stateful: bool = False
+    autoscale: bool = True
+    min_instances: int = field(init=False, repr=False)
+    max_instances: Optional[int] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.kind is not None:
-            return
-        if inspect.isfunction(self.execution_object) or inspect.isbuiltin(self.execution_object) or (inspect.isclass(self.execution_object) and self.execution_object.__module__ == "builtins"):
-            self.kind = RunnerServiceKind.Stateless
+        """Compute min/max instances and validate configuration."""
+        # Compute min/max instances based on autoscale
+        if self.autoscale:
+            self.min_instances = 0
+            self.max_instances = None  # Unlimited
         else:
-            self.kind = RunnerServiceKind.Stateful
+            self.min_instances = 1
+            self.max_instances = 1  # Single instance
+
+        # Validation: classes cannot be stateful (only instances can)
+        if self.stateful and inspect.isclass(self.execution_object):
+            raise ValueError("Cannot set stateful=True for a class. Classes themselves cannot maintain state; only instances can. Pass an instance instead, or set stateful=False.")
 
 
 @dataclass

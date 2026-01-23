@@ -99,6 +99,8 @@ pub struct SessionInfo {
     pub completion_time: Option<DateTime<Utc>>,
 
     pub state: SessionState,
+    pub min_instances: u32,         // Minimum number of instances
+    pub max_instances: Option<u32>, // Maximum number of instances (None means unlimited)
 }
 
 #[derive(Clone, Debug, Default)]
@@ -198,6 +200,8 @@ impl From<&Session> for SessionInfo {
             creation_time: ssn.creation_time,
             completion_time: ssn.completion_time,
             state: ssn.status.state,
+            min_instances: ssn.min_instances, // Map from Session
+            max_instances: ssn.max_instances, // Map from Session
         }
     }
 }

@@ -83,6 +83,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         application: DEFAULT_APP.to_string(),
         slots,
         common_data: cli.common_data.map(|s| s.into()),
+        min_instances: 0,    // Default: no minimum guarantee
+        max_instances: None, // Default: unlimited
     };
     let ssn = conn.create_session(&ssn_attr).await?;
     let ssn_creation_end_time = Instant::now();

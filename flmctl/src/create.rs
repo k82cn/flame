@@ -24,6 +24,8 @@ pub async fn run(ctx: &FlameContext, app: &str, slots: &u32) -> Result<(), Box<d
         application: app.to_owned(),
         slots: *slots,
         common_data: None,
+        min_instances: 0,    // Default: no minimum guarantee
+        max_instances: None, // Default: unlimited (will use application's max_instances as fallback)
     };
 
     let ssn = conn.create_session(&attr).await?;

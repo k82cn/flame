@@ -59,6 +59,8 @@ async fn test_create_session() -> Result<(), FlameError> {
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
+        min_instances: 0,
+        max_instances: None,
     };
     let ssn = conn.create_session(&ssn_attr).await?;
 
@@ -101,6 +103,8 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
+        min_instances: 0,
+        max_instances: None,
     };
     let ssn = conn.create_session(&ssn_attr).await?;
 
@@ -159,6 +163,8 @@ async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
+        min_instances: 0,
+        max_instances: None,
     };
     let ssn_1 = conn.create_session(&ssn_1_attr).await?;
     assert_eq!(ssn_1.state, SessionState::Open);
@@ -168,6 +174,8 @@ async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
         application: FLAME_DEFAULT_APP.to_string(),
         slots: 1,
         common_data: None,
+        min_instances: 0,
+        max_instances: None,
     };
     let ssn_2 = conn.create_session(&ssn_2_attr).await?;
     assert_eq!(ssn_2.state, SessionState::Open);

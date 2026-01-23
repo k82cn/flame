@@ -21,9 +21,9 @@ use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, Event,
-    EventOwner, ExecutorID, ExecutorState, Node, NodePtr, ResourceRequirement, Session, SessionID,
-    SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskPtr, TaskResult,
-    TaskState,
+    EventOwner, ExecutorID, ExecutorState, Node, NodePtr, ResourceRequirement, Session,
+    SessionAttributes, SessionID, SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput,
+    TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 use common::ctx::FlameClusterContext;
 use common::FlameError;
@@ -185,18 +185,9 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn create_session(
-        &self,
-        id: SessionID,
-        app: String,
-        slots: u32,
-        common_data: Option<CommonData>,
-    ) -> Result<Session, FlameError> {
+    pub async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
         trace_fn!("Storage::create_session");
-        let ssn = self
-            .engine
-            .create_session(id, app, slots, common_data)
-            .await?;
+        let ssn = self.engine.create_session(attr).await?;
 
         let mut ssn_map = lock_ptr!(self.sessions)?;
         ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));

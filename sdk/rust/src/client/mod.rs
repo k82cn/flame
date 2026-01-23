@@ -73,6 +73,8 @@ pub struct SessionAttributes {
     pub slots: u32,
     #[serde(with = "serde_message")]
     pub common_data: Option<CommonData>,
+    pub min_instances: u32,
+    pub max_instances: Option<u32>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -187,6 +189,8 @@ impl Connection {
                 application: attrs.application.clone(),
                 slots: attrs.slots,
                 common_data: attrs.common_data.clone().map(CommonData::into),
+                min_instances: attrs.min_instances,
+                max_instances: attrs.max_instances,
             }),
         };
 

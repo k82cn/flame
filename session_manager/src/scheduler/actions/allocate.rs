@@ -66,6 +66,27 @@ impl Action for AllocateAction {
                 continue;
             }
 
+            // Explicit max_instances check (safety guard)
+            // The fairshare plugin caches allocated count from snapshot at the start of the cycle.
+            // Within a single cycle, if we allocate multiple executors, the cached count doesn't update.
+            // To prevent over-allocation, we count actual executors from the current snapshot.
+            if let Some(max_instances) = ssn.max_instances {
+                let all_executors = ss.find_executors(None)?;
+                let current_count = all_executors
+                    .values()
+                    .filter(|e| e.ssn_id.as_ref() == Some(&ssn.id))
+                    .count();
+                if current_count >= max_instances as usize {
+                    tracing::debug!(
+                        "Session <{}> has reached max_instances limit: {} >= {}",
+                        ssn.id,
+                        current_count,
+                        max_instances
+                    );
+                    continue; // Already at max limit
+                }
+            }
+
             // If there're still some executors in pipeline, skip allocate new executor to the session.
             let pipelined_executors = ss.pipelined_executors(ssn.clone())?;
             if !pipelined_executors.is_empty() {
