@@ -132,7 +132,7 @@ impl PluginManager {
 
         Ok(plugins
             .values()
-            .all(|plugin| plugin.is_reclaimable(exec).unwrap_or(false)))
+            .all(|plugin| plugin.is_reclaimable(exec).unwrap_or(true)))
     }
 
     pub fn on_create_executor(
