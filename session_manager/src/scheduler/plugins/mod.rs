@@ -124,7 +124,7 @@ impl PluginManager {
 
         Ok(plugins
             .values()
-            .all(|plugin| plugin.is_allocatable(node, ssn).unwrap_or(false)))
+            .all(|plugin| plugin.is_allocatable(node, ssn).unwrap_or(true)))
     }
 
     pub fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Result<bool, FlameError> {
