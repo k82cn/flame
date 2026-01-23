@@ -252,7 +252,17 @@ mod tests {
 
         let error = FlameError::Network("test".to_string());
         let status = Status::from(error);
-        assert_eq!(status.code(), Code::Unknown);
+        assert_eq!(status.code(), Code::Internal);
+        assert_eq!(status.message(), "test");
+
+        let error = FlameError::InvalidConfig("test".to_string());
+        let status = Status::from(error);
+        assert_eq!(status.code(), Code::InvalidArgument);
+        assert_eq!(status.message(), "test");
+
+        let error = FlameError::InvalidState("test".to_string());
+        let status = Status::from(error);
+        assert_eq!(status.code(), Code::InvalidArgument);
         assert_eq!(status.message(), "test");
     }
 }
