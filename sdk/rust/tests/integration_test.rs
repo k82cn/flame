@@ -83,6 +83,8 @@ async fn test_create_multiple_sessions() -> Result<(), FlameError> {
             application: FLAME_DEFAULT_APP.to_string(),
             slots: 1,
             common_data: None,
+            min_instances: 0,
+            max_instances: None,
         };
         let ssn = conn.create_session(&ssn_attr).await?;
 

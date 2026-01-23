@@ -739,12 +739,14 @@ mod tests {
         }
 
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
@@ -845,12 +847,14 @@ mod tests {
 
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
 
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
         assert_eq!(ssn_1.status.state, SessionState::Open);
@@ -1162,12 +1166,14 @@ mod tests {
         }
 
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
@@ -1214,12 +1220,14 @@ mod tests {
         }
 
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
@@ -1246,12 +1254,14 @@ mod tests {
         assert_eq!(task_1_2.state, TaskState::Succeed);
 
         let ssn_2_id = format!("ssn-2-{}", Utc::now().timestamp());
-        let ssn_2 = tokio_test::block_on(storage.create_session(
-            ssn_2_id.clone(),
-            "flmping".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_2 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_2_id.clone(),
+            application: "flmping".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
 
         assert_eq!(ssn_2.id, ssn_2_id);
         assert_eq!(ssn_2.application, "flmping");
@@ -1299,12 +1309,14 @@ mod tests {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
@@ -1334,12 +1346,14 @@ mod tests {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
@@ -1375,12 +1389,14 @@ mod tests {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
         }
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(storage.create_session(
-            ssn_1_id.clone(),
-            "flmexec".to_string(),
-            1,
-            None,
-        ))?;
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
