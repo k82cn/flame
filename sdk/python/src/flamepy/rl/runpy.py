@@ -15,6 +15,7 @@ import importlib
 import inspect
 import logging
 import os
+import shutil
 import site
 import subprocess
 import sys
@@ -120,7 +121,12 @@ class FlameRunpyService(FlameService):
         logger.info(f"Extracting archive: {archive_path} to {extract_to}")
 
         try:
-            # Create extraction directory if it doesn't exist
+            # Remove old extracted directory if it exists to ensure clean extraction
+            if os.path.exists(extract_to):
+                logger.info(f"Removing existing extracted directory: {extract_to}")
+                shutil.rmtree(extract_to)
+
+            # Create extraction directory
             os.makedirs(extract_to, exist_ok=True)
 
             # Determine archive type and extract
@@ -193,27 +199,50 @@ class FlameRunpyService(FlameService):
             install_path = extracted_dir
             logger.info(f"Will install from extracted directory: {install_path}")
 
+            # Debug: List contents of extracted directory
+            try:
+                contents = os.listdir(install_path)
+                logger.debug(f"Extracted directory contents: {contents}")
+
+                # Check for pyproject.toml or setup.py
+                if "pyproject.toml" in contents:
+                    pyproject_path = os.path.join(install_path, "pyproject.toml")
+                    with open(pyproject_path, "r") as f:
+                        pyproject_content = f.read()
+                    logger.debug(f"pyproject.toml content:\n{pyproject_content}")
+                if "setup.py" in contents:
+                    logger.debug("Found setup.py in extracted directory")
+            except Exception as e:
+                logger.warning(f"Failed to list extracted directory contents: {e}")
+
         # Use sys.executable -m pip to install into the current virtual environment
+        # pip install will upgrade the package if it's already installed
         logger.info(f"Installing package: {install_path}")
-        install_args = [sys.executable, "-m", "pip", "install", install_path]
+        logger.debug(f"Python executable: {sys.executable}")
+        logger.debug(f"Current working directory: {os.getcwd()}")
+        install_args = [sys.executable, "-m", "pip", "install", "--upgrade", install_path]
+        logger.debug(f"Install command: {' '.join(install_args)}")
 
         try:
             result = subprocess.run(install_args, capture_output=True, text=True, check=True)
-            logger.info(f"Package installation output: {result.stdout}")
+            logger.info("Package installation succeeded")
+            logger.debug(f"Package installation stdout:\n{result.stdout}")
             if result.stderr:
-                logger.warning(f"Package installation stderr: {result.stderr}")
+                logger.debug(f"Package installation stderr:\n{result.stderr}")
             logger.info(f"Successfully installed package from: {install_path}")
 
             # Reload site packages to make the newly installed package available
             # This is necessary because the Python interpreter has already started
             logger.info("Reloading site packages to pick up newly installed package")
             importlib.reload(site)
-            logger.info(f"Updated sys.path: {sys.path}")
+            logger.debug(f"Updated sys.path: {sys.path}")
 
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to install package: {e}")
-            logger.error(f"stdout: {e.stdout}")
-            logger.error(f"stderr: {e.stderr}")
+            logger.error(f"Return code: {e.returncode}")
+            logger.error(f"Install command was: {' '.join(install_args)}")
+            logger.error(f"Package installation stdout:\n{e.stdout}")
+            logger.error(f"Package installation stderr:\n{e.stderr}")
             raise RuntimeError(f"Package installation failed: {e}")
         finally:
             # Clean up extracted directory if it was created

@@ -1,0 +1,22 @@
+[project]
+name = "ps-example"
+version = "0.1.0"
+description = "Parameter Server by flamepy.Runner"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch",
+    "torchvision",
+    "numpy",
+    "filelock"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["ps", "main"]
+
+[tool.uv.sources]
+flamepy = { path = "/usr/local/flame/sdk/python" }

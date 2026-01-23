@@ -84,7 +84,7 @@ mod tests {
             description: None,
             labels: Vec::new(),
             arguments: Vec::new(),
-            working_directory: "/tmp".to_string(),
+            working_directory: Some("/tmp".to_string()),
             environments: HashMap::new(),
             shim: Shim::Host,
             max_instances: 10,

@@ -15,6 +15,7 @@ use std::env;
 use std::fs::{self, create_dir_all, File, OpenOptions};
 use std::future::Future;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::pin::Pin;
 use std::process::{self, Command, Stdio};
 use std::sync::Arc;
@@ -99,10 +100,13 @@ impl HostShim {
         // Spawn child process
         let mut cmd = tokio::process::Command::new(&command);
 
-        let cur_dir = app
-            .working_directory
-            .clone()
-            .unwrap_or(FLAME_WORKING_DIRECTORY.to_string());
+        // If application doesn't specify working_directory, use executor-specific directory
+        let cur_dir = app.working_directory.clone().unwrap_or_else(|| {
+            let executor_working_directory = env::current_dir()
+                .unwrap_or(Path::new(FLAME_WORKING_DIRECTORY).to_path_buf())
+                .join(executor.id.as_str());
+            executor_working_directory.to_string_lossy().to_string()
+        });
 
         tracing::debug!("Current directory of application instance: {cur_dir}");
 

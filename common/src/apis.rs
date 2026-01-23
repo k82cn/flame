@@ -95,7 +95,7 @@ pub struct Application {
     pub command: Option<String>,
     pub arguments: Vec<String>,
     pub environments: HashMap<String, String>,
-    pub working_directory: String,
+    pub working_directory: Option<String>,
     pub max_instances: u32,
     pub delay_release: Duration,
     pub schema: Option<ApplicationSchema>,
@@ -111,7 +111,7 @@ pub struct ApplicationAttributes {
     pub command: Option<String>,
     pub arguments: Vec<String>,
     pub environments: HashMap<String, String>,
-    pub working_directory: String,
+    pub working_directory: Option<String>,
     pub max_instances: u32,
     pub delay_release: Duration,
     pub schema: Option<ApplicationSchema>,
@@ -128,7 +128,7 @@ impl Default for ApplicationAttributes {
             command: None,
             arguments: vec![],
             environments: HashMap::new(),
-            working_directory: "/tmp".to_string(),
+            working_directory: None,
             max_instances: DEFAULT_MAX_INSTANCES,
             delay_release: DEFAULT_DELAY_RELEASE,
             schema: Some(ApplicationSchema::default()),
@@ -868,7 +868,7 @@ impl TryFrom<&rpc::Application> for Application {
                 .into_iter()
                 .map(|e| (e.name, e.value))
                 .collect(),
-            working_directory: spec.working_directory.unwrap_or(String::default()),
+            working_directory: spec.working_directory,
             max_instances: spec.max_instances.unwrap_or(DEFAULT_MAX_INSTANCES),
             delay_release: spec
                 .delay_release
@@ -901,7 +901,7 @@ impl From<&Application> for rpc::Application {
                 .into_iter()
                 .map(|(k, v)| rpc::Environment { name: k, value: v })
                 .collect(),
-            working_directory: Some(app.working_directory.clone()),
+            working_directory: app.working_directory.clone(),
             max_instances: Some(app.max_instances),
             delay_release: Some(app.delay_release.num_seconds()),
             schema: app.schema.clone().map(rpc::ApplicationSchema::from),
@@ -939,7 +939,7 @@ impl From<rpc::ApplicationSpec> for ApplicationAttributes {
                 .into_iter()
                 .map(|e| (e.name, e.value))
                 .collect(),
-            working_directory: spec.working_directory.clone().unwrap_or_default(),
+            working_directory: spec.working_directory.clone(),
             max_instances: spec.max_instances.unwrap_or(DEFAULT_MAX_INSTANCES),
             delay_release: spec
                 .delay_release
