@@ -93,7 +93,7 @@ where
     C: Cmp<T>,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(Cmp::cmp(self, &self.data, &other.data))
+        Some(Ord::cmp(self, other))
     }
 }
 

@@ -19,6 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "flame.ExecutorState",
             "#[allow(clippy::enum_variant_names)]",
         )
+        .type_attribute("flame.NodeSpec", "#[allow(dead_code)]")
+        .type_attribute("flame.Node", "#[allow(dead_code)]")
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile_protos(
             &[

@@ -65,9 +65,15 @@ impl From<stdng::Error> for FlameError {
 impl From<FlameError> for Status {
     fn from(value: FlameError) -> Self {
         match value {
-            FlameError::NotFound(s) => Status::not_found(s),
-            FlameError::Internal(s) => Status::internal(s),
-            _ => Status::unknown(value.to_string()),
+            FlameError::NotFound(msg) => Status::not_found(msg),
+            FlameError::InvalidConfig(msg) | FlameError::InvalidState(msg) => {
+                Status::invalid_argument(msg)
+            }
+            FlameError::Internal(msg)
+            | FlameError::Network(msg)
+            | FlameError::Uninitialized(msg)
+            | FlameError::Storage(msg)
+            | FlameError::VersionMismatch(msg) => Status::internal(msg),
         }
     }
 }

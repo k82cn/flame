@@ -13,6 +13,20 @@ limitations under the License.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
+        .type_attribute(".", "#[allow(clippy::doc_overindented_list_items)]")
+        .type_attribute(".", "#[allow(clippy::doc_lazy_continuation)]")
+        .type_attribute(
+            "runtime.v1.MountPropagation",
+            "#[allow(clippy::enum_variant_names)]",
+        )
+        .type_attribute(
+            "runtime.v1.ContainerState",
+            "#[allow(clippy::enum_variant_names)]",
+        )
+        .type_attribute(
+            "runtime.v1.ContainerEventType",
+            "#[allow(clippy::enum_variant_names)]",
+        )
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile_protos(&["protos/cri.proto"], &["protos"])?;
 
