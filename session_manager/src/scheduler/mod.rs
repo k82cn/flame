@@ -169,14 +169,15 @@ mod tests {
         )?;
         tokio_test::block_on(controller.register_node(&new_test_node("node_1".to_string())))?;
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
-        let ssn_1 = tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
-            id: ssn_1_id.clone(),
-            application: "flmtest".to_string(),
-            slots: 1,
-            common_data: None,
-            min_instances: 0,
-            max_instances: None,
-        }))?;
+        let ssn_1 =
+            tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
+                id: ssn_1_id.clone(),
+                application: "flmtest".to_string(),
+                slots: 1,
+                common_data: None,
+                min_instances: 0,
+                max_instances: None,
+            }))?;
 
         for _ in 0..task_num {
             tokio_test::block_on(controller.create_task(ssn_1.id.clone(), None))?;

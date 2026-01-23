@@ -427,15 +427,17 @@ impl FlightCacheServer {
         }
     }
 
-    fn extract_schema_from_flight_data(flight_data: &FlightData) -> Result<Arc<Schema>, Status> {
+    fn extract_schema_from_flight_data(
+        flight_data: &FlightData,
+    ) -> Result<Arc<Schema>, FlameError> {
         use arrow::ipc::root_as_message;
 
         let message = root_as_message(&flight_data.data_header)
-            .map_err(|e| Status::internal(format!("Failed to parse IPC message: {}", e)))?;
+            .map_err(|e| FlameError::Internal(format!("Failed to parse IPC message: {}", e)))?;
 
         let ipc_schema = message
             .header_as_schema()
-            .ok_or_else(|| Status::internal("Message is not a schema"))?;
+            .ok_or_else(|| FlameError::Internal("Message is not a schema".to_string()))?;
 
         let decoded_schema = arrow::ipc::convert::fb_to_schema(ipc_schema);
         Ok(Arc::new(decoded_schema))
@@ -444,24 +446,28 @@ impl FlightCacheServer {
     fn decode_batch_from_flight_data(
         flight_data: &FlightData,
         schema: &Arc<Schema>,
-    ) -> Result<RecordBatch, Status> {
+    ) -> Result<RecordBatch, FlameError> {
         arrow_flight::utils::flight_data_to_arrow_batch(
             flight_data,
             schema.clone(),
             &Default::default(),
         )
-        .map_err(|e| Status::internal(format!("Failed to decode batch: {}", e)))
+        .map_err(|e| FlameError::Internal(format!("Failed to decode batch: {}", e)))
     }
 
     async fn collect_batches_from_stream(
         mut stream: Streaming<FlightData>,
-    ) -> Result<(String, Option<String>, Vec<RecordBatch>), Status> {
+    ) -> Result<(String, Option<String>, Vec<RecordBatch>), FlameError> {
         let mut batches = Vec::new();
         let mut session_id: Option<String> = None;
         let mut object_id: Option<String> = None;
         let mut schema: Option<Arc<Schema>> = None;
 
-        while let Some(flight_data) = stream.message().await? {
+        while let Some(flight_data) = stream
+            .message()
+            .await
+            .map_err(|e| FlameError::Internal(format!("Stream error: {}", e)))?
+        {
             Self::extract_session_and_object_id(&flight_data, &mut session_id, &mut object_id);
 
             // Extract schema from data_header in first message
@@ -479,29 +485,29 @@ impl FlightCacheServer {
         }
 
         if batches.is_empty() {
-            return Err(Status::invalid_argument("No data received"));
+            return Err(FlameError::InvalidState("No data received".to_string()));
         }
 
         let session_id = session_id.ok_or_else(|| {
-            Status::invalid_argument(
-                "session_id must be provided in app_metadata as 'session_id:{id}'",
+            FlameError::InvalidState(
+                "session_id must be provided in app_metadata as 'session_id:{id}'".to_string(),
             )
         })?;
 
         Ok((session_id, object_id, batches))
     }
 
-    fn combine_batches(batches: Vec<RecordBatch>) -> Result<RecordBatch, Status> {
+    fn combine_batches(batches: Vec<RecordBatch>) -> Result<RecordBatch, FlameError> {
         if batches.len() == 1 {
             Ok(batches.into_iter().next().unwrap())
         } else {
             let schema = batches[0].schema();
             concat_batches(&schema, &batches)
-                .map_err(|e| Status::internal(format!("Failed to concatenate batches: {}", e)))
+                .map_err(|e| FlameError::Internal(format!("Failed to concatenate batches: {}", e)))
         }
     }
 
-    fn create_put_result(metadata: &ObjectMetadata) -> Result<PutResult, Status> {
+    fn create_put_result(metadata: &ObjectMetadata) -> Result<PutResult, FlameError> {
         let object_ref = bson::doc! {
             "endpoint": &metadata.endpoint,
             "key": &metadata.key,
@@ -510,7 +516,7 @@ impl FlightCacheServer {
 
         let mut bson_bytes = Vec::new();
         object_ref.to_writer(&mut bson_bytes).map_err(|e| {
-            Status::internal(format!("Failed to serialize ObjectRef to BSON: {}", e))
+            FlameError::Internal(format!("Failed to serialize ObjectRef to BSON: {}", e))
         })?;
 
         Ok(PutResult {
@@ -518,75 +524,65 @@ impl FlightCacheServer {
         })
     }
 
-    async fn handle_put_action(&self, action_body: &str) -> Result<String, Status> {
+    async fn handle_put_action(&self, action_body: &str) -> Result<String, FlameError> {
         let (session_id_str, data_b64) = action_body
             .split_once(':')
-            .ok_or_else(|| Status::invalid_argument("Invalid PUT action format"))?;
+            .ok_or_else(|| FlameError::InvalidState("Invalid PUT action format".to_string()))?;
 
         let session_id = session_id_str.to_string();
         let data = base64::engine::general_purpose::STANDARD
             .decode(data_b64)
-            .map_err(|e| Status::invalid_argument(format!("Invalid base64: {}", e)))?;
+            .map_err(|e| FlameError::InvalidState(format!("Invalid base64: {}", e)))?;
 
         let object = Object { version: 0, data };
-        let metadata = self
-            .cache
-            .put(session_id, object)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to put: {}", e)))?;
+        let metadata = self.cache.put(session_id, object).await?;
 
         serde_json::to_string(&metadata)
-            .map_err(|e| Status::internal(format!("Failed to serialize: {}", e)))
+            .map_err(|e| FlameError::Internal(format!("Failed to serialize: {}", e)))
     }
 
-    async fn handle_update_action(&self, action_body: &str) -> Result<String, Status> {
+    async fn handle_update_action(&self, action_body: &str) -> Result<String, FlameError> {
         let (key_str, data_b64) = action_body
             .split_once(':')
-            .ok_or_else(|| Status::invalid_argument("Invalid UPDATE action format"))?;
+            .ok_or_else(|| FlameError::InvalidState("Invalid UPDATE action format".to_string()))?;
 
         let key = key_str.to_string();
         let data = base64::engine::general_purpose::STANDARD
             .decode(data_b64)
-            .map_err(|e| Status::invalid_argument(format!("Invalid base64: {}", e)))?;
+            .map_err(|e| FlameError::InvalidState(format!("Invalid base64: {}", e)))?;
 
         let object = Object { version: 0, data };
-        let metadata = self
-            .cache
-            .update(key, object)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to update: {}", e)))?;
+        let metadata = self.cache.update(key, object).await?;
 
         serde_json::to_string(&metadata)
-            .map_err(|e| Status::internal(format!("Failed to serialize: {}", e)))
+            .map_err(|e| FlameError::Internal(format!("Failed to serialize: {}", e)))
     }
 
-    async fn handle_delete_action(&self, session_id: String) -> Result<String, Status> {
-        self.cache
-            .delete(session_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to delete: {}", e)))?;
+    async fn handle_delete_action(&self, session_id: String) -> Result<String, FlameError> {
+        self.cache.delete(session_id).await?;
         Ok("OK".to_string())
     }
 }
 
 // Helper function to encode schema to IPC format for FlightInfo
-fn encode_schema(schema: &Schema) -> Result<Vec<u8>, Status> {
+fn encode_schema(schema: &Schema) -> Result<Vec<u8>, FlameError> {
     // Encode schema as IPC message using IpcDataGenerator
-    use arrow::ipc::writer::{IpcDataGenerator, IpcWriteOptions};
+    use arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
 
     let options = IpcWriteOptions::default();
     let data_gen = IpcDataGenerator::default();
+    let mut dict_tracker = DictionaryTracker::new(false);
 
     // Encode the schema
-    let encoded = data_gen.schema_to_bytes(schema, &options);
+    let encoded =
+        data_gen.schema_to_bytes_with_dictionary_tracker(schema, &mut dict_tracker, &options);
 
     Ok(encoded.ipc_message)
 }
 
 // Helper function to convert RecordBatch to FlightData
-fn batch_to_flight_data_vec(batch: &RecordBatch) -> Result<Vec<FlightData>, Status> {
-    use arrow::ipc::writer::{IpcDataGenerator, IpcWriteOptions};
-    use arrow_flight::utils::flight_data_from_arrow_batch;
+fn batch_to_flight_data_vec(batch: &RecordBatch) -> Result<Vec<FlightData>, FlameError> {
+    use arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
 
     tracing::debug!(
         "batch_to_flight_data_vec: batch rows={}, cols={}",
@@ -597,45 +593,41 @@ fn batch_to_flight_data_vec(batch: &RecordBatch) -> Result<Vec<FlightData>, Stat
     // Create IPC write options with alignment to ensure proper encoding
     let options = IpcWriteOptions::default()
         .try_with_compression(None)
-        .map_err(|e| Status::internal(format!("Failed to set compression: {}", e)))?;
+        .map_err(|e| FlameError::Internal(format!("Failed to set compression: {}", e)))?;
 
-    let (mut flight_data_vec, _) = flight_data_from_arrow_batch(batch, &options);
-    tracing::debug!(
-        "batch_to_flight_data_vec: generated {} FlightData messages",
-        flight_data_vec.len()
+    let mut flight_data_vec = Vec::new();
+
+    // Encode using IpcDataGenerator directly with DictionaryTracker
+    let data_gen = IpcDataGenerator::default();
+    let mut dict_tracker = DictionaryTracker::new(false);
+
+    // First, encode and send schema
+    let encoded_schema = data_gen.schema_to_bytes_with_dictionary_tracker(
+        batch.schema().as_ref(),
+        &mut dict_tracker,
+        &options,
     );
 
-    // If empty, manually encode the batch
-    if flight_data_vec.is_empty() {
-        tracing::warn!("flight_data_from_arrow_batch returned empty, using manual encoding");
+    let schema_flight_data = FlightData {
+        flight_descriptor: None,
+        app_metadata: vec![].into(),
+        data_header: encoded_schema.ipc_message.into(),
+        data_body: vec![].into(),
+    };
+    flight_data_vec.push(schema_flight_data);
 
-        // First, encode and send schema
-        let mut data_gen = IpcDataGenerator::default();
-        let encoded_schema = data_gen.schema_to_bytes(batch.schema().as_ref(), &options);
+    // Then, send the batch data
+    let (encoded_dictionaries, encoded_batch) = data_gen
+        .encoded_batch(batch, &mut dict_tracker, &options)
+        .map_err(|e| FlameError::Internal(format!("Failed to encode batch: {}", e)))?;
 
-        let schema_flight_data = FlightData {
-            flight_descriptor: None,
-            app_metadata: vec![].into(),
-            data_header: encoded_schema.ipc_message.into(),
-            data_body: vec![].into(),
-        };
-        flight_data_vec.push(schema_flight_data);
-
-        // Then, send the batch data
-        let mut dictionary_tracker = arrow::ipc::writer::DictionaryTracker::new(false);
-
-        let (encoded_dictionaries, encoded_batch) = data_gen
-            .encoded_batch(batch, &mut dictionary_tracker, &options)
-            .map_err(|e| Status::internal(format!("Failed to encode batch: {}", e)))?;
-
-        // Add dictionary batches if any
-        for dict_batch in encoded_dictionaries {
-            flight_data_vec.push(dict_batch.into());
-        }
-
-        // Add the data batch
-        flight_data_vec.push(encoded_batch.into());
+    // Add dictionary batches if any
+    for dict_batch in encoded_dictionaries {
+        flight_data_vec.push(dict_batch.into());
     }
+
+    // Add the data batch
+    flight_data_vec.push(encoded_batch.into());
 
     tracing::debug!(
         "batch_to_flight_data_vec: final {} FlightData messages",
@@ -643,7 +635,9 @@ fn batch_to_flight_data_vec(batch: &RecordBatch) -> Result<Vec<FlightData>, Stat
     );
 
     if flight_data_vec.is_empty() {
-        Err(Status::internal("No FlightData generated from batch"))
+        Err(FlameError::Internal(
+            "No FlightData generated from batch".to_string(),
+        ))
     } else {
         Ok(flight_data_vec)
     }
@@ -672,7 +666,7 @@ fn write_batch_to_file(path: &Path, batch: &RecordBatch) -> Result<(), FlameErro
 }
 
 // Helper function to create a RecordBatch from object data
-fn object_to_batch(object: &Object) -> Result<RecordBatch, Status> {
+fn object_to_batch(object: &Object) -> Result<RecordBatch, FlameError> {
     let schema = get_object_schema();
 
     let version_array = UInt64Array::from(vec![object.version]);
@@ -682,25 +676,27 @@ fn object_to_batch(object: &Object) -> Result<RecordBatch, Status> {
         Arc::new(schema),
         vec![Arc::new(version_array), Arc::new(data_array)],
     )
-    .map_err(|e| Status::internal(format!("Failed to create RecordBatch: {}", e)))
+    .map_err(|e| FlameError::Internal(format!("Failed to create RecordBatch: {}", e)))
 }
 
 // Helper function to extract data from RecordBatch
-fn batch_to_object(batch: &RecordBatch) -> Result<Object, Status> {
+fn batch_to_object(batch: &RecordBatch) -> Result<Object, FlameError> {
     if batch.num_rows() != 1 {
-        return Err(Status::invalid_argument("Expected exactly one row"));
+        return Err(FlameError::InvalidState(
+            "Expected exactly one row".to_string(),
+        ));
     }
 
     let version_col = batch
         .column(0)
         .as_any()
         .downcast_ref::<UInt64Array>()
-        .ok_or_else(|| Status::internal("Invalid version column"))?;
+        .ok_or_else(|| FlameError::Internal("Invalid version column".to_string()))?;
     let data_col = batch
         .column(1)
         .as_any()
         .downcast_ref::<BinaryArray>()
-        .ok_or_else(|| Status::internal("Invalid data column"))?;
+        .ok_or_else(|| FlameError::Internal("Invalid data column".to_string()))?;
 
     let version = version_col.value(0);
     let data = data_col.value(0).to_vec();
@@ -732,7 +728,6 @@ impl FlightService for FlightCacheServer {
         };
 
         // Key format: "session_id/object_id"
-        let schema = get_object_schema();
 
         // Create endpoint with cache server's public endpoint
         let endpoint_uri = self.cache.endpoint.to_uri();
@@ -776,11 +771,7 @@ impl FlightService for FlightCacheServer {
             .map_err(|e| Status::invalid_argument(format!("Invalid ticket: {}", e)))?;
 
         // Key format: "session_id/object_id"
-        let object = self
-            .cache
-            .get(key.clone())
-            .await
-            .map_err(|e| Status::not_found(format!("Object not found: {}", e)))?;
+        let object = self.cache.get(key.clone()).await?;
 
         let batch = object_to_batch(&object)?;
         tracing::debug!(
@@ -812,8 +803,7 @@ impl FlightService for FlightCacheServer {
         let metadata = self
             .cache
             .put_with_id(session_id, object_id, object)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to put object: {}", e)))?;
+            .await?;
 
         let result = Self::create_put_result(&metadata)?;
 

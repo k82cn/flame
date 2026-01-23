@@ -69,6 +69,7 @@ async fn main() -> Result<(), FlameError> {
     let provider_rt = build_runtime("provider", 1)?;
 
     // Start provider thread.
+    #[allow(clippy::let_underscore_future)]
     {
         let controller = controller.clone();
         let ctx = ctx.clone();
@@ -115,6 +116,7 @@ async fn main() -> Result<(), FlameError> {
     tracing::info!("flame-session-manager started.");
 
     // Register default applications.
+    #[allow(clippy::let_underscore_future)]
     let _: JoinHandle<Result<(), FlameError>> = tokio::spawn(async move {
         for (name, attr) in common::default_applications() {
             controller.register_application(name, attr).await?;
