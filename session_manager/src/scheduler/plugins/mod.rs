@@ -92,7 +92,7 @@ impl PluginManager {
 
         Ok(plugins
             .values()
-            .all(|plugin| plugin.is_underused(ssn).unwrap_or(false)))
+            .any(|plugin| plugin.is_underused(ssn).unwrap_or(false)))
     }
 
     pub fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
@@ -110,15 +110,9 @@ impl PluginManager {
     ) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
-        for plugin in plugins.values() {
-            if let Some(available) = plugin.is_available(exec, ssn) {
-                if !available {
-                    return Ok(false);
-                }
-            }
-        }
-
-        Ok(true)
+        Ok(plugins
+            .values()
+            .all(|plugin| plugin.is_available(exec, ssn).unwrap_or(true)))
     }
 
     pub fn is_allocatable(
@@ -128,29 +122,17 @@ impl PluginManager {
     ) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
-        for plugin in plugins.values() {
-            if let Some(allocatable) = plugin.is_allocatable(node, ssn) {
-                if !allocatable {
-                    return Ok(false);
-                }
-            }
-        }
-
-        Ok(true)
+        Ok(plugins
+            .values()
+            .all(|plugin| plugin.is_allocatable(node, ssn).unwrap_or(true)))
     }
 
     pub fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
-        for plugin in plugins.values() {
-            if let Some(reclaimable) = plugin.is_reclaimable(exec) {
-                if !reclaimable {
-                    return Ok(false);
-                }
-            }
-        }
-
-        Ok(true)
+        Ok(plugins
+            .values()
+            .all(|plugin| plugin.is_reclaimable(exec).unwrap_or(true)))
     }
 
     pub fn on_create_executor(
