@@ -192,7 +192,7 @@ impl TryFrom<&ApplicationDao> for Application {
                 .clone()
                 .map(|envs| envs.0)
                 .unwrap_or_default(),
-            working_directory: app.working_directory.clone().unwrap_or("/tmp".to_string()),
+            working_directory: app.working_directory.clone(),
             max_instances: app.max_instances as u32,
             delay_release: Duration::seconds(app.delay_release),
             schema: app.schema.clone().map(|arg| arg.0.into()),

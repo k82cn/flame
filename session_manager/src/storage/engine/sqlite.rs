@@ -803,7 +803,7 @@ mod tests {
                 command: Some("run-agent".to_string()),
                 arguments: vec!["--test".to_string(), "--agent".to_string()],
                 environments: HashMap::from([("TEST".to_string(), "true".to_string())]),
-                working_directory: "/tmp".to_string(),
+                working_directory: Some("/tmp".to_string()),
                 max_instances: 10,
                 delay_release: Duration::seconds(0),
                 schema: None,
@@ -825,7 +825,7 @@ mod tests {
             app_2.environments,
             HashMap::from([("TEST".to_string(), "true".to_string())])
         );
-        assert_eq!(app_2.working_directory, "/tmp".to_string());
+        assert_eq!(app_2.working_directory, Some("/tmp".to_string()));
         assert_eq!(app_2.max_instances, 10);
         assert_eq!(app_2.delay_release, Duration::seconds(0));
         assert!(app_2.schema.is_none());
@@ -916,7 +916,7 @@ mod tests {
                     command: Some("my-agent".to_string()),
                     arguments: vec!["--test".to_string(), "--agent".to_string()],
                     environments: HashMap::from([("TEST".to_string(), "true".to_string())]),
-                    working_directory: "/tmp".to_string(),
+                    working_directory: Some("/tmp".to_string()),
                     max_instances: 10,
                     delay_release: Duration::seconds(0),
                     schema: Some(ApplicationSchema {
@@ -937,7 +937,7 @@ mod tests {
                     command: None,
                     arguments: vec![],
                     environments: HashMap::new(),
-                    working_directory: "/tmp".to_string(),
+                    working_directory: Some("/tmp".to_string()),
                     max_instances: 10,
                     delay_release: Duration::seconds(0),
                     schema: None,
@@ -1003,7 +1003,7 @@ mod tests {
                     "flamepy.rl.runpy".to_string(),
                 ],
                 environments: HashMap::new(),
-                working_directory: "/tmp".to_string(),
+                working_directory: Some("/tmp".to_string()),
                 max_instances: 5,
                 delay_release: Duration::seconds(10),
                 schema: None,
@@ -1053,7 +1053,7 @@ mod tests {
                 command: Some("/usr/bin/test".to_string()),
                 arguments: vec![],
                 environments: HashMap::new(),
-                working_directory: "/tmp".to_string(),
+                working_directory: Some("/tmp".to_string()),
                 max_instances: 5,
                 delay_release: Duration::seconds(10),
                 schema: None,
@@ -1099,7 +1099,7 @@ mod tests {
                 command: Some("/usr/bin/test".to_string()),
                 arguments: vec![],
                 environments: HashMap::new(),
-                working_directory: "/tmp".to_string(),
+                working_directory: Some("/tmp".to_string()),
                 max_instances: 5,
                 delay_release: Duration::seconds(10),
                 schema: None,
@@ -1123,7 +1123,7 @@ mod tests {
                 command: Some("/usr/bin/uv".to_string()),
                 arguments: vec!["run".to_string()],
                 environments: HashMap::from([("ENV".to_string(), "test".to_string())]),
-                working_directory: "/opt".to_string(),
+                working_directory: Some("/opt".to_string()),
                 max_instances: 10,
                 delay_release: Duration::seconds(20),
                 schema: None,
@@ -1139,7 +1139,7 @@ mod tests {
             Some("Updated description".to_string())
         );
         // Note: image field is not updated by update_application method
-        assert_eq!(updated_app.working_directory, "/opt".to_string());
+        assert_eq!(updated_app.working_directory, Some("/opt".to_string()));
         assert_eq!(updated_app.max_instances, 10);
 
         // Retrieve and verify URL persisted after update

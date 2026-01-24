@@ -15,6 +15,7 @@ use std::env;
 use std::fs::{self, create_dir_all, File, OpenOptions};
 use std::future::Future;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::pin::Pin;
 use std::process::{self, Command, Stdio};
 use std::sync::Arc;
@@ -99,34 +100,65 @@ impl HostShim {
         // Spawn child process
         let mut cmd = tokio::process::Command::new(&command);
 
-        let cur_dir = app
-            .working_directory
-            .clone()
-            .unwrap_or(FLAME_WORKING_DIRECTORY.to_string());
+        // If application doesn't specify working_directory, use executor manager's working directory with executor ID
+        let cur_dir = match app.working_directory.clone() {
+            Some(wd) => Path::new(&wd).to_path_buf(),
+            None => env::current_dir()
+                .unwrap_or(Path::new(FLAME_WORKING_DIRECTORY).to_path_buf())
+                .join(executor.id.as_str()),
+        };
 
-        tracing::debug!("Current directory of application instance: {cur_dir}");
+        let work_dir = cur_dir.clone();
+        let tmp_dir = cur_dir.join("tmp");
 
-        // Create the working directory if it doesn't exist
-        create_dir_all(&cur_dir).map_err(|e| {
-            FlameError::Internal(format!("failed to create working directory {cur_dir}: {e}"))
+        tracing::debug!(
+            "Working directory of application instance: {}",
+            work_dir.display()
+        );
+        tracing::debug!(
+            "Temporary directory of application instance: {}",
+            tmp_dir.display()
+        );
+
+        // Create the working & temporary directories if they don't exist
+        create_dir_all(&work_dir).map_err(|e| {
+            FlameError::Internal(format!(
+                "failed to create working directory {}: {e}",
+                work_dir.display()
+            ))
+        })?;
+        create_dir_all(&tmp_dir).map_err(|e| {
+            FlameError::Internal(format!(
+                "failed to create temporary directory {}: {e}",
+                tmp_dir.display()
+            ))
         })?;
 
-        let log_file = OpenOptions::new()
+        // Set temporary directory for the application instance
+        envs.insert("TMPDIR".to_string(), tmp_dir.to_string_lossy().to_string());
+
+        let log_out = OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
             .truncate(true)
-            .open(format!("{cur_dir}/{}.log", executor.id))
-            .map_err(|e| FlameError::Internal(format!("failed to open log file: {e}")))?;
+            .open(work_dir.join(format!("{}.out", executor.id)))
+            .map_err(|e| FlameError::Internal(format!("failed to open stdout log file: {e}")))?;
+
+        let log_err = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(true)
+            .open(work_dir.join(format!("{}.err", executor.id)))
+            .map_err(|e| FlameError::Internal(format!("failed to open stderr log file: {e}")))?;
 
         let mut child = cmd
             .envs(envs)
             .args(args)
-            .current_dir(cur_dir)
-            .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
-                FlameError::Internal(format!("failed to clone log file: {e}"))
-            })?))
-            .stderr(Stdio::from(log_file))
+            .current_dir(&work_dir)
+            .stdout(Stdio::from(log_out))
+            .stderr(Stdio::from(log_err))
             .process_group(0)
             .spawn()
             .map_err(|e| {
