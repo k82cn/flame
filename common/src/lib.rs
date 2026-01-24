@@ -215,7 +215,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                     "The Flame Runner application for executing customized Python applications."
                         .to_string(),
                 ),
-                command: Some("/usr/bin/uv".to_string()),
+                command: Some("/bin/uv".to_string()),
                 arguments: vec![
                     "run".to_string(),
                     "--with".to_string(),
