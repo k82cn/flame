@@ -574,7 +574,8 @@ impl From<ApplicationSpec> for ApplicationAttributes {
                 .into_iter()
                 .map(|env| (env.name, env.value))
                 .collect(),
-            working_directory: app.working_directory.clone(),
+            // Treat empty string as None due to protobuf limitation
+            working_directory: app.working_directory.clone().filter(|wd| !wd.is_empty()),
             max_instances: app.max_instances,
             delay_release: app.delay_release.map(Duration::seconds),
             schema: app.schema.clone().map(ApplicationSchema::from),

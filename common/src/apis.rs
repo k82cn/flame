@@ -939,7 +939,8 @@ impl From<rpc::ApplicationSpec> for ApplicationAttributes {
                 .into_iter()
                 .map(|e| (e.name, e.value))
                 .collect(),
-            working_directory: spec.working_directory.clone(),
+            // Treat empty string as None due to protobuf limitation
+            working_directory: spec.working_directory.clone().filter(|wd| !wd.is_empty()),
             max_instances: spec.max_instances.unwrap_or(DEFAULT_MAX_INSTANCES),
             delay_release: spec
                 .delay_release

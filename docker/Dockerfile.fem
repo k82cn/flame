@@ -12,7 +12,7 @@ FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y python3-pip
 
-RUN mkdir -p /usr/local/flame/bin /usr/local/flame/work /usr/local/flame/sdk
+RUN mkdir -p /usr/local/flame/bin /usr/local/flame/work/tmp /usr/local/flame/sdk
 
 WORKDIR /usr/local/flame/work
 
