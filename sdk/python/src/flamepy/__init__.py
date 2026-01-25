@@ -11,22 +11,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import logging
-import os
-
-_log_level_str = os.getenv("FLAME_LOG_LEVEL", "INFO").upper()
-_log_level_map = {
-    "CRITICAL": logging.CRITICAL,
-    "ERROR": logging.ERROR,
-    "WARNING": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-}
-
-_log_level = _log_level_map[_log_level_str] if _log_level_str in _log_level_map else logging.INFO
-
-logging.basicConfig(level=_log_level)
-
 # Import submodules for rl and agent (only as submodules)
 from . import agent, rl
 
@@ -46,6 +30,7 @@ from .core import (  # Type aliases; Constants; Enums; Exception classes; Data c
     Connection,
     Event,
     FlameContext,
+    FlameContextRunner,
     FlameError,
     FlameErrorCode,
     FlamePackage,
@@ -109,6 +94,7 @@ __all__ = [
     "Task",
     "Application",
     "FlamePackage",
+    "FlameContextRunner",
     # Context and utility classes
     "TaskInformer",
     "FlameContext",

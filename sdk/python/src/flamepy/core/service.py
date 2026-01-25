@@ -13,6 +13,7 @@ limitations under the License.
 
 import logging
 import os
+import typing
 from abc import abstractmethod
 from concurrent import futures
 from dataclasses import dataclass
@@ -122,6 +123,7 @@ class FlameInstanceServicer(InstanceServicer):
     def __init__(self, service: FlameService):
         self._service = service
 
+    @typing.override
     def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
         _trace_fn = TraceFn("OnSessionEnter")
@@ -165,6 +167,7 @@ class FlameInstanceServicer(InstanceServicer):
             logger.error(f"Error in OnSessionEnter: {e}")
             return Result(return_code=-1, message=f"{str(e)}")
 
+    @typing.override
     def OnTaskInvoke(self, request, context):
         """Handle OnTaskInvoke RPC call."""
         _trace_fn = TraceFn("OnTaskInvoke")
@@ -193,6 +196,7 @@ class FlameInstanceServicer(InstanceServicer):
             logger.error(f"Error in OnTaskInvoke: {e}")
             return TaskResultProto(return_code=-1, output=None, message=f"{str(e)}")
 
+    @typing.override
     def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
         _trace_fn = TraceFn("OnSessionLeave")

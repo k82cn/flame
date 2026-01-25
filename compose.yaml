@@ -53,6 +53,7 @@ services:
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
       - flame-packages:/opt/flame/packages
+      - ./work:/opt/flame/work
 
   flame-console:
     image: xflops/flame-console:latest
