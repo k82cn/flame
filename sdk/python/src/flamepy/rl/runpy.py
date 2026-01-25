@@ -233,7 +233,7 @@ class FlameRunpyService(FlameService):
                 log_file.flush()
 
                 # Run the installation with output redirected to the log file
-                result = subprocess.run(
+                subprocess.run(
                     install_args,
                     stdout=log_file,
                     stderr=subprocess.STDOUT,  # Redirect stderr to stdout so both go to the same log
@@ -241,9 +241,6 @@ class FlameRunpyService(FlameService):
                     check=True,
                     env=env,
                 )
-
-                if result.returncode != 0:
-                    raise RuntimeError(f"Package installation failed: {result.returncode}")
 
             logger.info(f"Successfully installed package from: {install_path}")
 

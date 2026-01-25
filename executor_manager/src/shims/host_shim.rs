@@ -74,6 +74,16 @@ impl HostShim {
         })))
     }
 
+    fn create_dir(path: &Path, name: &str) -> Result<(), FlameError> {
+        create_dir_all(path).map_err(|e| {
+            FlameError::Internal(format!(
+                "failed to create {} directory {}: {e}",
+                name,
+                path.display()
+            ))
+        })
+    }
+
     fn setup_working_directory(work_dir: &Path) -> Result<HashMap<String, String>, FlameError> {
         trace_fn!("HostShim::setup_working_directory");
 
@@ -99,30 +109,10 @@ impl HostShim {
         );
 
         // Create the working, temporary, and cache directories if they don't exist
-        create_dir_all(&work_dir).map_err(|e| {
-            FlameError::Internal(format!(
-                "failed to create working directory {}: {e}",
-                work_dir.display()
-            ))
-        })?;
-        create_dir_all(&tmp_dir).map_err(|e| {
-            FlameError::Internal(format!(
-                "failed to create temporary directory {}: {e}",
-                tmp_dir.display()
-            ))
-        })?;
-        create_dir_all(&uv_cache_dir).map_err(|e| {
-            FlameError::Internal(format!(
-                "failed to create UV cache directory {}: {e}",
-                uv_cache_dir.display()
-            ))
-        })?;
-        create_dir_all(&pip_cache_dir).map_err(|e| {
-            FlameError::Internal(format!(
-                "failed to create PIP cache directory {}: {e}",
-                pip_cache_dir.display()
-            ))
-        })?;
+        Self::create_dir(&work_dir, "working")?;
+        Self::create_dir(&tmp_dir, "temporary")?;
+        Self::create_dir(&uv_cache_dir, "UV cache")?;
+        Self::create_dir(&pip_cache_dir, "PIP cache")?;
 
         // Build environment variables for the application instance
         let mut envs = HashMap::new();

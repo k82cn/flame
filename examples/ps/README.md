@@ -81,7 +81,7 @@ Iter 10:        accuracy is 32.9
 Final accuracy is 32.9.
 ```
 
-The accuracy should improve from around 10% (random guessing) to ~85% after 20 training iterations.
+In this simplified run, the accuracy typically improves from around 10% (random guessing) to roughly 30–35% after 20 training iterations (as shown above). Higher accuracy may require more iterations, a larger model, or full‑dataset evaluation.
 
 ## Key Concepts
 
