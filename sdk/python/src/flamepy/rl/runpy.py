@@ -28,7 +28,7 @@ import cloudpickle
 
 from flamepy.core import ObjectRef, get_object, put_object, update_object
 from flamepy.core.service import FlameService, SessionContext, TaskContext
-from flamepy.core.types import TaskOutput
+from flamepy.core.types import TaskOutput, short_name
 from flamepy.rl.types import RunnerContext, RunnerRequest
 
 logger = logging.getLogger(__name__)
@@ -199,22 +199,6 @@ class FlameRunpyService(FlameService):
             install_path = extracted_dir
             logger.info(f"Will install from extracted directory: {install_path}")
 
-            # Debug: List contents of extracted directory
-            try:
-                contents = os.listdir(install_path)
-                logger.debug(f"Extracted directory contents: {contents}")
-
-                # Check for pyproject.toml or setup.py
-                if "pyproject.toml" in contents:
-                    pyproject_path = os.path.join(install_path, "pyproject.toml")
-                    with open(pyproject_path, "r") as f:
-                        pyproject_content = f.read()
-                    logger.debug(f"pyproject.toml content:\n{pyproject_content}")
-                if "setup.py" in contents:
-                    logger.debug("Found setup.py in extracted directory")
-            except Exception as e:
-                logger.warning(f"Failed to list extracted directory contents: {e}")
-
         # Use sys.executable -m pip to install into the current virtual environment
         # pip install will upgrade the package if it's already installed
         logger.info(f"Installing package: {install_path}")
@@ -222,13 +206,42 @@ class FlameRunpyService(FlameService):
         logger.debug(f"Current working directory: {os.getcwd()}")
         install_args = [sys.executable, "-m", "pip", "install", "--upgrade", install_path]
         logger.debug(f"Install command: {' '.join(install_args)}")
+        env = os.environ.copy()
+        logger.debug(f"Environment from parent process: {env}")
+
+        # Create a dedicated log file for the installation process
+        working_dir = os.getcwd()
+        if self._ssn_ctx and getattr(self._ssn_ctx, "session_id", None):
+            session_id = self._ssn_ctx.session_id
+        else:
+            # Generate a short random identifier when session context is unavailable
+            session_id = short_name("unknown")
+        log_file_path = os.path.join(working_dir, f"package_installation_{session_id}.log")
+        logger.info(f"Installation progress will be logged to: {log_file_path}")
 
         try:
-            result = subprocess.run(install_args, capture_output=True, text=True, check=True)
-            logger.info("Package installation succeeded")
-            logger.debug(f"Package installation stdout:\n{result.stdout}")
-            if result.stderr:
-                logger.debug(f"Package installation stderr:\n{result.stderr}")
+            # Open the log file and redirect subprocess output to it
+            with open(log_file_path, "w") as log_file:
+                # Write header to log file
+                log_file.write("Package Installation Log\n")
+                log_file.write(f"{'=' * 80}\n")
+                log_file.write(f"Session ID: {session_id}\n")
+                log_file.write(f"Install command: {' '.join(install_args)}\n")
+                log_file.write(f"Working directory: {os.getcwd()}\n")
+                log_file.write(f"Python executable: {sys.executable}\n")
+                log_file.write(f"{'=' * 80}\n\n")
+                log_file.flush()
+
+                # Run the installation with output redirected to the log file
+                subprocess.run(
+                    install_args,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,  # Redirect stderr to stdout so both go to the same log
+                    text=True,
+                    check=True,
+                    env=env,
+                )
+
             logger.info(f"Successfully installed package from: {install_path}")
 
             # Reload site packages to make the newly installed package available
@@ -241,14 +254,18 @@ class FlameRunpyService(FlameService):
             logger.error(f"Failed to install package: {e}")
             logger.error(f"Return code: {e.returncode}")
             logger.error(f"Install command was: {' '.join(install_args)}")
-            logger.error(f"Package installation stdout:\n{e.stdout}")
-            logger.error(f"Package installation stderr:\n{e.stderr}")
-            raise RuntimeError(f"Package installation failed: {e}")
+            logger.error(f"Installation log file: {log_file_path}")
+
+            raise RuntimeError(f"Package installation failed: {e}. Check log at {log_file_path}")
         finally:
-            # Clean up extracted directory if it was created
-            # Note: We keep it for now as it might be needed during the session
-            # Future enhancement could add cleanup in on_session_leave
-            pass
+            # Read and log the installation output from the log file
+            try:
+                if logger.isEnabledFor(logging.DEBUG):
+                    with open(log_file_path, "r") as log_file:
+                        installation_output = log_file.read()
+                        logger.debug(f"Package installation output:\n{installation_output}")
+            except Exception as read_error:
+                logger.error(f"Could not read installation log: {read_error}")
 
     def on_session_enter(self, context: SessionContext) -> bool:
         """

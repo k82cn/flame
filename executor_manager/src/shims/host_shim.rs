@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use hyper_util::rt::TokioIo;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
+use std::collections::HashMap;
 use stdng::{logs::TraceFn, trace_fn};
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;
@@ -73,6 +74,63 @@ impl HostShim {
         })))
     }
 
+    fn create_dir(path: &Path, name: &str) -> Result<(), FlameError> {
+        create_dir_all(path).map_err(|e| {
+            FlameError::Internal(format!(
+                "failed to create {} directory {}: {e}",
+                name,
+                path.display()
+            ))
+        })
+    }
+
+    fn setup_working_directory(work_dir: &Path) -> Result<HashMap<String, String>, FlameError> {
+        trace_fn!("HostShim::setup_working_directory");
+
+        let tmp_dir = work_dir.join("tmp");
+        let uv_cache_dir = work_dir.join(".uv");
+        let pip_cache_dir = work_dir.join(".pip");
+
+        tracing::debug!(
+            "Working directory of application instance: {}",
+            work_dir.display()
+        );
+        tracing::debug!(
+            "Temporary directory of application instance: {}",
+            tmp_dir.display()
+        );
+        tracing::debug!(
+            "UV cache directory of application instance: {}",
+            uv_cache_dir.display()
+        );
+        tracing::debug!(
+            "PIP cache directory of application instance: {}",
+            pip_cache_dir.display()
+        );
+
+        // Create the working, temporary, and cache directories if they don't exist
+        Self::create_dir(&work_dir, "working")?;
+        Self::create_dir(&tmp_dir, "temporary")?;
+        Self::create_dir(&uv_cache_dir, "UV cache")?;
+        Self::create_dir(&pip_cache_dir, "PIP cache")?;
+
+        // Build environment variables for the application instance
+        let mut envs = HashMap::new();
+        envs.insert("TMPDIR".to_string(), tmp_dir.to_string_lossy().to_string());
+        envs.insert("TEMP".to_string(), tmp_dir.to_string_lossy().to_string());
+        envs.insert("TMP".to_string(), tmp_dir.to_string_lossy().to_string());
+        envs.insert(
+            "UV_CACHE_DIR".to_string(),
+            uv_cache_dir.to_string_lossy().to_string(),
+        );
+        envs.insert(
+            "PIP_CACHE_DIR".to_string(),
+            pip_cache_dir.to_string_lossy().to_string(),
+        );
+
+        Ok(envs)
+    }
+
     fn launch_instance(
         app: &ApplicationContext,
         executor: &Executor,
@@ -109,33 +167,9 @@ impl HostShim {
         };
 
         let work_dir = cur_dir.clone();
-        let tmp_dir = cur_dir.join("tmp");
-
-        tracing::debug!(
-            "Working directory of application instance: {}",
-            work_dir.display()
-        );
-        tracing::debug!(
-            "Temporary directory of application instance: {}",
-            tmp_dir.display()
-        );
-
-        // Create the working & temporary directories if they don't exist
-        create_dir_all(&work_dir).map_err(|e| {
-            FlameError::Internal(format!(
-                "failed to create working directory {}: {e}",
-                work_dir.display()
-            ))
-        })?;
-        create_dir_all(&tmp_dir).map_err(|e| {
-            FlameError::Internal(format!(
-                "failed to create temporary directory {}: {e}",
-                tmp_dir.display()
-            ))
-        })?;
-
-        // Set temporary directory for the application instance
-        envs.insert("TMPDIR".to_string(), tmp_dir.to_string_lossy().to_string());
+        // Setup working directory and get environment overrides
+        let wd_envs = Self::setup_working_directory(&work_dir)?;
+        envs.extend(wd_envs);
 
         let log_out = OpenOptions::new()
             .create(true)

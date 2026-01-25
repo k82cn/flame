@@ -51,7 +51,6 @@ from .service import (
     FlameService,
     SessionContext,
     TaskContext,
-    TaskOutput,
     run,
 )
 
@@ -74,6 +73,7 @@ from .types import (
     CommonData,
     Event,
     FlameContext,
+    FlameContextRunner,
     FlameError,
     FlameErrorCode,
     FlamePackage,
@@ -120,6 +120,7 @@ __all__ = [
     "Task",
     "Application",
     "FlamePackage",
+    "FlameContextRunner",
     # Context and utility classes
     "TaskInformer",
     "FlameContext",

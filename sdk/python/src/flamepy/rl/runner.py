@@ -338,33 +338,41 @@ class Runner:
         storage_url = self._upload_package()
         logger.debug(f"Uploaded package to: {storage_url}")
 
-        # Step 3: Retrieve the flmrun application template
+        # Step 3: Retrieve the application template
+        # Use configured template if available, otherwise default to flmrun
+        template_name = self._context.runner.template
+
         try:
-            flmrun_app = get_application("flmrun")
-            logger.debug("Retrieved flmrun application template")
+            template_app = get_application(template_name)
+            logger.debug(f"Retrieved application template: {template_name}")
         except Exception as e:
             # Clean up the package file
             if self._package_path and os.path.exists(self._package_path):
                 os.remove(self._package_path)
-            raise FlameError(FlameErrorCode.INTERNAL, f"Failed to get flmrun application template: {str(e)}")
+            raise FlameError(FlameErrorCode.INTERNAL, f"Failed to get application template '{template_name}': {str(e)}")
 
         # Step 4: Register the new application
         try:
-            # Use /opt/{name} as working directory for the application
-            working_directory = f"/opt/{self._name}"
+            # Determine working directory based on template
+            working_directory = None
+            if template_app.working_directory is not None and template_app.working_directory != "":
+                # If template has a working_directory, append runner name
+                working_directory = f"{template_app.working_directory}/{self._name}"
+
+            logger.debug(f"Working directory: {working_directory}")
 
             app_attrs = ApplicationAttributes(
-                shim=flmrun_app.shim,
-                image=flmrun_app.image,
-                command=flmrun_app.command,
+                shim=template_app.shim,
+                image=template_app.image,
+                command=template_app.command,
                 description=f"Runner application: {self._name}",
-                labels=flmrun_app.labels,
-                arguments=flmrun_app.arguments,
-                environments=flmrun_app.environments,
+                labels=template_app.labels,
+                arguments=template_app.arguments,
+                environments=template_app.environments,
                 working_directory=working_directory,
-                max_instances=flmrun_app.max_instances,
-                delay_release=flmrun_app.delay_release,
-                schema=flmrun_app.schema,
+                max_instances=template_app.max_instances,
+                delay_release=template_app.delay_release,
+                schema=template_app.schema,
                 url=storage_url,
             )
 

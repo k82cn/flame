@@ -8,7 +8,8 @@ dependencies = [
     "torch",
     "torchvision",
     "numpy",
-    "filelock"
+    "filelock",
+    "flamepy",
 ]
 
 [build-system]

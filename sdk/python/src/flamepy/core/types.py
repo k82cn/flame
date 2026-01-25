@@ -36,6 +36,7 @@ CommonData = Message
 DEFAULT_FLAME_CONF = "flame.yaml"
 DEFAULT_FLAME_ENDPOINT = "http://127.0.0.1:8080"
 DEFAULT_FLAME_CACHE_ENDPOINT = "grpc://127.0.0.1:9090"
+DEFAULT_FLAME_RUNNER_TEMPLATE = "flmrun"
 
 
 class SessionState(IntEnum):
@@ -219,14 +220,30 @@ class FlamePackage:
     )
 
 
+@dataclass
+class FlameContextRunner:
+    """Runner configuration for Flame applications.
+
+    Attributes:
+        template: The name of the application template to use for runners.
+                  If not specified, defaults to 'flmrun'.
+    """
+
+    template: Optional[str] = None
+
+
 class FlameContext:
     """Flame configuration."""
 
     _endpoint = None
     _cache = None
     _package = None
+    _runner = None
 
     def __init__(self):
+        # Initialize runner with default values
+        self._runner = FlameContextRunner(template=DEFAULT_FLAME_RUNNER_TEMPLATE)
+
         home = Path.home()
         config_file = home / ".flame" / DEFAULT_FLAME_CONF
         if config_file.exists():
@@ -250,6 +267,12 @@ class FlameContext:
                                 default_excludes = [".venv", "__pycache__", ".gitignore", "*.pyc"]
                                 all_excludes = list(set(default_excludes + excludes))
                                 self._package = FlamePackage(storage=storage, excludes=all_excludes)
+
+                        # Parse runner configuration if present
+                        runner_config = cluster.get("runner")
+                        if runner_config is not None:
+                            template = runner_config.get("template")
+                            self._runner = FlameContextRunner(template=DEFAULT_FLAME_RUNNER_TEMPLATE if template is None else template)
                         break
                 else:
                     raise FlameError(FlameErrorCode.INVALID_CONFIG, f"cluster <{cc}> not found")
@@ -299,3 +322,8 @@ class FlameContext:
         elif self._cache is not None:
             return self._cache
         return DEFAULT_FLAME_CACHE_ENDPOINT
+
+    @property
+    def runner(self) -> FlameContextRunner:
+        """Get the runner configuration."""
+        return self._runner

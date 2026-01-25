@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     with Runner("ps-example") as rr:
         ps_svc = rr.service(ParameterServer(1e-2))
-        workers_svc = [rr.service(DataWorker) for _ in range(4)]
+        workers_svc = [rr.service(DataWorker) for _ in range(2)]
 
         current_weights = ps_svc.get_weights().get()
         for i in range(20):
