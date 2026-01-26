@@ -1,6 +1,6 @@
 # Parameter Server Example
 
-This example demonstrates distributed training using the **Parameter Server** pattern with Flame's Python SDK. It trains a simple convolutional neural network on the MNIST dataset using synchronous gradient updates.
+In AI-related distributed workloads, large amounts of data often need to be transferred between multiple worker nodes. Flame provides an object cache mechanism to facilitate the transfer of data objects between nodes. This example demonstrates the use of `Flame.rl.Runner` in a training scenario through a simple case based on the `Parameter Server` (ps-worker) pattern.
 
 ## Overview
 
@@ -21,10 +21,10 @@ This example uses Flame's `flamepy.rl.Runner` to orchestrate the distributed ser
            │
     ┌──────┴──────┐
     │             │
-┌───▼────┐   ┌───▼────┐
-│Worker 1│   │Worker 2│  - Fetch weights
-│        │   │        │  - Compute gradients on data batches
-└────────┘   └────────┘
+┌───▼────┐    ┌───▼────┐
+│Worker 1│    │Worker 2│  - Fetch weights
+│        │    │        │  - Compute gradients on data batches
+└────────┘    └────────┘
 ```
 
 ### Components
