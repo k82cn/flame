@@ -123,7 +123,7 @@ Repo: https://github.com/xflops-io/flame
   - Verify Docker services still work: `docker compose up -d`
 
 - **Pull Request format:**
-  - Title: `[<project_name>] <Title>` (e.g., `[session_manager] Add application resource management`)
+  - Title: `[<component>] <Title>` (e.g., `[session_manager] Add application resource management`, `[sdk/python] Fix agent context serialization`)
   - Include:
     - Summary of changes and motivation
     - Testing performed (which tests ran, any manual testing)
@@ -162,7 +162,9 @@ Repo: https://github.com/xflops-io/flame
 
 ## Agent-Specific Notes
 
-- **Always check file contents** before making changes; use Read tool first
+> **Note:** This section contains guidance for AI coding agents (like Cursor AI, GitHub Copilot, etc.) that assist with development. These notes help AI agents understand project conventions and best practices. Human developers may find this section useful for understanding how AI tools interact with the codebase.
+
+- **Always check file contents** before making changes; AI agents should use file reading capabilities before editing
 - **When adding features**, review similar existing implementations in the codebase for patterns
 - **State machines:** Both session_manager and executor_manager use state machine patterns; study existing states before adding new ones
 - **RPC changes:** If modifying `.proto` files, remember to rebuild all services that depend on those definitions
@@ -171,7 +173,7 @@ Repo: https://github.com/xflops-io/flame
 - **Breaking changes:** If introducing breaking changes to SDK, document migration path
 - **Performance:** Flame is designed for distributed systems; consider scalability and concurrency in designs
 - **Error handling:** Prefer explicit error handling; avoid panics in production code paths
-- **When answering questions**, respond with high-confidence answers only: verify in code; do not guess
+- **When answering questions**, AI agents should respond with high-confidence answers only: verify in code; do not guess or hallucinate
 - **Security:** Never commit secrets, credentials, or sensitive data to the repository
 - **Container rebuilds:** Be aware that changing core components may require rebuilding multiple containers
 - **Dependencies:** Check `Cargo.toml` (Rust) or `pyproject.toml` (Python) before adding new dependencies
