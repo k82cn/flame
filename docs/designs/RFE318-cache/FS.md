@@ -10,7 +10,7 @@ Previously, the object cache in Flame was implemented as a naive HTTP-based in-m
 3. **Performance**: The implementation lacked efficient serialization and storage mechanisms, which could become a bottleneck for large objects.
 4. **No Standardization**: The implementation didn't leverage industry-standard formats, making it harder to integrate with other systems or tools.
 
-**Note:** The naive cache implementation has been removed from flame-executor-manager as of this RFE. The object cache is now a dedicated standalone service.
+**Note:** The naive cache implementation has been removed from flame-executor-manager as of this RFE. The object cache is now implemented as a library embedded in flame-executor-manager, running in a dedicated thread.
 
 **Target:**
 This design aims to improve the object cache implementation by leveraging Apache Arrow to achieve:
@@ -128,8 +128,9 @@ class ObjectRef:
 
 ### CLI
 
-**flame-object-cache binary:**
-- Command: `flame-object-cache [OPTIONS]`
+**flame-object-cache library:**
+- Embedded in `flame-executor-manager`
+- Runs as a dedicated thread
 - Options:
   - `-c, --config <PATH>`: Path to flame cluster configuration file (default: `~/.flame/flame-cluster.yaml`)
 - Exit codes:
@@ -165,7 +166,7 @@ class ObjectRef:
 ### Scope
 
 **In Scope:**
-- Implementation of flame-object-cache component in Rust
+- Implementation of flame-cache library in Rust, integrated into executor-manager
 - Arrow Flight server implementation
 - Arrow IPC persistence to disk
 - Python SDK integration with Arrow Flight client
@@ -256,7 +257,7 @@ The flame-object-cache component is a standalone Rust service that implements an
 
 ### Components
 
-**1. flame-object-cache (Rust Service)**
+**1. flame-cache (Rust Library in executor-manager)**
 - **Location**: `object_cache/` directory in workspace
 - **Responsibilities**:
   - Implement Arrow Flight server

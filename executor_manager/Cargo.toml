@@ -9,6 +9,7 @@ edition = "2021"
 rpc = { path = "../rpc" }
 common = { path = "../common" }
 stdng = { path = "../stdng" }
+flame-cache = { path = "../object_cache" }
 
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -34,6 +35,15 @@ wasmtime = "16"
 wasmtime-wasi = "16"
 anyhow = "1"
 tokio-stream = { workspace = true }
+
+# Dependencies for embedded object cache
+arrow = "53"
+arrow-flight = "53"
+arrow-ipc = "53"
+network-interface = "2"
+regex = "1"
+base64 = "0.22"
+bson = "2"
 
 [lints.rust]
 unused = "allow"

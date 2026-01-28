@@ -79,7 +79,7 @@ Repo: https://github.com/xflops-io/flame
 - **Naming:**
   - Use **Flame** for product/documentation headings
   - Use `flame` for package names, paths, and config keys
-  - Component names: `flame-session-manager`, `flame-executor-manager`, `flame-object-cache`, etc.
+  - Component names: `flame-session-manager`, `flame-executor-manager`, `flmctl`, `flmexec`, etc.
 
 ## Testing Guidelines
 
@@ -87,7 +87,6 @@ Repo: https://github.com/xflops-io/flame
 - **Pre-test setup:** Restart the Flame cluster before starting testing to ensure clean state
 - **Test timing:** Most tests should complete within 30 seconds. If not, check the logs:
   - `docker logs flame-executor-manager`
-  - `docker logs flame-object-cache`
   - `docker logs flame-session-manager`
   - Or use: `docker compose logs <service-name>`
   

@@ -4,8 +4,7 @@ clusters:
   - name: flame
     endpoint: "http://flame-session-manager:8080"
     cache:
-      endpoint: "grpc://flame-object-cache:9090"
-      storage: "/var/lib/flame/cache"
+      endpoint: "grpc://flame-executor-manager:9090"
     package:
       storage: "file:///opt/flame/packages"
       excludes:

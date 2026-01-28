@@ -11,19 +11,16 @@ DOCKER_REGISTRY ?= xflops
 FSM_TAG ?= $(shell cargo get --entry session_manager/ package.version --pretty)
 FEM_TAG ?= $(shell cargo get --entry executor_manager/ package.version --pretty)
 CONSOLE_TAG ?= latest
-CACHE_TAG ?= $(shell cargo get --entry object_cache/ package.version --pretty)
 
 # Docker image names
 FSM_IMAGE = $(DOCKER_REGISTRY)/flame-session-manager
 FEM_IMAGE = $(DOCKER_REGISTRY)/flame-executor-manager
 CONSOLE_IMAGE = $(DOCKER_REGISTRY)/flame-console
-CACHE_IMAGE = $(DOCKER_REGISTRY)/flame-object-cache
 
 # Dockerfile paths
 FSM_DOCKERFILE = docker/Dockerfile.fsm
 FEM_DOCKERFILE = docker/Dockerfile.fem
 CONSOLE_DOCKERFILE = docker/Dockerfile.console
-CACHE_DOCKERFILE = docker/Dockerfile.cache
 
 # Default target
 .PHONY: help build docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e e2e-py e2e-rs format format-rust format-python
@@ -108,11 +105,7 @@ docker-push-fem: docker-build-fem ## Push executor manager Docker image
 docker-push-console: docker-build-console ## Push console Docker image
 	$(CONTAINER_RUNTIME) push $(CONSOLE_IMAGE):$(CONSOLE_TAG)
 
-docker-push-cache: docker-build-cache ## Push object cache Docker image
-	$(CONTAINER_RUNTIME) push $(CACHE_IMAGE):$(CACHE_TAG)
-	$(CONTAINER_RUNTIME) push $(CACHE_IMAGE):latest
-
-docker-push: docker-push-fsm docker-push-fem docker-push-console docker-push-cache ## Push all Docker images
+docker-push: docker-push-fsm docker-push-fem docker-push-console ## Push all Docker images
 
 # Release targets
 docker-release: init docker-build docker-push ## Build and push all images for release
@@ -121,14 +114,12 @@ ci-image: update_protos ## Build images for CI (without version tags)
 	$(CONTAINER_RUNTIME) build -t $(FSM_IMAGE) -f $(FSM_DOCKERFILE) .
 	$(CONTAINER_RUNTIME) build -t $(FEM_IMAGE) -f $(FEM_DOCKERFILE) .
 	$(CONTAINER_RUNTIME) build -t $(CONSOLE_IMAGE) -f $(CONSOLE_DOCKERFILE) .
-	$(CONTAINER_RUNTIME) build -t $(CACHE_IMAGE) -f $(CACHE_DOCKERFILE) .
 
 # Cleanup targets
 docker-clean: ## Remove all flame Docker images
 	$(CONTAINER_RUNTIME) rmi $(FSM_IMAGE):$(FSM_TAG) $(FSM_IMAGE):latest 2>/dev/null || true
 	$(CONTAINER_RUNTIME) rmi $(FEM_IMAGE):$(FEM_TAG) $(FEM_IMAGE):latest 2>/dev/null || true
 	$(CONTAINER_RUNTIME) rmi $(CONSOLE_IMAGE):$(CONSOLE_TAG) 2>/dev/null || true
-	$(CONTAINER_RUNTIME) rmi $(CACHE_IMAGE):$(CACHE_TAG) $(CACHE_IMAGE):latest 2>/dev/null || true
 
 docker-clean-all: ## Remove all Docker images and containers (use with caution)
 	$(CONTAINER_RUNTIME) system prune -a -f

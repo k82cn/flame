@@ -8,7 +8,7 @@
 - Removed unnecessary dependencies: `actix-web`, `bson`, `network-interface`, `regex`
 - Updated documentation to reflect the migration
 
-The object cache is now exclusively provided by the standalone `flame-object-cache` service.
+The object cache is now provided as an embedded library within the `flame-executor-manager` service, running in a dedicated thread.
 
 ## ✅ Completed
 
@@ -102,7 +102,7 @@ Moved from HTTP headers/app_metadata to `FlightDescriptor.path[0]` for better co
 - `Makefile` - Added cache build targets
 
 **Docker**:
-- `docker/Dockerfile.cache` - Cache service image
+- `object_cache/src/lib.rs` - Cache library entry point
 
 **Documentation**:
 - `object_cache/README.md` - Usage documentation
@@ -116,7 +116,7 @@ To test manually:
 docker compose up -d
 
 # Check cache logs
-docker compose logs flame-object-cache
+docker compose logs flame-executor-manager | grep cache
 
 # Run specific cache test
 docker compose exec flame-console uv run pytest -vv tests/test_cache.py::test_objectref_encode_decode

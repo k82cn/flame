@@ -4,11 +4,12 @@ This document summarizes the implementation of the Apache Arrow-based object cac
 
 ## Migration from Naive Cache
 
-The naive HTTP-based in-memory cache that was previously embedded in `flame-executor-manager` has been removed. The object cache is now a dedicated standalone service (`flame-object-cache`) using Apache Arrow Flight protocol. This provides:
+The naive HTTP-based in-memory cache has been removed from `flame-executor-manager`. The object cache is now a library (`flame-cache`) integrated into `flame-executor-manager`, running as a dedicated thread. This provides:
 - Persistent storage with Arrow IPC format
 - Better performance through efficient Arrow serialization
-- Standardized protocol for interoperability
-- Separation of concerns (cache is independent from executor management)
+- Standardized Arrow Flight protocol
+- Simplified deployment (no separate service)
+- Better locality (cache runs alongside executors)
 
 ## Implementation Status
 
@@ -46,10 +47,11 @@ The naive HTTP-based in-memory cache that was previously embedded in `flame-exec
 - `pyproject.toml`: Added pyarrow >= 18.1.0 dependency
 
 #### 4. Docker & Deployment
-- ✅ Created `docker/Dockerfile.cache` for object cache service
-- ✅ Updated `compose.yaml` with flame-object-cache service
-- ✅ Added volume for persistent cache storage
-- ✅ Updated `Makefile` with cache build and push targets
+- ✅ Cache library embedded in `docker/Dockerfile.fem`
+- ✅ Updated `compose.yaml` to remove standalone cache service
+- ✅ Added cache storage volume mount to executor-manager
+- ✅ Exposed port 9090 on executor-manager for cache access
+- ✅ Updated `Makefile` to remove standalone cache build targets
 
 #### 5. Testing
 - ✅ Created `e2e/tests/test_cache.py` with basic cache tests
@@ -139,8 +141,8 @@ Each object is stored as an Arrow IPC file with:
 
 ### Build and Test
 ```bash
-# Build Rust components
-cargo build --package flame-cache --release
+# Build Rust components (cache included in executor-manager)
+cargo build --package flame-executor-manager --release
 
 # Build Docker images
 make docker-build
@@ -149,7 +151,7 @@ make docker-build
 docker compose up -d
 
 # Run Python e2e tests
-make e2e-ci
+make e2e-py
 ```
 
 ### Manual Testing
@@ -175,11 +177,11 @@ assert retrieved == data
 - Python SDK clients must be updated to use new cache format
 
 ### Migration
-1. Stop old cache servers
+1. Stop old services
 2. Clear old cache data (incompatible format)
-3. Deploy new cache server with storage configuration
+3. Deploy new executor-manager with embedded cache
 4. Update Python SDK to latest version
-5. Update client configurations to use grpc:// endpoints
+5. Update client configurations to use grpc://flame-executor-manager:9090
 
 ## Performance Characteristics
 
