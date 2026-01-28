@@ -131,7 +131,7 @@ impl TryFrom<&String> for CacheEndpoint {
     }
 }
 
-pub(crate) struct ObjectCache {
+pub struct ObjectCache {
     endpoint: CacheEndpoint,
     storage_path: Option<PathBuf>,
     objects: MutexPtr<HashMap<String, ObjectMetadata>>, // key -> metadata

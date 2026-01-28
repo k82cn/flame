@@ -4,7 +4,7 @@ Apache Arrow-based object cache service for Flame distributed system.
 
 ## Overview
 
-The flame-object-cache is a standalone service that provides persistent object storage using Apache Arrow Flight protocol and Arrow IPC format for efficient serialization.
+The flame-object-cache is an embedded library that provides persistent object storage using Apache Arrow Flight protocol and Arrow IPC format for efficient serialization. It runs as a dedicated thread within the flame-executor-manager service.
 
 ## Features
 
@@ -43,15 +43,9 @@ clusters:
 
 ## Usage
 
-### Starting the Cache Server
+### Using the Cache
 
-```bash
-# Using configuration file
-flame-cache --config ~/.flame/flame-cluster.yaml
-
-# Using default configuration location
-flame-cache
-```
+The cache server is automatically started when the executor-manager starts. No separate startup command is needed.
 
 ### Python SDK
 
@@ -104,11 +98,11 @@ docker build -t xflops/flame-object-cache:latest -f docker/Dockerfile.cache .
 ## Running with Docker Compose
 
 ```bash
-# Start all services including cache
+# Start all services (cache runs in executor-manager)
 docker compose up -d
 
-# View cache logs
-docker compose logs flame-object-cache
+# View cache logs (part of executor-manager logs)
+docker compose logs flame-executor-manager | grep cache
 
 # Stop services
 docker compose down
@@ -122,11 +116,20 @@ docker compose down
 - **Async Runtime**: Tokio
 - **Arrow Version**: 53 (compatible with tonic 0.12)
 
+## Architecture
+
+The object cache runs as a dedicated thread within the executor-manager process, providing:
+
+- **Simplified deployment**: No separate service to manage
+- **Better locality**: Cache runs alongside executors on the same node
+- **Shared configuration**: Uses the same config file as executor-manager
+- **Resource efficiency**: Lower overhead than separate service
+
 ## Limitations
 
 - Version is always 0 (no version conflict detection)
 - No automatic cache cleanup or eviction
-- Single-node cache server (no distributed coordination)
+- Single-node cache (no distributed coordination)
 - No authentication/authorization
 - Objects are per-session (no cross-session sharing)
 

@@ -3,9 +3,9 @@ name = "flame-cache"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "flame-cache"
-path = "src/main.rs"
+[lib]
+name = "flame_cache"
+path = "src/lib.rs"
 
 [dependencies]
 common = { path = "../common" }

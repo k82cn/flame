@@ -26,6 +26,9 @@ mod manager;
 mod shims;
 mod states;
 
+// Import cache functionality
+use flame_cache;
+
 #[derive(Parser)]
 #[command(name = "flame-executor-manager")]
 #[command(author = "XFLOPS <support@xflops.io>")]
@@ -54,6 +57,30 @@ async fn main() -> Result<(), FlameError> {
             .build()
             .map_err(|e| FlameError::Internal(format!("failed to build runtime <{name}>: {e}")))
     };
+
+    // Start the object cache thread if cache configuration is present.
+    if let Some(ref cache_config) = ctx.cache {
+        let cache_rt = build_runtime("cache", 2)?;
+        let cache_config = cache_config.clone();
+        let handler = thread::spawn(move || {
+            let _ = cache_rt.block_on(async move {
+                match flame_cache::run(&cache_config).await {
+                    Ok(_) => {
+                        tracing::info!("Object cache exited successfully.");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("Object cache exited with error: {e}");
+                        Err(e)
+                    }
+                }
+            });
+        });
+        handlers.push(handler);
+        tracing::info!("Object cache thread started.");
+    } else {
+        tracing::info!("No cache configuration found, object cache will not be started.");
+    }
 
     // The manager thread will start one thread for each executor.
     let max_executors = ctx.executors.limits.max_executors as usize;

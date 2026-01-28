@@ -10,6 +10,6 @@ executors:
   limits:
     max_executors: 10
 cache:
-  endpoint: "grpc://flame-object-cache:9090"
+  endpoint: "grpc://flame-executor-manager:9090"
   network_interface: "eth0"
   storage: "/var/lib/flame/cache"

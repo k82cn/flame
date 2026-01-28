@@ -378,7 +378,7 @@ No changes required. The executor manager continues to handle executor lifecycle
    - Update integration tests to verify new behavior
 
 **Integration Points:**
-- **Python SDK → Cache**: `RunnerContext` is serialized with cloudpickle and stored in flame-object-cache
+- **Python SDK → Cache**: `RunnerContext` is serialized with cloudpickle and stored in the object cache (embedded in executor-manager)
 - **Python SDK → Session Manager**: `SessionSpec` protobuf message (via RPC) contains `min_instances`, `max_instances`, and reference to cached `RunnerContext`
 - **Session Manager → Database**: `SessionSpec` fields are persisted to session table
 - **Session Manager → Scheduler**: Scheduler reads `min_instances` and `max_instances` from `SessionSpec` to control executor allocation

@@ -5,6 +5,8 @@
 *.so
 *.dylib
 *.log
+*.err
+*.out
 
 # Test binary, built with `go test -c`
 *.test
@@ -28,3 +30,5 @@ build/
 uv.lock
 
 work/
+dist/
+tmp/
