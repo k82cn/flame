@@ -111,15 +111,15 @@ fn install_components(
     paths: &InstallationPaths,
     config: &InstallConfig,
 ) -> Result<()> {
-    // Create directories
-    let installation_manager = InstallationManager::new();
-    installation_manager.create_directories(paths)?;
-
-    // Create flame user (for system-wide installation)
+    // Create flame user (for system-wide installation) - must be done before creating directories
     let user_manager = UserManager::new();
     if config.systemd && user_manager.is_root() {
         user_manager.create_user()?;
     }
+
+    // Create directories
+    let installation_manager = InstallationManager::new();
+    installation_manager.create_directories(paths)?;
 
     // Install binaries
     installation_manager.install_binaries(artifacts, paths)?;
