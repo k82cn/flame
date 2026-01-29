@@ -63,6 +63,12 @@ jobs:
           sudo chmod -R 777 $INSTALL_PREFIX
           echo "$INSTALL_PREFIX/bin" >> $GITHUB_PATH
       
+      - name: Install Python SDK for current user
+        run: |
+          echo "=== Installing flamepy for current user ==="
+          pip3 install --user ./sdk/python
+          echo "✓ flamepy installed for current user"
+
       - name: Check service status
         run: |
           # Wait for services to be ready
