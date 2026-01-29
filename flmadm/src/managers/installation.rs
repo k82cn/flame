@@ -16,6 +16,26 @@ impl InstallationManager {
         }
     }
 
+    /// Copy directory recursively
+    fn copy_dir_all(&self, src: &Path, dst: &Path) -> Result<()> {
+        fs::create_dir_all(dst).context("Failed to create destination directory")?;
+
+        for entry in fs::read_dir(src).context("Failed to read source directory")? {
+            let entry = entry.context("Failed to read directory entry")?;
+            let ty = entry.file_type().context("Failed to get file type")?;
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if ty.is_dir() {
+                self.copy_dir_all(&src_path, &dst_path)?;
+            } else {
+                fs::copy(&src_path, &dst_path).context(format!("Failed to copy {:?}", src_path))?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Create all required directories
     pub fn create_directories(&self, paths: &InstallationPaths) -> Result<()> {
         println!("📁 Creating directory structure...");
@@ -126,17 +146,22 @@ impl InstallationManager {
             anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
         }
 
-        // Canonicalize path to absolute path (needed for su command)
-        let sdk_src_abs = sdk_src
-            .canonicalize()
-            .context("Failed to canonicalize SDK path")?;
-
         // Install as flame user if running as root, otherwise install for current user
         if self.user_manager.is_root() && self.user_manager.user_exists()? {
             println!("  Installing Python SDK as flame user...");
 
+            // Copy SDK to ${PREFIX}/sdk/python (which is owned by flame:flame)
+            // This allows the flame user to access the source for installation
+            let sdk_install_src = paths.sdk_python.join("src");
+
+            // Copy SDK source to the installation directory
+            self.copy_dir_all(&sdk_src, &sdk_install_src)
+                .context("Failed to copy SDK to installation directory")?;
+
+            // Set ownership to flame:flame
+            self.user_manager.set_ownership(&sdk_install_src)?;
+
             // Install using pip as flame user with --user flag
-            // Use sudo -u instead of su - to preserve environment and file access
             let output = Command::new("sudo")
                 .args([
                     "-u",
@@ -145,7 +170,7 @@ impl InstallationManager {
                     pip_cmd.to_str().unwrap(),
                     "install",
                     "--user",
-                    sdk_src_abs.to_str().unwrap(),
+                    sdk_install_src.to_str().unwrap(),
                 ])
                 .output()
                 .context("Failed to install Python SDK as flame user")?;
@@ -162,6 +187,7 @@ impl InstallationManager {
             std::fs::write(
                 &readme_path,
                 "Python SDK installed for flame user in /var/lib/flame/.local/lib/python*/site-packages\n\
+                 SDK source copied to this directory for installation.\n\
                  To verify: sudo -u flame pip3 show flamepy\n",
             ).ok(); // Ignore errors for this informational file
         } else {
@@ -169,7 +195,7 @@ impl InstallationManager {
 
             // Install using pip with --user flag for current user
             let output = Command::new(&pip_cmd)
-                .args(["install", "--user", sdk_src_abs.to_str().unwrap()])
+                .args(["install", "--user", sdk_src.to_str().unwrap()])
                 .output()
                 .context("Failed to install Python SDK")?;
 
