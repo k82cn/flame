@@ -846,8 +846,13 @@ pub struct BuildArtifacts {
    - Set ownership to flame:flame (for system-wide)
 
 8. Install Python SDK
-   - cd to sdk/python in source directory
-   - Run: pip install -e . --target ${PREFIX}/sdk/python
+   - For system-wide install (as root with flame user):
+     - Run as flame user: sudo -u flame -H pip3 install --user <absolute-path-to-sdk>
+     - Uses sudo -u instead of su - to preserve file access permissions
+     - SDK installed to /var/lib/flame/.local/lib/python*/site-packages
+   - For user-local install:
+     - Run: pip3 install --user <path-to-sdk>
+     - SDK installed to current user's site-packages
    - Verify installation
 
 9. Generate configuration

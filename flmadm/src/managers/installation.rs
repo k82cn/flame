@@ -136,16 +136,16 @@ impl InstallationManager {
             println!("  Installing Python SDK as flame user...");
 
             // Install using pip as flame user with --user flag
-            let output = Command::new("su")
+            // Use sudo -u instead of su - to preserve environment and file access
+            let output = Command::new("sudo")
                 .args([
-                    "-",
+                    "-u",
                     "flame",
-                    "-c",
-                    &format!(
-                        "{} install --user {}",
-                        pip_cmd.to_str().unwrap(),
-                        sdk_src_abs.to_str().unwrap()
-                    ),
+                    "-H", // Set HOME to flame user's home directory
+                    pip_cmd.to_str().unwrap(),
+                    "install",
+                    "--user",
+                    sdk_src_abs.to_str().unwrap(),
                 ])
                 .output()
                 .context("Failed to install Python SDK as flame user")?;
