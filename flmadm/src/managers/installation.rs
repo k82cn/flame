@@ -31,6 +31,8 @@ impl InstallationManager {
             ("data", &paths.data),
             ("data/cache", &paths.cache),
             ("data/packages", &paths.data.join("packages")),
+            ("migrations", &paths.migrations),
+            ("migrations/sqlite", &paths.migrations.join("sqlite")),
         ] {
             if !path.exists() {
                 fs::create_dir_all(path)
@@ -56,7 +58,7 @@ impl InstallationManager {
 
         // Set ownership if running as root
         if self.user_manager.is_root() {
-            for path in [&paths.work, &paths.logs, &paths.data, &paths.conf] {
+            for path in [&paths.work, &paths.logs, &paths.data, &paths.conf, &paths.migrations] {
                 self.user_manager.set_ownership(path)?;
             }
         }
@@ -139,6 +141,34 @@ impl InstallationManager {
         Ok(())
     }
 
+    /// Install database migrations
+    pub fn install_migrations(&self, src_dir: &Path, paths: &InstallationPaths) -> Result<()> {
+        println!("🗄️  Installing database migrations...");
+
+        let migrations_src = src_dir.join("session_manager/migrations/sqlite");
+        if !migrations_src.exists() {
+            anyhow::bail!("Migrations source not found at: {:?}", migrations_src);
+        }
+
+        // Copy all migration files
+        for entry in fs::read_dir(&migrations_src)
+            .context("Failed to read migrations directory")?
+        {
+            let entry = entry.context("Failed to read migration file entry")?;
+            let file_name = entry.file_name();
+            let src_path = entry.path();
+            let dst_path = paths.migrations.join("sqlite").join(&file_name);
+
+            if src_path.is_file() {
+                fs::copy(&src_path, &dst_path)
+                    .context(format!("Failed to copy migration: {:?}", file_name))?;
+            }
+        }
+
+        println!("✓ Installed migrations to: {}", paths.migrations.display());
+        Ok(())
+    }
+
     /// Remove the installation directory
     pub fn remove_installation(
         &self,
@@ -160,6 +190,12 @@ impl InstallationManager {
             fs::remove_dir_all(paths.sdk_python.parent().unwrap())
                 .context("Failed to remove sdk directory")?;
             println!("  ✓ Removed Python SDK");
+        }
+
+        // Remove migrations
+        if paths.migrations.exists() {
+            fs::remove_dir_all(&paths.migrations).context("Failed to remove migrations directory")?;
+            println!("  ✓ Removed migrations");
         }
 
         // Remove work directory

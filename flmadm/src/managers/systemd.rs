@@ -248,7 +248,7 @@ Type=simple
 User=flame
 Group=flame
 Environment="RUST_LOG=info"
-WorkingDirectory={prefix}/work
+WorkingDirectory={prefix}
 ExecStart={prefix}/bin/flame-session-manager --config {prefix}/conf/flame-cluster.yaml
 StandardOutput=append:{prefix}/logs/fsm.log
 StandardError=append:{prefix}/logs/fsm.log

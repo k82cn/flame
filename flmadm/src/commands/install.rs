@@ -127,6 +127,9 @@ fn install_components(
     // Install Python SDK
     installation_manager.install_python_sdk(src_dir, paths)?;
 
+    // Install database migrations
+    installation_manager.install_migrations(src_dir, paths)?;
+
     // Generate configuration
     let config_generator = ConfigGenerator::new();
     config_generator.generate_config(&paths.prefix)?;

@@ -65,6 +65,7 @@ pub struct InstallationPaths {
     pub conf: PathBuf,
     pub data: PathBuf,
     pub cache: PathBuf,
+    pub migrations: PathBuf,
 }
 
 impl InstallationPaths {
@@ -77,6 +78,7 @@ impl InstallationPaths {
             conf: prefix.join("conf"),
             data: prefix.join("data"),
             cache: prefix.join("data/cache"),
+            migrations: prefix.join("migrations"),
             prefix,
         }
     }
