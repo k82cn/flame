@@ -76,13 +76,15 @@ jobs:
       
       - name: Install Python dependencies
         run: |
-          cd e2e
-          uv sync
+          # Install test dependencies directly (don't use uv sync to avoid source override)
+          pip3 install grpcio grpcio-tools pytest black isort
       
       - name: Run test_runner
         run: |
+          # Add installed flamepy and e2e src to PYTHONPATH
+          export PYTHONPATH="$INSTALL_PREFIX/sdk/python:$(pwd)/e2e/src:$PYTHONPATH"
           cd e2e
-          uv run pytest -vv --durations=0 tests/test_runner.py
+          pytest -vv --durations=0 tests/test_runner.py
       
       - name: Show service logs on failure
         if: failure()
