@@ -68,22 +68,4 @@ package:
             prefix = prefix
         )
     }
-
-    /// Backup existing configuration
-    pub fn backup_config(&self, prefix: &Path) -> Result<()> {
-        let config_path = prefix.join("conf/flame-cluster.yaml");
-
-        if !config_path.exists() {
-            return Ok(());
-        }
-
-        let backup_path = prefix.join("conf/flame-cluster.yaml.backup");
-        fs::copy(&config_path, &backup_path).context("Failed to backup configuration")?;
-
-        println!(
-            "✓ Backed up existing configuration to: {}",
-            backup_path.display()
-        );
-        Ok(())
-    }
 }

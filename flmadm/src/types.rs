@@ -127,9 +127,5 @@ impl BuildArtifacts {
 /// Exit codes for flmadm commands
 pub mod exit_codes {
     pub const SUCCESS: i32 = 0;
-    pub const INVALID_ARGS: i32 = 1;
-    pub const BUILD_FAILURE: i32 = 2;
     pub const INSTALL_FAILURE: i32 = 3;
-    pub const SYSTEMD_FAILURE: i32 = 4;
-    pub const SERVICE_FAILURE: i32 = 5;
 }
