@@ -343,6 +343,7 @@ Type=simple
 User=flame
 Group=flame
 Environment="RUST_LOG=info"
+Environment="HOME=/var/lib/flame"
 WorkingDirectory=${PREFIX}/work
 ExecStart=${PREFIX}/bin/flame-session-manager --config ${PREFIX}/conf/flame-cluster.yaml
 StandardOutput=append:${PREFIX}/logs/fsm.log
@@ -369,6 +370,7 @@ Type=simple
 User=flame
 Group=flame
 Environment="RUST_LOG=info"
+Environment="HOME=/var/lib/flame"
 WorkingDirectory=${PREFIX}/work
 ExecStart=${PREFIX}/bin/flame-executor-manager --config ${PREFIX}/conf/flame-cluster.yaml
 StandardOutput=append:${PREFIX}/logs/fem.log
@@ -831,8 +833,9 @@ pub struct BuildArtifacts {
 
 6. Create flame user (for system-wide install)
    - Check if flame user exists
-   - If not, create with: useradd --system --no-create-home flame
+   - If not, create with: useradd --system --create-home --home-dir /var/lib/flame --shell /bin/bash flame
    - Create flame group if needed
+   - User home directory needed for Python user-local packages
 
 7. Install binaries
    - Copy flame-session-manager to ${PREFIX}/bin/

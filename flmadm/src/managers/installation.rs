@@ -126,31 +126,62 @@ impl InstallationManager {
             anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
         }
 
-        // Install using pip (without -e for proper installation)
-        // Note: We use --break-system-packages to allow installation over system packages
-        // This is needed in CI environments where system packages might conflict
-        let output = Command::new(&pip_cmd)
-            .args([
-                "install",
-                "--break-system-packages",
-                sdk_src.to_str().unwrap(),
-            ])
-            .output()
-            .context("Failed to install Python SDK")?;
+        // Install as flame user if running as root, otherwise install for current user
+        if self.user_manager.is_root() && self.user_manager.user_exists()? {
+            println!("  Installing Python SDK as flame user...");
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to install Python SDK: {}", stderr);
+            // Install using pip as flame user with --user flag
+            let output = Command::new("su")
+                .args([
+                    "-",
+                    "flame",
+                    "-c",
+                    &format!(
+                        "{} install --user {}",
+                        pip_cmd.to_str().unwrap(),
+                        sdk_src.to_str().unwrap()
+                    ),
+                ])
+                .output()
+                .context("Failed to install Python SDK as flame user")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("Failed to install Python SDK as flame user: {}", stderr);
+            }
+
+            println!("✓ Installed Python SDK for flame user");
+
+            // Create a note in the sdk_python directory for reference
+            let readme_path = paths.sdk_python.join("README.txt");
+            std::fs::write(
+                &readme_path,
+                "Python SDK installed for flame user in /var/lib/flame/.local/lib/python*/site-packages\n\
+                 To verify: sudo -u flame pip3 show flamepy\n",
+            ).ok(); // Ignore errors for this informational file
+        } else {
+            println!("  Installing Python SDK for current user...");
+
+            // Install using pip with --user flag for current user
+            let output = Command::new(&pip_cmd)
+                .args(["install", "--user", sdk_src.to_str().unwrap()])
+                .output()
+                .context("Failed to install Python SDK")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("Failed to install Python SDK: {}", stderr);
+            }
+
+            println!("✓ Installed Python SDK for current user");
+
+            // Create a note in the sdk_python directory for reference
+            let readme_path = paths.sdk_python.join("README.txt");
+            std::fs::write(
+                &readme_path,
+                "Python SDK installed for current user.\nUse 'pip3 show flamepy' to see installation location.\n",
+            ).ok(); // Ignore errors for this informational file
         }
-
-        println!("✓ Installed Python SDK (system-wide)");
-
-        // Create a symlink or note in the sdk_python directory for reference
-        let readme_path = paths.sdk_python.join("README.txt");
-        std::fs::write(
-            &readme_path,
-            "Python SDK installed system-wide via pip.\nUse 'pip3 show flamepy' to see installation location.\n",
-        ).ok(); // Ignore errors for this informational file
 
         Ok(())
     }

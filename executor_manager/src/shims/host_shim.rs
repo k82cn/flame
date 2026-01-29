@@ -209,6 +209,12 @@ impl HostShim {
             }
         }
 
+        // Propagate HOME environment variable to ensure Python finds user site-packages
+        // This is needed when flamepy is installed with --user flag for the flame user
+        if let Ok(home) = env::var("HOME") {
+            envs.entry("HOME".to_string()).or_insert(home);
+        }
+
         tracing::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"
         );

@@ -41,15 +41,17 @@ impl UserManager {
             }
         }
 
-        // Create flame user
+        // Create flame user with home directory for Python packages
         let output = Command::new("useradd")
             .args([
                 "--system",
-                "--no-create-home",
+                "--create-home",
+                "--home-dir",
+                "/var/lib/flame",
                 "--gid",
                 "flame",
                 "--shell",
-                "/usr/sbin/nologin",
+                "/bin/bash",
                 "flame",
             ])
             .output()
@@ -60,7 +62,7 @@ impl UserManager {
             anyhow::bail!("Failed to create flame user: {}", stderr);
         }
 
-        println!("✓ Created flame user and group");
+        println!("✓ Created flame user and group with home directory");
         Ok(())
     }
 
