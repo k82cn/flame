@@ -216,28 +216,21 @@ tail -f /tmp/flame-dev/logs/fem.log
 The default configuration is generated at `/tmp/flame-dev/conf/flame-cluster.yaml`:
 
 ```yaml
-session_manager:
+---
+cluster:
+  name: flame
   endpoint: "http://127.0.0.1:8080"
-  storage: "/tmp/flame-dev/data/sessions.db"
-  log_level: "info"
-
-executor_manager:
-  endpoint: "http://127.0.0.1:8081"
-  work_dir: "/tmp/flame-dev/work/executors"
-  log_level: "info"
-
+  slot: "cpu=1,mem=2g"
+  policy: proportion
+  storage: "sqlite:///tmp/flame-dev/data/sessions.db"
+executors:
+  shim: host
+  limits:
+    max_executors: 128
 cache:
   endpoint: "grpc://127.0.0.1:9090"
   network_interface: "lo"
   storage: "/tmp/flame-dev/data/cache"
-
-package:
-  storage: "file:///tmp/flame-dev/data/packages"
-  excludes:
-    - "*.log"
-    - "*.tmp"
-    - "*.pyc"
-    - "__pycache__"
 ```
 
 You can edit this file to customize your local cluster.
