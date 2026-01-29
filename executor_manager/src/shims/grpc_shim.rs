@@ -125,7 +125,6 @@ impl GrpcShim {
     }
 }
 
-
 #[async_trait]
 impl Shim for GrpcShim {
     async fn on_session_enter(&mut self, ctx: &SessionContext) -> Result<(), FlameError> {

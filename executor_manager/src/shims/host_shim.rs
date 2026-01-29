@@ -54,7 +54,11 @@ struct HostInstance {
 }
 
 impl HostInstance {
-    fn new(child: tokio::process::Child, work_dir: std::path::PathBuf, socket_path: std::path::PathBuf) -> Self {
+    fn new(
+        child: tokio::process::Child,
+        work_dir: std::path::PathBuf,
+        socket_path: std::path::PathBuf,
+    ) -> Self {
         Self {
             child,
             work_dir,

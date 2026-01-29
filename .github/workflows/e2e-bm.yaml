@@ -74,18 +74,26 @@ jobs:
           
           echo "✓ Services are running via systemd"
       
+      - name: Verify Python SDK installation
+        run: |
+          echo "=== Verify flamepy installation ==="
+          pip3 show flamepy
+          echo ""
+          echo "=== Test import ==="
+          python3 -c "import flamepy; print('✓ flamepy imported successfully from:', flamepy.__file__)"
+
       - name: Install Python dependencies
         run: |
-          # Install test dependencies directly (don't use uv sync to avoid source override)
+          # Install test dependencies
           pip3 install grpcio grpcio-tools pytest black isort
-      
+
       - name: Run test_runner
         run: |
-          # Add installed flamepy and e2e src to PYTHONPATH
-          export PYTHONPATH="$INSTALL_PREFIX/sdk/python:$(pwd)/e2e/src:$PYTHONPATH"
+          # Add e2e src to PYTHONPATH (flamepy is already system-installed)
+          export PYTHONPATH="$(pwd)/e2e/src:$PYTHONPATH"
           cd e2e
           pytest -vv --durations=0 tests/test_runner.py
-      
+
       - name: Show service logs on failure
         if: failure()
         run: |

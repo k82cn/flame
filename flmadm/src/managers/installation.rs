@@ -58,7 +58,13 @@ impl InstallationManager {
 
         // Set ownership if running as root
         if self.user_manager.is_root() {
-            for path in [&paths.work, &paths.logs, &paths.data, &paths.conf, &paths.migrations] {
+            for path in [
+                &paths.work,
+                &paths.logs,
+                &paths.data,
+                &paths.conf,
+                &paths.migrations,
+            ] {
                 self.user_manager.set_ownership(path)?;
             }
         }
@@ -120,15 +126,11 @@ impl InstallationManager {
             anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
         }
 
-        // Install using pip
-        let output = Command::new(pip_cmd)
-            .args([
-                "install",
-                "-e",
-                sdk_src.to_str().unwrap(),
-                "--target",
-                paths.sdk_python.to_str().unwrap(),
-            ])
+        // Install using pip (without -e for proper installation)
+        // Note: We don't use --target because it conflicts with editable mode
+        // and we want system-wide installation for ease of use
+        let output = Command::new(&pip_cmd)
+            .args(["install", sdk_src.to_str().unwrap()])
             .output()
             .context("Failed to install Python SDK")?;
 
@@ -137,7 +139,15 @@ impl InstallationManager {
             anyhow::bail!("Failed to install Python SDK: {}", stderr);
         }
 
-        println!("✓ Installed Python SDK to: {}", paths.sdk_python.display());
+        println!("✓ Installed Python SDK (system-wide)");
+
+        // Create a symlink or note in the sdk_python directory for reference
+        let readme_path = paths.sdk_python.join("README.txt");
+        std::fs::write(
+            &readme_path,
+            "Python SDK installed system-wide via pip.\nUse 'pip3 show flamepy' to see installation location.\n",
+        ).ok(); // Ignore errors for this informational file
+
         Ok(())
     }
 
@@ -151,9 +161,7 @@ impl InstallationManager {
         }
 
         // Copy all migration files
-        for entry in fs::read_dir(&migrations_src)
-            .context("Failed to read migrations directory")?
-        {
+        for entry in fs::read_dir(&migrations_src).context("Failed to read migrations directory")? {
             let entry = entry.context("Failed to read migration file entry")?;
             let file_name = entry.file_name();
             let src_path = entry.path();
@@ -194,7 +202,8 @@ impl InstallationManager {
 
         // Remove migrations
         if paths.migrations.exists() {
-            fs::remove_dir_all(&paths.migrations).context("Failed to remove migrations directory")?;
+            fs::remove_dir_all(&paths.migrations)
+                .context("Failed to remove migrations directory")?;
             println!("  ✓ Removed migrations");
         }
 
