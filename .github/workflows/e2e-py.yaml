@@ -2,6 +2,8 @@ name: Flame CI
 on: [push, pull_request]
 env:
   CLICOLOR_FORCE: 1
+  INSTALL_PREFIX: /tmp/flame-test
+  FLAME_ENDPOINT: http://127.0.0.1:8080
 jobs:
   ci:
     name: Python E2E Test
@@ -14,13 +16,77 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Set up Docker Compose
-        uses: docker/setup-compose-action@v1
+      
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          version: latest
-      - name: Start Flame
+          toolchain: ${{ matrix.rust }}
+      
+      - name: Install Python and uv
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install uv
         run: |
-          docker compose up --build --force-recreate -d
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Build Flame
+        run: |
+          cargo build --release
+      
+      - name: Install Flame with flmadm
+        run: |
+          ./target/release/flmadm install --src-dir . --skip-build --no-systemd --prefix $INSTALL_PREFIX
+          echo "$INSTALL_PREFIX/bin" >> $GITHUB_PATH
+      
+      - name: Start Flame services
+        run: |
+          # Start session manager in background
+          $INSTALL_PREFIX/bin/flame-session-manager --config $INSTALL_PREFIX/conf/flame-cluster.yaml > $INSTALL_PREFIX/logs/fsm.log 2>&1 &
+          echo $! > /tmp/fsm.pid
+          
+          # Wait for session manager to start
+          sleep 5
+          
+          # Start executor manager in background
+          $INSTALL_PREFIX/bin/flame-executor-manager --config $INSTALL_PREFIX/conf/flame-cluster.yaml > $INSTALL_PREFIX/logs/fem.log 2>&1 &
+          echo $! > /tmp/fem.pid
+          
+          # Wait for services to be ready
+          sleep 5
+          
+          # Check if services are running
+          ps -p $(cat /tmp/fsm.pid) || (echo "Session manager failed to start" && cat $INSTALL_PREFIX/logs/fsm.log && exit 1)
+          ps -p $(cat /tmp/fem.pid) || (echo "Executor manager failed to start" && cat $INSTALL_PREFIX/logs/fem.log && exit 1)
+      
       - name: Run Python E2E Test
         run: |
-          make e2e-py
+          cd e2e
+          uv run pytest -vv --durations=0 .
+      
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Session Manager Logs ==="
+          cat $INSTALL_PREFIX/logs/fsm.log || echo "No FSM logs found"
+          echo ""
+          echo "=== Executor Manager Logs ==="
+          cat $INSTALL_PREFIX/logs/fem.log || echo "No FEM logs found"
+      
+      - name: Stop Flame services
+        if: always()
+        run: |
+          # Kill services if they're still running
+          if [ -f /tmp/fem.pid ]; then
+            kill $(cat /tmp/fem.pid) 2>/dev/null || true
+          fi
+          if [ -f /tmp/fsm.pid ]; then
+            kill $(cat /tmp/fsm.pid) 2>/dev/null || true
+          fi
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          ./target/release/flmadm uninstall --prefix $INSTALL_PREFIX --no-backup --force || true
