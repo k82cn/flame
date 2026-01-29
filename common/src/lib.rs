@@ -226,7 +226,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                     "-m".to_string(),
                     "flamepy.rl.runpy".to_string(),
                 ],
-                working_directory: Some("/opt/flame/work".to_string()),
+                working_directory: None,
                 ..ApplicationAttributes::default()
             },
         ),

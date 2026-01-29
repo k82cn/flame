@@ -36,6 +36,7 @@ services:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
+      - flame-work:/usr/local/flame/work
 
   flame-console:
     image: xflops/flame-console:latest
@@ -62,3 +63,6 @@ services:
       - 6334:6334
     volumes:
       - ./work/vdb/data:/qdrant/data
+
+volumes:
+  flame-work:

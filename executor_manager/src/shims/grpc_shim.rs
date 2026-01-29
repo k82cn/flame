@@ -80,6 +80,10 @@ impl GrpcShim {
         self.endpoint.as_str()
     }
 
+    pub fn socket_path(&self) -> &Path {
+        Path::new(&self.endpoint)
+    }
+
     pub async fn connect(&mut self) -> Result<(), FlameError> {
         trace_fn!("GrpcShim::connect");
 
@@ -113,14 +117,14 @@ impl GrpcShim {
 
         Ok(())
     }
-}
 
-impl Drop for GrpcShim {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.endpoint);
-        let _ = std::fs::remove_dir_all(&self.working_directory);
+    pub fn close(&mut self) {
+        if self.client.take().is_some() {
+            tracing::debug!("Closed gRPC connection to service at <{}>", self.endpoint);
+        }
     }
 }
+
 
 #[async_trait]
 impl Shim for GrpcShim {

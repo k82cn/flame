@@ -37,7 +37,7 @@ services:
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
       - flame-packages:/opt/flame/packages
-      - ./work:/opt/flame/work
+      - flame-work:/usr/local/flame/work
       - flame-cache-storage:/var/lib/flame/cache
     ports:
       - 9090:9090
@@ -60,4 +60,5 @@ services:
 
 volumes:
   flame-packages:
+  flame-work:
   flame-cache-storage:

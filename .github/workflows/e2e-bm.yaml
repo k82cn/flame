@@ -1,0 +1,112 @@
+name: Flame CI
+on: [push, pull_request]
+env:
+  CLICOLOR_FORCE: 1
+  INSTALL_PREFIX: /opt/flame-test
+  FLAME_ENDPOINT: http://127.0.0.1:8080
+jobs:
+  ci:
+    name: BareMetal Python Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable]
+        os: [ubuntu-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+      
+      - name: Install Python and uv
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      
+      - name: Build Flame
+        run: |
+          cargo build --release
+      
+      - name: Verify systemd availability
+        run: |
+          echo "=== Checking systemd ==="
+          systemctl --version
+          echo ""
+          echo "=== Systemd status ==="
+          systemctl status || echo "systemd status command returned non-zero"
+          echo ""
+          echo "=== Check if systemd is running as init ==="
+          ps -p 1 -o comm=
+          echo ""
+          echo "=== Current user ==="
+          whoami
+          echo ""
+          echo "=== Sudo privileges ==="
+          sudo -v && echo "✓ Sudo available"
+      
+      - name: Install Flame with flmadm and systemd
+        run: |
+          sudo ./target/release/flmadm install --src-dir . --skip-build --prefix $INSTALL_PREFIX --enable
+          sudo chmod -R 777 $INSTALL_PREFIX
+          echo "$INSTALL_PREFIX/bin" >> $GITHUB_PATH
+      
+      - name: Check service status
+        run: |
+          # Wait for services to be ready
+          sleep 5
+          
+          # Check service status
+          sudo systemctl status flame-session-manager || (echo "Session manager not running" && sudo journalctl -u flame-session-manager -n 50 && exit 1)
+          sudo systemctl status flame-executor-manager || (echo "Executor manager not running" && sudo journalctl -u flame-executor-manager -n 50 && exit 1)
+          
+          echo "✓ Services are running via systemd"
+      
+      - name: Install Python dependencies
+        run: |
+          cd e2e
+          uv sync
+      
+      - name: Run test_runner
+        run: |
+          cd e2e
+          uv run pytest -vv --durations=0 tests/test_runner.py
+      
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Session Manager Logs (systemd) ==="
+          sudo journalctl -u flame-session-manager -n 100 || echo "No systemd logs found"
+          echo ""
+          echo "=== Session Manager Logs (file) ==="
+          sudo cat $INSTALL_PREFIX/logs/fsm.log || echo "No FSM log file found"
+          echo ""
+          echo "=== Executor Manager Logs (systemd) ==="
+          sudo journalctl -u flame-executor-manager -n 100 || echo "No systemd logs found"
+          echo ""
+          echo "=== Executor Manager Logs (file) ==="
+          sudo cat $INSTALL_PREFIX/logs/fem.log || echo "No FEM log file found"
+      
+      - name: Stop Flame services
+        if: always()
+        run: |
+          # Stop services via systemd
+          sudo systemctl stop flame-executor-manager || true
+          sudo systemctl stop flame-session-manager || true
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          sudo ./target/release/flmadm uninstall --prefix $INSTALL_PREFIX --no-backup --force || true
