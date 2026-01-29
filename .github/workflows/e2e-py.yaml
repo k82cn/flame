@@ -32,6 +32,10 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Build Flame
         run: |
           cargo build --release
@@ -61,6 +65,11 @@ jobs:
           ps -p $(cat /tmp/fsm.pid) || (echo "Session manager failed to start" && cat $INSTALL_PREFIX/logs/fsm.log && exit 1)
           ps -p $(cat /tmp/fem.pid) || (echo "Executor manager failed to start" && cat $INSTALL_PREFIX/logs/fem.log && exit 1)
       
+      - name: Install Python dependencies
+        run: |
+          cd e2e
+          uv sync
+
       - name: Run Python E2E Test
         run: |
           cd e2e
