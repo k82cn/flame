@@ -126,6 +126,11 @@ impl InstallationManager {
             anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
         }
 
+        // Canonicalize path to absolute path (needed for su command)
+        let sdk_src_abs = sdk_src
+            .canonicalize()
+            .context("Failed to canonicalize SDK path")?;
+
         // Install as flame user if running as root, otherwise install for current user
         if self.user_manager.is_root() && self.user_manager.user_exists()? {
             println!("  Installing Python SDK as flame user...");
@@ -139,7 +144,7 @@ impl InstallationManager {
                     &format!(
                         "{} install --user {}",
                         pip_cmd.to_str().unwrap(),
-                        sdk_src.to_str().unwrap()
+                        sdk_src_abs.to_str().unwrap()
                     ),
                 ])
                 .output()
@@ -164,7 +169,7 @@ impl InstallationManager {
 
             // Install using pip with --user flag for current user
             let output = Command::new(&pip_cmd)
-                .args(["install", "--user", sdk_src.to_str().unwrap()])
+                .args(["install", "--user", sdk_src_abs.to_str().unwrap()])
                 .output()
                 .context("Failed to install Python SDK")?;
 

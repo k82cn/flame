@@ -87,10 +87,10 @@ enum Commands {
 
 fn main() {
     // Initialize logging
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
+    if let Err(e) = common::init_logger() {
+        eprintln!("Failed to initialize logger: {}", e);
+        std::process::exit(types::exit_codes::INSTALL_FAILURE);
     }
-    tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
 

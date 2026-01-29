@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use chrono::Local;
 use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 pub struct BackupManager;
 
@@ -101,25 +100,13 @@ impl BackupManager {
 
     /// Copy a directory recursively
     fn copy_directory(&self, src: &Path, dst: &Path) -> Result<()> {
-        fs::create_dir_all(dst)?;
-
-        for entry in WalkDir::new(src) {
-            let entry = entry?;
-            let path = entry.path();
-
-            let relative_path = path.strip_prefix(src)?;
-            let target_path = dst.join(relative_path);
-
-            if entry.file_type().is_dir() {
-                fs::create_dir_all(&target_path)?;
-            } else {
-                if let Some(parent) = target_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::copy(path, &target_path)?;
-            }
-        }
-
+        let mut options = fs_extra::dir::CopyOptions::new();
+        options.copy_inside = true;
+        fs_extra::dir::copy(src, dst, &options).context(format!(
+            "Failed to copy {} to {}",
+            src.display(),
+            dst.display()
+        ))?;
         Ok(())
     }
 }

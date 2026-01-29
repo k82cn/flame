@@ -55,6 +55,15 @@ fn validate_and_confirm(config: &UninstallConfig) -> Result<InstallationPaths> {
 
     // Check if installation exists
     if !paths.is_valid_installation() {
+        // If --force is used and installation doesn't exist, treat as success (already uninstalled)
+        if config.force {
+            println!(
+                "ℹ️  Flame installation not found at: {}",
+                paths.prefix.display()
+            );
+            println!("   Nothing to uninstall.");
+            std::process::exit(crate::types::exit_codes::SUCCESS);
+        }
         anyhow::bail!(
             "Flame installation not found at: {}\n  Directory does not exist or is not a valid Flame installation.",
             paths.prefix.display()
@@ -218,10 +227,7 @@ fn print_summary(
     println!("  • Binaries");
     println!("  • Python SDK");
     println!("  • Working directories");
-
-    if !config.preserve_systemd_services() {
-        println!("  • Systemd service files");
-    }
+    println!("  • Systemd service files");
 
     if !config.preserve_data {
         println!("  • Data directory");
@@ -261,12 +267,4 @@ fn print_summary(
     }
 
     println!();
-}
-
-// Helper method for UninstallConfig
-impl UninstallConfig {
-    fn preserve_systemd_services(&self) -> bool {
-        // Systemd services are always removed during uninstall
-        false
-    }
 }

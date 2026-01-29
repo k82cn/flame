@@ -41,13 +41,13 @@ Repo: https://github.com/xflops-io/flame
 ### Docker-based Development (Traditional)
 - **Build:** `docker compose build` (compiles all images of Flame); if Docker is unavailable, Podman is an alternative
 - **Dev Environment:** 
- - Start: `docker compose up -d` (start Flame cluster after rebuilding)
- - Stop: `docker compose down` (stop the cluster)
- - Restart: `docker compose restart` (restart specific services)
+  - Start: `docker compose up -d` (start Flame cluster after rebuilding)
+  - Stop: `docker compose down` (stop the cluster)
+  - Restart: `docker compose restart` (restart specific services)
 - **Test:**
- - All tests: `make e2e` (runs all tests with docker compose)
- - Python tests: `make e2e-py-docker`
- - Rust tests: `make e2e-rs`
+  - All tests: `make e2e` (runs all tests with docker compose)
+  - Python tests: `make e2e-py-docker`
+  - Rust tests: `make e2e-rs`
 
 ### Local Development (New, Faster)
 - **Install:** `make install-dev` (installs Flame to /tmp/flame-dev, no sudo required)

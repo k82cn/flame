@@ -32,7 +32,7 @@ impl BuildManager {
         println!("✓ Build completed in {:.1}s", duration.as_secs_f64());
 
         // Return build artifacts
-        BuildArtifacts::from_source_dir(&src_dir.to_path_buf(), "release")
+        BuildArtifacts::from_source_dir(src_dir, "release")
     }
 
     fn build_verbose(&self, src_dir: &Path) -> Result<()> {
@@ -55,6 +55,10 @@ impl BuildManager {
 
     fn build_with_progress(&self, src_dir: &Path) -> Result<()> {
         // Create a progress bar
+        // Note: This uses Command::output() which waits for completion, so the progress bar
+        // acts as a spinner rather than showing real-time compilation progress.
+        // For real-time progress, we would need to spawn() the process and process stdout/stderr
+        // streams asynchronously, which adds significant complexity.
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()

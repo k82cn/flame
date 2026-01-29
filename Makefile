@@ -59,7 +59,7 @@ uninstall: ## Uninstall Flame from system (requires sudo)
 	sudo ./target/release/flmadm uninstall --force
 
 uninstall-dev: ## Uninstall Flame from dev location
-	./target/release/flmadm uninstall --prefix $(INSTALL_PREFIX) --no-backup --force || true
+	./target/release/flmadm uninstall --prefix $(INSTALL_PREFIX) --no-backup --force
 
 start-services: ## Start Flame services (systemd)
 	sudo systemctl start flame-session-manager flame-executor-manager

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Configuration for the install command
 #[derive(Debug, Clone)]
@@ -100,7 +100,7 @@ pub struct BuildArtifacts {
 
 impl BuildArtifacts {
     /// Find build artifacts in a source directory
-    pub fn from_source_dir(src_dir: &PathBuf, profile: &str) -> anyhow::Result<Self> {
+    pub fn from_source_dir(src_dir: &Path, profile: &str) -> anyhow::Result<Self> {
         let target_dir = src_dir.join("target").join(profile);
 
         let artifacts = Self {
