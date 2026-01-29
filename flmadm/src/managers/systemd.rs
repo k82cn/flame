@@ -78,16 +78,14 @@ impl SystemdManager {
         // Start session manager first
         self.start_service("flame-session-manager")?;
 
-        // Wait a bit for session manager to be ready
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        // Wait for session manager to be ready (with retry)
+        self.wait_for_service_active("flame-session-manager", 15)?;
 
         // Start executor manager
         self.start_service("flame-executor-manager")?;
 
-        // Verify services are running
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        self.check_service_status("flame-session-manager")?;
-        self.check_service_status("flame-executor-manager")?;
+        // Wait for executor manager to be ready (with retry)
+        self.wait_for_service_active("flame-executor-manager", 15)?;
 
         println!("✓ Services are running");
         Ok(())
@@ -165,20 +163,76 @@ impl SystemdManager {
         Ok(())
     }
 
-    fn check_service_status(&self, service: &str) -> Result<()> {
+    fn check_service_status(&self, service: &str) -> Result<String> {
         let output = Command::new("systemctl")
             .args(["is-active", service])
             .output()
             .context(format!("Failed to check {} status", service))?;
 
         let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(status)
+    }
 
-        if status == "active" {
-            println!("✓ {} is active", service);
-            Ok(())
-        } else {
-            anyhow::bail!("{} is not active (status: {})", service, status);
+    /// Wait for a service to become active with retry logic
+    fn wait_for_service_active(&self, service: &str, max_wait_secs: u64) -> Result<()> {
+        let start = std::time::Instant::now();
+        let mut last_status = String::new();
+
+        loop {
+            match self.check_service_status(service) {
+                Ok(status) if status == "active" => {
+                    println!("✓ {} is active", service);
+                    return Ok(());
+                }
+                Ok(status) => {
+                    last_status = status;
+                    // Service is not active yet, keep waiting
+                }
+                Err(e) => {
+                    // Error checking status, log it but continue
+                    println!("⚠️  Warning: Failed to check {} status: {}", service, e);
+                }
+            }
+
+            // Check if we've exceeded max wait time
+            if start.elapsed().as_secs() >= max_wait_secs {
+                // Get detailed status and logs for debugging
+                let _ = self.show_service_status(service);
+                anyhow::bail!(
+                    "{} is not active after {}s (status: {})",
+                    service,
+                    max_wait_secs,
+                    last_status
+                );
+            }
+
+            // Wait before retrying
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
+    }
+
+    /// Show detailed service status for debugging
+    fn show_service_status(&self, service: &str) -> Result<()> {
+        println!("\n=== Debugging {} ===", service);
+
+        // Show service status
+        let output = Command::new("systemctl")
+            .args(["status", service])
+            .output()
+            .context(format!("Failed to get {} status", service))?;
+
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+
+        // Show recent journal logs
+        let output = Command::new("journalctl")
+            .args(["-u", service, "-n", "20", "--no-pager"])
+            .output()
+            .context(format!("Failed to get {} logs", service))?;
+
+        println!("\n=== Recent logs ===");
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+
+        Ok(())
     }
 
     fn generate_session_manager_service(&self, prefix: &str) -> String {

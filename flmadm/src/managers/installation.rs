@@ -56,7 +56,7 @@ impl InstallationManager {
 
         // Set ownership if running as root
         if self.user_manager.is_root() {
-            for path in [&paths.work, &paths.logs, &paths.data] {
+            for path in [&paths.work, &paths.logs, &paths.data, &paths.conf] {
                 self.user_manager.set_ownership(path)?;
             }
         }
