@@ -127,10 +127,14 @@ impl InstallationManager {
         }
 
         // Install using pip (without -e for proper installation)
-        // Note: We don't use --target because it conflicts with editable mode
-        // and we want system-wide installation for ease of use
+        // Note: We use --break-system-packages to allow installation over system packages
+        // This is needed in CI environments where system packages might conflict
         let output = Command::new(&pip_cmd)
-            .args(["install", sdk_src.to_str().unwrap()])
+            .args([
+                "install",
+                "--break-system-packages",
+                sdk_src.to_str().unwrap(),
+            ])
             .output()
             .context("Failed to install Python SDK")?;
 
