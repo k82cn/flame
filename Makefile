@@ -103,9 +103,12 @@ e2e-py: ## Run Python E2E tests (use e2e-py-docker for docker compose or e2e-py-
 	@echo "Use 'make e2e-py-docker' for docker compose tests or 'make e2e-py-local' for local cluster tests"
 
 e2e-py-docker: ## Run Python E2E tests with docker compose
+	@echo "Installing flamepy in console container for test client..."
+	$(CONTAINER_RUNTIME) compose exec flame-console uv pip install --system /usr/local/flame/sdk/python
+	@echo "Running e2e tests..."
 	$(CONTAINER_RUNTIME) compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .
 
-e2e-py-local: ## Run Python E2E tests against local cluster
+e2e-py-local: ## Run Python E2E tests against local cluster (requires flamepy installed via pip)
 	cd e2e && FLAME_ENDPOINT=$(FLAME_ENDPOINT) uv run pytest -vv --durations=0 .
 
 e2e-rs: ## Run Rust E2E tests
