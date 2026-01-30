@@ -98,6 +98,18 @@ impl InstallationManager {
             ),
             ("flmctl", &artifacts.flmctl, paths.bin.join("flmctl")),
             ("flmadm", &artifacts.flmadm, paths.bin.join("flmadm")),
+            ("flmping", &artifacts.flmping, paths.bin.join("flmping")),
+            (
+                "flmping-service",
+                &artifacts.flmping_service,
+                paths.bin.join("flmping-service"),
+            ),
+            ("flmexec", &artifacts.flmexec, paths.bin.join("flmexec")),
+            (
+                "flmexec-service",
+                &artifacts.flmexec_service,
+                paths.bin.join("flmexec-service"),
+            ),
         ] {
             fs::copy(src, &dst).context(format!("Failed to copy {} binary", name))?;
 
