@@ -47,8 +47,56 @@ use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
 use common::{FlameError, FLAME_CACHE_ENDPOINT, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY};
 
-pub struct HostShim {
+struct HostInstance {
     child: tokio::process::Child,
+    work_dir: std::path::PathBuf,
+    socket_path: std::path::PathBuf,
+}
+
+impl HostInstance {
+    fn new(
+        child: tokio::process::Child,
+        work_dir: std::path::PathBuf,
+        socket_path: std::path::PathBuf,
+    ) -> Self {
+        Self {
+            child,
+            work_dir,
+            socket_path,
+        }
+    }
+
+    fn cleanup(&mut self) {
+        // Kill the child process
+        if let Some(id) = self.child.id() {
+            let ig = Pid::from_raw(id as i32);
+            killpg(ig, Signal::SIGTERM);
+            tracing::debug!("Killed process group <{}>", id);
+        } else {
+            let _ = self.child.kill();
+            tracing::debug!("Killed child process");
+        }
+
+        // Note: Working directory is preserved for debugging and log inspection
+        // It can be cleaned up manually if needed
+
+        // Cleanup socket file
+        if self.socket_path.exists() {
+            if let Err(e) = fs::remove_file(&self.socket_path) {
+                tracing::warn!(
+                    "Failed to remove socket file {}: {}",
+                    self.socket_path.display(),
+                    e
+                );
+            } else {
+                tracing::debug!("Removed socket file: {}", self.socket_path.display());
+            }
+        }
+    }
+}
+
+pub struct HostShim {
+    instance: HostInstance,
     instance_client: GrpcShim,
 }
 
@@ -64,12 +112,12 @@ impl HostShim {
 
         let mut instance_client = GrpcShim::new(executor, app).await?;
 
-        let child = Self::launch_instance(app, executor, instance_client.endpoint())?;
+        let instance = Self::launch_instance(app, executor, instance_client.endpoint())?;
 
         instance_client.connect().await?;
 
         Ok(Arc::new(Mutex::new(Self {
-            child,
+            instance,
             instance_client,
         })))
     }
@@ -135,7 +183,7 @@ impl HostShim {
         app: &ApplicationContext,
         executor: &Executor,
         endpoint: &str,
-    ) -> Result<tokio::process::Child, FlameError> {
+    ) -> Result<HostInstance, FlameError> {
         trace_fn!("HostShim::launch_instance");
 
         let command = app.command.clone().unwrap_or_default();
@@ -151,6 +199,12 @@ impl HostShim {
             }
         }
 
+        // Propagate HOME environment variable to ensure Python finds user site-packages
+        // This is needed when flamepy is installed with --user flag for the flame user
+        if let Ok(home) = env::var("HOME") {
+            envs.entry("HOME".to_string()).or_insert(home);
+        }
+
         tracing::debug!(
             "Try to start service by command <{command}> with args <{args:?}> and envs <{envs:?}>"
         );
@@ -158,12 +212,14 @@ impl HostShim {
         // Spawn child process
         let mut cmd = tokio::process::Command::new(&command);
 
-        // If application doesn't specify working_directory, use executor manager's working directory with executor ID
+        // If application doesn't specify working_directory, use executor manager's working directory with executor ID and application name
         let cur_dir = match app.working_directory.clone() {
             Some(wd) => Path::new(&wd).to_path_buf(),
             None => env::current_dir()
                 .unwrap_or(Path::new(FLAME_WORKING_DIRECTORY).to_path_buf())
-                .join(executor.id.as_str()),
+                .join(executor.id.as_str())
+                .join("work")
+                .join(&app.name),
         };
 
         let work_dir = cur_dir.clone();
@@ -187,7 +243,7 @@ impl HostShim {
             .open(work_dir.join(format!("{}.err", executor.id)))
             .map_err(|e| FlameError::Internal(format!("failed to open stderr log file: {e}")))?;
 
-        let mut child = cmd
+        let child = cmd
             .envs(envs)
             .args(args)
             .current_dir(&work_dir)
@@ -201,23 +257,18 @@ impl HostShim {
                 ))
             })?;
 
-        Ok(child)
+        let socket_path = Path::new(endpoint).to_path_buf();
+
+        Ok(HostInstance::new(child, work_dir, socket_path))
     }
 }
 
 impl Drop for HostShim {
     fn drop(&mut self) {
-        if let Some(id) = self.child.id() {
-            let ig = Pid::from_raw(id as i32);
-            killpg(ig, Signal::SIGTERM);
-        } else {
-            self.child.kill();
-        }
-
-        tracing::debug!(
-            "The service <{}> was stopped",
-            self.child.id().unwrap_or_default()
-        );
+        // Close gRPC connection first
+        self.instance_client.close();
+        // Then cleanup instance resources (kill process, remove files)
+        self.instance.cleanup();
     }
 }
 
