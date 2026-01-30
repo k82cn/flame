@@ -193,7 +193,7 @@ Repo: https://github.com/xflops-io/flame
 - **State machines:** Both session_manager and executor_manager use state machine patterns; study existing states before adding new ones
 - **RPC changes:** If modifying `.proto` files, remember to rebuild all services that depend on those definitions
 - **Documentation structure:** All documentation must live in the `docs/` directory
-  - Design docs: Create a new directory under `docs/designs/RFE<number>-<name>/` with all related files (FS.md, IMPLEMENTATION.md, STATUS.md, CHANGELOG.md)
+  - Design docs: Create a new directory under `docs/designs/RFE<number>-<name>/` with all related files (FS.md, IMPLEMENTATION.md, STATUS.md, INTEGRATION.md, CHANGELOG.md)
   - Feature changelog: Each RFE directory should have its own CHANGELOG.md tracking feature-specific changes, implementation progress, and evolution
   - Tutorials: Add to `docs/tutorials/` with clear step-by-step instructions
   - Blog posts: Add to `docs/blogs/` for feature highlights and use cases
