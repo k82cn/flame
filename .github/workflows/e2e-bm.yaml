@@ -30,9 +30,9 @@ jobs:
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
           # Install uv to /usr/bin for flmrun service
-          sudo cp $HOME/.cargo/bin/uv /usr/bin/uv
+          sudo cp $HOME/.local/bin/uv /usr/bin/uv
           sudo chmod +x /usr/bin/uv
           echo "✓ Installed uv to /usr/bin/uv for flmrun"
       
