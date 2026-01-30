@@ -77,18 +77,8 @@ impl HostInstance {
             tracing::debug!("Killed child process");
         }
 
-        // Cleanup working directory
-        if self.work_dir.exists() {
-            if let Err(e) = fs::remove_dir_all(&self.work_dir) {
-                tracing::warn!(
-                    "Failed to remove working directory {}: {}",
-                    self.work_dir.display(),
-                    e
-                );
-            } else {
-                tracing::debug!("Removed working directory: {}", self.work_dir.display());
-            }
-        }
+        // Note: Working directory is preserved for debugging and log inspection
+        // It can be cleaned up manually if needed
 
         // Cleanup socket file
         if self.socket_path.exists() {
