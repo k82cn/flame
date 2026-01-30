@@ -87,6 +87,12 @@ impl InstallationManager {
             ] {
                 self.user_manager.set_ownership(path)?;
             }
+
+            // Set ownership for SDK directory parent (sdk/python directory will be set later)
+            let sdk_parent = paths.sdk_python.parent().unwrap().parent().unwrap(); // ${PREFIX}/sdk
+            if sdk_parent.exists() {
+                self.user_manager.set_ownership(sdk_parent)?;
+            }
         }
 
         Ok(())
@@ -158,8 +164,8 @@ impl InstallationManager {
             self.copy_dir_all(&sdk_src, &sdk_install_src)
                 .context("Failed to copy SDK to installation directory")?;
 
-            // Set ownership to flame:flame
-            self.user_manager.set_ownership(&sdk_install_src)?;
+            // Set ownership to flame:flame for the entire sdk/python directory tree
+            self.user_manager.set_ownership(&paths.sdk_python)?;
 
             // Install using pip as flame user with --user flag
             let output = Command::new("sudo")
