@@ -13,11 +13,23 @@ limitations under the License.
 
 import logging
 import os
+import sys
 import typing
 from abc import abstractmethod
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Optional
+
+# Handle typing.override compatibility for Python < 3.12
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    try:
+        from typing_extensions import override
+    except ImportError:
+        # If typing_extensions is not available, use a no-op decorator
+        def override(func):  # type: ignore
+            return func
 
 import grpc
 
@@ -123,7 +135,7 @@ class FlameInstanceServicer(InstanceServicer):
     def __init__(self, service: FlameService):
         self._service = service
 
-    @typing.override
+    @override
     def OnSessionEnter(self, request, context):
         """Handle OnSessionEnter RPC call."""
         _trace_fn = TraceFn("OnSessionEnter")
@@ -167,7 +179,7 @@ class FlameInstanceServicer(InstanceServicer):
             logger.error(f"Error in OnSessionEnter: {e}")
             return Result(return_code=-1, message=f"{str(e)}")
 
-    @typing.override
+    @override
     def OnTaskInvoke(self, request, context):
         """Handle OnTaskInvoke RPC call."""
         _trace_fn = TraceFn("OnTaskInvoke")
@@ -196,7 +208,7 @@ class FlameInstanceServicer(InstanceServicer):
             logger.error(f"Error in OnTaskInvoke: {e}")
             return TaskResultProto(return_code=-1, output=None, message=f"{str(e)}")
 
-    @typing.override
+    @override
     def OnSessionLeave(self, request, context):
         """Handle OnSessionLeave RPC call."""
         _trace_fn = TraceFn("OnSessionLeave")
