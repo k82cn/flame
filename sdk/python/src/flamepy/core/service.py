@@ -14,7 +14,6 @@ limitations under the License.
 import logging
 import os
 import sys
-import typing
 from abc import abstractmethod
 from concurrent import futures
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ else:
         # If typing_extensions is not available, use a no-op decorator
         def override(func):  # type: ignore
             return func
+
 
 import grpc
 

@@ -181,6 +181,13 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         "description": "The output of the script in UTF-8."
     });
 
+    // Get FLAME_HOME from environment or use default
+    let flame_home = std::env::var("FLAME_HOME").unwrap_or_else(|_| "/usr/local/flame".to_string());
+    let flmexec_cmd = format!("{}/bin/flmexec-service", flame_home);
+    let flmping_cmd = format!("{}/bin/flmping-service", flame_home);
+    let flmping_url = format!("file://{}/bin/flmping-service", flame_home);
+    let flamepy_sdk_path = format!("file://{}/sdk/python", flame_home);
+
     HashMap::from([
         (
             "flmexec".to_string(),
@@ -189,7 +196,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                 description: Some(
                     "The Flame Executor application, which is used to run scripts.".to_string(),
                 ),
-                command: Some("/usr/local/flame/bin/flmexec-service".to_string()),
+                command: Some(flmexec_cmd),
                 schema: Some(ApplicationSchema {
                     input: Some(script_input_schema.to_string()),
                     output: Some(script_output_schema.to_string()),
@@ -202,8 +209,8 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
             "flmping".to_string(),
             ApplicationAttributes {
                 shim: Shim::Host,
-                url: Some("file:///opt/flame/bin/flmping-service".to_string()),
-                command: Some("/usr/local/flame/bin/flmping-service".to_string()),
+                url: Some(flmping_url),
+                command: Some(flmping_cmd),
                 ..ApplicationAttributes::default()
             },
         ),
@@ -215,13 +222,13 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                     "The Flame Runner application for executing customized Python applications."
                         .to_string(),
                 ),
-                command: Some("/bin/uv".to_string()),
+                command: Some("/usr/bin/uv".to_string()),
                 arguments: vec![
                     "run".to_string(),
                     "--with".to_string(),
                     "pip".to_string(),
                     "--with".to_string(),
-                    "flamepy @ file:///usr/local/flame/sdk/python".to_string(),
+                    format!("flamepy @ {}", flamepy_sdk_path),
                     "python".to_string(),
                     "-m".to_string(),
                     "flamepy.rl.runpy".to_string(),

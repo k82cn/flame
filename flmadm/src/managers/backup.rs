@@ -57,6 +57,23 @@ impl BackupManager {
             println!("  ✓ Backed up logs");
         }
 
+        // Backup work directory (sessions, executors)
+        if paths.work.exists() {
+            let backup_work = backup_dir.join("work");
+            self.copy_directory(&paths.work, &backup_work)
+                .context("Failed to backup work directory")?;
+            println!("  ✓ Backed up work directory");
+        }
+
+        // Backup events directory (session-manager creates this in prefix)
+        let events_dir = paths.prefix.join("events");
+        if events_dir.exists() {
+            let backup_events = backup_dir.join("events");
+            self.copy_directory(&events_dir, &backup_events)
+                .context("Failed to backup events directory")?;
+            println!("  ✓ Backed up events");
+        }
+
         println!("✓ Backup created at: {}", backup_dir.display());
         Ok(backup_dir)
     }
@@ -85,6 +102,7 @@ impl BackupManager {
             ("conf", &paths.conf),
             ("data", &paths.data),
             ("logs", &paths.logs),
+            ("work", &paths.work),
         ] {
             if src.exists() {
                 let dst = backup_dir.join(name);
@@ -92,6 +110,15 @@ impl BackupManager {
                     .context(format!("Failed to backup {}", name))?;
                 println!("  ✓ Backed up {}", name);
             }
+        }
+
+        // Backup events directory (session-manager creates this in prefix)
+        let events_dir = paths.prefix.join("events");
+        if events_dir.exists() {
+            let dst = backup_dir.join("events");
+            self.copy_directory(&events_dir, &dst)
+                .context("Failed to backup events")?;
+            println!("  ✓ Backed up events");
         }
 
         println!("✓ Backup created at: {}", backup_dir.display());

@@ -105,7 +105,14 @@ fn validate_and_confirm(config: &UninstallConfig) -> Result<InstallationPaths> {
         );
     }
     if paths.work.exists() {
-        println!("  • Working directory: {}", paths.work.display());
+        println!(
+            "  • Working directory (sessions, executors): {}",
+            paths.work.display()
+        );
+    }
+    let events_dir = paths.prefix.join("events");
+    if events_dir.exists() {
+        println!("  • Events directory: {}", events_dir.display());
     }
     if !config.preserve_data && paths.data.exists() {
         println!("  • Data directory: {}", paths.data.display());
@@ -226,7 +233,8 @@ fn print_summary(
     println!("Removed Components:");
     println!("  • Binaries");
     println!("  • Python SDK");
-    println!("  • Working directories");
+    println!("  • Working directory (sessions, executors)");
+    println!("  • Events directory");
     println!("  • Systemd service files");
 
     if !config.preserve_data {

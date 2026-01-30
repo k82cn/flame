@@ -74,11 +74,13 @@ jobs:
           sudo chmod 0777 /opt/flame/packages
           echo "✓ Created /opt/flame/packages with 0777 permissions"
 
-      - name: Install Python SDK for current user
+      - name: Install Python SDK for test client
         run: |
-          echo "=== Installing flamepy for current user ==="
+          echo "=== Installing flamepy for test client (not required for flmrun service) ==="
           pip3 install --user ./sdk/python
-          echo "✓ flamepy installed for current user"
+          echo "✓ flamepy installed for test client"
+          echo ""
+          echo "Note: flmrun service uses 'uv run --with' to access flamepy from $INSTALL_PREFIX/sdk/python"
 
       - name: Check service status
         run: |
@@ -91,13 +93,16 @@ jobs:
           
           echo "✓ Services are running via systemd"
       
-      - name: Verify Python SDK installation
+      - name: Verify Python SDK installation (for test client)
         run: |
-          echo "=== Verify flamepy installation ==="
+          echo "=== Verify flamepy installation for test client ==="
           pip3 show flamepy
           echo ""
           echo "=== Test import ==="
           python3 -c "import flamepy; print('✓ flamepy imported successfully from:', flamepy.__file__)"
+          echo ""
+          echo "=== Verify SDK copied to installation directory ==="
+          ls -la $INSTALL_PREFIX/sdk/python/
 
       - name: Install Python dependencies
         run: |

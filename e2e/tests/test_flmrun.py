@@ -79,7 +79,7 @@ def test_flmrun_application_registered():
     assert flmrun.name == FLMRUN_E2E_APP
     assert flmrun.shim == flamepy.Shim.Host
     assert flmrun.state == flamepy.ApplicationState.ENABLED
-    assert flmrun.command == "/bin/uv"
+    assert flmrun.command == "/usr/bin/uv"
 
 
 def test_flmrun_sum_function():

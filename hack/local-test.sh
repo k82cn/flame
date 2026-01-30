@@ -42,7 +42,7 @@ case "$1" in
         
         # Start session manager
         log_info "Starting session manager..."
-        "$INSTALL_PREFIX/bin/flame-session-manager" \
+        FLAME_HOME="$INSTALL_PREFIX" "$INSTALL_PREFIX/bin/flame-session-manager" \
             --config "$INSTALL_PREFIX/conf/flame-cluster.yaml" \
             > "$INSTALL_PREFIX/logs/fsm.log" 2>&1 &
         echo $! > /tmp/flame-fsm.pid
@@ -52,7 +52,7 @@ case "$1" in
         
         # Start executor manager
         log_info "Starting executor manager..."
-        "$INSTALL_PREFIX/bin/flame-executor-manager" \
+        FLAME_HOME="$INSTALL_PREFIX" "$INSTALL_PREFIX/bin/flame-executor-manager" \
             --config "$INSTALL_PREFIX/conf/flame-cluster.yaml" \
             > "$INSTALL_PREFIX/logs/fem.log" 2>&1 &
         echo $! > /tmp/flame-fem.pid
