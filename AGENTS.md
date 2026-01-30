@@ -31,10 +31,21 @@ Repo: https://github.com/xflops-io/flame
   - `docker/`: Dockerfiles for all services
   - `.github/workflows/`: CI/CD pipelines
 
-- **Documentation:**
-  - `docs/designs/`: Design documents for RFEs and bugs; all related documents (FS.md, IMPLEMENTATION.md, STATUS.md) should be in the same directory under `docs/designs/RFE<number>-<name>/` to keep design details aligned
-  - `docs/tutorials/`: Tutorial documents for both user and admin
-  - `docs/blogs/`: Blog posts about Flame
+- **Documentation:** All documentation lives in the `docs/` directory, organized by type
+  - `docs/designs/`: Design documents for RFEs and bugs
+    - Each RFE has its own directory: `docs/designs/RFE<number>-<name>/`
+    - Related documents (FS.md, IMPLEMENTATION.md, STATUS.md, INTEGRATION.md, CHANGELOG.md) are kept together in the same RFE directory
+    - Each feature should maintain its own CHANGELOG.md to track feature-specific changes and evolution
+    - Examples: `RFE318-cache/`, `RFE333-flmadm/`, `RFE323-runner-v2/`, `RFE309-agent-client/`
+    - `templates.md`: Templates for creating new design documents
+  - `docs/tutorials/`: Step-by-step guides for users and administrators
+    - `local-development.md`: Guide for local development without Docker
+    - `runner-setup.md`: Setting up and using Flame runners
+  - `docs/blogs/`: Blog posts and articles about Flame features
+    - Pi calculation examples and demonstrations
+    - Agent execution guides
+    - Feature highlights and use cases
+  - `docs/images/`: Architecture diagrams and visual assets
 
 ## Build, Test, and Development Commands
 
@@ -132,6 +143,7 @@ Repo: https://github.com/xflops-io/flame
   - Run relevant tests: `make e2e-py` or `make e2e-rs`
   - Check for linter errors: `cargo clippy` for Rust
   - Verify Docker services still work: `docker compose up -d`
+  - Update the CHANGELOG.md in the relevant RFE directory for significant changes to that feature
 
 - **Pull Request format:**
   - Title: `[<component>] <Title>` (e.g., `[session_manager] Add application resource management`, `[sdk/python] Fix agent context serialization`)
@@ -139,7 +151,8 @@ Repo: https://github.com/xflops-io/flame
     - Summary of changes and motivation
     - Testing performed (which tests ran, any manual testing)
     - Any user-facing changes or breaking changes
-    - References to related RFE/bug documents
+    - References to related RFE/bug documents (e.g., `docs/designs/RFE318-cache/`)
+    - Update the feature's CHANGELOG.md if this PR completes or significantly advances an RFE
 
 - **PR review process:**
   - Ensure CI passes (all workflow checks green)
@@ -179,7 +192,12 @@ Repo: https://github.com/xflops-io/flame
 - **When adding features**, review similar existing implementations in the codebase for patterns
 - **State machines:** Both session_manager and executor_manager use state machine patterns; study existing states before adding new ones
 - **RPC changes:** If modifying `.proto` files, remember to rebuild all services that depend on those definitions
-- **Documentation:** When adding or changing features, update relevant docs in `docs/designs/`, `docs/tutorials/`, or `docs/blogs/`
+- **Documentation structure:** All documentation must live in the `docs/` directory
+  - Design docs: Create a new directory under `docs/designs/RFE<number>-<name>/` with all related files (FS.md, IMPLEMENTATION.md, STATUS.md, CHANGELOG.md)
+  - Feature changelog: Each RFE directory should have its own CHANGELOG.md tracking feature-specific changes, implementation progress, and evolution
+  - Tutorials: Add to `docs/tutorials/` with clear step-by-step instructions
+  - Blog posts: Add to `docs/blogs/` for feature highlights and use cases
+  - When adding or changing features, update relevant docs in the appropriate `docs/` subdirectory and the feature's CHANGELOG.md
 - **Multi-language project:** Be mindful of both Rust and Python conventions; respect each language's idioms
 - **Breaking changes:** If introducing breaking changes to SDK, document migration path
 - **Performance:** Flame is designed for distributed systems; consider scalability and concurrency in designs
