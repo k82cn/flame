@@ -66,8 +66,9 @@ jobs:
       - name: Setup local configuration and packages directory
         run: |
           echo "=== Copy local configuration ==="
-          cp ci/flame-local.yaml ~/flame.yaml
-          echo "✓ Copied flame-local.yaml to ~/flame.yaml"
+          mkdir -p ~/.flame
+          cp ci/flame-local.yaml ~/.flame/flame.yaml
+          echo "✓ Copied flame-local.yaml to ~/.flame/flame.yaml"
 
           echo "=== Create packages directory ==="
           sudo mkdir -p /opt/flame/packages
