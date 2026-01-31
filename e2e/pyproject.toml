@@ -32,3 +32,6 @@ dev = [
     "isort>=5.0.0",
 ]
 
+[tool.uv.sources]
+flamepy = { path = "/usr/local/flame/sdk/python", editable = true }
+
