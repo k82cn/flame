@@ -1,18 +1,15 @@
-use crate::types::{BuildArtifacts, InstallationPaths};
+use crate::types::{BuildArtifacts, InstallProfile, InstallationPaths};
 use anyhow::{Context, Result};
 use std::fs;
+use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-pub struct InstallationManager {
-    user_manager: super::user::UserManager,
-}
+pub struct InstallationManager;
 
 impl InstallationManager {
     pub fn new() -> Self {
-        Self {
-            user_manager: super::user::UserManager::new(),
-        }
+        Self
     }
 
     /// Create all required directories
@@ -55,25 +52,6 @@ impl InstallationManager {
         fs::set_permissions(&paths.data, data_perms)
             .context("Failed to set data directory permissions")?;
 
-        // Set ownership if running as root
-        if self.user_manager.is_root() {
-            for path in [
-                &paths.work,
-                &paths.logs,
-                &paths.data,
-                &paths.conf,
-                &paths.migrations,
-            ] {
-                self.user_manager.set_ownership(path)?;
-            }
-
-            // Set ownership for SDK directory parent (sdk/python directory will be set later)
-            let sdk_parent = paths.sdk_python.parent().unwrap().parent().unwrap(); // ${PREFIX}/sdk
-            if sdk_parent.exists() {
-                self.user_manager.set_ownership(sdk_parent)?;
-            }
-        }
-
         Ok(())
     }
 
@@ -82,10 +60,15 @@ impl InstallationManager {
         &self,
         artifacts: &BuildArtifacts,
         paths: &InstallationPaths,
+        profiles: &[InstallProfile],
+        force_overwrite: bool,
     ) -> Result<()> {
         println!("📦 Installing binaries...");
 
-        for (name, src, dst) in [
+        // Check which components should be installed based on profiles
+        let components_to_install = self.get_components_to_install(profiles);
+
+        let all_binaries = [
             (
                 "flame-session-manager",
                 &artifacts.session_manager,
@@ -110,7 +93,21 @@ impl InstallationManager {
                 &artifacts.flmexec_service,
                 paths.bin.join("flmexec-service"),
             ),
-        ] {
+        ];
+
+        for (name, src, dst) in all_binaries {
+            // Skip components that are not in any of the selected profiles
+            if !components_to_install.iter().any(|c| c == name) {
+                println!("  ⊘ Skipped {} (not in selected profiles)", name);
+                continue;
+            }
+
+            // Check if the file already exists
+            if dst.exists() && !force_overwrite && !self.prompt_overwrite(name)? {
+                println!("  ⊘ Skipped {} (already exists)", name);
+                continue;
+            }
+
             fs::copy(src, &dst).context(format!("Failed to copy {} binary", name))?;
 
             // Set executable permissions
@@ -121,16 +118,50 @@ impl InstallationManager {
             println!("  ✓ Installed {}", name);
         }
 
-        // Set ownership if running as root
-        if self.user_manager.is_root() {
-            self.user_manager.set_ownership(&paths.bin)?;
-        }
-
         Ok(())
     }
 
+    /// Get all components that should be installed based on the profiles
+    fn get_components_to_install(&self, profiles: &[InstallProfile]) -> Vec<String> {
+        let mut components = Vec::new();
+        for profile in profiles {
+            for component in profile.components() {
+                let component_str = component.to_string();
+                if !components.contains(&component_str) {
+                    components.push(component_str);
+                }
+            }
+        }
+        components
+    }
+
+    /// Prompt the user whether to overwrite an existing file
+    fn prompt_overwrite(&self, component: &str) -> Result<bool> {
+        print!("  ⚠️  {} already exists. Overwrite? [y/N]: ", component);
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        let response = input.trim().to_lowercase();
+        Ok(response == "y" || response == "yes")
+    }
+
     /// Install Python SDK
-    pub fn install_python_sdk(&self, src_dir: &Path, paths: &InstallationPaths) -> Result<()> {
+    pub fn install_python_sdk(
+        &self,
+        src_dir: &Path,
+        paths: &InstallationPaths,
+        profiles: &[InstallProfile],
+        force_overwrite: bool,
+    ) -> Result<()> {
+        // Check if any profile requires flamepy
+        let components_to_install = self.get_components_to_install(profiles);
+        if !components_to_install.iter().any(|c| c == "flamepy") {
+            println!("⊘ Skipped Python SDK (not in selected profiles)");
+            return Ok(());
+        }
+
         println!("🐍 Installing Python SDK...");
 
         let sdk_src = src_dir.join("sdk/python");
@@ -138,15 +169,33 @@ impl InstallationManager {
             anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
         }
 
+        // Check if SDK already exists
+        if paths.sdk_python.exists() && !force_overwrite {
+            print!(
+                "  ⚠️  Python SDK already exists at {}. Overwrite? [y/N]: ",
+                paths.sdk_python.display()
+            );
+            io::stdout().flush()?;
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            let response = input.trim().to_lowercase();
+            if response != "y" && response != "yes" {
+                println!("  ⊘ Skipped Python SDK (already exists)");
+                return Ok(());
+            }
+
+            // Remove existing SDK before copying
+            if paths.sdk_python.exists() {
+                fs::remove_dir_all(&paths.sdk_python).context("Failed to remove existing SDK")?;
+            }
+        }
+
         // Copy SDK source to the installation directory, excluding development artifacts
         // uv will use this directly with --with "flamepy @ file://..."
         self.copy_sdk_excluding_artifacts(&sdk_src, &paths.sdk_python)
             .context("Failed to copy SDK to installation directory")?;
-
-        // Set ownership if running as root
-        if self.user_manager.is_root() {
-            self.user_manager.set_ownership(&paths.sdk_python)?;
-        }
 
         println!("✓ Copied Python SDK to: {}", paths.sdk_python.display());
 
@@ -223,7 +272,18 @@ impl InstallationManager {
     }
 
     /// Install database migrations
-    pub fn install_migrations(&self, src_dir: &Path, paths: &InstallationPaths) -> Result<()> {
+    pub fn install_migrations(
+        &self,
+        src_dir: &Path,
+        paths: &InstallationPaths,
+        profiles: &[InstallProfile],
+    ) -> Result<()> {
+        // Migrations are only needed for control plane
+        if !profiles.contains(&InstallProfile::ControlPlane) {
+            println!("⊘ Skipped database migrations (not in selected profiles)");
+            return Ok(());
+        }
+
         println!("🗄️  Installing database migrations...");
 
         let migrations_src = src_dir.join("session_manager/migrations/sqlite");
@@ -246,6 +306,77 @@ impl InstallationManager {
 
         println!("✓ Installed migrations to: {}", paths.migrations.display());
         Ok(())
+    }
+
+    /// Install uv tool
+    pub fn install_uv(&self, paths: &InstallationPaths, profiles: &[InstallProfile]) -> Result<()> {
+        // UV is only needed for worker and client profiles
+        let needs_uv = profiles.contains(&InstallProfile::Worker)
+            || profiles.contains(&InstallProfile::Client);
+
+        if !needs_uv {
+            println!("⊘ Skipped uv installation (not in selected profiles)");
+            return Ok(());
+        }
+
+        println!("🔧 Installing uv...");
+
+        // Find uv in the system
+        let uv_src = self.find_uv_executable().context(
+            "uv not found in system. Please install uv first:\n\
+             1. curl -LsSf https://astral.sh/uv/install.sh | sh\n\
+             2. Or install via your package manager",
+        )?;
+
+        let uv_dst = paths.bin.join("uv");
+
+        // Copy uv to installation directory
+        fs::copy(&uv_src, &uv_dst).context("Failed to copy uv binary")?;
+
+        // Set executable permissions
+        let perms = fs::Permissions::from_mode(0o755);
+        fs::set_permissions(&uv_dst, perms).context("Failed to set permissions on uv")?;
+
+        println!("  ✓ Installed uv from {}", uv_src.display());
+        Ok(())
+    }
+
+    /// Find uv executable in the system
+    fn find_uv_executable(&self) -> Result<std::path::PathBuf> {
+        use std::process::Command;
+
+        // Try to find uv using 'which' command
+        if let Ok(output) = Command::new("which").arg("uv").output() {
+            if output.status.success() {
+                let path_str = String::from_utf8_lossy(&output.stdout);
+                let path = path_str.trim();
+                if !path.is_empty() {
+                    return Ok(std::path::PathBuf::from(path));
+                }
+            }
+        }
+
+        // Fallback: check common locations
+        for common_path in [
+            "/usr/bin/uv",
+            "/usr/local/bin/uv",
+            "/opt/homebrew/bin/uv", // macOS Homebrew
+        ] {
+            let path = std::path::Path::new(common_path);
+            if path.exists() {
+                return Ok(path.to_path_buf());
+            }
+        }
+
+        // Try to find in $HOME/.local/bin (common user install location)
+        if let Ok(home) = std::env::var("HOME") {
+            let user_uv = std::path::PathBuf::from(home).join(".local/bin/uv");
+            if user_uv.exists() {
+                return Ok(user_uv);
+            }
+        }
+
+        anyhow::bail!("uv executable not found in system")
     }
 
     /// Remove the installation directory

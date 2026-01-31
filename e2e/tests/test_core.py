@@ -34,7 +34,7 @@ def setup_test_env():
         FLM_TEST_SVC_APP,
         flamepy.ApplicationAttributes(
             shim=flamepy.Shim.Host,
-            command="uv",
+            command="${FLAME_HOME}/bin/uv",
             working_directory="/opt/e2e",
             environments={"FLAME_LOG_LEVEL": "DEBUG"},
             arguments=["run", "src/e2e/basic_svc.py", "src/e2e/api.py"],
@@ -137,7 +137,8 @@ def test_application_context_info():
         "Host" in response.application_context.shim
         or "host" in response.application_context.shim.lower()
     )
-    assert response.application_context.command == "uv"
+    # Command should use FLAME_HOME environment variable
+    assert response.application_context.command == "${FLAME_HOME}/bin/uv"
     assert response.application_context.working_directory == "/opt/e2e"
     assert response.application_context.url == FLM_TEST_SVC_APP_URL
 
@@ -177,7 +178,8 @@ def test_all_context_info():
 
     # Check application context details
     assert response.application_context.name == FLM_TEST_SVC_APP
-    assert response.application_context.command == "uv"
+    # Command should use FLAME_HOME environment variable
+    assert response.application_context.command == "${FLAME_HOME}/bin/uv"
     assert response.application_context.working_directory == "/opt/e2e"
     assert response.application_context.url == FLM_TEST_SVC_APP_URL
 
@@ -373,7 +375,7 @@ def test_task_invoke_exception_handling():
         FLM_ERROR_SVC_APP,
         flamepy.ApplicationAttributes(
             shim=flamepy.Shim.Host,
-            command="uv",
+            command="${FLAME_HOME}/bin/uv",
             working_directory="/opt/e2e",
             environments={"FLAME_LOG_LEVEL": "DEBUG"},
             arguments=["run", "src/e2e/error_svc.py"],

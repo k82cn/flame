@@ -14,10 +14,10 @@ Flame provides two separate CLI tools:
 - **Source Building**: Builds Flame binaries from source (Rust)
 - **Python SDK Installation**: Automatically installs the Flame Python SDK
 - **Systemd Integration**: Generates and manages systemd service files
-- **User Management**: Creates and manages the `flame` user for service isolation
 - **Configuration Generation**: Creates default configuration files
 - **Clean Uninstallation**: Safely removes Flame with backup support
-- **Flexible Installation**: Supports both system-wide and user-local installations
+- **Flexible Installation**: Supports both system-wide (root) and user-local installations
+- **Installation Profiles**: Install specific components (control-plane, worker, client)
 
 ## Installation
 
@@ -74,6 +74,30 @@ sudo flmadm install --clean --enable
 sudo flmadm install --verbose
 ```
 
+**Install specific profiles:**
+```bash
+# Control plane only (session manager, flmctl, flmadm)
+sudo flmadm install --control-plane
+
+# Worker only (executor manager, services, SDK)
+sudo flmadm install --worker
+
+# Client only (flmping, flmexec, SDK)
+sudo flmadm install --client
+
+# Combined installation (control plane + worker on same node)
+sudo flmadm install --control-plane --worker --enable
+
+# Force overwrite existing components
+sudo flmadm install --worker --force
+
+# Client installation (no systemd needed)
+flmadm install --client --prefix ~/flame
+
+# ERROR: Cannot use --enable with client-only
+# flmadm install --client --enable  # This will fail with an error
+```
+
 ### Uninstall Flame
 
 **Basic uninstall (with backup):**
@@ -93,7 +117,7 @@ sudo flmadm uninstall --prefix /opt/flame
 
 **Complete removal (no backup):**
 ```bash
-sudo flmadm uninstall --no-backup --remove-user --force
+sudo flmadm uninstall --no-backup --force
 ```
 
 **Custom backup location:**
@@ -105,11 +129,74 @@ sudo flmadm uninstall --backup-dir /backups/flame-backup-2026-01-28
 
 - `--src-dir <PATH>`: Source code directory for building Flame (default: clone from GitHub)
 - `--prefix <PATH>`: Target installation directory (default: `/usr/local/flame`)
+- `--control-plane`: Install control plane components only (flame-session-manager, flmctl, flmadm)
+- `--worker`: Install worker components only (flame-executor-manager, flmping-service, flmexec-service, flamepy)
+- `--client`: Install client components only (flmping, flmexec, flamepy)
 - `--no-systemd`: Skip systemd service generation (for user-local installs)
 - `--enable`: Enable and start systemd services after installation
 - `--skip-build`: Skip building from source (use pre-built binaries)
 - `--clean`: Remove existing installation before installing (creates backup)
+- `--force`: Force overwrite existing components without prompting
 - `--verbose`: Show detailed build output (useful for debugging build issues)
+
+**Note:** If no profile flags (`--control-plane`, `--worker`, `--client`) are specified, all components will be installed by default.
+
+## Installation Profiles
+
+Flame supports three installation profiles to allow flexible deployment architectures:
+
+### Control Plane Profile (`--control-plane`)
+
+Installs components required for cluster management:
+- `flame-session-manager`: Main control plane service
+- `flmctl`: CLI for job submission and management
+- `flmadm`: Administration CLI
+
+**Use case:** Deploy on dedicated control plane nodes that manage the cluster but don't execute workloads.
+
+### Worker Profile (`--worker`)
+
+Installs components required for executing workloads:
+- `flame-executor-manager`: Worker node service
+- `flmping-service`: Health check service
+- `flmexec-service`: Execution service
+- `flamepy`: Python SDK
+
+**Use case:** Deploy on worker nodes that execute user workloads.
+
+### Client Profile (`--client`)
+
+Installs client tools for submitting jobs:
+- `flmctl`: CLI for job submission and session management
+- `flmping`: CLI for health checks
+- `flmexec`: CLI for job execution
+- `flamepy`: Python SDK
+
+**Use case:** Deploy on client machines or jump hosts for users to submit jobs without running services.
+
+**Note:** The client profile doesn't install any systemd services. The `--enable` flag is not applicable when only `--client` is specified. The `--no-systemd` flag is automatically implied for client-only installations.
+
+### Combined Deployments
+
+Profiles can be combined in a single installation:
+
+```bash
+# Single-node deployment (all-in-one)
+sudo flmadm install --control-plane --worker --enable
+
+# Control plane + client tools
+sudo flmadm install --control-plane --client
+
+# Worker + client tools
+sudo flmadm install --worker --client
+```
+
+### Component Overwrite Behavior
+
+When installing over an existing installation:
+- Without `--force`: Prompts for confirmation before overwriting each existing component
+- With `--force`: Automatically overwrites all components without prompting
+- With `--clean`: Backs up and removes the entire installation before installing
 
 ## Uninstall Options
 
@@ -120,7 +207,6 @@ sudo flmadm uninstall --backup-dir /backups/flame-backup-2026-01-28
 - `--backup-dir <PATH>`: Custom backup directory
 - `--no-backup`: Do not create backup (PERMANENTLY DELETE - use with caution!)
 - `--force`: Skip confirmation prompts
-- `--remove-user`: Remove the flame user and group
 
 ## Directory Structure
 
@@ -200,8 +286,17 @@ flmadm install --src-dir . --prefix ~/flame --skip-build --no-systemd --clean
 ### Production Deployment
 
 ```bash
-# Initial installation
+# Single-node deployment (all components)
 sudo flmadm install --enable
+
+# Multi-node deployment: Control plane node
+sudo flmadm install --control-plane --enable
+
+# Multi-node deployment: Worker nodes
+sudo flmadm install --worker --enable
+
+# Client machine (no services)
+flmadm install --client --prefix ~/flame --no-systemd
 
 # Verify installation
 sudo systemctl status flame-session-manager flame-executor-manager
@@ -211,6 +306,22 @@ sudo systemctl status flame-session-manager flame-executor-manager
 sudo systemctl stop flame-executor-manager flame-session-manager
 sudo flmadm install --clean
 sudo systemctl start flame-session-manager flame-executor-manager
+```
+
+### Distributed Cluster Setup
+
+```bash
+# On control plane node (control01)
+sudo flmadm install --control-plane --enable
+
+# On worker nodes (worker01, worker02, ...)
+sudo flmadm install --worker --enable
+
+# On client/jump host (for users)
+flmadm install --client --prefix ~/flame --no-systemd
+
+# Update only worker nodes
+sudo flmadm install --worker --force --skip-build
 ```
 
 ### Testing and Cleanup

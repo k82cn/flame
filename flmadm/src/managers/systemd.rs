@@ -1,3 +1,4 @@
+use crate::types::InstallProfile;
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,26 +12,39 @@ impl SystemdManager {
     }
 
     /// Generate and install systemd service files
-    pub fn install_services(&self, prefix: &Path) -> Result<()> {
+    pub fn install_services(&self, prefix: &Path, profiles: &[InstallProfile]) -> Result<()> {
         println!("⚙️  Installing systemd service files...");
 
         let prefix_str = prefix.to_str().unwrap();
 
-        // Generate service files
-        let fsm_service = self.generate_session_manager_service(prefix_str);
-        let fem_service = self.generate_executor_manager_service(prefix_str);
+        let has_control_plane = profiles.contains(&InstallProfile::ControlPlane);
+        let has_worker = profiles.contains(&InstallProfile::Worker);
 
         // Write to /etc/systemd/system/
-        let fsm_path = PathBuf::from("/etc/systemd/system/flame-session-manager.service");
-        let fem_path = PathBuf::from("/etc/systemd/system/flame-executor-manager.service");
+        if has_control_plane {
+            let fsm_service = self.generate_session_manager_service(prefix_str);
+            let fsm_path = PathBuf::from("/etc/systemd/system/flame-session-manager.service");
+            fs::write(&fsm_path, fsm_service)
+                .context("Failed to write flame-session-manager.service")?;
+            println!("  ✓ Installed flame-session-manager.service");
+        } else {
+            println!("  ⊘ Skipped flame-session-manager.service (control plane not selected)");
+        }
 
-        fs::write(&fsm_path, fsm_service)
-            .context("Failed to write flame-session-manager.service")?;
-        fs::write(&fem_path, fem_service)
-            .context("Failed to write flame-executor-manager.service")?;
+        if has_worker {
+            let fem_service = self.generate_executor_manager_service(prefix_str);
+            let fem_path = PathBuf::from("/etc/systemd/system/flame-executor-manager.service");
+            fs::write(&fem_path, fem_service)
+                .context("Failed to write flame-executor-manager.service")?;
+            println!("  ✓ Installed flame-executor-manager.service");
+        } else {
+            println!("  ⊘ Skipped flame-executor-manager.service (worker not selected)");
+        }
 
-        // Reload systemd daemon
-        self.daemon_reload()?;
+        // Only reload if we installed at least one service
+        if has_control_plane || has_worker {
+            self.daemon_reload()?;
+        }
 
         println!("✓ Installed systemd service files");
         Ok(())
@@ -68,24 +82,25 @@ impl SystemdManager {
     }
 
     /// Enable and start systemd services
-    pub fn enable_and_start_services(&self) -> Result<()> {
+    pub fn enable_and_start_services(&self, profiles: &[InstallProfile]) -> Result<()> {
         println!("🚀 Enabling and starting Flame services...");
 
-        // Enable services
-        self.enable_service("flame-session-manager")?;
-        self.enable_service("flame-executor-manager")?;
+        let has_control_plane = profiles.contains(&InstallProfile::ControlPlane);
+        let has_worker = profiles.contains(&InstallProfile::Worker);
 
-        // Start session manager first
-        self.start_service("flame-session-manager")?;
+        if has_control_plane {
+            // Enable and start session manager
+            self.enable_service("flame-session-manager")?;
+            self.start_service("flame-session-manager")?;
+            self.wait_for_service_active("flame-session-manager", 15)?;
+        }
 
-        // Wait for session manager to be ready (with retry)
-        self.wait_for_service_active("flame-session-manager", 15)?;
-
-        // Start executor manager
-        self.start_service("flame-executor-manager")?;
-
-        // Wait for executor manager to be ready (with retry)
-        self.wait_for_service_active("flame-executor-manager", 15)?;
+        if has_worker {
+            // Enable and start executor manager
+            self.enable_service("flame-executor-manager")?;
+            self.start_service("flame-executor-manager")?;
+            self.wait_for_service_active("flame-executor-manager", 15)?;
+        }
 
         println!("✓ Services are running");
         Ok(())
@@ -245,10 +260,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=flame
-Group=flame
 Environment="RUST_LOG=info"
-Environment="HOME=/var/lib/flame"
 Environment="FLAME_HOME={prefix}"
 WorkingDirectory={prefix}
 ExecStart={prefix}/bin/flame-session-manager --config {prefix}/conf/flame-cluster.yaml
@@ -276,10 +288,7 @@ Requires=flame-session-manager.service
 
 [Service]
 Type=simple
-User=flame
-Group=flame
 Environment="RUST_LOG=info"
-Environment="HOME=/var/lib/flame"
 Environment="FLAME_HOME={prefix}"
 WorkingDirectory={prefix}/work
 ExecStart={prefix}/bin/flame-executor-manager --config {prefix}/conf/flame-cluster.yaml

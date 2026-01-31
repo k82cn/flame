@@ -28,6 +28,18 @@ enum Commands {
         #[arg(long, default_value = "/usr/local/flame", value_name = "PATH")]
         prefix: PathBuf,
 
+        /// Install control plane components (flame-session-manager, flmctl, flmadm)
+        #[arg(long)]
+        control_plane: bool,
+
+        /// Install worker components (flame-executor-manager, flmping-service, flmexec-service, flamepy)
+        #[arg(long)]
+        worker: bool,
+
+        /// Install client components (flmping, flmexec, flamepy)
+        #[arg(long)]
+        client: bool,
+
         /// Skip systemd service generation
         #[arg(long)]
         no_systemd: bool,
@@ -43,6 +55,10 @@ enum Commands {
         /// Remove existing installation before installing
         #[arg(long)]
         clean: bool,
+
+        /// Force overwrite existing components without prompting
+        #[arg(long)]
+        force: bool,
 
         /// Show detailed build output
         #[arg(long)]
@@ -78,10 +94,6 @@ enum Commands {
         /// Skip confirmation prompts
         #[arg(long)]
         force: bool,
-
-        /// Remove the flame user and group
-        #[arg(long)]
-        remove_user: bool,
     },
 }
 
@@ -98,12 +110,39 @@ fn main() {
         Commands::Install {
             src_dir,
             prefix,
+            control_plane,
+            worker,
+            client,
             no_systemd,
             enable,
             skip_build,
             clean,
+            force,
             verbose,
         } => {
+            // Determine which profiles to install
+            let profiles = if control_plane || worker || client {
+                // If any profile flag is specified, only install those profiles
+                let mut profiles = Vec::new();
+                if control_plane {
+                    profiles.push(types::InstallProfile::ControlPlane);
+                }
+                if worker {
+                    profiles.push(types::InstallProfile::Worker);
+                }
+                if client {
+                    profiles.push(types::InstallProfile::Client);
+                }
+                profiles
+            } else {
+                // If no profile flags are specified, install all profiles (default behavior)
+                vec![
+                    types::InstallProfile::ControlPlane,
+                    types::InstallProfile::Worker,
+                    types::InstallProfile::Client,
+                ]
+            };
+
             let config = types::InstallConfig {
                 src_dir,
                 prefix,
@@ -112,6 +151,8 @@ fn main() {
                 skip_build,
                 clean,
                 verbose,
+                profiles,
+                force_overwrite: force,
             };
             commands::install::run(config)
         }
@@ -123,7 +164,6 @@ fn main() {
             backup_dir,
             no_backup,
             force,
-            remove_user,
         } => {
             let config = types::UninstallConfig {
                 prefix,
@@ -133,7 +173,6 @@ fn main() {
                 backup_dir,
                 no_backup,
                 force,
-                remove_user,
             };
             commands::uninstall::run(config)
         }

@@ -197,6 +197,14 @@ impl HostShim {
         Ok(envs)
     }
 
+    /// Expand environment variables in a string
+    /// Supports both ${VAR} and $VAR syntax
+    fn expand_env_vars(s: &str) -> String {
+        shellexpand::env(s)
+            .unwrap_or(std::borrow::Cow::Borrowed(s))
+            .into_owned()
+    }
+
     fn launch_instance(
         app: &ApplicationContext,
         executor: &Executor,
@@ -204,8 +212,17 @@ impl HostShim {
     ) -> Result<HostInstance, FlameError> {
         trace_fn!("HostShim::launch_instance");
 
+        // Expand environment variables in command and arguments
         let command = app.command.clone().unwrap_or_default();
-        let args = app.arguments.clone();
+        let command = Self::expand_env_vars(&command);
+
+        let args: Vec<String> = app
+            .arguments
+            .clone()
+            .iter()
+            .map(|arg| Self::expand_env_vars(arg))
+            .collect();
+
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
 
         let mut envs = app.environments.clone();

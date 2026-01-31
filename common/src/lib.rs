@@ -181,12 +181,13 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         "description": "The output of the script in UTF-8."
     });
 
-    // Get FLAME_HOME from environment or use default
-    let flame_home = std::env::var("FLAME_HOME").unwrap_or_else(|_| "/usr/local/flame".to_string());
-    let flmexec_cmd = format!("{}/bin/flmexec-service", flame_home);
-    let flmping_cmd = format!("{}/bin/flmping-service", flame_home);
-    let flmping_url = format!("file://{}/bin/flmping-service", flame_home);
-    let flamepy_sdk_path = format!("file://{}/sdk/python", flame_home);
+    // Use ${FLAME_HOME} variable substitution syntax
+    // This will be expanded at runtime by the executor to the actual FLAME_HOME path
+    let flmexec_cmd = "${FLAME_HOME}/bin/flmexec-service".to_string();
+    let flmping_cmd = "${FLAME_HOME}/bin/flmping-service".to_string();
+    let uv_cmd = "${FLAME_HOME}/bin/uv".to_string();
+    let flmping_url = "file://${FLAME_HOME}/bin/flmping-service".to_string();
+    let flamepy_sdk_path = "file://${FLAME_HOME}/sdk/python".to_string();
 
     HashMap::from([
         (
@@ -222,7 +223,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                     "The Flame Runner application for executing customized Python applications."
                         .to_string(),
                 ),
-                command: Some("/usr/bin/uv".to_string()),
+                command: Some(uv_cmd),
                 arguments: vec![
                     "run".to_string(),
                     "--with".to_string(),

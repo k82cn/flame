@@ -1,6 +1,5 @@
 use crate::managers::{
     backup::BackupManager, installation::InstallationManager, systemd::SystemdManager,
-    user::UserManager,
 };
 use crate::types::{InstallationPaths, UninstallConfig};
 use anyhow::Result;
@@ -32,13 +31,7 @@ pub fn run(config: UninstallConfig) -> Result<()> {
     println!("\n═══ Phase 4: Remove Installation ═══");
     remove_installation(&paths, &config)?;
 
-    // Phase 5: Remove User (if requested)
-    if config.remove_user {
-        println!("\n═══ Phase 5: Remove User ═══");
-        remove_user()?;
-    }
-
-    // Phase 6: Summary
+    // Phase 5: Summary
     println!("\n═══ Uninstallation Complete ═══");
     print_summary(&paths, &config, backup_dir);
 
@@ -215,12 +208,6 @@ fn remove_installation(paths: &InstallationPaths, config: &UninstallConfig) -> R
         config.preserve_config,
         config.preserve_logs,
     )
-}
-
-fn remove_user() -> Result<()> {
-    let user_manager = UserManager::new();
-    user_manager.remove_user(false)?;
-    Ok(())
 }
 
 fn print_summary(
