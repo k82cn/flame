@@ -15,7 +15,6 @@ import flamepy
 import logging
 from typing import Optional
 
-from flamepy.core.types import TaskOutput
 
 from e2e.api import (
     TestRequest,
@@ -58,7 +57,7 @@ class BasicTestService(flamepy.FlameService):
             f"task count reset to: {self._task_count}"
         )
 
-    def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[TaskOutput]:
+    def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[flamepy.TaskOutput]:
         """Handle task invoke and return response with optional context information."""
         logger.info(
             f"Task invoked: task_id={context.task_id}, "
@@ -204,7 +203,7 @@ class BasicTestService(flamepy.FlameService):
             f"Task completed successfully: task_id={context.task_id}, "
             f"response_size={len(response_bytes)} bytes"
         )
-        return TaskOutput(response_bytes)
+        return flamepy.TaskOutput(response_bytes)
 
     def on_session_leave(self):
         """Handle session leave."""

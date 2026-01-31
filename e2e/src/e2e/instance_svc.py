@@ -11,7 +11,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import flamepy
 from flamepy import agent
 
 from e2e.api import TestRequest, TestResponse, TestContext

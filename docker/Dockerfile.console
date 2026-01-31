@@ -20,7 +20,7 @@ RUN chmod +x /usr/local/bin/*
 
 COPY ./sdk/python /usr/local/flame/sdk/python
 
-# Install flamepy for test client using uv
-RUN uv pip install --system --break-system-packages --no-cache /usr/local/flame/sdk/python
+# Install flamepy and pytest for test client using uv
+RUN uv pip install --system --break-system-packages --no-cache /usr/local/flame/sdk/python pytest
 
 CMD ["service", "ssh", "start", "-D"]
