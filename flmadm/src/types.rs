@@ -96,6 +96,10 @@ pub struct BuildArtifacts {
     pub executor_manager: PathBuf,
     pub flmctl: PathBuf,
     pub flmadm: PathBuf,
+    pub flmping: PathBuf,
+    pub flmping_service: PathBuf,
+    pub flmexec: PathBuf,
+    pub flmexec_service: PathBuf,
 }
 
 impl BuildArtifacts {
@@ -108,6 +112,10 @@ impl BuildArtifacts {
             executor_manager: target_dir.join("flame-executor-manager"),
             flmctl: target_dir.join("flmctl"),
             flmadm: target_dir.join("flmadm"),
+            flmping: target_dir.join("flmping"),
+            flmping_service: target_dir.join("flmping-service"),
+            flmexec: target_dir.join("flmexec"),
+            flmexec_service: target_dir.join("flmexec-service"),
         };
 
         // Verify all artifacts exist
@@ -116,6 +124,10 @@ impl BuildArtifacts {
             ("flame-executor-manager", &artifacts.executor_manager),
             ("flmctl", &artifacts.flmctl),
             ("flmadm", &artifacts.flmadm),
+            ("flmping", &artifacts.flmping),
+            ("flmping-service", &artifacts.flmping_service),
+            ("flmexec", &artifacts.flmexec),
+            ("flmexec-service", &artifacts.flmexec_service),
         ] {
             if !path.exists() {
                 anyhow::bail!("Build artifact not found: {} at {:?}", name, path);

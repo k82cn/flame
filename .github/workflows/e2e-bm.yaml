@@ -30,7 +30,11 @@ jobs:
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Install uv to /usr/bin for flmrun service
+          sudo cp $HOME/.local/bin/uv /usr/bin/uv
+          sudo chmod +x /usr/bin/uv
+          echo "✓ Installed uv to /usr/bin/uv for flmrun"
       
       - name: Install system dependencies
         run: |
@@ -60,14 +64,27 @@ jobs:
       - name: Install Flame with flmadm and systemd
         run: |
           sudo ./target/release/flmadm install --src-dir . --skip-build --prefix $INSTALL_PREFIX --enable
-          sudo chmod -R 777 $INSTALL_PREFIX
           echo "$INSTALL_PREFIX/bin" >> $GITHUB_PATH
       
-      - name: Install Python SDK for current user
+      - name: Setup local configuration and packages directory
         run: |
-          echo "=== Installing flamepy for current user ==="
+          echo "=== Copy local configuration ==="
+          mkdir -p ~/.flame
+          cp ci/flame-local.yaml ~/.flame/flame.yaml
+          echo "✓ Copied flame-local.yaml to ~/.flame/flame.yaml"
+
+          echo "=== Create packages directory ==="
+          sudo mkdir -p /opt/flame/packages
+          sudo chmod 0777 /opt/flame/packages
+          echo "✓ Created /opt/flame/packages with 0777 permissions"
+
+      - name: Install Python SDK for test client
+        run: |
+          echo "=== Installing flamepy for test client (not required for flmrun service) ==="
           pip3 install --user ./sdk/python
-          echo "✓ flamepy installed for current user"
+          echo "✓ flamepy installed for test client"
+          echo ""
+          echo "Note: flmrun service uses 'uv run --with' to access flamepy from $INSTALL_PREFIX/sdk/python"
 
       - name: Check service status
         run: |
@@ -80,13 +97,16 @@ jobs:
           
           echo "✓ Services are running via systemd"
       
-      - name: Verify Python SDK installation
+      - name: Verify Python SDK installation (for test client)
         run: |
-          echo "=== Verify flamepy installation ==="
+          echo "=== Verify flamepy installation for test client ==="
           pip3 show flamepy
           echo ""
           echo "=== Test import ==="
           python3 -c "import flamepy; print('✓ flamepy imported successfully from:', flamepy.__file__)"
+          echo ""
+          echo "=== Verify SDK copied to installation directory ==="
+          ls -la $INSTALL_PREFIX/sdk/python/
 
       - name: Install Python dependencies
         run: |

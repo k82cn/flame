@@ -11,8 +11,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-# Import submodules for rl and agent (only as submodules)
-from . import agent, rl
+# Import submodules for rl, agent, and util (only as submodules)
+from . import agent, rl, util
 
 # Export all core classes/types at top level
 from .core import (  # Type aliases; Constants; Enums; Exception classes; Data classes; Context and utility classes; Client functions; Client classes; Service constants; Service context classes; Service base classes; Service functions
@@ -36,6 +36,7 @@ from .core import (  # Type aliases; Constants; Enums; Exception classes; Data c
     FlamePackage,
     FlameService,
     Message,
+    ObjectRef,
     Session,
     SessionAttributes,
     SessionContext,
@@ -54,13 +55,16 @@ from .core import (  # Type aliases; Constants; Enums; Exception classes; Data c
     connect,
     create_session,
     get_application,
+    get_object,
     get_session,
     list_applications,
     list_sessions,
     open_session,
+    put_object,
     register_application,
     run,
     unregister_application,
+    update_object,
 )
 
 __version__ = "0.3.0"
@@ -125,14 +129,12 @@ __all__ = [
     "run",
     # Cache classes
     "ObjectRef",
-    "Object",
-    "ObjectMetadata",
     # Cache functions
     "get_object",
     "put_object",
     "update_object",
-    "suppress_dependency_logs",
-    # Submodules (rl and agent only)
+    # Submodules
     "agent",
     "rl",
+    "util",
 ]

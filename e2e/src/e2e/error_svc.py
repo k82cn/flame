@@ -14,7 +14,6 @@ limitations under the License.
 import flamepy
 import logging
 from typing import Optional
-from flamepy.core.types import TaskOutput
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ class ErrorTestService(flamepy.FlameService):
         logger.info(f"Session entered: session_id={context.session_id}")
         self._session_context = context
 
-    def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[TaskOutput]:
+    def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[flamepy.TaskOutput]:
         """Handle task invoke by raising an exception."""
         logger.info(
             f"Task invoked: task_id={context.task_id}, session_id={context.session_id}"

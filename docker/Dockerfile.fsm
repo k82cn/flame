@@ -10,11 +10,14 @@ FROM ubuntu:24.04
 
 RUN mkdir -p /usr/local/flame/bin
 RUN mkdir -p /usr/local/flame/work
-WORKDIR /usr/local/flame/work   
+RUN mkdir -p /usr/local/flame/migrations
+WORKDIR /usr/local/flame
 
-COPY session_manager/migrations /usr/local/flame/work/migrations
+COPY session_manager/migrations /usr/local/flame/migrations
 COPY --from=builder /usr/local/cargo/bin/flame-session-manager /usr/local/flame/bin/flame-session-manager
 
 RUN chmod +x /usr/local/flame/bin/*
+
+ENV FLAME_HOME=/usr/local/flame
 
 ENTRYPOINT ["/usr/local/flame/bin/flame-session-manager"]

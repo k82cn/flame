@@ -11,23 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from flamepy import agent
-
-from e2e.api import TestRequest, TestResponse, TestContext
-
-instance = agent.FlameInstance()
+import random
+import string
 
 
-@instance.entrypoint
-def e2e_service_entrypoint(req: TestRequest) -> TestResponse:
-    cxt = instance.context()
-    data = cxt.common_data if cxt is not None else None
-
-    if req.update_common_data:
-        instance.update_context(TestContext(common_data=req.input))
-
-    return TestResponse(output=req.input, common_data=data)
+def short_name(prefix: str, length: int = 6) -> str:
+    """Generate a short name with a prefix."""
+    alphabet = string.ascii_letters + string.digits
+    sn = "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
+    return f"{prefix}-{sn}"
 
 
-if __name__ == "__main__":
-    instance.run()
+__all__ = ["short_name"]

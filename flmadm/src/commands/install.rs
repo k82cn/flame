@@ -80,6 +80,17 @@ fn validate_config(config: &InstallConfig) -> Result<()> {
         anyhow::bail!("Cannot use --enable without systemd (--no-systemd conflicts with --enable)");
     }
 
+    // Check if uv is available at /usr/bin/uv (required by flmrun)
+    let uv_path = std::path::Path::new("/usr/bin/uv");
+    if !uv_path.exists() {
+        anyhow::bail!(
+            "uv is not installed at /usr/bin/uv (required by flmrun service)\n\
+             Please install uv using one of these methods:\n\
+             1. curl -LsSf https://astral.sh/uv/install.sh | sh && sudo cp ~/.local/bin/uv /usr/bin/uv\n\
+             2. Or install uv via your package manager and ensure it's at /usr/bin/uv"
+        );
+    }
+
     println!("✓ Configuration validated");
     Ok(())
 }

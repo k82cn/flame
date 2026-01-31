@@ -51,8 +51,13 @@ spec:
   command: /usr/bin/uv
   arguments:
     - run
-    - -n
-    - flamepy.runpy
+    - --with
+    - pip
+    - --with
+    - flamepy @ file:///usr/local/flame/sdk/python
+    - python
+    - -m
+    - flamepy.rl.runpy
   ...
 ```
 
@@ -137,19 +142,30 @@ dependencies = [
 flamepy = { path = "/usr/local/flame/sdk/python" }
 ```
 
-When building the image of `flame-executor-manager` and `flame-console`, the `flmrun` directory should be copy into `/usr/local/flame/work/flmrun` which is the working directory of `flmrun` application. The application should be started with `uv`.
+When deploying Flame, the `flamepy` SDK source is copied to `${FLAME_HOME}/sdk/python`. The flmrun application uses `uv run --with` to reference flamepy directly from this location, eliminating the need for separate installation.
 
 ```yaml
 metadata:
   name: flmrun
 spec:
-  working_directory: /usr/local/flame/work/flmrun
   command: /usr/bin/uv
   arguments:
     - run
-    - -n
-    - flamepy.runpy
+    - --with
+    - pip                                      # Provides pip for installing user packages
+    - --with
+    - flamepy @ file://${FLAME_HOME}/sdk/python  # Provides flamepy SDK
+    - python
+    - -m
+    - flamepy.rl.runpy
 ```
+
+This approach:
+- **Self-contained**: All dependencies stay within the Flame installation directory
+- **No user-level installation**: Flamepy SDK doesn't require separate pip install
+- **User packages**: `pip` is available to install user-provided applications from the `url` field
+- **Consistent**: Works identically in Docker, bare-metal, and CI environments
+- **Isolated**: Multiple Flame versions can coexist without conflicts
 
 
 ## Use Cases

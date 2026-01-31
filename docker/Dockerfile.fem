@@ -16,7 +16,7 @@ RUN mkdir -p /usr/local/flame/bin /usr/local/flame/work/tmp /usr/local/flame/sdk
 
 WORKDIR /usr/local/flame/work
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /usr/bin/
 
 COPY --from=builder /usr/local/cargo/bin/flame-executor-manager /usr/local/flame/bin/flame-executor-manager
 COPY --from=builder /usr/local/cargo/bin/flmping-service /usr/local/flame/bin/flmping-service
@@ -25,5 +25,7 @@ COPY --from=builder /usr/local/cargo/bin/flmexec-service /usr/local/flame/bin/fl
 RUN chmod +x /usr/local/flame/bin/*
 
 COPY ./sdk/python /usr/local/flame/sdk/python
+
+ENV FLAME_HOME=/usr/local/flame
 
 ENTRYPOINT ["/usr/local/flame/bin/flame-executor-manager"]

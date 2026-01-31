@@ -102,15 +102,46 @@ git clone https://github.com/xflops/flame.git
 cd flame/sdk/python
 
 # Install in development mode
+# Note: Use --no-build-isolation if you have setuptools>=61.0 installed
+python3 -m pip install -e . --user --no-build-isolation
+
+# Or build and install the wheel
+python3 -m build --wheel --no-isolation
+python3 -m pip install dist/flamepy-0.5.0-py3-none-any.whl --user
+
+# Install development dependencies
 pip install -e .[dev]
 
 # Run tests
 pytest
 
 # Format code
-black flamepy/
-isort flamepy/
+ruff format
 
 # Type checking
 mypy flamepy/
-``` 
+```
+
+### Requirements
+
+- Python >= 3.8
+- setuptools >= 61.0 (for building from source)
+
+### Troubleshooting
+
+If you encounter issues with the package name showing as "UNKNOWN":
+
+1. Make sure you have `setuptools>=61.0` installed:
+   ```bash
+   python3 -m pip install --user --upgrade "setuptools>=61.0"
+   ```
+
+2. Clean any stale build artifacts:
+   ```bash
+   rm -rf dist build src/flamepy.egg-info *.egg-info
+   ```
+
+3. Use `--no-build-isolation` flag when installing:
+   ```bash
+   python3 -m pip install . --user --no-build-isolation
+   ``` 

@@ -103,10 +103,10 @@ e2e-py: ## Run Python E2E tests (use e2e-py-docker for docker compose or e2e-py-
 	@echo "Use 'make e2e-py-docker' for docker compose tests or 'make e2e-py-local' for local cluster tests"
 
 e2e-py-docker: ## Run Python E2E tests with docker compose
-	$(CONTAINER_RUNTIME) compose exec -w /opt/e2e flame-console uv run -n pytest -vv --durations=0 .
+	$(CONTAINER_RUNTIME) compose exec -w /opt/e2e -e PYTHONPATH=/opt/e2e/src flame-console python3 -m pytest -vv --durations=0 .
 
-e2e-py-local: ## Run Python E2E tests against local cluster
-	cd e2e && FLAME_ENDPOINT=$(FLAME_ENDPOINT) uv run pytest -vv --durations=0 .
+e2e-py-local: ## Run Python E2E tests against local cluster (requires flamepy installed via pip)
+	cd e2e && PYTHONPATH="$(CURDIR)/e2e/src:$$PYTHONPATH" FLAME_ENDPOINT=$(FLAME_ENDPOINT) pytest -vv --durations=0 .
 
 e2e-rs: ## Run Rust E2E tests
 	cargo test --workspace --exclude cri-rs -- --nocapture

@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::Command;
 
 pub struct InstallationManager {
     user_manager: super::user::UserManager,
@@ -14,26 +13,6 @@ impl InstallationManager {
         Self {
             user_manager: super::user::UserManager::new(),
         }
-    }
-
-    /// Copy directory recursively
-    fn copy_dir_all(&self, src: &Path, dst: &Path) -> Result<()> {
-        fs::create_dir_all(dst).context("Failed to create destination directory")?;
-
-        for entry in fs::read_dir(src).context("Failed to read source directory")? {
-            let entry = entry.context("Failed to read directory entry")?;
-            let ty = entry.file_type().context("Failed to get file type")?;
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
-
-            if ty.is_dir() {
-                self.copy_dir_all(&src_path, &dst_path)?;
-            } else {
-                fs::copy(&src_path, &dst_path).context(format!("Failed to copy {:?}", src_path))?;
-            }
-        }
-
-        Ok(())
     }
 
     /// Create all required directories
@@ -87,6 +66,12 @@ impl InstallationManager {
             ] {
                 self.user_manager.set_ownership(path)?;
             }
+
+            // Set ownership for SDK directory parent (sdk/python directory will be set later)
+            let sdk_parent = paths.sdk_python.parent().unwrap().parent().unwrap(); // ${PREFIX}/sdk
+            if sdk_parent.exists() {
+                self.user_manager.set_ownership(sdk_parent)?;
+            }
         }
 
         Ok(())
@@ -113,6 +98,18 @@ impl InstallationManager {
             ),
             ("flmctl", &artifacts.flmctl, paths.bin.join("flmctl")),
             ("flmadm", &artifacts.flmadm, paths.bin.join("flmadm")),
+            ("flmping", &artifacts.flmping, paths.bin.join("flmping")),
+            (
+                "flmping-service",
+                &artifacts.flmping_service,
+                paths.bin.join("flmping-service"),
+            ),
+            ("flmexec", &artifacts.flmexec, paths.bin.join("flmexec")),
+            (
+                "flmexec-service",
+                &artifacts.flmexec_service,
+                paths.bin.join("flmexec-service"),
+            ),
         ] {
             fs::copy(src, &dst).context(format!("Failed to copy {} binary", name))?;
 
@@ -136,82 +133,90 @@ impl InstallationManager {
     pub fn install_python_sdk(&self, src_dir: &Path, paths: &InstallationPaths) -> Result<()> {
         println!("🐍 Installing Python SDK...");
 
-        // Check if pip is available
-        let pip_cmd = which::which("pip3")
-            .or_else(|_| which::which("pip"))
-            .context("pip not found. Please install pip3")?;
-
         let sdk_src = src_dir.join("sdk/python");
         if !sdk_src.exists() {
             anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
         }
 
-        // Install as flame user if running as root, otherwise install for current user
-        if self.user_manager.is_root() && self.user_manager.user_exists()? {
-            println!("  Installing Python SDK as flame user...");
+        // Copy SDK source to the installation directory, excluding development artifacts
+        // uv will use this directly with --with "flamepy @ file://..."
+        self.copy_sdk_excluding_artifacts(&sdk_src, &paths.sdk_python)
+            .context("Failed to copy SDK to installation directory")?;
 
-            // Copy SDK to ${PREFIX}/sdk/python (which is owned by flame:flame)
-            // This allows the flame user to access the source for installation
-            let sdk_install_src = paths.sdk_python.join("src");
+        // Set ownership if running as root
+        if self.user_manager.is_root() {
+            self.user_manager.set_ownership(&paths.sdk_python)?;
+        }
 
-            // Copy SDK source to the installation directory
-            self.copy_dir_all(&sdk_src, &sdk_install_src)
-                .context("Failed to copy SDK to installation directory")?;
+        println!("✓ Copied Python SDK to: {}", paths.sdk_python.display());
 
-            // Set ownership to flame:flame
-            self.user_manager.set_ownership(&sdk_install_src)?;
+        // Create a note in the sdk_python directory for reference
+        let readme_path = paths.sdk_python.join("README.txt");
+        std::fs::write(
+            &readme_path,
+            "Python SDK source copied to this directory.\n\
+             Applications use 'uv run --with \"flamepy @ file://...\"' to access it.\n\
+             No separate installation required.\n",
+        )
+        .ok(); // Ignore errors for this informational file
 
-            // Install using pip as flame user with --user flag
-            let output = Command::new("sudo")
-                .args([
-                    "-u",
-                    "flame",
-                    "-H", // Set HOME to flame user's home directory
-                    pip_cmd.to_str().unwrap(),
-                    "install",
-                    "--user",
-                    sdk_install_src.to_str().unwrap(),
-                ])
-                .output()
-                .context("Failed to install Python SDK as flame user")?;
+        Ok(())
+    }
 
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                anyhow::bail!("Failed to install Python SDK as flame user: {}", stderr);
+    /// Copy SDK directory while excluding development artifacts
+    fn copy_sdk_excluding_artifacts(&self, src: &Path, dst: &Path) -> Result<()> {
+        use walkdir::WalkDir;
+
+        let exclude_patterns = [
+            ".venv",
+            "__pycache__",
+            ".pytest_cache",
+            ".pyc",
+            ".pyo",
+            ".eggs",
+            ".egg-info",
+            ".tox",
+            ".coverage",
+            ".mypy_cache",
+            ".ruff_cache",
+            "build",
+            "dist",
+        ];
+
+        fs::create_dir_all(dst).context("Failed to create destination directory")?;
+
+        for entry in WalkDir::new(src).into_iter().filter_entry(|e| {
+            // Filter out directories and files matching exclude patterns
+            let file_name = e.file_name().to_string_lossy();
+            !exclude_patterns
+                .iter()
+                .any(|pattern| file_name.contains(pattern) || file_name == *pattern)
+        }) {
+            let entry = entry.context("Failed to read directory entry")?;
+            let entry_path = entry.path();
+
+            // Skip the source root itself
+            if entry_path == src {
+                continue;
             }
 
-            println!("✓ Installed Python SDK for flame user");
+            // Calculate relative path and destination
+            let relative_path = entry_path
+                .strip_prefix(src)
+                .context("Failed to strip prefix")?;
+            let dst_path = dst.join(relative_path);
 
-            // Create a note in the sdk_python directory for reference
-            let readme_path = paths.sdk_python.join("README.txt");
-            std::fs::write(
-                &readme_path,
-                "Python SDK installed for flame user in /var/lib/flame/.local/lib/python*/site-packages\n\
-                 SDK source copied to this directory for installation.\n\
-                 To verify: sudo -u flame pip3 show flamepy\n",
-            ).ok(); // Ignore errors for this informational file
-        } else {
-            println!("  Installing Python SDK for current user...");
-
-            // Install using pip with --user flag for current user
-            let output = Command::new(&pip_cmd)
-                .args(["install", "--user", sdk_src.to_str().unwrap()])
-                .output()
-                .context("Failed to install Python SDK")?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                anyhow::bail!("Failed to install Python SDK: {}", stderr);
+            if entry.file_type().is_dir() {
+                fs::create_dir_all(&dst_path)
+                    .context(format!("Failed to create directory {:?}", dst_path))?;
+            } else {
+                // Ensure parent directory exists
+                if let Some(parent) = dst_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(entry_path, &dst_path)
+                    .context(format!("Failed to copy {:?}", entry_path))?;
             }
-
-            println!("✓ Installed Python SDK for current user");
-
-            // Create a note in the sdk_python directory for reference
-            let readme_path = paths.sdk_python.join("README.txt");
-            std::fs::write(
-                &readme_path,
-                "Python SDK installed for current user.\nUse 'pip3 show flamepy' to see installation location.\n",
-            ).ok(); // Ignore errors for this informational file
         }
 
         Ok(())
@@ -277,6 +282,13 @@ impl InstallationManager {
         if paths.work.exists() {
             fs::remove_dir_all(&paths.work).context("Failed to remove work directory")?;
             println!("  ✓ Removed working directory");
+        }
+
+        // Remove events directory (session-manager creates this in prefix)
+        let events_dir = paths.prefix.join("events");
+        if events_dir.exists() {
+            fs::remove_dir_all(&events_dir).context("Failed to remove events directory")?;
+            println!("  ✓ Removed events directory");
         }
 
         // Remove data directory (unless preserved)

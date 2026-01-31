@@ -249,6 +249,7 @@ User=flame
 Group=flame
 Environment="RUST_LOG=info"
 Environment="HOME=/var/lib/flame"
+Environment="FLAME_HOME={prefix}"
 WorkingDirectory={prefix}
 ExecStart={prefix}/bin/flame-session-manager --config {prefix}/conf/flame-cluster.yaml
 StandardOutput=append:{prefix}/logs/fsm.log
@@ -279,6 +280,7 @@ User=flame
 Group=flame
 Environment="RUST_LOG=info"
 Environment="HOME=/var/lib/flame"
+Environment="FLAME_HOME={prefix}"
 WorkingDirectory={prefix}/work
 ExecStart={prefix}/bin/flame-executor-manager --config {prefix}/conf/flame-cluster.yaml
 StandardOutput=append:{prefix}/logs/fem.log
