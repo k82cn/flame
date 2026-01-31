@@ -40,6 +40,10 @@ enum Commands {
         #[arg(long)]
         client: bool,
 
+        /// Install all components (control plane + worker + client)
+        #[arg(long)]
+        all: bool,
+
         /// Skip systemd service generation
         #[arg(long)]
         no_systemd: bool,
@@ -113,6 +117,7 @@ fn main() {
             control_plane,
             worker,
             client,
+            all,
             no_systemd,
             enable,
             skip_build,
@@ -120,9 +125,38 @@ fn main() {
             force,
             verbose,
         } => {
+            // Validate profile flags
+            if all && (control_plane || worker || client) {
+                eprintln!(
+                    "Error: --all cannot be used with --control-plane, --worker, or --client"
+                );
+                std::process::exit(types::exit_codes::INSTALL_FAILURE);
+            }
+
+            // Require explicit profile selection
+            if !all && !control_plane && !worker && !client {
+                eprintln!("Error: You must specify which components to install:");
+                eprintln!(
+                    "  --all              Install all components (control plane + worker + client)"
+                );
+                eprintln!("  --control-plane    Install control plane components only");
+                eprintln!("  --worker           Install worker components only");
+                eprintln!("  --client           Install client components only");
+                eprintln!("\nYou can also combine profiles, for example:");
+                eprintln!("  --control-plane --worker    Install control plane and worker");
+                std::process::exit(types::exit_codes::INSTALL_FAILURE);
+            }
+
             // Determine which profiles to install
-            let profiles = if control_plane || worker || client {
-                // If any profile flag is specified, only install those profiles
+            let profiles = if all {
+                // Explicit --all flag: install all profiles
+                vec![
+                    types::InstallProfile::ControlPlane,
+                    types::InstallProfile::Worker,
+                    types::InstallProfile::Client,
+                ]
+            } else {
+                // Specific profile flags specified
                 let mut profiles = Vec::new();
                 if control_plane {
                     profiles.push(types::InstallProfile::ControlPlane);
@@ -134,13 +168,6 @@ fn main() {
                     profiles.push(types::InstallProfile::Client);
                 }
                 profiles
-            } else {
-                // If no profile flags are specified, install all profiles (default behavior)
-                vec![
-                    types::InstallProfile::ControlPlane,
-                    types::InstallProfile::Worker,
-                    types::InstallProfile::Client,
-                ]
             };
 
             let config = types::InstallConfig {

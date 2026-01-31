@@ -63,7 +63,7 @@ jobs:
       
       - name: Install Flame with flmadm and systemd
         run: |
-          sudo ./target/release/flmadm install --src-dir . --skip-build --prefix $INSTALL_PREFIX --enable
+          sudo ./target/release/flmadm install --all --src-dir . --skip-build --prefix $INSTALL_PREFIX --enable
           echo "$INSTALL_PREFIX/bin" >> $GITHUB_PATH
       
       - name: Setup local configuration and packages directory

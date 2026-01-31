@@ -18,7 +18,7 @@ impl InstallationManager {
 
         for (name, path) in [
             ("bin", &paths.bin),
-            ("sdk/python", &paths.sdk_python),
+            // Note: sdk/python is created by install_python_sdk() to allow existence check
             ("work", &paths.work),
             ("work/sessions", &paths.work.join("sessions")),
             ("work/executors", &paths.work.join("executors")),

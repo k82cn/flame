@@ -39,24 +39,24 @@ sudo flmadm install
 
 ### Install Flame
 
-**Basic installation (from GitHub):**
+**Basic installation (all components):**
 ```bash
-sudo flmadm install
+sudo flmadm install --all
 ```
 
 **Install from local source:**
 ```bash
-sudo flmadm install --src-dir /path/to/flame
+sudo flmadm install --all --src-dir /path/to/flame
 ```
 
 **Custom installation directory:**
 ```bash
-sudo flmadm install --prefix /opt/flame
+sudo flmadm install --all --prefix /opt/flame
 ```
 
 **Install and start services:**
 ```bash
-sudo flmadm install --enable
+sudo flmadm install --all --enable
 ```
 
 **User-local installation (no systemd):**
@@ -76,6 +76,9 @@ sudo flmadm install --verbose
 
 **Install specific profiles:**
 ```bash
+# Install all components explicitly (same as default)
+sudo flmadm install --all
+
 # Control plane only (session manager, flmctl, flmadm)
 sudo flmadm install --control-plane
 
@@ -96,6 +99,9 @@ flmadm install --client --prefix ~/flame
 
 # ERROR: Cannot use --enable with client-only
 # flmadm install --client --enable  # This will fail with an error
+
+# ERROR: Cannot use --all with specific profiles
+# sudo flmadm install --all --control-plane  # This will fail with an error
 ```
 
 ### Uninstall Flame
@@ -129,6 +135,7 @@ sudo flmadm uninstall --backup-dir /backups/flame-backup-2026-01-28
 
 - `--src-dir <PATH>`: Source code directory for building Flame (default: clone from GitHub)
 - `--prefix <PATH>`: Target installation directory (default: `/usr/local/flame`)
+- `--all`: Explicitly install all components (control plane + worker + client)
 - `--control-plane`: Install control plane components only (flame-session-manager, flmctl, flmadm)
 - `--worker`: Install worker components only (flame-executor-manager, flmping-service, flmexec-service, flamepy)
 - `--client`: Install client components only (flmping, flmexec, flamepy)
@@ -139,7 +146,10 @@ sudo flmadm uninstall --backup-dir /backups/flame-backup-2026-01-28
 - `--force`: Force overwrite existing components without prompting
 - `--verbose`: Show detailed build output (useful for debugging build issues)
 
-**Note:** If no profile flags (`--control-plane`, `--worker`, `--client`) are specified, all components will be installed by default.
+**Note:** 
+- You **must** specify at least one profile flag (`--all`, `--control-plane`, `--worker`, or `--client`)
+- The `--all` flag cannot be combined with `--control-plane`, `--worker`, or `--client`
+- Profile flags can be combined (e.g., `--control-plane --worker` for a combined node)
 
 ## Installation Profiles
 
