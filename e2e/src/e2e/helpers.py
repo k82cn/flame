@@ -7,7 +7,8 @@ import json
 import cloudpickle
 from dataclasses import asdict
 from typing import Optional, Any
-from flamepy import ObjectRef, put_object, get_object, short_name
+from flamepy import ObjectRef, put_object, get_object
+from flamepy.util import short_name
 from flamepy.rl import RunnerContext, RunnerRequest
 
 from e2e.api import (
