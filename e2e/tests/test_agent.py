@@ -29,7 +29,7 @@ def setup_test_env():
         FLM_TEST_APP,
         flamepy.ApplicationAttributes(
             shim=flamepy.Shim.Host,
-            command="uv",
+            command="${FLAME_HOME}/bin/uv",
             working_directory="/opt/e2e",
             environments={"FLAME_LOG_LEVEL": "DEBUG"},
             arguments=["run", "src/e2e/instance_svc.py", "src/e2e/api.py"],

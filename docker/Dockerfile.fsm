@@ -4,19 +4,26 @@ WORKDIR /usr/src/flame
 COPY . .
 
 RUN apt-get update && apt-get install -y protobuf-compiler pkg-config libssl-dev
-RUN cargo install --path ./session_manager
+RUN cargo build --release
+
+# Build flmadm for installation
+RUN cargo install --path ./flmadm
+
+# Install using flmadm with control-plane profile
+RUN /usr/local/cargo/bin/flmadm install \
+    --src-dir /usr/src/flame \
+    --prefix /usr/local/flame \
+    --control-plane \
+    --no-systemd \
+    --skip-build \
+    --force
 
 FROM ubuntu:24.04
 
-RUN mkdir -p /usr/local/flame/bin
-RUN mkdir -p /usr/local/flame/work
-RUN mkdir -p /usr/local/flame/migrations
 WORKDIR /usr/local/flame
 
-COPY session_manager/migrations /usr/local/flame/migrations
-COPY --from=builder /usr/local/cargo/bin/flame-session-manager /usr/local/flame/bin/flame-session-manager
-
-RUN chmod +x /usr/local/flame/bin/*
+# Copy the entire installation from builder
+COPY --from=builder /usr/local/flame /usr/local/flame
 
 ENV FLAME_HOME=/usr/local/flame
 

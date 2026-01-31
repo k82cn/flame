@@ -87,18 +87,20 @@ The cache server implements the Arrow Flight protocol:
 
 ## Building
 
-```bash
-# Build the cache service
-cargo build --package flame-cache --release
+The cache is built as part of the executor-manager:
 
-# Build Docker image
-docker build -t xflops/flame-object-cache:latest -f docker/Dockerfile.cache .
+```bash
+# Build the cache library (part of executor-manager build)
+cargo build --package object_cache --release
+
+# Or build the full executor-manager
+cargo build --package executor_manager --release
 ```
 
 ## Running with Docker Compose
 
 ```bash
-# Start all services (cache runs in executor-manager)
+# Start all services (cache runs embedded in executor-manager)
 docker compose up -d
 
 # View cache logs (part of executor-manager logs)

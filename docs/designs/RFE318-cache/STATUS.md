@@ -19,7 +19,7 @@ The object cache is now provided as an embedded library within the `flame-execut
 - ✅ In-memory index with HashMap
 - ✅ Object loading from disk on startup
 - ✅ Configuration support (flame-cluster.yaml with storage path)
-- ✅ Docker integration (Dockerfile.cache, compose.yaml, Makefile)
+- ✅ Docker integration (embedded in executor-manager, compose.yaml, Makefile)
 
 ### API Operations
 - ✅ `get_flight_info`: Returns flight metadata for objects

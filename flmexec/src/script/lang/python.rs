@@ -29,7 +29,19 @@ use crate::api::{Script, ScriptRuntime};
 use crate::script::ScriptEngine;
 
 const DEFAULT_ENTRYPOINT: &str = "main.py";
-const UV_CMD: &str = "/usr/bin/uv";
+
+/// Get the uv command path from FLAME_HOME or fallback to system uv
+fn get_uv_cmd() -> String {
+    let flame_home = std::env::var("FLAME_HOME").unwrap_or_else(|_| "/usr/local/flame".to_string());
+    let uv_path = format!("{}/bin/uv", flame_home);
+
+    // Check if uv exists in FLAME_HOME, otherwise fallback to system uv
+    if std::path::Path::new(&uv_path).exists() {
+        uv_path
+    } else {
+        "/usr/bin/uv".to_string()
+    }
+}
 
 pub struct PythonScript {
     runtime: ScriptRuntime,
@@ -73,7 +85,10 @@ impl ScriptEngine for PythonScript {
         tracing::debug!("Running script: {}", self.runtime.entrypoint);
         tracing::debug!("Work directory: {}", self.runtime.work_dir);
 
-        let mut child = Command::new(UV_CMD)
+        let uv_cmd = get_uv_cmd();
+        tracing::debug!("Using uv from: {}", uv_cmd);
+
+        let mut child = Command::new(uv_cmd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .current_dir(&self.runtime.work_dir)

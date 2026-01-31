@@ -1,5 +1,34 @@
 use std::path::{Path, PathBuf};
 
+/// Installation profiles for different deployment scenarios
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallProfile {
+    ControlPlane,
+    Worker,
+    Client,
+}
+
+impl InstallProfile {
+    /// Get the components that should be installed for this profile
+    pub fn components(&self) -> &[&str] {
+        match self {
+            InstallProfile::ControlPlane => &["flame-session-manager", "flmctl", "flmadm"],
+            InstallProfile::Worker => &[
+                "flame-executor-manager",
+                "flmping-service",
+                "flmexec-service",
+                "flamepy",
+            ],
+            InstallProfile::Client => &["flmctl", "flmping", "flmexec", "flamepy"],
+        }
+    }
+
+    /// Check if a component should be installed for this profile
+    pub fn includes_component(&self, component: &str) -> bool {
+        self.components().contains(&component)
+    }
+}
+
 /// Configuration for the install command
 #[derive(Debug, Clone)]
 pub struct InstallConfig {
@@ -10,6 +39,8 @@ pub struct InstallConfig {
     pub skip_build: bool,
     pub clean: bool,
     pub verbose: bool,
+    pub profiles: Vec<InstallProfile>,
+    pub force_overwrite: bool,
 }
 
 impl Default for InstallConfig {
@@ -22,6 +53,12 @@ impl Default for InstallConfig {
             skip_build: false,
             clean: false,
             verbose: false,
+            profiles: vec![
+                InstallProfile::ControlPlane,
+                InstallProfile::Worker,
+                InstallProfile::Client,
+            ],
+            force_overwrite: false,
         }
     }
 }
@@ -36,7 +73,6 @@ pub struct UninstallConfig {
     pub backup_dir: Option<PathBuf>,
     pub no_backup: bool,
     pub force: bool,
-    pub remove_user: bool,
 }
 
 impl Default for UninstallConfig {
@@ -49,7 +85,6 @@ impl Default for UninstallConfig {
             backup_dir: None,
             no_backup: false,
             force: false,
-            remove_user: false,
         }
     }
 }

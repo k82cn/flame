@@ -9,6 +9,15 @@ use anyhow::Result;
 pub fn run(config: InstallConfig) -> Result<()> {
     println!("🚀 Flame Installation");
     println!("   Target: {}", config.prefix.display());
+    println!("   Profiles:");
+    for profile in &config.profiles {
+        let profile_name = match profile {
+            crate::types::InstallProfile::ControlPlane => "Control Plane",
+            crate::types::InstallProfile::Worker => "Worker",
+            crate::types::InstallProfile::Client => "Client",
+        };
+        println!("     • {}", profile_name);
+    }
     println!();
 
     // Phase 1: Validation
@@ -46,12 +55,22 @@ pub fn run(config: InstallConfig) -> Result<()> {
         install_components(&artifacts, &src_dir, &paths, &config)?;
     }
 
-    // Phase 5: Systemd Setup (if requested)
-    if config.systemd {
+    // Phase 5: Systemd Setup (if requested and needed)
+    let has_control_plane = config
+        .profiles
+        .contains(&crate::types::InstallProfile::ControlPlane);
+    let has_worker = config
+        .profiles
+        .contains(&crate::types::InstallProfile::Worker);
+    let needs_systemd = has_control_plane || has_worker;
+
+    if config.systemd && needs_systemd {
         println!("\n═══ Phase 5: Systemd Setup ═══");
         setup_systemd(&paths, &config)?;
-    } else {
+    } else if !config.systemd {
         println!("\n═══ Phase 5: Skipping Systemd (--no-systemd) ═══");
+    } else {
+        println!("\n═══ Phase 5: Skipping Systemd (no services to install) ═══");
     }
 
     // Phase 6: Summary
@@ -67,9 +86,36 @@ fn validate_config(config: &InstallConfig) -> Result<()> {
         anyhow::bail!("Installation prefix must be an absolute path");
     }
 
-    // Check if we need root privileges
+    // Check if profiles require systemd services
+    let has_control_plane = config
+        .profiles
+        .contains(&crate::types::InstallProfile::ControlPlane);
+    let has_worker = config
+        .profiles
+        .contains(&crate::types::InstallProfile::Worker);
+    let has_client_only = config.profiles.len() == 1
+        && config
+            .profiles
+            .contains(&crate::types::InstallProfile::Client);
+
+    // Check if client-only installation is combined with systemd flags
+    if has_client_only && config.systemd {
+        println!(
+            "ℹ️  Note: Client profile doesn't install services. Ignoring systemd configuration."
+        );
+    }
+
+    if has_client_only && config.enable {
+        anyhow::bail!(
+            "Cannot use --enable with --client profile only.\n  \
+             The client profile doesn't install any services.\n  \
+             Use --control-plane and/or --worker to install services."
+        );
+    }
+
+    // Check if we need root privileges for systemd
     let user_manager = UserManager::new();
-    if config.systemd && !user_manager.is_root() {
+    if config.systemd && (has_control_plane || has_worker) && !user_manager.is_root() {
         anyhow::bail!(
             "Root privileges required for system-wide installation with systemd.\n  Run with sudo or use --no-systemd for user-local installation."
         );
@@ -80,19 +126,67 @@ fn validate_config(config: &InstallConfig) -> Result<()> {
         anyhow::bail!("Cannot use --enable without systemd (--no-systemd conflicts with --enable)");
     }
 
-    // Check if uv is available at /usr/bin/uv (required by flmrun)
-    let uv_path = std::path::Path::new("/usr/bin/uv");
-    if !uv_path.exists() {
-        anyhow::bail!(
-            "uv is not installed at /usr/bin/uv (required by flmrun service)\n\
-             Please install uv using one of these methods:\n\
-             1. curl -LsSf https://astral.sh/uv/install.sh | sh && sudo cp ~/.local/bin/uv /usr/bin/uv\n\
-             2. Or install uv via your package manager and ensure it's at /usr/bin/uv"
-        );
+    // Check if uv is available (required by worker and client profiles)
+    let needs_uv = has_worker
+        || config
+            .profiles
+            .contains(&crate::types::InstallProfile::Client);
+    if needs_uv {
+        match find_uv_executable() {
+            Some(uv_path) => {
+                println!("✓ Found uv at: {}", uv_path.display());
+            }
+            None => {
+                anyhow::bail!(
+                    "uv is not found in PATH (required by worker and client profiles)\n\
+                     Please install uv using one of these methods:\n\
+                     1. curl -LsSf https://astral.sh/uv/install.sh | sh\n\
+                     2. Or install uv via your package manager"
+                );
+            }
+        }
     }
 
     println!("✓ Configuration validated");
     Ok(())
+}
+
+/// Find uv executable in the system PATH
+fn find_uv_executable() -> Option<std::path::PathBuf> {
+    use std::process::Command;
+
+    // Try to find uv using 'which' command
+    if let Ok(output) = Command::new("which").arg("uv").output() {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout);
+            let path = path_str.trim();
+            if !path.is_empty() {
+                return Some(std::path::PathBuf::from(path));
+            }
+        }
+    }
+
+    // Fallback: check common locations
+    for common_path in [
+        "/usr/bin/uv",
+        "/usr/local/bin/uv",
+        "/opt/homebrew/bin/uv", // macOS Homebrew
+    ] {
+        let path = std::path::Path::new(common_path);
+        if path.exists() {
+            return Some(path.to_path_buf());
+        }
+    }
+
+    // Try to find in $HOME/.local/bin (common user install location)
+    if let Ok(home) = std::env::var("HOME") {
+        let user_uv = std::path::PathBuf::from(home).join(".local/bin/uv");
+        if user_uv.exists() {
+            return Some(user_uv);
+        }
+    }
+
+    None
 }
 
 fn handle_clean_install(paths: &InstallationPaths) -> Result<()> {
@@ -122,24 +216,31 @@ fn install_components(
     paths: &InstallationPaths,
     config: &InstallConfig,
 ) -> Result<()> {
-    // Create flame user (for system-wide installation) - must be done before creating directories
-    let user_manager = UserManager::new();
-    if config.systemd && user_manager.is_root() {
-        user_manager.create_user()?;
-    }
-
     // Create directories
     let installation_manager = InstallationManager::new();
     installation_manager.create_directories(paths)?;
 
     // Install binaries
-    installation_manager.install_binaries(artifacts, paths)?;
+    installation_manager.install_binaries(
+        artifacts,
+        paths,
+        &config.profiles,
+        config.force_overwrite,
+    )?;
+
+    // Install uv (for worker and client profiles)
+    installation_manager.install_uv(paths, &config.profiles)?;
 
     // Install Python SDK
-    installation_manager.install_python_sdk(src_dir, paths)?;
+    installation_manager.install_python_sdk(
+        src_dir,
+        paths,
+        &config.profiles,
+        config.force_overwrite,
+    )?;
 
     // Install database migrations
-    installation_manager.install_migrations(src_dir, paths)?;
+    installation_manager.install_migrations(src_dir, paths, &config.profiles)?;
 
     // Generate configuration
     let config_generator = ConfigGenerator::new();
@@ -152,14 +253,27 @@ fn setup_systemd(paths: &InstallationPaths, config: &InstallConfig) -> Result<()
     let systemd_manager = SystemdManager::new();
 
     // Install service files
-    systemd_manager.install_services(&paths.prefix)?;
+    systemd_manager.install_services(&paths.prefix, &config.profiles)?;
 
     // Enable and start services if requested
     if config.enable {
-        systemd_manager.enable_and_start_services()?;
+        systemd_manager.enable_and_start_services(&config.profiles)?;
     } else {
+        let has_control_plane = config
+            .profiles
+            .contains(&crate::types::InstallProfile::ControlPlane);
+        let has_worker = config
+            .profiles
+            .contains(&crate::types::InstallProfile::Worker);
+
         println!("ℹ️  Services installed but not enabled. To start services:");
-        println!("   sudo systemctl enable --now flame-session-manager flame-executor-manager");
+        if has_control_plane && has_worker {
+            println!("   sudo systemctl enable --now flame-session-manager flame-executor-manager");
+        } else if has_control_plane {
+            println!("   sudo systemctl enable --now flame-session-manager");
+        } else if has_worker {
+            println!("   sudo systemctl enable --now flame-executor-manager");
+        }
     }
 
     Ok(())
@@ -170,41 +284,99 @@ fn print_summary(paths: &InstallationPaths, config: &InstallConfig) {
     println!();
     println!("Installation Details:");
     println!("  • Installation prefix: {}", paths.prefix.display());
+    println!("  • Installation profiles:");
+
+    // Show which profiles were installed
+    for profile in &config.profiles {
+        let profile_name = match profile {
+            crate::types::InstallProfile::ControlPlane => "Control Plane",
+            crate::types::InstallProfile::Worker => "Worker",
+            crate::types::InstallProfile::Client => "Client",
+        };
+        println!(
+            "    - {}: {}",
+            profile_name,
+            profile.components().join(", ")
+        );
+    }
+
+    println!();
     println!("  • Binaries: {}", paths.bin.display());
     println!(
         "  • Configuration: {}",
         paths.conf.join("flame-cluster.yaml").display()
     );
-    println!("  • Python SDK: {}", paths.sdk_python.display());
+
+    // Only show SDK path if it was installed
+    let has_flamepy = config
+        .profiles
+        .iter()
+        .any(|p| p.includes_component("flamepy"));
+    if has_flamepy {
+        println!("  • Python SDK: {}", paths.sdk_python.display());
+    }
     println!();
 
-    if config.systemd {
+    let has_control_plane = config
+        .profiles
+        .contains(&crate::types::InstallProfile::ControlPlane);
+    let has_worker = config
+        .profiles
+        .contains(&crate::types::InstallProfile::Worker);
+
+    if config.systemd && (has_control_plane || has_worker) {
         println!("Systemd Services:");
         if config.enable {
-            println!("  • flame-session-manager: enabled and running");
-            println!("  • flame-executor-manager: enabled and running");
+            if has_control_plane {
+                println!("  • flame-session-manager: enabled and running");
+            }
+            if has_worker {
+                println!("  • flame-executor-manager: enabled and running");
+            }
             println!();
             println!("To check service status:");
-            println!("  sudo systemctl status flame-session-manager");
-            println!("  sudo systemctl status flame-executor-manager");
+            if has_control_plane {
+                println!("  sudo systemctl status flame-session-manager");
+            }
+            if has_worker {
+                println!("  sudo systemctl status flame-executor-manager");
+            }
         } else {
-            println!("  • flame-session-manager: installed (not enabled)");
-            println!("  • flame-executor-manager: installed (not enabled)");
+            if has_control_plane {
+                println!("  • flame-session-manager: installed (not enabled)");
+            }
+            if has_worker {
+                println!("  • flame-executor-manager: installed (not enabled)");
+            }
             println!();
             println!("To start services:");
-            println!("  sudo systemctl enable --now flame-session-manager");
-            println!("  sudo systemctl enable --now flame-executor-manager");
+            if has_control_plane {
+                println!("  sudo systemctl enable --now flame-session-manager");
+            }
+            if has_worker {
+                println!("  sudo systemctl enable --now flame-executor-manager");
+            }
         }
         println!();
         println!("To view logs:");
-        println!("  sudo journalctl -u flame-session-manager -f");
-        println!("  tail -f {}/logs/fsm.log", paths.prefix.display());
-    } else {
+        if has_control_plane {
+            println!("  sudo journalctl -u flame-session-manager -f");
+            println!("  tail -f {}/logs/fsm.log", paths.prefix.display());
+        }
+        if has_worker {
+            println!("  sudo journalctl -u flame-executor-manager -f");
+            println!("  tail -f {}/logs/fem.log", paths.prefix.display());
+        }
+    } else if !config.systemd && (has_control_plane || has_worker) {
         println!("Manual Service Management:");
-        println!("  • Start session manager: {}/bin/flame-session-manager --config {}/conf/flame-cluster.yaml", 
-                 paths.prefix.display(), paths.prefix.display());
-        println!("  • Start executor manager: {}/bin/flame-executor-manager --config {}/conf/flame-cluster.yaml", 
-                 paths.prefix.display(), paths.prefix.display());
+        if has_control_plane {
+            println!("  • Start session manager: {}/bin/flame-session-manager --config {}/conf/flame-cluster.yaml", 
+                     paths.prefix.display(), paths.prefix.display());
+        }
+        if has_worker {
+            println!("  • Start executor manager: {}/bin/flame-executor-manager --config {}/conf/flame-cluster.yaml", 
+                     paths.prefix.display(), paths.prefix.display());
+        }
     }
 
     println!();
@@ -214,9 +386,21 @@ fn print_summary(paths: &InstallationPaths, config: &InstallConfig) {
         paths.prefix.display()
     );
     println!("  2. Add {}/bin to your PATH", paths.bin.display());
-    println!(
-        "  3. Test the installation: {}/bin/flmctl --version",
-        paths.bin.display()
-    );
+
+    // Provide relevant test command based on what was installed
+    if has_control_plane {
+        println!(
+            "  3. Test the installation: {}/bin/flmctl --version",
+            paths.bin.display()
+        );
+    } else if config
+        .profiles
+        .contains(&crate::types::InstallProfile::Client)
+    {
+        println!(
+            "  3. Test the installation: {}/bin/flmping --version",
+            paths.bin.display()
+        );
+    }
     println!();
 }

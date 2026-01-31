@@ -28,6 +28,22 @@ enum Commands {
         #[arg(long, default_value = "/usr/local/flame", value_name = "PATH")]
         prefix: PathBuf,
 
+        /// Install control plane components (flame-session-manager, flmctl, flmadm)
+        #[arg(long)]
+        control_plane: bool,
+
+        /// Install worker components (flame-executor-manager, flmping-service, flmexec-service, flamepy)
+        #[arg(long)]
+        worker: bool,
+
+        /// Install client components (flmping, flmexec, flamepy)
+        #[arg(long)]
+        client: bool,
+
+        /// Install all components (control plane + worker + client)
+        #[arg(long)]
+        all: bool,
+
         /// Skip systemd service generation
         #[arg(long)]
         no_systemd: bool,
@@ -43,6 +59,10 @@ enum Commands {
         /// Remove existing installation before installing
         #[arg(long)]
         clean: bool,
+
+        /// Force overwrite existing components without prompting
+        #[arg(long)]
+        force: bool,
 
         /// Show detailed build output
         #[arg(long)]
@@ -78,10 +98,6 @@ enum Commands {
         /// Skip confirmation prompts
         #[arg(long)]
         force: bool,
-
-        /// Remove the flame user and group
-        #[arg(long)]
-        remove_user: bool,
     },
 }
 
@@ -98,12 +114,62 @@ fn main() {
         Commands::Install {
             src_dir,
             prefix,
+            control_plane,
+            worker,
+            client,
+            all,
             no_systemd,
             enable,
             skip_build,
             clean,
+            force,
             verbose,
         } => {
+            // Validate profile flags
+            if all && (control_plane || worker || client) {
+                eprintln!(
+                    "Error: --all cannot be used with --control-plane, --worker, or --client"
+                );
+                std::process::exit(types::exit_codes::INSTALL_FAILURE);
+            }
+
+            // Require explicit profile selection
+            if !all && !control_plane && !worker && !client {
+                eprintln!("Error: You must specify which components to install:");
+                eprintln!(
+                    "  --all              Install all components (control plane + worker + client)"
+                );
+                eprintln!("  --control-plane    Install control plane components only");
+                eprintln!("  --worker           Install worker components only");
+                eprintln!("  --client           Install client components only");
+                eprintln!("\nYou can also combine profiles, for example:");
+                eprintln!("  --control-plane --worker    Install control plane and worker");
+                std::process::exit(types::exit_codes::INSTALL_FAILURE);
+            }
+
+            // Determine which profiles to install
+            let profiles = if all {
+                // Explicit --all flag: install all profiles
+                vec![
+                    types::InstallProfile::ControlPlane,
+                    types::InstallProfile::Worker,
+                    types::InstallProfile::Client,
+                ]
+            } else {
+                // Specific profile flags specified
+                let mut profiles = Vec::new();
+                if control_plane {
+                    profiles.push(types::InstallProfile::ControlPlane);
+                }
+                if worker {
+                    profiles.push(types::InstallProfile::Worker);
+                }
+                if client {
+                    profiles.push(types::InstallProfile::Client);
+                }
+                profiles
+            };
+
             let config = types::InstallConfig {
                 src_dir,
                 prefix,
@@ -112,6 +178,8 @@ fn main() {
                 skip_build,
                 clean,
                 verbose,
+                profiles,
+                force_overwrite: force,
             };
             commands::install::run(config)
         }
@@ -123,7 +191,6 @@ fn main() {
             backup_dir,
             no_backup,
             force,
-            remove_user,
         } => {
             let config = types::UninstallConfig {
                 prefix,
@@ -133,7 +200,6 @@ fn main() {
                 backup_dir,
                 no_backup,
                 force,
-                remove_user,
             };
             commands::uninstall::run(config)
         }
