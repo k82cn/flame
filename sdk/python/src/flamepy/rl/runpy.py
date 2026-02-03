@@ -29,6 +29,7 @@ import cloudpickle
 from flamepy.core import ObjectRef, get_object, put_object, update_object
 from flamepy.core.service import FlameService, SessionContext, TaskContext
 from flamepy.core.types import TaskOutput, short_name
+from flamepy.rl.storage import StorageBackend, create_storage_backend
 from flamepy.rl.types import RunnerContext, RunnerRequest
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class FlameRunpyService(FlameService):
         self._ssn_ctx: SessionContext = None
         self._execution_object: Any = None  # Cached execution object
         self._runner_context: RunnerContext = None  # Configuration
+        self._storage_backend: Optional[StorageBackend] = None  # Storage backend for downloading packages
 
     def _resolve_object_ref(self, value: Any) -> Any:
         """
@@ -151,53 +153,61 @@ class FlameRunpyService(FlameService):
         """
         Install a package from a URL.
 
-        Supports file:// URLs pointing to either directories or package files (archives).
-        If the URL points to an archive file (.tar.gz, .zip, etc.), it will be extracted
-        to the working directory first, then installed from the extracted directory.
+        Supports file:// and http:///https:// URLs pointing to package files (archives).
+        If the URL points to an archive file (.tar.gz, .zip, etc.), it will be downloaded
+        to the tmp directory, extracted to the working directory, then installed from the extracted directory.
 
         Args:
-            url: The package URL (e.g., file:///opt/my-package.tar.gz or file:///opt/my-package)
+            url: The package URL (e.g., file:///opt/my-package.tar.gz or file:///opt/my-package or http://host/path/package.tar.gz)
 
         Raises:
-            FileNotFoundError: If the package path does not exist
+            FileNotFoundError: If the package path does not exist (for file:// URLs)
             RuntimeError: If package installation fails
         """
 
         logger.info(f"Installing package from URL: {url}")
 
-        # Parse the URL to extract the path
+        install_path = None
         parsed_url = urlparse(url)
+        if self._is_archive(parsed_url.path):
+             # Extract storage_base from URL (e.g., file:///opt/my-package.tar.gz or http://host/path/package.tar.gz)
+            filename = os.path.basename(parsed_url.path)
 
-        # Currently only support file:// scheme
-        if parsed_url.scheme != "file":
-            logger.warning(f"Unsupported URL scheme: {parsed_url.scheme}, skipping package installation")
-            return
+            # Remove filename from path
+            path_without_filename = parsed_url.path[: -len(filename)]
+            # Ensure path ends with '/' for proper URL construction
+            if not path_without_filename.endswith("/"):
+                path_without_filename += "/"
+            # Reconstruct URL without filename
+            storage_base = f"{parsed_url.scheme}://{parsed_url.netloc}{path_without_filename}"
 
-        package_path = parsed_url.path
-        logger.info(f"Package path: {package_path}")
+            try:
+                self._storage_backend = create_storage_backend(storage_base)
+                logger.info(f"Initialized storage backend: {type(self._storage_backend).__name__} with base: {storage_base}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to create storage backend: {e}")
 
-        # Check if the path exists
-        if not os.path.exists(package_path):
-            logger.error(f"Package path does not exist: {package_path}")
-            raise FileNotFoundError(f"Package path not found: {package_path}")
-
-        # If it's an archive file, extract it first
-        install_path = package_path
-        extracted_dir = None
-
-        if os.path.isfile(package_path) and self._is_archive(package_path):
-            logger.info("Package is an archive file, extracting...")
-
-            # Get the working directory (default to /tmp if not set)
+            # Get the working directory and tmp directory
             working_dir = os.getcwd()
-            extract_dir = os.path.join(working_dir, f"extracted_{os.path.basename(package_path).split('.')[0]}")
+            tmp_dir = os.path.join(working_dir, "tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
 
-            # Extract the archive
-            extracted_dir = self._extract_archive(package_path, extract_dir)
+            local_package_path = os.path.join(tmp_dir, filename)
+            try:
+                self._storage_backend.download(filename, local_package_path)
+                logger.info(f"Downloaded package to: {local_package_path}")
+            except Exception as e:
+                logger.error(f"Failed to download package from storage: {e}")
+                raise RuntimeError(f"Failed to download package from storage: {e}")
+            
+            logger.info("Package is an archive file, extracting...")
+            extract_dir = os.path.join(working_dir, f"extracted_{os.path.basename(local_package_path).split('.')[0]}")
+            extracted_dir = self._extract_archive(local_package_path, extract_dir)
 
-            # Use the extracted directory for installation
             install_path = extracted_dir
-            logger.info(f"Will install from extracted directory: {install_path}")
+        else:
+            # Direct file access (e.g., file:///opt/my-package)
+            install_path = parsed_url.path
 
         # Use sys.executable -m pip to install into the current virtual environment
         # pip install will upgrade the package if it's already installed
@@ -288,12 +298,13 @@ class FlameRunpyService(FlameService):
         # Store the session context for use in task invocation
         self._ssn_ctx = context
 
-        # Install package if URL is specified
+        # Initialize storage backend if URL is specified
         if context.application.url:
             logger.info(f"Application URL specified: {context.application.url}")
             self._install_package_from_url(context.application.url)
         else:
             logger.info("No application URL specified, skipping package installation")
+            self._storage_backend = None
 
         # Step 1: Load RunnerContext from common_data
         common_data_bytes = context.common_data()
