@@ -127,11 +127,7 @@ docker-build-fem: update_protos ## Build executor manager Docker image
 docker-build-console: update_protos ## Build console Docker image
 	$(CONTAINER_RUNTIME) build -t $(CONSOLE_IMAGE):$(CONSOLE_TAG) -f $(CONSOLE_DOCKERFILE) .
 
-docker-build-cache: update_protos ## Build object cache Docker image
-	$(CONTAINER_RUNTIME) build -t $(CACHE_IMAGE):$(CACHE_TAG) -f $(CACHE_DOCKERFILE) .
-	$(CONTAINER_RUNTIME) tag $(CACHE_IMAGE):$(CACHE_TAG) $(CACHE_IMAGE):latest
-
-docker-build: docker-build-fsm docker-build-fem docker-build-console docker-build-cache ## Build all Docker images
+docker-build: docker-build-fsm docker-build-fem docker-build-console ## Build all Docker images
 
 # Docker push targets
 docker-push-fsm: docker-build-fsm ## Push session manager Docker image
