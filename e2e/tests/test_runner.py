@@ -388,3 +388,98 @@ def test_runner_defaults_instance(check_package_config, check_flmrun_app):
 
         values = rr.get([result1, result2])
         assert values == [8, 6], f"Expected [8, 6], got {values}"
+
+
+def test_runner_auto_start(check_package_config, check_flmrun_app):
+    """Test Case 21: Test Runner starts automatically in __init__."""
+    rr = runner.Runner("test-runner-auto-start")
+    try:
+        apps = flamepy.list_applications()
+        app_names = [app.name for app in apps]
+        assert "test-runner-auto-start" in app_names, (
+            f"test-runner-auto-start not found in applications: {app_names}"
+        )
+
+        sum_service = rr.service(sum_func)
+        result = sum_service(10, 20)
+        value = result.get()
+        assert value == 30, f"Expected 30, got {value}"
+    finally:
+        rr.close()
+
+    apps = flamepy.list_applications()
+    app_names = [app.name for app in apps]
+    assert "test-runner-auto-start" not in app_names, (
+        f"test-runner-auto-start should be unregistered but found in: {app_names}"
+    )
+
+
+def test_runner_explicit_close(check_package_config, check_flmrun_app):
+    """Test Case 22: Test Runner with explicit close() call."""
+    rr = runner.Runner("test-runner-explicit-close")
+
+    apps = flamepy.list_applications()
+    app_names = [app.name for app in apps]
+    assert "test-runner-explicit-close" in app_names
+
+    sum_service = rr.service(sum_func)
+    result = sum_service(5, 7)
+    value = result.get()
+    assert value == 12, f"Expected 12, got {value}"
+
+    rr.close()
+
+    apps = flamepy.list_applications()
+    app_names = [app.name for app in apps]
+    assert "test-runner-explicit-close" not in app_names
+
+
+def test_runner_fail_if_exists_true(check_package_config, check_flmrun_app):
+    """Test Case 23: Test Runner with fail_if_exists=True raises error for existing app."""
+    rr1 = runner.Runner("test-runner-exists-check")
+    try:
+        apps = flamepy.list_applications()
+        app_names = [app.name for app in apps]
+        assert "test-runner-exists-check" in app_names
+
+        with pytest.raises(flamepy.FlameError) as exc_info:
+            runner.Runner("test-runner-exists-check", fail_if_exists=True)
+
+        assert exc_info.value.code == flamepy.FlameErrorCode.ALREADY_EXISTS
+    finally:
+        rr1.close()
+
+
+def test_runner_fail_if_exists_false(check_package_config, check_flmrun_app):
+    """Test Case 24: Test Runner with fail_if_exists=False (default) skips registration."""
+    rr1 = runner.Runner("test-runner-exists-skip")
+    try:
+        apps = flamepy.list_applications()
+        app_names = [app.name for app in apps]
+        assert "test-runner-exists-skip" in app_names
+
+        rr2 = runner.Runner("test-runner-exists-skip")
+
+        sum_service = rr2.service(sum_func)
+        result = sum_service(3, 4)
+        value = result.get()
+        assert value == 7, f"Expected 7, got {value}"
+
+        rr2.close()
+
+        apps = flamepy.list_applications()
+        app_names = [app.name for app in apps]
+        assert "test-runner-exists-skip" in app_names
+    finally:
+        rr1.close()
+
+
+def test_runner_close_idempotent(check_package_config, check_flmrun_app):
+    """Test Case 25: Test that calling close() multiple times is safe."""
+    with runner.Runner("test-runner-close-idempotent") as rr:
+        sum_service = rr.service(sum_func)
+        result = sum_service(1, 1)
+        assert result.get() == 2
+
+    rr.close()
+    rr.close()

@@ -97,7 +97,7 @@ def list_applications() -> List[Application]:
     return conn.list_applications()
 
 
-def get_application(name: str) -> Application:
+def get_application(name: str) -> Optional[Application]:
     conn = ConnectionInstance.instance()
     return conn.get_application(name)
 
@@ -282,8 +282,8 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list applications: {e.details()}")
 
-    def get_application(self, name: str) -> Application:
-        """Get an application by name."""
+    def get_application(self, name: str) -> Optional[Application]:
+        """Get an application by name. Returns None if not found."""
         request = GetApplicationRequest(name=name)
 
         try:
@@ -319,6 +319,8 @@ class Connection:
             )
 
         except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.NOT_FOUND:
+                return None
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get application: {e.details()}")
 
     def create_session(self, attrs: SessionAttributes) -> "Session":
