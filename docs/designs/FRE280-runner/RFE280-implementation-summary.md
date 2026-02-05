@@ -179,7 +179,7 @@ Created comprehensive test suite in `e2e/tests/test_runner.py` with the followin
 
 ### Basic Function Example:
 ```python
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 
 def sum_fn(a: int, b: int) -> int:
     return a + b
@@ -192,7 +192,7 @@ with Runner("my-app") as rr:
 
 ### Class with State Example:
 ```python
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 
 class Counter:
     def __init__(self, initial: int = 0):
@@ -308,7 +308,7 @@ uv run pytest tests/test_runner.py -v
 ### Manual Testing:
 ```python
 # Create a test script
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 
 def sum_fn(a: int, b: int) -> int:
     return a + b

@@ -11,8 +11,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-# Import submodules for rl, agent, and util (only as submodules)
-from . import agent, rl, util
+# Import submodules for runner, agent, and util (only as submodules)
+from . import agent, runner, util
 
 # Export all core classes/types at top level
 from .core import (  # Type aliases; Constants; Enums; Exception classes; Data classes; Context and utility classes; Client functions; Client classes; Service constants; Service context classes; Service base classes; Service functions
@@ -135,6 +135,6 @@ __all__ = [
     "update_object",
     # Submodules
     "agent",
-    "rl",
+    "runner",
     "util",
 ]

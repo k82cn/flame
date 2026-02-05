@@ -37,7 +37,7 @@ The Python SDK introduces a new API, named `Runner`, which is a context manager 
 Each runner takes a single argument to specify the package name. If a package with the same name already exists in the storage, it will not be uploaded again, avoiding unnecessary duplication. If package cleanup fails due to a fatal error (such as a system power loss), it is the site administrator’s responsibility to manually remove orphaned packages. In future releases, Flame will provide an option to forcibly overwrite an existing package during upload.
 
 ```python
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 
 with Runner("test") as rr:
     pass
@@ -49,7 +49,7 @@ The execution object provided to the `service` method can be a function, a class
 
 
 ```python
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 
 def sum(a:int, b:int) -> int:
     return a + b
@@ -178,7 +178,7 @@ The `Runner` class provides a `service(...)` method for instantiating a `RunnerS
 
 2. Edit `main.py` to leverage the `Runner` abstraction:
    ```python
-   from flamepy.rl import Runner
+   from flamepy.runner import Runner
 
    def sum_fn(a: int, b: int) -> int:
        return a + b
