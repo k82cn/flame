@@ -1,6 +1,6 @@
 # Parameter Server Example
 
-In AI-related distributed workloads, large amounts of data often need to be transferred between multiple worker nodes. Flame provides an object cache mechanism to facilitate the transfer of data objects between nodes. This example demonstrates the use of `Flame.rl.Runner` in a training scenario through a simple case based on the `Parameter Server` (ps-worker) pattern.
+In AI-related distributed workloads, large amounts of data often need to be transferred between multiple worker nodes. Flame provides an object cache mechanism to facilitate the transfer of data objects between nodes. This example demonstrates the use of `Flame.runner.Runner` in a training scenario through a simple case based on the `Parameter Server` (ps-worker) pattern.
 
 ## Overview
 
@@ -9,7 +9,7 @@ The parameter server pattern is a classic distributed training architecture wher
 - Multiple **Data Workers** compute gradients on different data batches in parallel
 - Workers fetch the latest weights, compute gradients, and send them back to the parameter server
 
-This example uses Flame's `flamepy.rl.Runner` to orchestrate the distributed services and handle inter-service communication.
+This example uses Flame's `flamepy.runner.Runner` to orchestrate the distributed services and handle inter-service communication.
 
 ## Architecture
 

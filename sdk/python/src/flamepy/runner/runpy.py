@@ -29,8 +29,8 @@ import cloudpickle
 from flamepy.core import ObjectRef, get_object, put_object, update_object
 from flamepy.core.service import FlameService, SessionContext, TaskContext
 from flamepy.core.types import TaskOutput, short_name
-from flamepy.rl.storage import StorageBackend, create_storage_backend
-from flamepy.rl.types import RunnerContext, RunnerRequest
+from flamepy.runner.storage import StorageBackend, create_storage_backend
+from flamepy.runner.types import RunnerContext, RunnerRequest
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ class FlameRunpyService(FlameService):
         install_path = None
         parsed_url = urlparse(url)
         if self._is_archive(parsed_url.path):
-             # Extract storage_base from URL (e.g., file:///opt/my-package.tar.gz or http://host/path/package.tar.gz)
+            # Extract storage_base from URL (e.g., file:///opt/my-package.tar.gz or http://host/path/package.tar.gz)
             filename = os.path.basename(parsed_url.path)
 
             # Remove filename from path
@@ -199,7 +199,7 @@ class FlameRunpyService(FlameService):
             except Exception as e:
                 logger.error(f"Failed to download package from storage: {e}")
                 raise RuntimeError(f"Failed to download package from storage: {e}")
-            
+
             logger.info("Package is an archive file, extracting...")
             extract_dir = os.path.join(working_dir, f"extracted_{os.path.basename(local_package_path).split('.')[0]}")
             extracted_dir = self._extract_archive(local_package_path, extract_dir)
@@ -491,7 +491,7 @@ class FlameRunpyService(FlameService):
 
 
 def main():
-    """Main entrypoint for the flamepy.rl.runpy module."""
+    """Main entrypoint for the flamepy.runner.runpy module."""
     from ..core.service import run
 
     logger.info("Starting FlameRunpyService")

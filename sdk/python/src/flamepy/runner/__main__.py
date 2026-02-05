@@ -11,4 +11,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-# This makes the flamepy.rl module executable as a module
+# This makes the flamepy.runner module executable as a module

@@ -101,7 +101,7 @@ if os.path.isfile(package_path) and self._is_archive(package_path):
 ### Using Cache-based Output
 
 ```python
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 from flamepy.cache import get_object
 
 class DataProcessor:
@@ -164,7 +164,7 @@ Update all `test_flmrun.py` tests to handle ObjectRef:
 
 **Before**:
 ```python
-req = flamepy.rl.RunnerRequest(method="add", args=(5, 3))
+req = flamepy.runner.RunnerRequest(method="add", args=(5, 3))
 result = ssn.invoke(req)
 assert result == 8
 ```
@@ -173,7 +173,7 @@ assert result == 8
 ```python
 from flamepy.cache import get_object
 
-req = flamepy.rl.RunnerRequest(method="add", args=(5, 3))
+req = flamepy.runner.RunnerRequest(method="add", args=(5, 3))
 result = get_object(ssn.invoke(req))
 assert result == 8
 ```
@@ -195,7 +195,7 @@ If you're using `create_session` and `invoke` directly (not through Runner):
 
 **Before**:
 ```python
-from flamepy.rl import RunnerContext, RunnerServiceKind
+from flamepy.runner import RunnerContext, RunnerServiceKind
 
 ctx = RunnerContext(execution_object=my_func, kind=RunnerServiceKind.Stateless)
 ssn = create_session("flmrun", ctx)
@@ -204,7 +204,7 @@ result = ssn.invoke(request)
 
 **After**:
 ```python
-from flamepy.rl import RunnerContext, RunnerServiceKind
+from flamepy.runner import RunnerContext, RunnerServiceKind
 from flamepy.cache import get_object
 
 ctx = RunnerContext(execution_object=my_func, kind=RunnerServiceKind.Stateless)

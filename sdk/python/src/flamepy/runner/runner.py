@@ -30,8 +30,8 @@ from flamepy.core.types import (
     FlameErrorCode,
     short_name,
 )
-from flamepy.rl.storage import StorageBackend, create_storage_backend
-from flamepy.rl.types import (
+from flamepy.runner.storage import StorageBackend, create_storage_backend
+from flamepy.runner.types import (
     RunnerContext,
     RunnerRequest,
 )
@@ -116,7 +116,7 @@ class ObjectFutureIterator:
 class RunnerService:
     """Encapsulates an execution object for remote invocation within Flame.
 
-    This class creates a session with the flamepy.rl.runpy service and dynamically
+    This class creates a session with the flamepy.runner.runpy service and dynamically
     generates wrapper methods for all public methods of the execution object.
     Each wrapper submits tasks to the session and returns ObjectFuture instances.
 
@@ -131,7 +131,7 @@ class RunnerService:
 
         Args:
             app: The name of the application registered in Flame.
-                 The associated service must be flamepy.rl.runpy.
+                 The associated service must be flamepy.runner.runpy.
             execution_object: The Python execution object to be managed and
                              exposed as a remote service.
             stateful: If True, persist the execution object state back to flame-cache
@@ -143,7 +143,7 @@ class RunnerService:
         self._execution_object = execution_object
         self._function_wrapper = None  # For callable functions
 
-        # Create a session with flamepy.rl.runpy service
+        # Create a session with flamepy.runner.runpy service
         # For RL module: serialize RunnerContext with cloudpickle, put in cache to get ObjectRef,
         # then encode ObjectRef to bytes for core API
         runner_context = RunnerContext(execution_object=execution_object, stateful=stateful, autoscale=autoscale)

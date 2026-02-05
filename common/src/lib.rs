@@ -232,7 +232,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                     format!("flamepy @ {}", flamepy_sdk_path),
                     "python".to_string(),
                     "-m".to_string(),
-                    "flamepy.rl.runpy".to_string(),
+                    "flamepy.runner.runpy".to_string(),
                 ],
                 working_directory: None,
                 ..ApplicationAttributes::default()

@@ -1,5 +1,5 @@
 from ps import ConvNet, get_data_loader, ParameterServer, DataWorker, evaluate
-from flamepy.rl import Runner
+from flamepy.runner import Runner
 
 
 if __name__ == "__main__":
@@ -13,7 +13,9 @@ if __name__ == "__main__":
 
         current_weights = ps_svc.get_weights().get()
         for i in range(20):
-            gradients = [worker.compute_gradients(current_weights) for worker in workers_svc]
+            gradients = [
+                worker.compute_gradients(current_weights) for worker in workers_svc
+            ]
             # Calculate update after all gradients are available.
             current_weights = ps_svc.apply_gradients(*gradients).get()
 

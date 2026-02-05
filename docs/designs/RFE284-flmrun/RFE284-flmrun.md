@@ -57,7 +57,7 @@ spec:
     - flamepy @ file:///usr/local/flame/sdk/python
     - python
     - -m
-    - flamepy.rl.runpy
+    - flamepy.runner.runpy
   ...
 ```
 
@@ -71,7 +71,7 @@ To support the introduction of the new `url` field in the application configurat
 
 ### APIs
 
-The `RunnerContext` and `RunnerRequest` classes are integral parts of the `flamepy.rl` module, and are made available to users developing custom applications via `from flamepy.rl import RunnerContext, RunnerRequest, RunnerServiceKind`.
+The `RunnerContext` and `RunnerRequest` classes are integral parts of the `flamepy.runner` module, and are made available to users developing custom applications via `from flamepy.runner import RunnerContext, RunnerRequest, RunnerServiceKind`.
 
 - **RunnerContext** encapsulates the session-wide shared execution object. Its `execution_object` field holds a Python object directly. This allows flexible sharing of state or functions for all tasks within a session, leveraging `ObjectRef` to optimize data transfer.
   
@@ -157,7 +157,7 @@ spec:
     - flamepy @ file://${FLAME_HOME}/sdk/python  # Provides flamepy SDK
     - python
     - -m
-    - flamepy.rl.runpy
+    - flamepy.runner.runpy
 ```
 
 This approach:
@@ -180,7 +180,7 @@ This approach:
    ```
 2. Create a session with `RunnerContext` and `sum`
     ```python
-    from flamepy.rl import RunnerContext, RunnerRequest, RunnerServiceKind
+    from flamepy.runner import RunnerContext, RunnerRequest, RunnerServiceKind
     
     ctx = RunnerContext(
         execution_object=sum,
