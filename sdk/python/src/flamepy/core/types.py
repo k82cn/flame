@@ -76,6 +76,8 @@ class FlameErrorCode(IntEnum):
     INVALID_STATE = 1
     INVALID_ARGUMENT = 2
     INTERNAL = 3
+    ALREADY_EXISTS = 4
+    NOT_FOUND = 5
 
 
 class FlameError(Exception):

@@ -285,8 +285,8 @@ class Runner:
     """Context manager for managing lifecycle and deployment of Python packages in Flame.
 
     This class automates the packaging, uploading, registration, and cleanup of
-    Python applications within Flame. It uses the context manager protocol to
-    ensure proper setup and teardown.
+    Python applications within Flame. It can be used either as a context manager
+    or with explicit close() call.
 
     Attributes:
         _name: The name of the application/package
@@ -294,13 +294,17 @@ class Runner:
         _package_path: Path to the created package file
         _app_registered: Whether the application was successfully registered
         _storage_backend: Storage backend instance for uploading/deleting packages
+        _started: Whether the runner has been started
+        _fail_if_exists: Whether to raise an exception if the application already exists
     """
 
-    def __init__(self, name: str):
-        """Initialize a Runner.
+    def __init__(self, name: str, fail_if_exists: bool = False):
+        """Initialize and start a Runner.
 
         Args:
             name: The name of the application/package
+            fail_if_exists: If True, raise an exception if the application already exists.
+                           If False (default), skip registration if the application already exists.
         """
         self._name = name
         self._services: List[RunnerService] = []
@@ -308,11 +312,15 @@ class Runner:
         self._app_registered = False
         self._context = FlameContext()
         self._storage_backend: Optional[StorageBackend] = None
+        self._started = False
+        self._fail_if_exists = fail_if_exists
 
-        logger.debug(f"Initialized Runner '{name}'")
+        logger.debug(f"Initialized Runner '{name}' (fail_if_exists={fail_if_exists})")
 
-    def __enter__(self) -> "Runner":
-        """Enter the context manager and set up the application environment.
+        self._start()
+
+    def _start(self) -> None:
+        """Internal method to start the runner and set up the application environment.
 
         Steps:
         1. Package the current working directory into a .tar.gz archive
@@ -320,13 +328,14 @@ class Runner:
         3. Retrieve the flmrun application template
         4. Register a new application with the package URL
 
-        Returns:
-            self for use in the with statement
-
         Raises:
             FlameError: If setup fails at any step
         """
-        logger.debug(f"Entering Runner context for '{self._name}'")
+        if self._started:
+            logger.debug(f"Runner '{self._name}' already started, skipping")
+            return
+
+        logger.debug(f"Starting Runner '{self._name}'")
 
         # Check that package configuration is available
         if self._context.package is None:
@@ -358,12 +367,23 @@ class Runner:
                 os.remove(self._package_path)
             raise FlameError(FlameErrorCode.INTERNAL, f"Failed to get application template '{template_name}': {str(e)}")
 
-        # Step 4: Register the new application
+        # Check if application already exists
+        existing_app = get_application(self._name)
+        if existing_app is not None:
+            if self._fail_if_exists:
+                self._cleanup_storage()
+                if self._package_path and os.path.exists(self._package_path):
+                    os.remove(self._package_path)
+                raise FlameError(FlameErrorCode.ALREADY_EXISTS, f"Application '{self._name}' already exists. Set fail_if_exists=False to skip registration.")
+            else:
+                logger.debug(f"Application '{self._name}' already exists, skipping registration")
+                self._started = True
+                return
+
+        # Register the new application
         try:
-            # Determine working directory based on template
             working_directory = None
             if template_app.working_directory is not None and template_app.working_directory != "":
-                # If template has a working_directory, append runner name
                 working_directory = f"{template_app.working_directory}/{self._name}"
 
             logger.debug(f"Working directory: {working_directory}")
@@ -385,56 +405,72 @@ class Runner:
 
             register_application(self._name, app_attrs)
             self._app_registered = True
+            self._started = True
             logger.debug(f"Registered application '{self._name}' with working directory: {working_directory}")
+        except FlameError:
+            raise
         except Exception as e:
-            # Clean up storage and package file
             self._cleanup_storage()
             if self._package_path and os.path.exists(self._package_path):
                 os.remove(self._package_path)
             raise FlameError(FlameErrorCode.INTERNAL, f"Failed to register application: {str(e)}")
 
+    def __enter__(self) -> "Runner":
+        """Enter the context manager and set up the application environment.
+
+        Returns:
+            self for use in the with statement
+
+        Raises:
+            FlameError: If setup fails at any step
+        """
+        self._start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit the context manager and clean up resources.
+        """Exit the context manager and clean up resources."""
+        self.close()
 
-        Steps:
-        1. Close all RunnerService instances
-        2. Unregister the application
-        3. Delete the package from storage
+    def close(self) -> None:
+        """Close the Runner and clean up all resources.
 
-        Args:
-            exc_type: Exception type if an exception occurred
-            exc_val: Exception value if an exception occurred
-            exc_tb: Exception traceback if an exception occurred
+        This method can be called explicitly or is automatically called when
+        exiting the context manager. It performs the following cleanup:
+        1. Closes all RunnerService instances
+        2. Unregisters the application (if registered)
+        3. Deletes the package from storage
+        4. Removes the local package file
         """
-        logger.debug(f"Exiting Runner context for '{self._name}'")
+        if not self._started:
+            logger.debug(f"Runner '{self._name}' not started, nothing to close")
+            return
 
-        # Step 1: Close all services
+        logger.debug(f"Closing Runner '{self._name}'")
+
         for service in self._services:
             try:
                 service.close()
             except Exception as e:
                 logger.error(f"Error closing service: {e}", exc_info=True)
 
-        # Step 2: Unregister the application
         if self._app_registered:
             try:
                 unregister_application(self._name)
+                self._app_registered = False
                 logger.debug(f"Unregistered application '{self._name}'")
             except Exception as e:
                 logger.error(f"Error unregistering application: {e}", exc_info=True)
 
-        # Step 3: Delete the package from storage
         self._cleanup_storage()
 
-        # Clean up local package file
         if self._package_path and os.path.exists(self._package_path):
             try:
                 os.remove(self._package_path)
                 logger.debug(f"Removed local package: {self._package_path}")
             except Exception as e:
                 logger.error(f"Error removing local package: {e}", exc_info=True)
+
+        self._started = False
 
     def service(self, execution_object: Any, stateful: Optional[bool] = None, autoscale: Optional[bool] = None) -> RunnerService:
         """Create a RunnerService for the given execution object.

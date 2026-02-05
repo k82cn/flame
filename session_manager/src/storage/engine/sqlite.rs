@@ -331,10 +331,13 @@ impl Engine for SqliteEngine {
 
         let sql = "SELECT * FROM applications WHERE name=?";
         let app: ApplicationDao = sqlx::query_as(sql)
-            .bind(id)
+            .bind(&id)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| FlameError::Storage(e.to_string()))?;
+            .map_err(|e| match e {
+                sqlx::Error::RowNotFound => FlameError::NotFound(format!("application <{id}> not found")),
+                _ => FlameError::Storage(e.to_string()),
+            })?;
 
         tx.commit()
             .await
