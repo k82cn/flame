@@ -59,11 +59,11 @@ services:
       - flame-package-storage
 
   flame-package-storage:
-    image: sigoden/dufs:latest
+    image: sigoden/dufs:v0.43.0
     logging:
       options:
         max-size: "100m"
-    command: ["/data", "-A", "--allow-upload", "--allow-delete"]
+    command: ["/data", "-A"]
     volumes:
       - flame-packages:/data
     ports:
