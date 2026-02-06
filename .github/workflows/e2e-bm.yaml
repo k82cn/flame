@@ -133,32 +133,47 @@ jobs:
       - name: Install Python dependencies
         run: |
           # Install test dependencies
-          pip3 install grpcio grpcio-tools pytest black isort
+          pip3 install grpcio grpcio-tools pytest pytest-timeout black isort
+
+      - name: Verify Flame cluster is ready
+        run: |
+          echo "=== Check flmctl connectivity ==="
+          flmctl list -a || echo "Warning: Could not list applications"
+          echo ""
+          echo "=== Verify HTTP storage is accessible ==="
+          curl -s http://127.0.0.1:5050/ && echo "✓ HTTP storage is accessible" || echo "Warning: HTTP storage not accessible"
 
       - name: Run test_runner
+        timeout-minutes: 10
         run: |
           # Add e2e src to PYTHONPATH (flamepy is already system-installed)
           export PYTHONPATH="$(pwd)/e2e/src:$PYTHONPATH"
           cd e2e
-          pytest -vv --durations=0 tests/test_runner.py
+          pytest -vv --durations=0 --timeout=120 tests/test_runner.py
 
       - name: Show service logs on failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           echo "=== Package Storage Logs ==="
           cat /tmp/dufs.log || echo "No dufs log file found"
           echo ""
           echo "=== Session Manager Logs (systemd) ==="
-          sudo journalctl -u flame-session-manager -n 100 || echo "No systemd logs found"
+          sudo journalctl -u flame-session-manager -n 200 || echo "No systemd logs found"
           echo ""
           echo "=== Session Manager Logs (file) ==="
           sudo cat $INSTALL_PREFIX/logs/fsm.log || echo "No FSM log file found"
           echo ""
           echo "=== Executor Manager Logs (systemd) ==="
-          sudo journalctl -u flame-executor-manager -n 100 || echo "No systemd logs found"
+          sudo journalctl -u flame-executor-manager -n 200 || echo "No systemd logs found"
           echo ""
           echo "=== Executor Manager Logs (file) ==="
           sudo cat $INSTALL_PREFIX/logs/fem.log || echo "No FEM log file found"
+          echo ""
+          echo "=== Active processes ==="
+          ps aux | grep -E "(flame|dufs|python)" || true
+          echo ""
+          echo "=== Network connections ==="
+          netstat -tlnp 2>/dev/null || ss -tlnp || true
       
       - name: Stop Flame services
         if: always()
