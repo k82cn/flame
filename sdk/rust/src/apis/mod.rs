@@ -211,7 +211,7 @@ impl From<rpc::ExecutorState> for ExecutorState {
 }
 
 pub fn init_logger() -> Result<(), FlameError> {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()?
+    let filter = tracing_subscriber::EnvFilter::from_default_env()
         .add_directive("h2=error".parse()?)
         .add_directive("hyper_util=error".parse()?)
         .add_directive("tower=error".parse()?);
