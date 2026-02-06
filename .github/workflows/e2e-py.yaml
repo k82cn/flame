@@ -21,7 +21,7 @@ jobs:
       
       - name: Start Flame
         run: |
-          docker compose up --build --force-recreate -d
+          docker compose -f compose-e2e.yaml up --build --force-recreate -d
       
       - name: Run Python E2E Test
         run: |
