@@ -36,7 +36,6 @@ services:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
-      - flame-packages:/opt/flame/packages
       - flame-work:/usr/local/flame/work
       - flame-cache-storage:/var/lib/flame/cache
     ports:
@@ -56,7 +55,19 @@ services:
       - ./ci/flame.yaml:/root/.flame/flame.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
-      - flame-packages:/opt/flame/packages
+    depends_on:
+      - flame-package-storage
+
+  flame-package-storage:
+    image: sigoden/dufs:latest
+    logging:
+      options:
+        max-size: "100m"
+    command: ["/data", "-A", "--allow-upload", "--allow-delete"]
+    volumes:
+      - flame-packages:/data
+    ports:
+      - 5050:5000
 
 volumes:
   flame-packages:

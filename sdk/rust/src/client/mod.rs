@@ -231,6 +231,17 @@ impl Connection {
         Ok(ssn)
     }
 
+    pub async fn close_session(&self, id: &str) -> Result<(), FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        client
+            .close_session(CloseSessionRequest {
+                session_id: id.to_string(),
+            })
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn register_application(
         &self,
         name: String,

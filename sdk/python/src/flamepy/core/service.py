@@ -136,7 +136,7 @@ class FlameInstanceServicer(InstanceServicer):
         self._service = service
 
     @override
-    def OnSessionEnter(self, request, context):
+    def OnSessionEnter(self, request, context):  # noqa: N802
         """Handle OnSessionEnter RPC call."""
         _trace_fn = TraceFn("OnSessionEnter")
 
@@ -180,7 +180,7 @@ class FlameInstanceServicer(InstanceServicer):
             return Result(return_code=-1, message=f"{str(e)}")
 
     @override
-    def OnTaskInvoke(self, request, context):
+    def OnTaskInvoke(self, request, context):  # noqa: N802
         """Handle OnTaskInvoke RPC call."""
         _trace_fn = TraceFn("OnTaskInvoke")
 
@@ -209,7 +209,7 @@ class FlameInstanceServicer(InstanceServicer):
             return TaskResultProto(return_code=-1, output=None, message=f"{str(e)}")
 
     @override
-    def OnSessionLeave(self, request, context):
+    def OnSessionLeave(self, request, context):  # noqa: N802
         """Handle OnSessionLeave RPC call."""
         _trace_fn = TraceFn("OnSessionLeave")
 

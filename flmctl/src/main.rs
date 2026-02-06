@@ -17,6 +17,7 @@ use clap::{Parser, Subcommand};
 use flame_rs::apis::FlameContext;
 
 mod apis;
+mod close;
 mod create;
 mod helper;
 mod list;
@@ -129,9 +130,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             session,
             executor,
         }) => list::run(&ctx, *application, *session, *executor).await?,
-        Some(Commands::Close { .. }) => {
-            todo!()
-        }
+        Some(Commands::Close { session }) => close::run(&ctx, session).await?,
         Some(Commands::Create { app, slots }) => create::run(&ctx, app, slots).await?,
         Some(Commands::View {
             application,
