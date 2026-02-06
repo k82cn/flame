@@ -55,7 +55,21 @@ services:
       - ./ci/flame.yaml:/root/.flame/flame.yaml
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
+    depends_on:
+      - flame-package-storage
+
+  flame-package-storage:
+    image: sigoden/dufs:v0.43.0
+    logging:
+      options:
+        max-size: "100m"
+    command: ["/data", "-A"]
+    volumes:
+      - flame-packages:/data
+    ports:
+      - 5050:5000
 
 volumes:
+  flame-packages:
   flame-work:
   flame-cache-storage:
