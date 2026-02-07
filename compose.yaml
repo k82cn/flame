@@ -26,7 +26,7 @@ services:
       - RUST_LOG=debug
     deploy:
       mode: replicated
-      replicas: 1
+      replicas: 3
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -38,8 +38,8 @@ services:
       - ./e2e:/opt/e2e
       - flame-work:/usr/local/flame/work
       - flame-cache-storage:/var/lib/flame/cache
-    ports:
-      - 9090:9090
+    expose:
+      - "9090"
 
   flame-console:
     image: xflops/flame-console:latest
