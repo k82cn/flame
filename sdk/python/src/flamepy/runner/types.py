@@ -17,11 +17,11 @@ from typing import Any, Dict, Optional, Tuple
 
 
 @dataclass
-class FlameSessionContext:
+class SessionContext:
     """Context for customizing Flame session creation in Runner.service().
 
     Users can attach this context to their execution objects (classes, instances,
-    or functions) via the `_flame_session_context` attribute to customize session
+    or functions) via the `_session_context` attribute to customize session
     behavior, particularly the session ID.
 
     Attributes:
@@ -34,7 +34,7 @@ class FlameSessionContext:
 
     Example with a class:
         >>> class MyService:
-        ...     _flame_session_context = FlameSessionContext(
+        ...     _session_context = SessionContext(
         ...         session_id="my-session-001",
         ...         application_name="my-app"
         ...     )
@@ -43,19 +43,19 @@ class FlameSessionContext:
 
     Example with an instance:
         >>> obj = MyClass()
-        >>> obj._flame_session_context = FlameSessionContext(session_id="instance-001")
+        >>> obj._session_context = SessionContext(session_id="instance-001")
 
     Example with a function:
         >>> def my_func(x):
         ...     return x * 2
-        >>> my_func._flame_session_context = FlameSessionContext(session_id="func-001")
+        >>> my_func._session_context = SessionContext(session_id="func-001")
     """
 
     session_id: Optional[str] = None
     application_name: Optional[str] = None
 
     def __post_init__(self) -> None:
-        """Validate FlameSessionContext fields."""
+        """Validate SessionContext fields."""
         if self.session_id is not None:
             if not isinstance(self.session_id, str):
                 raise ValueError(f"session_id must be a string, got {type(self.session_id)}")

@@ -14,7 +14,7 @@ limitations under the License.
 import pytest
 import flamepy
 from flamepy import runner
-from flamepy.runner import FlameSessionContext
+from flamepy.runner import SessionContext
 import os
 import tempfile
 from pathlib import Path
@@ -487,15 +487,15 @@ def test_runner_close_idempotent(check_package_config, check_flmrun_app):
 
 
 # =============================================================================
-# FlameSessionContext Tests (RFE350)
+# SessionContext Tests (RFE350)
 # =============================================================================
 
 
-def test_flame_session_context_with_class(check_package_config, check_flmrun_app):
-    """Test Case 26: Test FlameSessionContext with a class."""
+def test_session_context_with_class(check_package_config, check_flmrun_app):
+    """Test Case 26: Test SessionContext with a class."""
     # Define a class with custom session context
     class ServiceWithContext:
-        _flame_session_context = FlameSessionContext(
+        _session_context = SessionContext(
             session_id="test-class-session-001",
             application_name="test-class-app"
         )
@@ -517,11 +517,11 @@ def test_flame_session_context_with_class(check_package_config, check_flmrun_app
         assert value == 42, f"Expected 42, got {value}"
 
 
-def test_flame_session_context_with_instance(check_package_config, check_flmrun_app):
-    """Test Case 27: Test FlameSessionContext with an instance (object)."""
+def test_session_context_with_instance(check_package_config, check_flmrun_app):
+    """Test Case 27: Test SessionContext with an instance (object)."""
     # Create an instance and attach context
     counter = Counter()
-    counter._flame_session_context = FlameSessionContext(
+    counter._session_context = SessionContext(
         session_id="test-instance-session-001",
         application_name="test-instance-app"
     )
@@ -541,13 +541,13 @@ def test_flame_session_context_with_instance(check_package_config, check_flmrun_
         assert value == 10, f"Expected 10, got {value}"
 
 
-def test_flame_session_context_with_function(check_package_config, check_flmrun_app):
-    """Test Case 28: Test FlameSessionContext with a function."""
+def test_session_context_with_function(check_package_config, check_flmrun_app):
+    """Test Case 28: Test SessionContext with a function."""
     # Create a function and attach context
     def my_sum(a: int, b: int) -> int:
         return a + b
 
-    my_sum._flame_session_context = FlameSessionContext(
+    my_sum._session_context = SessionContext(
         session_id="test-func-session-001",
         application_name="test-func-app"
     )
@@ -566,10 +566,10 @@ def test_flame_session_context_with_function(check_package_config, check_flmrun_
         assert value == 30, f"Expected 30, got {value}"
 
 
-def test_flame_session_context_no_session_id(check_package_config, check_flmrun_app):
-    """Test Case 29: Test FlameSessionContext with session_id=None (auto-generate)."""
+def test_session_context_no_session_id(check_package_config, check_flmrun_app):
+    """Test Case 29: Test SessionContext with session_id=None (auto-generate)."""
     class ServiceWithPartialContext:
-        _flame_session_context = FlameSessionContext(
+        _session_context = SessionContext(
             application_name="partial-ctx-app"
             # session_id is None, should auto-generate
         )
@@ -591,9 +591,9 @@ def test_flame_session_context_no_session_id(check_package_config, check_flmrun_
         assert value == "hello", f"Expected 'hello', got {value}"
 
 
-def test_flame_session_context_without_context(check_package_config, check_flmrun_app):
-    """Test Case 30: Test that services without FlameSessionContext still work (backward compatibility)."""
-    # Standard class without _flame_session_context
+def test_session_context_without_context(check_package_config, check_flmrun_app):
+    """Test Case 30: Test that services without SessionContext still work (backward compatibility)."""
+    # Standard class without _session_context
     class PlainService:
         def multiply(self, x: int, y: int) -> int:
             return x * y
@@ -612,11 +612,11 @@ def test_flame_session_context_without_context(check_package_config, check_flmru
         assert value == 56, f"Expected 56, got {value}"
 
 
-def test_flame_session_context_invalid_type_ignored(check_package_config, check_flmrun_app):
-    """Test Case 31: Test that invalid _flame_session_context type is ignored with warning."""
+def test_session_context_invalid_type_ignored(check_package_config, check_flmrun_app):
+    """Test Case 31: Test that invalid _session_context type is ignored with warning."""
     class ServiceWithInvalidContext:
         # Invalid type - should be ignored
-        _flame_session_context = {"session_id": "invalid"}
+        _session_context = {"session_id": "invalid"}
 
         def add(self, a: int, b: int) -> int:
             return a + b
@@ -636,42 +636,42 @@ def test_flame_session_context_invalid_type_ignored(check_package_config, check_
         assert value == 8, f"Expected 8, got {value}"
 
 
-def test_flame_session_context_validation_empty_string():
-    """Test Case 32: Test FlameSessionContext validation - empty session_id."""
+def test_session_context_validation_empty_string():
+    """Test Case 32: Test SessionContext validation - empty session_id."""
     with pytest.raises(ValueError) as exc_info:
-        FlameSessionContext(session_id="")
+        SessionContext(session_id="")
 
     assert "cannot be empty" in str(exc_info.value)
 
 
-def test_flame_session_context_validation_too_long():
-    """Test Case 33: Test FlameSessionContext validation - session_id too long."""
+def test_session_context_validation_too_long():
+    """Test Case 33: Test SessionContext validation - session_id too long."""
     with pytest.raises(ValueError) as exc_info:
-        FlameSessionContext(session_id="x" * 129)
+        SessionContext(session_id="x" * 129)
 
     assert "too long" in str(exc_info.value)
 
 
-def test_flame_session_context_validation_invalid_type():
-    """Test Case 34: Test FlameSessionContext validation - invalid session_id type."""
+def test_session_context_validation_invalid_type():
+    """Test Case 34: Test SessionContext validation - invalid session_id type."""
     with pytest.raises(ValueError) as exc_info:
-        FlameSessionContext(session_id=12345)  # type: ignore
+        SessionContext(session_id=12345)  # type: ignore
 
     assert "must be a string" in str(exc_info.value)
 
 
-def test_flame_session_context_validation_invalid_app_name():
-    """Test Case 35: Test FlameSessionContext validation - invalid application_name type."""
+def test_session_context_validation_invalid_app_name():
+    """Test Case 35: Test SessionContext validation - invalid application_name type."""
     with pytest.raises(ValueError) as exc_info:
-        FlameSessionContext(application_name=12345)  # type: ignore
+        SessionContext(application_name=12345)  # type: ignore
 
     assert "must be a string" in str(exc_info.value)
 
 
-def test_flame_session_context_valid_creation():
-    """Test Case 36: Test FlameSessionContext valid creation."""
+def test_session_context_valid_creation():
+    """Test Case 36: Test SessionContext valid creation."""
     # Test with all fields
-    ctx1 = FlameSessionContext(
+    ctx1 = SessionContext(
         session_id="valid-session-123",
         application_name="my-app"
     )
@@ -679,34 +679,34 @@ def test_flame_session_context_valid_creation():
     assert ctx1.application_name == "my-app"
 
     # Test with only session_id
-    ctx2 = FlameSessionContext(session_id="only-session")
+    ctx2 = SessionContext(session_id="only-session")
     assert ctx2.session_id == "only-session"
     assert ctx2.application_name is None
 
     # Test with only application_name
-    ctx3 = FlameSessionContext(application_name="only-app")
+    ctx3 = SessionContext(application_name="only-app")
     assert ctx3.session_id is None
     assert ctx3.application_name == "only-app"
 
     # Test with no fields (all defaults)
-    ctx4 = FlameSessionContext()
+    ctx4 = SessionContext()
     assert ctx4.session_id is None
     assert ctx4.application_name is None
 
 
-def test_flame_session_context_max_length():
-    """Test Case 37: Test FlameSessionContext with max length session_id (128 chars)."""
+def test_session_context_max_length():
+    """Test Case 37: Test SessionContext with max length session_id (128 chars)."""
     max_session_id = "x" * 128
-    ctx = FlameSessionContext(session_id=max_session_id)
+    ctx = SessionContext(session_id=max_session_id)
     assert ctx.session_id == max_session_id
     assert len(ctx.session_id) == 128
 
 
-def test_flame_session_context_dynamic_class(check_package_config, check_flmrun_app):
-    """Test Case 38: Test FlameSessionContext with dynamically created class."""
+def test_session_context_dynamic_class(check_package_config, check_flmrun_app):
+    """Test Case 38: Test SessionContext with dynamically created class."""
     def create_service_class(session_id: str):
         class DynamicService:
-            _flame_session_context = FlameSessionContext(session_id=session_id)
+            _session_context = SessionContext(session_id=session_id)
 
             def get_id(self) -> str:
                 return session_id

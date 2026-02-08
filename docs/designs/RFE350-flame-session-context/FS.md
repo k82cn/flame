@@ -1,4 +1,4 @@
-# RFE350: FlameSessionContext for Custom Session IDs
+# RFE350: SessionContext for Custom Session IDs
 
 ## 1. Motivation
 
@@ -16,7 +16,7 @@ Currently, when users create services via `Runner.service()`, the session ID is 
 
 **Target:**
 
-This design introduces `FlameSessionContext`, a lightweight context class that users can attach to their execution objects to:
+This design introduces `SessionContext`, a lightweight context class that users can attach to their execution objects to:
 
 1. **Custom Session IDs**: Allow users to specify their own session IDs for better traceability and correlation.
 
@@ -28,17 +28,17 @@ This design introduces `FlameSessionContext`, a lightweight context class that u
 
 ### Configuration
 
-**FlameSessionContext Class:**
+**SessionContext Class:**
 
 A new dataclass in `flamepy.runner.types` that encapsulates session context:
 
 ```python
 @dataclass
-class FlameSessionContext:
+class SessionContext:
     """Context for customizing session creation in Runner.service().
     
     Users can attach this context to their execution objects via the
-    `_flame_session_context` attribute to customize session behavior.
+    `_session_context` attribute to customize session behavior.
     
     Attributes:
         session_id: Custom session ID for the service. If not provided,
@@ -52,7 +52,7 @@ class FlameSessionContext:
 
 **Supported Execution Object Types:**
 
-The `_flame_session_context` attribute is supported on all execution object types that `Runner.service()` accepts:
+The `_session_context` attribute is supported on all execution object types that `Runner.service()` accepts:
 
 | Execution Object Type | How to Attach Context |
 |-----------------------|-----------------------|
@@ -65,10 +65,10 @@ The `_flame_session_context` attribute is supported on all execution object type
 **1. With a Class:**
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 
 class MyService:
-    _flame_session_context = FlameSessionContext(
+    _session_context = SessionContext(
         session_id="my-custom-session-001",
         application_name="recommendation-engine"
     )
@@ -85,7 +85,7 @@ with Runner("my-app") as runner:
 **2. With an Instance (Object):**
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 
 class Counter:
     def __init__(self, initial=0):
@@ -97,7 +97,7 @@ class Counter:
 
 # Create instance and attach context
 counter = Counter(10)
-counter._flame_session_context = FlameSessionContext(
+counter._session_context = SessionContext(
     session_id="counter-session-001",
     application_name="stateful-counter"
 )
@@ -111,13 +111,13 @@ with Runner("counter-app") as runner:
 **3. With a Function:**
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 
 def compute(x, y):
     return x + y
 
 # Attach context to function
-compute._flame_session_context = FlameSessionContext(
+compute._session_context = SessionContext(
     session_id="compute-batch-001",
     application_name="batch-processor"
 )
@@ -130,11 +130,11 @@ with Runner("compute-app") as runner:
 
 ### API
 
-**FlameSessionContext Structure:**
+**SessionContext Structure:**
 
 ```python
 @dataclass
-class FlameSessionContext:
+class SessionContext:
     """Context for customizing Flame session creation.
     
     Attributes:
@@ -145,7 +145,7 @@ class FlameSessionContext:
     application_name: Optional[str] = None
     
     def __post_init__(self) -> None:
-        """Validate FlameSessionContext fields."""
+        """Validate SessionContext fields."""
         if self.session_id is not None:
             if not isinstance(self.session_id, str):
                 raise ValueError(f"session_id must be a string, got {type(self.session_id)}")
@@ -161,10 +161,10 @@ class FlameSessionContext:
 
 **Detection Convention:**
 
-- The special attribute `_flame_session_context` is used to attach context to execution objects
-- This attribute must be an instance of `FlameSessionContext`
+- The special attribute `_session_context` is used to attach context to execution objects
+- This attribute must be an instance of `SessionContext`
 - Works with all execution object types: classes, instances (objects), and functions
-- If the attribute exists but is not a `FlameSessionContext`, a warning is logged and it's ignored
+- If the attribute exists but is not a `SessionContext`, a warning is logged and it's ignored
 
 ### CLI
 
@@ -174,23 +174,23 @@ No CLI changes required. Existing `flmctl` commands will display custom session 
 
 **SDK Interface Changes:**
 
-- `RunnerService.__init__()`: Updated to check for `_flame_session_context` attribute
+- `RunnerService.__init__()`: Updated to check for `_session_context` attribute
 - `Runner.service()`: No signature change, behavior change only
 - `RunnerContext`: No changes needed (session_id is not stored in RunnerContext)
 
 ### Scope
 
 **In Scope:**
-- Add `FlameSessionContext` dataclass to `flamepy.runner.types`
-- Update `RunnerService.__init__()` to detect and use `_flame_session_context.session_id`
+- Add `SessionContext` dataclass to `flamepy.runner.types`
+- Update `RunnerService.__init__()` to detect and use `_session_context.session_id`
 - Update `Runner.service()` to pass through detected context
-- Export `FlameSessionContext` from `flamepy.runner` module
+- Export `SessionContext` from `flamepy.runner` module
 - Validation of session_id format (length, type)
 
 **Out of Scope:**
 - Session ID uniqueness enforcement (session manager already handles this)
 - Session ID format restrictions beyond basic validation
-- Passing FlameSessionContext through RPC (only session_id is used)
+- Passing SessionContext through RPC (only session_id is used)
 - Storing application_name in session metadata (future enhancement)
 
 **Limitations:**
@@ -201,31 +201,31 @@ No CLI changes required. Existing `flmctl` commands will display custom session 
 ### Feature Interaction
 
 **Related Features:**
-- **Runner.service()**: The primary integration point for FlameSessionContext
+- **Runner.service()**: The primary integration point for SessionContext
 - **RunnerService**: Creates sessions using the custom session_id if provided
 - **Session Manager**: Receives custom session_id via `create_session()` (existing parameter)
 
 **Updates Required:**
 
 1. **types.py** (`sdk/python/src/flamepy/runner/types.py`):
-   - Add `FlameSessionContext` dataclass
+   - Add `SessionContext` dataclass
    - Export in `__all__`
 
 2. **runner.py** (`sdk/python/src/flamepy/runner/runner.py`):
    - Update `RunnerService.__init__()` to:
-     - Check if `execution_object` has `_flame_session_context` attribute
-     - Validate that it's a `FlameSessionContext` instance
-     - Use `_flame_session_context.session_id` instead of `short_name(app)` if provided
+     - Check if `execution_object` has `_session_context` attribute
+     - Validate that it's a `SessionContext` instance
+     - Use `_session_context.session_id` instead of `short_name(app)` if provided
 
 3. **__init__.py** (`sdk/python/src/flamepy/runner/__init__.py`):
-   - Export `FlameSessionContext`
+   - Export `SessionContext`
 
 **Integration Points:**
 - **Python SDK -> Session Manager**: Custom session_id passed via existing `create_session(session_id=...)` parameter
 - **RunnerContext**: No changes needed - session_id is used during session creation, not serialized
 
 **Compatibility:**
-- Fully backward compatible - existing code without `_flame_session_context` continues to work
+- Fully backward compatible - existing code without `_session_context` continues to work
 - Auto-generated session IDs remain the default behavior
 
 **Breaking Changes:**
@@ -239,7 +239,7 @@ No CLI changes required. Existing `flmctl` commands will display custom session 
 +--------------------------------------------------------------+
 |                  User Code                                    |
 |  class MyService:                                             |
-|      _flame_session_context = FlameSessionContext(...)        |
+|      _session_context = SessionContext(...)        |
 |      def process(self, data): ...                             |
 +----------------------------+---------------------------------+
                              |
@@ -253,8 +253,8 @@ No CLI changes required. Existing `flmctl` commands will display custom session 
                              v
 +--------------------------------------------------------------+
 |            RunnerService.__init__() (runner.py)               |
-|  - Check hasattr(execution_object, '_flame_session_context')  |
-|  - Validate FlameSessionContext instance                      |
+|  - Check hasattr(execution_object, '_session_context')  |
+|  - Validate SessionContext instance                      |
 |  - Extract session_id (or use short_name(app) if None)        |
 |  - Call create_session(session_id=custom_or_generated)        |
 +----------------------------+---------------------------------+
@@ -270,7 +270,7 @@ No CLI changes required. Existing `flmctl` commands will display custom session 
 
 ### Components
 
-**1. FlameSessionContext (Python SDK)**
+**1. SessionContext (Python SDK)**
 - **Location**: `sdk/python/src/flamepy/runner/types.py`
 - **Responsibilities**:
   - Store user-provided session configuration
@@ -280,17 +280,17 @@ No CLI changes required. Existing `flmctl` commands will display custom session 
 **2. RunnerService (Python SDK)**
 - **Location**: `sdk/python/src/flamepy/runner/runner.py`
 - **Responsibilities**:
-  - Detect `_flame_session_context` attribute on execution objects
+  - Detect `_session_context` attribute on execution objects
   - Extract and validate session_id from context
   - Use custom session_id or fall back to auto-generation
 
 ### Data Structures
 
-**FlameSessionContext:**
+**SessionContext:**
 
 ```python
 @dataclass
-class FlameSessionContext:
+class SessionContext:
     """Context for customizing Flame session creation.
     
     Attributes:
@@ -305,7 +305,7 @@ class FlameSessionContext:
     application_name: Optional[str] = None
     
     def __post_init__(self) -> None:
-        """Validate FlameSessionContext fields."""
+        """Validate SessionContext fields."""
         if self.session_id is not None:
             if not isinstance(self.session_id, str):
                 raise ValueError(f"session_id must be a string, got {type(self.session_id)}")
@@ -328,17 +328,17 @@ def __init__(self, app: str, execution_object: Any, stateful: bool = False, auto
     self._execution_object = execution_object
     self._function_wrapper = None
 
-    # NEW: Extract custom session_id from FlameSessionContext if present
+    # NEW: Extract custom session_id from SessionContext if present
     custom_session_id = None
-    if hasattr(execution_object, '_flame_session_context'):
-        ctx = getattr(execution_object, '_flame_session_context')
-        if isinstance(ctx, FlameSessionContext):
+    if hasattr(execution_object, '_session_context'):
+        ctx = getattr(execution_object, '_session_context')
+        if isinstance(ctx, SessionContext):
             custom_session_id = ctx.session_id
             if ctx.application_name:
-                logger.debug(f"FlameSessionContext application_name: {ctx.application_name}")
+                logger.debug(f"SessionContext application_name: {ctx.application_name}")
         else:
             logger.warning(
-                f"_flame_session_context attribute found but is not FlameSessionContext "
+                f"_session_context attribute found but is not SessionContext "
                 f"(got {type(ctx).__name__}), ignoring"
             )
     
@@ -382,7 +382,7 @@ def __init__(self, app: str, execution_object: Any, stateful: bool = False, auto
 - Duplicate session ID errors propagate to user with clear error message
 
 **Resource Usage:**
-- No additional memory usage beyond FlameSessionContext instance (small dataclass)
+- No additional memory usage beyond SessionContext instance (small dataclass)
 
 **Security:**
 - No security implications - session_id is user-provided metadata only
@@ -406,7 +406,7 @@ def __init__(self, app: str, execution_object: Any, stateful: bool = False, auto
 **Description:** User wants to use a meaningful session ID for better log correlation.
 
 **Step-by-step workflow:**
-1. User defines their service class with `_flame_session_context` attribute
+1. User defines their service class with `_session_context` attribute
 2. User calls `runner.service(MyService)`
 3. `RunnerService` detects the attribute and extracts `session_id`
 4. Session is created with the custom ID
@@ -415,11 +415,11 @@ def __init__(self, app: str, execution_object: Any, stateful: bool = False, auto
 **Code Example:**
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 
 class RecommendationService:
     # Attach custom session context
-    _flame_session_context = FlameSessionContext(
+    _session_context = SessionContext(
         session_id="reco-batch-2024-02-08",
         application_name="recommendation-engine"
     )
@@ -447,14 +447,14 @@ with Runner("reco-app") as runner:
 **Step-by-step workflow:**
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 import uuid
 
 def create_service_with_trace(trace_id: str):
     """Factory function to create service with trace-correlated session."""
     
     class TrackedService:
-        _flame_session_context = FlameSessionContext(
+        _session_context = SessionContext(
             session_id=f"trace-{trace_id}",
             application_name="tracked-processor"
         )
@@ -476,7 +476,7 @@ with Runner("tracked-app") as runner:
 
 ### Use Case: Backward Compatibility (No Context)
 
-**Description:** Existing code without `_flame_session_context` continues to work.
+**Description:** Existing code without `_session_context` continues to work.
 
 ```python
 from flamepy.runner import Runner
@@ -486,7 +486,7 @@ class LegacyService:
         return x * 2
 
 with Runner("legacy-app") as runner:
-    # No _flame_session_context - auto-generated session ID
+    # No _session_context - auto-generated session ID
     service = runner.service(LegacyService)
     # Session ID will be auto-generated like "legacy-app-XyZ123"
     result = service.compute(5)
@@ -501,7 +501,7 @@ with Runner("legacy-app") as runner:
 **Description:** User creates an instance with initial state and attaches custom session context.
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 
 class ModelServer:
     def __init__(self, model_path: str):
@@ -520,7 +520,7 @@ class ModelServer:
 server = ModelServer("/models/v2.0")
 
 # Attach session context to the instance
-server._flame_session_context = FlameSessionContext(
+server._session_context = SessionContext(
     session_id="model-v2-inference",
     application_name="ml-inference"
 )
@@ -542,14 +542,14 @@ with Runner("ml-app") as runner:
 **Description:** User attaches session context to a standalone function.
 
 ```python
-from flamepy.runner import Runner, FlameSessionContext
+from flamepy.runner import Runner, SessionContext
 
 def batch_process(items: list) -> list:
     """Process a batch of items."""
     return [item * 2 for item in items]
 
 # Attach context to function
-batch_process._flame_session_context = FlameSessionContext(
+batch_process._session_context = SessionContext(
     session_id="batch-job-2024-02-08",
     application_name="batch-processor"
 )

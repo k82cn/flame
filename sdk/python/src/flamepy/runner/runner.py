@@ -32,7 +32,7 @@ from flamepy.core.types import (
 )
 from flamepy.runner.storage import StorageBackend, create_storage_backend
 from flamepy.runner.types import (
-    FlameSessionContext,
+    SessionContext,
     RunnerContext,
     RunnerRequest,
 )
@@ -135,8 +135,8 @@ class RunnerService:
                  The associated service must be flamepy.runner.runpy.
             execution_object: The Python execution object to be managed and
                              exposed as a remote service. Can be a class, instance,
-                             or function. If the object has a `_flame_session_context`
-                             attribute of type FlameSessionContext, its session_id
+                             or function. If the object has a `_session_context`
+                             attribute of type SessionContext, its session_id
                              will be used instead of auto-generating one.
             stateful: If True, persist the execution object state back to flame-cache
                      after each task. If False, do not persist state.
@@ -147,17 +147,17 @@ class RunnerService:
         self._execution_object = execution_object
         self._function_wrapper = None  # For callable functions
 
-        # Extract custom session_id from FlameSessionContext if present
+        # Extract custom session_id from SessionContext if present
         custom_session_id = None
-        if hasattr(execution_object, "_flame_session_context"):
-            ctx = getattr(execution_object, "_flame_session_context")
-            if isinstance(ctx, FlameSessionContext):
+        if hasattr(execution_object, "_session_context"):
+            ctx = getattr(execution_object, "_session_context")
+            if isinstance(ctx, SessionContext):
                 custom_session_id = ctx.session_id
                 if ctx.application_name:
-                    logger.debug(f"FlameSessionContext application_name: {ctx.application_name}")
+                    logger.debug(f"SessionContext application_name: {ctx.application_name}")
             else:
                 logger.warning(
-                    f"_flame_session_context attribute found but is not FlameSessionContext "
+                    f"_session_context attribute found but is not SessionContext "
                     f"(got {type(ctx).__name__}), ignoring"
                 )
 
