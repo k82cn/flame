@@ -19,7 +19,6 @@ use chrono::{DateTime, Duration, Utc};
 use rustix::system;
 use stdng::{lock_ptr, MutexPtr};
 
-use ::rpc::flame::ApplicationSpec;
 use rpc::flame as rpc;
 
 use crate::FlameError;
@@ -536,12 +535,25 @@ impl Session {
             let old_task = lock_ptr!(old_task_ptr)?;
             if old_task.version >= task.version {
                 tracing::debug!(
-                    "Update task: <{task_id}> with an old version, ignore it.",
-                    task_id = task.id
+                    "Update task: <{task_id}> with an old version (old={old_version}, new={new_version}), ignore it.",
+                    task_id = task.id,
+                    old_version = old_task.version,
+                    new_version = task.version
                 );
                 return Ok(());
             }
         }
+
+        tracing::debug!(
+            "Updating task <{}> from state {:?} to {:?} (version {})",
+            task.id,
+            self.tasks
+                .get(&task.id)
+                .and_then(|t| lock_ptr!(t).ok())
+                .map(|t| t.state),
+            task.state,
+            task.version
+        );
 
         self.tasks.insert(task.id, task_ptr.clone());
         self.tasks_index.entry(task.state).or_default();
@@ -556,6 +568,24 @@ impl Session {
             .get_mut(&task.state)
             .unwrap()
             .insert(task.id, task_ptr);
+
+        // Log the current tasks_index state for debugging
+        let pending_count = self
+            .tasks_index
+            .get(&TaskState::Pending)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let running_count = self
+            .tasks_index
+            .get(&TaskState::Running)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        tracing::debug!(
+            "Session <{}> tasks_index after update: pending={}, running={}",
+            self.id,
+            pending_count,
+            running_count
+        );
 
         Ok(())
     }
@@ -888,7 +918,7 @@ impl From<Application> for rpc::Application {
 
 impl From<&Application> for rpc::Application {
     fn from(app: &Application) -> Self {
-        let spec = Some(ApplicationSpec {
+        let spec = Some(rpc::ApplicationSpec {
             shim: app.shim.into(),
             image: app.image.clone(),
             description: app.description.clone(),

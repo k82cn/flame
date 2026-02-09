@@ -45,7 +45,10 @@ use crate::executor::Executor;
 use crate::shims::grpc_shim::GrpcShim;
 use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
-use common::{FlameError, FLAME_CACHE_ENDPOINT, FLAME_ENDPOINT, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY};
+use common::{
+    FlameError, FLAME_CACHE_ENDPOINT, FLAME_ENDPOINT, FLAME_INSTANCE_ENDPOINT,
+    FLAME_WORKING_DIRECTORY,
+};
 
 struct HostInstance {
     child: tokio::process::Child,

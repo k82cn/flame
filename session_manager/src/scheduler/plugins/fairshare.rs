@@ -295,9 +295,18 @@ impl Plugin for FairShare {
     }
 
     fn is_underused(&self, ssn: &SessionInfoPtr) -> Option<bool> {
-        self.ssn_map
-            .get(&ssn.id)
-            .map(|ssn| ssn.allocated < ssn.deserved)
+        self.ssn_map.get(&ssn.id).map(|ssn_info| {
+            let is_underused = ssn_info.allocated < ssn_info.deserved;
+            tracing::debug!(
+                "Fairshare is_underused for session <{}>: allocated={}, deserved={}, desired={} => {}",
+                ssn.id,
+                ssn_info.allocated,
+                ssn_info.deserved,
+                ssn_info.desired,
+                is_underused
+            );
+            is_underused
+        })
     }
 
     fn is_preemptible(&self, ssn: &SessionInfoPtr) -> Option<bool> {
@@ -311,9 +320,19 @@ impl Plugin for FairShare {
     }
 
     fn is_allocatable(&self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
-        self.node_map
-            .get(&node.name)
-            .map(|node| node.allocated + ssn.slots as f64 <= node.allocatable as f64)
+        self.node_map.get(&node.name).map(|node_info| {
+            let is_allocatable =
+                node_info.allocated + ssn.slots as f64 <= node_info.allocatable as f64;
+            tracing::debug!(
+                "Fairshare is_allocatable for node <{}>: allocated={}, allocatable={}, ssn_slots={} => {}",
+                node.name,
+                node_info.allocated,
+                node_info.allocatable,
+                ssn.slots,
+                is_allocatable
+            );
+            is_allocatable
+        })
     }
 
     fn is_reclaimable(&self, exec: &ExecutorInfoPtr) -> Option<bool> {
