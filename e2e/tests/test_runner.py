@@ -728,3 +728,141 @@ def test_session_context_dynamic_class(check_package_config, check_flmrun_app):
         value = result.get()
         assert value == "dynamic-session-001", f"Expected 'dynamic-session-001', got {value}"
 
+
+# =============================================================================
+# Recursive Runner Tests (open_session)
+# =============================================================================
+
+
+class RecursiveService:
+    """Service that recursively calls itself via Runner.service().
+
+    This class demonstrates recursive task submission within the same session
+    using the open_session API.
+    """
+
+    def __init__(self, session_id: str, app_name: str):
+        """Initialize with session ID and app name for recursive calls.
+
+        Args:
+            session_id: The shared session ID for recursive calls.
+            app_name: The shared application name for Runner.
+        """
+        self._session_context = SessionContext(
+            session_id=session_id,
+            application_name=app_name,
+        )
+
+    def compute_recursive(self, depth: int) -> int:
+        """Compute recursively by creating new Runner and service instances.
+
+        At depth 0, returns 1.
+        At depth > 0, creates a new Runner (reusing existing app) and service
+        with the same session, calls compute_recursive(depth - 1), then multiplies by 2.
+        """
+        if depth <= 0:
+            return 1
+
+        # Create a new Runner to reuse existing app (fail_if_exists=False by default)
+        # The outer Runner manages the lifecycle (registration/unregistration)
+        inner_runner = runner.Runner(self._session_context.application_name)
+
+        # Create service using Runner.service() - this uses open_session
+        # to reuse the existing session with _session_context
+        inner_instance = RecursiveService(
+            session_id=self._session_context.session_id,
+            app_name=self._session_context.application_name,
+        )
+        inner_service = inner_runner.service(inner_instance)
+
+        # Call the inner service recursively
+        result = inner_service.compute_recursive(depth - 1)
+        inner_value = result.get()
+
+        return inner_value * 2
+
+
+def test_runner_recursive_same_session(check_package_config, check_flmrun_app):
+    """Test Case 39: Test recursive runner execution within the same session.
+
+    This test verifies that a task can create another RunnerService using the same
+    session ID, enabling recursive task submission within the same session.
+    The open_session API allows this by returning the existing session instead of
+    creating a new one.
+
+    The outer Runner manages the lifecycle, while inner Runner instances with
+    fail_if_exists=False reuse the existing application registration.
+    """
+    # Shared application name and session ID
+    shared_app_name = "test-runner-recursive"
+    shared_session_id = "recursive-session-001"
+
+    # Create an instance with the shared session ID and app name
+    recursive_instance = RecursiveService(
+        session_id=shared_session_id,
+        app_name=shared_app_name,
+    )
+
+    with runner.Runner(shared_app_name) as rr:
+        service = rr.service(recursive_instance)
+
+        # Verify the session ID matches
+        assert service._session.id == shared_session_id, (
+            f"Expected session ID '{shared_session_id}', got '{service._session.id}'"
+        )
+
+        # Test with depth=0 (base case)
+        result0 = service.compute_recursive(0)
+        value0 = result0.get()
+        assert value0 == 1, f"Expected 1 for depth=0, got {value0}"
+
+        # Test with depth=1 (one level of recursion)
+        result1 = service.compute_recursive(1)
+        value1 = result1.get()
+        assert value1 == 2, f"Expected 2 for depth=1, got {value1}"
+
+        # Test with depth=2 (two levels of recursion)
+        result2 = service.compute_recursive(2)
+        value2 = result2.get()
+        assert value2 == 4, f"Expected 4 for depth=2, got {value2}"
+
+
+def test_runner_open_session_reuse(check_package_config, check_flmrun_app):
+    """Test Case 40: Test that multiple RunnerService instances reuse the same session.
+
+    This test verifies that creating multiple RunnerService instances with the same
+    session ID reuses the existing session via open_session, rather than failing
+    or creating duplicate sessions.
+    """
+    shared_session_id = "reuse-session-001"
+
+    class ServiceA:
+        _session_context = SessionContext(session_id=shared_session_id)
+
+        def get_value_a(self) -> str:
+            return "A"
+
+    class ServiceB:
+        _session_context = SessionContext(session_id=shared_session_id)
+
+        def get_value_b(self) -> str:
+            return "B"
+
+    with runner.Runner("test-runner-reuse") as rr:
+        # Create first service
+        service_a = rr.service(ServiceA)
+        assert service_a._session.id == shared_session_id
+
+        # Create second service with the same session ID
+        # This should succeed because open_session allows reusing existing sessions
+        service_b = rr.service(ServiceB)
+        assert service_b._session.id == shared_session_id
+
+        # Both services should work
+        result_a = service_a.get_value_a()
+        result_b = service_b.get_value_b()
+
+        assert result_a.get() == "A", f"Expected 'A', got {result_a.get()}"
+        assert result_b.get() == "B", f"Expected 'B', got {result_b.get()}"
+
+

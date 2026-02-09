@@ -22,12 +22,13 @@ from typing import Any, Callable, List, Optional
 import cloudpickle
 
 from flamepy.core import ObjectRef, get_object, put_object
-from flamepy.core.client import create_session, get_application, register_application, unregister_application
+from flamepy.core.client import open_session, get_application, register_application, unregister_application
 from flamepy.core.types import (
     ApplicationAttributes,
     FlameContext,
     FlameError,
     FlameErrorCode,
+    SessionAttributes,
     short_name,
 )
 from flamepy.runner.storage import StorageBackend, create_storage_backend
@@ -174,8 +175,17 @@ class RunnerService:
         object_ref = put_object(session_id, serialized_ctx)
         # Encode ObjectRef to bytes for core API
         common_data_bytes = object_ref.encode()
-        # Pass min_instances and max_instances from RunnerContext to create_session
-        self._session = create_session(application=app, common_data=common_data_bytes, session_id=session_id, min_instances=runner_context.min_instances, max_instances=runner_context.max_instances)
+        # Pass min_instances and max_instances from RunnerContext to open_session
+        # Use open_session to allow reusing existing sessions (e.g., for recursive calls)
+        session_spec = SessionAttributes(
+            id=session_id,
+            application=app,
+            common_data=common_data_bytes,
+            slots=1,
+            min_instances=runner_context.min_instances,
+            max_instances=runner_context.max_instances,
+        )
+        self._session = open_session(session_id=session_id, spec=session_spec)
 
         logger.debug(f"Created RunnerService for app '{app}' with session '{self._session.id}' (stateful={stateful}, autoscale={autoscale}, custom_session_id={custom_session_id is not None})")
 
