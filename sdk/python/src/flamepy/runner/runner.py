@@ -460,18 +460,25 @@ class Runner:
 
         This method can be called explicitly or is automatically called when
         exiting the context manager. It performs the following cleanup:
-        1. Closes all RunnerService instances
+        1. Closes all RunnerService instances (only if app was registered by this Runner)
         2. Unregisters the application (only if registered by this Runner instance)
         3. Deletes the package from storage (only if uploaded by this Runner)
         4. Removes the local package file (only if created by this Runner)
 
         Note: If the application already existed when the Runner was created
-        (fail_if_exists=False), the application will NOT be unregistered.
+        (fail_if_exists=False), the Runner will NOT perform any cleanup.
         This allows recursive runners to reuse existing applications without
         affecting their lifecycle.
         """
         if not self._started:
             logger.debug(f"Runner '{self._name}' not started, nothing to close")
+            return
+
+        # If this Runner did not register the application, skip all cleanup
+        # to allow recursive/nested runners to reuse existing apps safely
+        if not self._app_registered:
+            logger.debug(f"Runner '{self._name}' did not register app, skipping cleanup")
+            self._started = False
             return
 
         logger.debug(f"Closing Runner '{self._name}'")
@@ -482,13 +489,12 @@ class Runner:
             except Exception as e:
                 logger.error(f"Error closing service: {e}", exc_info=True)
 
-        if self._app_registered:
-            try:
-                unregister_application(self._name)
-                self._app_registered = False
-                logger.debug(f"Unregistered application '{self._name}'")
-            except Exception as e:
-                logger.error(f"Error unregistering application: {e}", exc_info=True)
+        try:
+            unregister_application(self._name)
+            self._app_registered = False
+            logger.debug(f"Unregistered application '{self._name}'")
+        except Exception as e:
+            logger.error(f"Error unregistering application: {e}", exc_info=True)
 
         self._cleanup_storage()
 
