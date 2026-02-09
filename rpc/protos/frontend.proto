@@ -74,6 +74,7 @@ message DeleteSessionRequest {
 
 message OpenSessionRequest {
   string session_id = 1;
+  optional SessionSpec session = 2;
 }
 
 message CloseSessionRequest {

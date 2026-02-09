@@ -240,6 +240,23 @@ impl Storage {
             .cloned()
     }
 
+    pub async fn open_session(
+        &self,
+        id: SessionID,
+        spec: Option<SessionAttributes>,
+    ) -> Result<Session, FlameError> {
+        trace_fn!("Storage::open_session");
+
+        // Delegate to engine for atomic get-or-create operation
+        let ssn = self.engine.open_session(id.clone(), spec).await?;
+
+        // Update in-memory cache
+        let mut ssn_map = lock_ptr!(self.sessions)?;
+        ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+
+        Ok(ssn)
+    }
+
     pub fn get_task_ptr(&self, gid: TaskGID) -> Result<TaskPtr, FlameError> {
         let ssn_map = lock_ptr!(self.sessions)?;
         let ssn_ptr = ssn_map

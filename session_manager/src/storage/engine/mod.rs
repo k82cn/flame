@@ -44,6 +44,11 @@ pub trait Engine: Send + Sync + 'static {
 
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError>;
     async fn get_session(&self, id: SessionID) -> Result<Session, FlameError>;
+    async fn open_session(
+        &self,
+        id: SessionID,
+        spec: Option<SessionAttributes>,
+    ) -> Result<Session, FlameError>;
     async fn close_session(&self, id: SessionID) -> Result<Session, FlameError>;
     async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError>;
     async fn find_session(&self) -> Result<Vec<Session>, FlameError>;
