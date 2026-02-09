@@ -119,6 +119,7 @@ pub struct HostShim {
 }
 
 const RUST_LOG: &str = "RUST_LOG";
+const FLAME_LOG: &str = "FLAME_LOG";
 const DEFAULT_SVC_LOG_LEVEL: &str = "info";
 
 impl HostShim {
@@ -226,7 +227,8 @@ impl HostShim {
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
 
         let mut envs = app.environments.clone();
-        envs.insert(RUST_LOG.to_string(), log_level);
+        envs.insert(RUST_LOG.to_string(), log_level.clone());
+        envs.insert(FLAME_LOG.to_string(), log_level);
         envs.insert(FLAME_INSTANCE_ENDPOINT.to_string(), endpoint.to_string());
         if let Some(context) = &executor.context {
             // Pass session manager endpoint for recursive runner calls

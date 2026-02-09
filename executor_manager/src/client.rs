@@ -58,7 +58,6 @@ impl BackendClient {
         })?;
 
         let channel = channel
-            .timeout(Duration::from_secs(60)) // 1 minute timeout for all requests
             .connect()
             .await
             .map_err(|e| FlameError::Network(format!("Failed to connect to <{endpoint}>: {e}")))?;

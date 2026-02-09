@@ -294,18 +294,43 @@ class RecursiveService:
         At depth > 0, creates a new Runner (reusing existing app) and service
         with the same session, calls compute_recursive(depth - 1), then multiplies by 2.
         """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"[RecursiveService] compute_recursive called with depth={depth}")
+        logger.info(f"[RecursiveService] session_context: session_id={self._session_context.session_id}, app_name={self._session_context.application_name}")
+
         if depth <= 0:
+            logger.info(f"[RecursiveService] Base case reached, returning 1")
             return 1
 
-        # Create a new Runner to reuse existing app (fail_if_exists=False by default)
-        # The outer Runner manages the lifecycle (registration/unregistration)
-        with Runner(self._session_context.application_name) as inner_runner:
-            # Create service using Runner.service() with self
-            # This reuses the existing session via _session_context
-            inner_service = inner_runner.service(self)
+        try:
+            logger.info(f"[RecursiveService] Creating inner Runner for app: {self._session_context.application_name}")
 
-            # Call the inner service recursively
-            result = inner_service.compute_recursive(depth - 1)
-            inner_value = result.get()
+            # Create a new Runner to reuse existing app (fail_if_exists=False by default)
+            # The outer Runner manages the lifecycle (registration/unregistration)
+            with Runner(self._session_context.application_name) as inner_runner:
+                logger.info(f"[RecursiveService] Inner Runner created, _app_registered={inner_runner._app_registered}")
 
-            return inner_value * 2
+                # Create service using Runner.service() with self
+                # This reuses the existing session via _session_context
+                # Use autoscale=True to allow multiple executors for recursive calls
+                logger.info(f"[RecursiveService] Creating inner service with self")
+                inner_service = inner_runner.service(self, autoscale=True)
+                logger.info(f"[RecursiveService] Inner service created, session_id={inner_service._session.id}")
+
+                # Call the inner service recursively
+                logger.info(f"[RecursiveService] Calling compute_recursive({depth - 1}) on inner service")
+                result = inner_service.compute_recursive(depth - 1)
+                logger.info(f"[RecursiveService] Got result future, calling get()")
+                inner_value = result.get()
+                logger.info(f"[RecursiveService] Inner value = {inner_value}")
+
+                final_result = inner_value * 2
+                logger.info(f"[RecursiveService] Returning {final_result}")
+                return final_result
+
+        except Exception as e:
+            logger.error(f"[RecursiveService] Exception in compute_recursive(depth={depth}): {type(e).__name__}: {e}", exc_info=True)
+            raise
