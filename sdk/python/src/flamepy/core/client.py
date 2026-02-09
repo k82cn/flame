@@ -434,7 +434,7 @@ class Connection:
                 slots=spec.slots,
                 common_data=spec.common_data,
                 min_instances=spec.min_instances,
-                max_instances=spec.max_instances if spec.max_instances is not None else None,
+                max_instances=spec.max_instances,
             )
 
         request = OpenSessionRequest(session_id=session_id, session=session_spec)

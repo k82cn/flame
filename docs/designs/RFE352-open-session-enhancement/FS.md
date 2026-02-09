@@ -57,7 +57,7 @@ impl Controller {
     /// * `Ok(Session)` - The opened or newly created session
     /// * `Err(FlameError::NotFound)` - Session not found and no spec provided
     /// * `Err(FlameError::InvalidState)` - Session exists but is not open
-    /// * `Err(FlameError::InvalidArgument)` - Session exists but spec doesn't match
+    /// * `Err(FlameError::InvalidConfig)` - Session exists but spec doesn't match
     pub async fn open_session(
         &self,
         id: SessionID,
@@ -101,11 +101,11 @@ impl Connection {
     /// * `Ok(Session)` - The opened or newly created session
     /// * `Err(FlameError::NotFound)` - Session not found and no spec provided
     /// * `Err(FlameError::InvalidState)` - Session exists but is not open
-    /// * `Err(FlameError::InvalidArgument)` - Session exists but spec doesn't match
+    /// * `Err(FlameError::InvalidConfig)` - Session exists but spec doesn't match
     ///
     /// # Example
     /// ```rust
-    /// // Open existing session (if no open_session existed before, this is new)
+    /// // Open an existing session. Returns an error if not found.
     /// let session = conn.open_session("my-session-id", None).await?;
     ///
     /// // Open or create session with spec
@@ -507,25 +507,25 @@ No other interface changes required. The enhancement is fully contained within t
       /// Compare session specs for validation
       fn compare_specs(session: &Session, attr: &SessionAttributes) -> Result<(), FlameError> {
           if session.application != attr.application {
-              return Err(FlameError::InvalidArgument(format!(
+              return Err(FlameError::InvalidConfig(format!(
                   "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
                   session.id, session.application, attr.application
               )));
           }
           if session.slots != attr.slots {
-              return Err(FlameError::InvalidArgument(format!(
+              return Err(FlameError::InvalidConfig(format!(
                   "session <{}> spec mismatch: slots differs (expected {}, got {})",
                   session.id, session.slots, attr.slots
               )));
           }
           if session.min_instances != attr.min_instances {
-              return Err(FlameError::InvalidArgument(format!(
+              return Err(FlameError::InvalidConfig(format!(
                   "session <{}> spec mismatch: min_instances differs (expected {}, got {})",
                   session.id, session.min_instances, attr.min_instances
               )));
           }
           if session.max_instances != attr.max_instances {
-              return Err(FlameError::InvalidArgument(format!(
+              return Err(FlameError::InvalidConfig(format!(
                   "session <{}> spec mismatch: max_instances differs (expected {:?}, got {:?})",
                   session.id, session.max_instances, attr.max_instances
               )));
@@ -718,15 +718,6 @@ message SessionSpec {
 }
 ```
 
-**Spec Comparison Result (internal):**
-
-```rust
-enum SpecCompareResult {
-    Match,
-    Mismatch { field: String, expected: String, actual: String },
-}
-```
-
 ### Algorithms
 
 **Algorithm 1: Helper Functions (SqliteEngine)**
@@ -771,7 +762,7 @@ impl SqliteEngine {
     /// Compare specs - returns error if mismatch
     fn compare_specs(session: &Session, attr: &SessionAttributes) -> Result<(), FlameError> {
         // Compare application, slots, min_instances, max_instances
-        // Return FlameError::InvalidArgument on mismatch
+        // Return FlameError::InvalidConfig on mismatch
     }
 }
 ```

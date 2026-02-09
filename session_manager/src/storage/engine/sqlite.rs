@@ -226,25 +226,25 @@ impl SqliteEngine {
     /// Returns error if specs don't match.
     fn compare_specs(session: &Session, attr: &SessionAttributes) -> Result<(), FlameError> {
         if session.application != attr.application {
-            return Err(FlameError::InvalidArgument(format!(
+            return Err(FlameError::InvalidConfig(format!(
                 "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
                 session.id, session.application, attr.application
             )));
         }
         if session.slots != attr.slots {
-            return Err(FlameError::InvalidArgument(format!(
+            return Err(FlameError::InvalidConfig(format!(
                 "session <{}> spec mismatch: slots differs (expected {}, got {})",
                 session.id, session.slots, attr.slots
             )));
         }
         if session.min_instances != attr.min_instances {
-            return Err(FlameError::InvalidArgument(format!(
+            return Err(FlameError::InvalidConfig(format!(
                 "session <{}> spec mismatch: min_instances differs (expected {}, got {})",
                 session.id, session.min_instances, attr.min_instances
             )));
         }
         if session.max_instances != attr.max_instances {
-            return Err(FlameError::InvalidArgument(format!(
+            return Err(FlameError::InvalidConfig(format!(
                 "session <{}> spec mismatch: max_instances differs (expected {:?}, got {:?})",
                 session.id, session.max_instances, attr.max_instances
             )));
