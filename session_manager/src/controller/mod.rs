@@ -63,16 +63,13 @@ impl Controller {
         self.storage.create_session(attr).await
     }
 
-    pub async fn open_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    pub async fn open_session(
+        &self,
+        id: SessionID,
+        spec: Option<SessionAttributes>,
+    ) -> Result<Session, FlameError> {
         trace_fn!("Controller::open_session");
-        let ssn = self.storage.get_session(id.clone())?;
-        if ssn.status.state != SessionState::Open {
-            return Err(FlameError::InvalidState(format!(
-                "session <{id}> is not open"
-            )));
-        }
-
-        Ok(ssn)
+        self.storage.open_session(id, spec).await
     }
 
     pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {

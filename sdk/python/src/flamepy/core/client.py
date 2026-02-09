@@ -77,9 +77,25 @@ def create_session(application: str, common_data: Optional[bytes] = None, sessio
     return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots, min_instances=min_instances, max_instances=max_instances))
 
 
-def open_session(session_id: SessionID) -> "Session":
+def open_session(session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
+    """Open an existing session or create a new one if spec is provided.
+
+    Args:
+        session_id: The session ID to open or create.
+        spec: Optional session specification. If provided and session doesn't
+              exist, a new session will be created with this spec. If session
+              exists, the spec will be validated against the existing session.
+
+    Returns:
+        The opened or newly created Session object.
+
+    Raises:
+        FlameError(NOT_FOUND): If session doesn't exist and no spec provided.
+        FlameError(INVALID_STATE): If session exists but is not in Open state.
+        FlameError(INVALID_ARGUMENT): If session exists but spec doesn't match.
+    """
     conn = ConnectionInstance.instance()
-    return conn.open_session(session_id)
+    return conn.open_session(session_id, spec)
 
 
 def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
@@ -400,9 +416,28 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list sessions: {e.details()}")
 
-    def open_session(self, session_id: SessionID) -> "Session":
-        """Open a session."""
-        request = OpenSessionRequest(session_id=session_id)
+    def open_session(self, session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
+        """Open an existing session or create a new one if spec is provided.
+
+        Args:
+            session_id: The session ID to open or create.
+            spec: Optional session specification for creation/validation.
+
+        Returns:
+            The opened or newly created Session object.
+        """
+        # Build SessionSpec protobuf if spec is provided
+        session_spec = None
+        if spec is not None:
+            session_spec = SessionSpec(
+                application=spec.application,
+                slots=spec.slots,
+                common_data=spec.common_data,
+                min_instances=spec.min_instances,
+                max_instances=spec.max_instances,
+            )
+
+        request = OpenSessionRequest(session_id=session_id, session=session_spec)
 
         try:
             response = self._frontend.OpenSession(request)

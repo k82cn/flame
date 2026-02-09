@@ -28,9 +28,9 @@ use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
     GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest,
-    ListExecutorRequest, ListSessionRequest, ListTaskRequest, RegisterApplicationRequest,
-    SessionSpec, TaskSpec, UnregisterApplicationRequest, UpdateApplicationRequest,
-    WatchTaskRequest,
+    ListExecutorRequest, ListSessionRequest, ListTaskRequest, OpenSessionRequest,
+    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
+    UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
 use crate::apis::Shim;
@@ -225,6 +225,34 @@ impl Connection {
             .await?;
 
         let ssn = ssn.into_inner();
+        let mut ssn = Session::from(&ssn);
+        ssn.client = Some(client);
+
+        Ok(ssn)
+    }
+
+    pub async fn open_session(
+        &self,
+        id: &SessionID,
+        spec: Option<&SessionAttributes>,
+    ) -> Result<Session, FlameError> {
+        let session_spec = spec.map(|attrs| SessionSpec {
+            application: attrs.application.clone(),
+            slots: attrs.slots,
+            common_data: attrs.common_data.clone().map(CommonData::into),
+            min_instances: attrs.min_instances,
+            max_instances: attrs.max_instances,
+        });
+
+        let open_ssn_req = OpenSessionRequest {
+            session_id: id.clone(),
+            session: session_spec,
+        };
+
+        let mut client = FlameClient::new(self.channel.clone());
+        let ssn = client.open_session(open_ssn_req).await?;
+        let ssn = ssn.into_inner();
+
         let mut ssn = Session::from(&ssn);
         ssn.client = Some(client);
 

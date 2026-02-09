@@ -167,6 +167,90 @@ impl SqliteEngine {
             .map_err(|e| FlameError::Storage(format!("failed to delete application: {e}")))?;
         Ok(())
     }
+
+    /// Internal helper to get session within an existing transaction.
+    /// Returns None if session not found.
+    async fn _get_session(
+        tx: &mut SqliteConnection,
+        id: SessionID,
+    ) -> Result<Option<Session>, FlameError> {
+        let sql = "SELECT * FROM sessions WHERE id=?";
+        let ssn: Option<SessionDao> = sqlx::query_as(sql)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        match ssn {
+            Some(dao) => Ok(Some(dao.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Internal helper to create session within an existing transaction.
+    async fn _create_session(
+        tx: &mut SqliteConnection,
+        attr: SessionAttributes,
+    ) -> Result<Session, FlameError> {
+        let common_data: Option<Vec<u8>> = attr.common_data.map(Bytes::into);
+        let sql = r#"INSERT INTO sessions (id, application, slots, common_data, creation_time, state, min_instances, max_instances)
+            VALUES (
+                ?,
+                (SELECT name FROM applications WHERE name=? AND state=?),
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?
+            )
+            RETURNING *"#;
+        let ssn: SessionDao = sqlx::query_as(sql)
+            .bind(attr.id.clone())
+            .bind(attr.application)
+            .bind(ApplicationState::Enabled as i32)
+            .bind(attr.slots)
+            .bind(common_data)
+            .bind(Utc::now().timestamp())
+            .bind(SessionState::Open as i32)
+            .bind(attr.min_instances as i64)
+            .bind(attr.max_instances.map(|v| v as i64))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        ssn.try_into()
+    }
+
+    /// Compare session specs for validation.
+    /// Returns error if specs don't match.
+    fn compare_specs(session: &Session, attr: &SessionAttributes) -> Result<(), FlameError> {
+        if session.application != attr.application {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
+                session.id, session.application, attr.application
+            )));
+        }
+        if session.slots != attr.slots {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: slots differs (expected {}, got {})",
+                session.id, session.slots, attr.slots
+            )));
+        }
+        if session.min_instances != attr.min_instances {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: min_instances differs (expected {}, got {})",
+                session.id, session.min_instances, attr.min_instances
+            )));
+        }
+        if session.max_instances != attr.max_instances {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: max_instances differs (expected {:?}, got {:?})",
+                session.id, session.max_instances, attr.max_instances
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -335,7 +419,9 @@ impl Engine for SqliteEngine {
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| match e {
-                sqlx::Error::RowNotFound => FlameError::NotFound(format!("application <{id}> not found")),
+                sqlx::Error::RowNotFound => {
+                    FlameError::NotFound(format!("application <{id}> not found"))
+                }
                 _ => FlameError::Storage(e.to_string()),
             })?;
 
@@ -377,38 +463,13 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let common_data: Option<Vec<u8>> = attr.common_data.map(Bytes::into);
-        let sql = r#"INSERT INTO sessions (id, application, slots, common_data, creation_time, state, min_instances, max_instances)
-            VALUES (
-                ?,
-                (SELECT name FROM applications WHERE name=? AND state=?),
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?
-            )
-            RETURNING *"#;
-        let ssn: SessionDao = sqlx::query_as(sql)
-            .bind(attr.id.clone())
-            .bind(attr.application)
-            .bind(ApplicationState::Enabled as i32)
-            .bind(attr.slots)
-            .bind(common_data)
-            .bind(Utc::now().timestamp())
-            .bind(SessionState::Open as i32)
-            .bind(attr.min_instances as i64)
-            .bind(attr.max_instances.map(|v| v as i64))
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(e.to_string()))?;
+        let ssn = Self::_create_session(&mut tx, attr).await?;
 
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        ssn.try_into()
+        Ok(ssn)
     }
 
     async fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
@@ -418,18 +479,56 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let sql = "SELECT * FROM sessions WHERE id=?";
-        let ssn: SessionDao = sqlx::query_as(sql)
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| FlameError::Storage(e.to_string()))?;
+        let ssn = Self::_get_session(&mut tx, id.clone())
+            .await?
+            .ok_or_else(|| FlameError::NotFound(format!("session <{id}> not found")))?;
 
         tx.commit()
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        ssn.try_into()
+        Ok(ssn)
+    }
+
+    async fn open_session(
+        &self,
+        id: SessionID,
+        spec: Option<SessionAttributes>,
+    ) -> Result<Session, FlameError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let ssn = match Self::_get_session(&mut tx, id.clone()).await? {
+            Some(session) => {
+                // Session exists - validate state
+                if session.status.state != SessionState::Open {
+                    return Err(FlameError::InvalidState(format!(
+                        "session <{id}> is not open"
+                    )));
+                }
+                // If spec provided, validate it matches
+                if let Some(ref attr) = spec {
+                    Self::compare_specs(&session, attr)?;
+                }
+                session
+            }
+            None => {
+                // Session doesn't exist
+                match spec {
+                    Some(attr) => Self::_create_session(&mut tx, attr).await?,
+                    None => return Err(FlameError::NotFound(format!("session <{id}> not found"))),
+                }
+            }
+        };
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        Ok(ssn)
     }
 
     async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {

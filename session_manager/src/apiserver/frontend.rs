@@ -307,15 +307,25 @@ impl Frontend for Flame {
         req: Request<OpenSessionRequest>,
     ) -> Result<Response<rpc::Session>, Status> {
         trace_fn!("Frontend::open_session");
+        let req = req.into_inner();
         let ssn_id = req
-            .into_inner()
             .session_id
             .parse::<apis::SessionID>()
             .map_err(|_| Status::invalid_argument("invalid session id"))?;
 
+        // Convert optional SessionSpec to SessionAttributes
+        let spec = req.session.map(|ssn_spec| SessionAttributes {
+            id: ssn_id.clone(),
+            application: ssn_spec.application,
+            slots: ssn_spec.slots,
+            common_data: ssn_spec.common_data.map(apis::CommonData::from),
+            min_instances: ssn_spec.min_instances,
+            max_instances: ssn_spec.max_instances,
+        });
+
         let ssn = self
             .controller
-            .open_session(ssn_id)
+            .open_session(ssn_id, spec)
             .await
             .map(Session::from)
             .map_err(Status::from)?;
