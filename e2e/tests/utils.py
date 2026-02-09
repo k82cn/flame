@@ -24,6 +24,4 @@ def random_string(size=16) -> str:
     Returns:
         A random string of the specified size
     """
-    return "".join(
-        random.choice(string.ascii_letters + string.digits) for _ in range(size)
-    )
+    return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))

@@ -157,10 +157,7 @@ class RunnerService:
                 if ctx.application_name:
                     logger.debug(f"SessionContext application_name: {ctx.application_name}")
             else:
-                logger.warning(
-                    f"_session_context attribute found but is not SessionContext "
-                    f"(got {type(ctx).__name__}), ignoring"
-                )
+                logger.warning(f"_session_context attribute found but is not SessionContext (got {type(ctx).__name__}), ignoring")
 
         # Determine session_id: use custom if provided, otherwise generate
         session_id = custom_session_id if custom_session_id else short_name(app)

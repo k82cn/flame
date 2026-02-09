@@ -24,6 +24,7 @@ from e2e.helpers import (
     greet_func,
     Calculator,
     Counter,
+    RecursiveService,
 )
 
 
@@ -32,10 +33,7 @@ def check_package_config():
     """Check that package configuration is available."""
     ctx = flamepy.FlameContext()
     if ctx.package is None:
-        pytest.skip(
-            "Package configuration not set in flame.yaml. "
-            "Please add 'package' section with 'storage' field."
-        )
+        pytest.skip("Package configuration not set in flame.yaml. Please add 'package' section with 'storage' field.")
     yield ctx.package
 
 
@@ -55,16 +53,12 @@ def test_runner_context_manager(check_package_config, check_flmrun_app):
         # Verify that the application is registered
         apps = flamepy.list_applications()
         app_names = [app.name for app in apps]
-        assert "test-runner-cm" in app_names, (
-            f"test-runner-cm not found in applications: {app_names}"
-        )
+        assert "test-runner-cm" in app_names, f"test-runner-cm not found in applications: {app_names}"
 
     # After exiting context, application should be unregistered
     apps = flamepy.list_applications()
     app_names = [app.name for app in apps]
-    assert "test-runner-cm" not in app_names, (
-        f"test-runner-cm should be unregistered but found in: {app_names}"
-    )
+    assert "test-runner-cm" not in app_names, f"test-runner-cm should be unregistered but found in: {app_names}"
 
 
 def test_runner_with_function(check_package_config, check_flmrun_app):
@@ -77,9 +71,7 @@ def test_runner_with_function(check_package_config, check_flmrun_app):
         result = sum_service(1, 3)
 
         # Verify result is an ObjectFuture
-        assert isinstance(result, runner.ObjectFuture), (
-            f"Expected ObjectFuture, got {type(result)}"
-        )
+        assert isinstance(result, runner.ObjectFuture), f"Expected ObjectFuture, got {type(result)}"
 
         # Get the actual result
         value = result.get()
@@ -219,9 +211,7 @@ def test_objectfuture_ref_method(check_package_config, check_flmrun_app):
         obj_ref = result.ref()
 
         # Verify it's an ObjectRef
-        assert isinstance(obj_ref, flamepy.core.ObjectRef), (
-            f"Expected ObjectRef, got {type(obj_ref)}"
-        )
+        assert isinstance(obj_ref, flamepy.core.ObjectRef), f"Expected ObjectRef, got {type(obj_ref)}"
         assert obj_ref.endpoint is not None, "ObjectRef endpoint should not be None"
         assert obj_ref.key is not None, "ObjectRef key should not be None"
 
@@ -397,9 +387,7 @@ def test_runner_auto_start(check_package_config, check_flmrun_app):
     try:
         apps = flamepy.list_applications()
         app_names = [app.name for app in apps]
-        assert "test-runner-auto-start" in app_names, (
-            f"test-runner-auto-start not found in applications: {app_names}"
-        )
+        assert "test-runner-auto-start" in app_names, f"test-runner-auto-start not found in applications: {app_names}"
 
         sum_service = rr.service(sum_func)
         result = sum_service(10, 20)
@@ -410,9 +398,7 @@ def test_runner_auto_start(check_package_config, check_flmrun_app):
 
     apps = flamepy.list_applications()
     app_names = [app.name for app in apps]
-    assert "test-runner-auto-start" not in app_names, (
-        f"test-runner-auto-start should be unregistered but found in: {app_names}"
-    )
+    assert "test-runner-auto-start" not in app_names, f"test-runner-auto-start should be unregistered but found in: {app_names}"
 
 
 def test_runner_explicit_close(check_package_config, check_flmrun_app):
@@ -493,12 +479,10 @@ def test_runner_close_idempotent(check_package_config, check_flmrun_app):
 
 def test_session_context_with_class(check_package_config, check_flmrun_app):
     """Test Case 26: Test SessionContext with a class."""
+
     # Define a class with custom session context
     class ServiceWithContext:
-        _session_context = SessionContext(
-            session_id="test-class-session-001",
-            application_name="test-class-app"
-        )
+        _session_context = SessionContext(session_id="test-class-session-001", application_name="test-class-app")
 
         def compute(self, x: int) -> int:
             return x * 2
@@ -507,9 +491,7 @@ def test_session_context_with_class(check_package_config, check_flmrun_app):
         service = rr.service(ServiceWithContext)
 
         # Verify the session ID matches
-        assert service._session.id == "test-class-session-001", (
-            f"Expected session ID 'test-class-session-001', got '{service._session.id}'"
-        )
+        assert service._session.id == "test-class-session-001", f"Expected session ID 'test-class-session-001', got '{service._session.id}'"
 
         # Verify the service works
         result = service.compute(21)
@@ -521,18 +503,13 @@ def test_session_context_with_instance(check_package_config, check_flmrun_app):
     """Test Case 27: Test SessionContext with an instance (object)."""
     # Create an instance and attach context
     counter = Counter()
-    counter._session_context = SessionContext(
-        session_id="test-instance-session-001",
-        application_name="test-instance-app"
-    )
+    counter._session_context = SessionContext(session_id="test-instance-session-001", application_name="test-instance-app")
 
     with runner.Runner("test-session-ctx-instance") as rr:
         service = rr.service(counter)
 
         # Verify the session ID matches
-        assert service._session.id == "test-instance-session-001", (
-            f"Expected session ID 'test-instance-session-001', got '{service._session.id}'"
-        )
+        assert service._session.id == "test-instance-session-001", f"Expected session ID 'test-instance-session-001', got '{service._session.id}'"
 
         # Verify the service works
         service.add(10).wait()
@@ -543,22 +520,18 @@ def test_session_context_with_instance(check_package_config, check_flmrun_app):
 
 def test_session_context_with_function(check_package_config, check_flmrun_app):
     """Test Case 28: Test SessionContext with a function."""
+
     # Create a function and attach context
     def my_sum(a: int, b: int) -> int:
         return a + b
 
-    my_sum._session_context = SessionContext(
-        session_id="test-func-session-001",
-        application_name="test-func-app"
-    )
+    my_sum._session_context = SessionContext(session_id="test-func-session-001", application_name="test-func-app")
 
     with runner.Runner("test-session-ctx-func") as rr:
         service = rr.service(my_sum)
 
         # Verify the session ID matches
-        assert service._session.id == "test-func-session-001", (
-            f"Expected session ID 'test-func-session-001', got '{service._session.id}'"
-        )
+        assert service._session.id == "test-func-session-001", f"Expected session ID 'test-func-session-001', got '{service._session.id}'"
 
         # Verify the service works
         result = service(10, 20)
@@ -568,6 +541,7 @@ def test_session_context_with_function(check_package_config, check_flmrun_app):
 
 def test_session_context_no_session_id(check_package_config, check_flmrun_app):
     """Test Case 29: Test SessionContext with session_id=None (auto-generate)."""
+
     class ServiceWithPartialContext:
         _session_context = SessionContext(
             application_name="partial-ctx-app"
@@ -581,9 +555,7 @@ def test_session_context_no_session_id(check_package_config, check_flmrun_app):
         service = rr.service(ServiceWithPartialContext)
 
         # Session ID should be auto-generated (starts with app name prefix)
-        assert service._session.id.startswith("test-session-ctx-partial"), (
-            f"Expected session ID to start with 'test-session-ctx-partial', got '{service._session.id}'"
-        )
+        assert service._session.id.startswith("test-session-ctx-partial"), f"Expected session ID to start with 'test-session-ctx-partial', got '{service._session.id}'"
 
         # Verify the service works
         result = service.echo("hello")
@@ -593,6 +565,7 @@ def test_session_context_no_session_id(check_package_config, check_flmrun_app):
 
 def test_session_context_without_context(check_package_config, check_flmrun_app):
     """Test Case 30: Test that services without SessionContext still work (backward compatibility)."""
+
     # Standard class without _session_context
     class PlainService:
         def multiply(self, x: int, y: int) -> int:
@@ -602,9 +575,7 @@ def test_session_context_without_context(check_package_config, check_flmrun_app)
         service = rr.service(PlainService)
 
         # Session ID should be auto-generated
-        assert service._session.id.startswith("test-no-session-ctx"), (
-            f"Expected session ID to start with 'test-no-session-ctx', got '{service._session.id}'"
-        )
+        assert service._session.id.startswith("test-no-session-ctx"), f"Expected session ID to start with 'test-no-session-ctx', got '{service._session.id}'"
 
         # Verify the service works
         result = service.multiply(7, 8)
@@ -614,6 +585,7 @@ def test_session_context_without_context(check_package_config, check_flmrun_app)
 
 def test_session_context_invalid_type_ignored(check_package_config, check_flmrun_app):
     """Test Case 31: Test that invalid _session_context type is ignored with warning."""
+
     class ServiceWithInvalidContext:
         # Invalid type - should be ignored
         _session_context = {"session_id": "invalid"}
@@ -626,9 +598,7 @@ def test_session_context_invalid_type_ignored(check_package_config, check_flmrun
         service = rr.service(ServiceWithInvalidContext)
 
         # Session ID should be auto-generated since invalid context was ignored
-        assert service._session.id.startswith("test-invalid-ctx-type"), (
-            f"Expected session ID to start with 'test-invalid-ctx-type', got '{service._session.id}'"
-        )
+        assert service._session.id.startswith("test-invalid-ctx-type"), f"Expected session ID to start with 'test-invalid-ctx-type', got '{service._session.id}'"
 
         # Verify the service works
         result = service.add(5, 3)
@@ -671,10 +641,7 @@ def test_session_context_validation_invalid_app_name():
 def test_session_context_valid_creation():
     """Test Case 36: Test SessionContext valid creation."""
     # Test with all fields
-    ctx1 = SessionContext(
-        session_id="valid-session-123",
-        application_name="my-app"
-    )
+    ctx1 = SessionContext(session_id="valid-session-123", application_name="my-app")
     assert ctx1.session_id == "valid-session-123"
     assert ctx1.application_name == "my-app"
 
@@ -704,6 +671,7 @@ def test_session_context_max_length():
 
 def test_session_context_dynamic_class(check_package_config, check_flmrun_app):
     """Test Case 38: Test SessionContext with dynamically created class."""
+
     def create_service_class(session_id: str):
         class DynamicService:
             _session_context = SessionContext(session_id=session_id)
@@ -719,9 +687,7 @@ def test_session_context_dynamic_class(check_package_config, check_flmrun_app):
         service = rr.service(ServiceClass)
 
         # Verify the session ID matches
-        assert service._session.id == "dynamic-session-001", (
-            f"Expected session ID 'dynamic-session-001', got '{service._session.id}'"
-        )
+        assert service._session.id == "dynamic-session-001", f"Expected session ID 'dynamic-session-001', got '{service._session.id}'"
 
         # Verify the service works
         result = service.get_id()
@@ -732,54 +698,6 @@ def test_session_context_dynamic_class(check_package_config, check_flmrun_app):
 # =============================================================================
 # Recursive Runner Tests (open_session)
 # =============================================================================
-
-
-class RecursiveService:
-    """Service that recursively calls itself via Runner.service().
-
-    This class demonstrates recursive task submission within the same session
-    using the open_session API.
-    """
-
-    def __init__(self, session_id: str, app_name: str):
-        """Initialize with session ID and app name for recursive calls.
-
-        Args:
-            session_id: The shared session ID for recursive calls.
-            app_name: The shared application name for Runner.
-        """
-        self._session_context = SessionContext(
-            session_id=session_id,
-            application_name=app_name,
-        )
-
-    def compute_recursive(self, depth: int) -> int:
-        """Compute recursively by creating new Runner and service instances.
-
-        At depth 0, returns 1.
-        At depth > 0, creates a new Runner (reusing existing app) and service
-        with the same session, calls compute_recursive(depth - 1), then multiplies by 2.
-        """
-        if depth <= 0:
-            return 1
-
-        # Create a new Runner to reuse existing app (fail_if_exists=False by default)
-        # The outer Runner manages the lifecycle (registration/unregistration)
-        inner_runner = runner.Runner(self._session_context.application_name)
-
-        # Create service using Runner.service() - this uses open_session
-        # to reuse the existing session with _session_context
-        inner_instance = RecursiveService(
-            session_id=self._session_context.session_id,
-            app_name=self._session_context.application_name,
-        )
-        inner_service = inner_runner.service(inner_instance)
-
-        # Call the inner service recursively
-        result = inner_service.compute_recursive(depth - 1)
-        inner_value = result.get()
-
-        return inner_value * 2
 
 
 def test_runner_recursive_same_session(check_package_config, check_flmrun_app):
@@ -807,9 +725,7 @@ def test_runner_recursive_same_session(check_package_config, check_flmrun_app):
         service = rr.service(recursive_instance)
 
         # Verify the session ID matches
-        assert service._session.id == shared_session_id, (
-            f"Expected session ID '{shared_session_id}', got '{service._session.id}'"
-        )
+        assert service._session.id == shared_session_id, f"Expected session ID '{shared_session_id}', got '{service._session.id}'"
 
         # Test with depth=0 (base case)
         result0 = service.compute_recursive(0)
@@ -864,5 +780,3 @@ def test_runner_open_session_reuse(check_package_config, check_flmrun_app):
 
         assert result_a.get() == "A", f"Expected 'A', got {result_a.get()}"
         assert result_b.get() == "B", f"Expected 'B', got {result_b.get()}"
-
-

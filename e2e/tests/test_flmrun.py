@@ -70,9 +70,7 @@ def test_flmrun_application_registered():
     """Test that flmrun is registered as a default application."""
     apps = flamepy.list_applications()
     app_names = [app.name for app in apps]
-    assert FLMRUN_E2E_APP in app_names, (
-        f"{FLMRUN_E2E_APP} not found in applications: {app_names}"
-    )
+    assert FLMRUN_E2E_APP in app_names, f"{FLMRUN_E2E_APP} not found in applications: {app_names}"
 
     # Get the flmrun application and verify its configuration
     flmrun = flamepy.get_application(FLMRUN_E2E_APP)
@@ -160,9 +158,7 @@ def test_flmrun_kwargs():
 
     try:
         # Test with keyword arguments
-        req = runner.RunnerRequest(
-            method=None, kwargs={"name": "World", "greeting": "Hi"}
-        )
+        req = runner.RunnerRequest(method=None, kwargs={"name": "World", "greeting": "Hi"})
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
@@ -195,9 +191,7 @@ def test_flmrun_no_args():
         req_bytes = serialize_runner_request(req)
         result_bytes = ssn.invoke(req_bytes)
         result = get_object(ObjectRef.decode(result_bytes))
-        assert result == "Hello from flmrun!", (
-            f"Expected 'Hello from flmrun!', got {result}"
-        )
+        assert result == "Hello from flmrun!", f"Expected 'Hello from flmrun!', got {result}"
 
     finally:
         # Clean up
@@ -227,9 +221,7 @@ def test_flmrun_multiple_tasks():
             req_bytes = serialize_runner_request(req)
             result_bytes = ssn.invoke(req_bytes)
             result = get_object(ObjectRef.decode(result_bytes))
-            assert result == expected, (
-                f"multiply{args} expected {expected}, got {result}"
-            )
+            assert result == expected, f"multiply{args} expected {expected}, got {result}"
 
     finally:
         # Clean up
