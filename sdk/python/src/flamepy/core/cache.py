@@ -34,11 +34,11 @@ class ObjectRef:
 
     def encode(self) -> bytes:
         data = asdict(self)
-        return bson.dumps(data)
+        return bson.encode(data)
 
     @classmethod
     def decode(cls, json_data: bytes) -> "ObjectRef":
-        data = bson.loads(json_data)
+        data = bson.decode(json_data)
         return cls(**data)
 
 
@@ -133,7 +133,7 @@ def _do_put_remote(client: flight.FlightClient, descriptor: flight.FlightDescrip
             if metadata_buffer is None:
                 break
             # Extract ObjectRef from metadata buffer (BSON format)
-            obj_ref_data = bson.loads(bytes(metadata_buffer))
+            obj_ref_data = bson.decode(bytes(metadata_buffer))
             writer.close()
             return ObjectRef(
                 endpoint=obj_ref_data["endpoint"],
