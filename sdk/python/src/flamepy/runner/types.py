@@ -17,6 +17,58 @@ from typing import Any, Dict, Optional, Tuple
 
 
 @dataclass
+class SessionContext:
+    """Context for customizing Flame session creation in Runner.service().
+
+    Users can attach this context to their execution objects (classes, instances,
+    or functions) via the `_session_context` attribute to customize session
+    behavior, particularly the session ID.
+
+    Attributes:
+        session_id: Custom session identifier. If provided, this ID will be used
+                   when creating the session instead of an auto-generated one.
+                   Must be unique across all active sessions. If None (default),
+                   a random ID will be generated using short_name(app).
+        application_name: Optional application name for logging and debugging.
+                         Currently used for local context only, not persisted.
+
+    Example with a class:
+        >>> class MyService:
+        ...     _session_context = SessionContext(
+        ...         session_id="my-session-001",
+        ...         application_name="my-app"
+        ...     )
+        ...     def process(self, data):
+        ...         return data * 2
+
+    Example with an instance:
+        >>> obj = MyClass()
+        >>> obj._session_context = SessionContext(session_id="instance-001")
+
+    Example with a function:
+        >>> def my_func(x):
+        ...     return x * 2
+        >>> my_func._session_context = SessionContext(session_id="func-001")
+    """
+
+    session_id: Optional[str] = None
+    application_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Validate SessionContext fields."""
+        if self.session_id is not None:
+            if not isinstance(self.session_id, str):
+                raise ValueError(f"session_id must be a string, got {type(self.session_id)}")
+            if len(self.session_id) == 0:
+                raise ValueError("session_id cannot be empty string")
+            if len(self.session_id) > 128:
+                raise ValueError(f"session_id too long ({len(self.session_id)} chars, max 128)")
+
+        if self.application_name is not None and not isinstance(self.application_name, str):
+            raise ValueError(f"application_name must be a string, got {type(self.application_name)}")
+
+
+@dataclass
 class RunnerContext:
     """Context for runner session containing the shared execution object.
 
