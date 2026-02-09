@@ -123,6 +123,7 @@ pub fn new_async_ptr<T>(t: T) -> AsyncMutexPtr<T> {
 pub const FLAME_WORKING_DIRECTORY: &str = "/tmp/flame";
 pub const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 pub const FLAME_CACHE_ENDPOINT: &str = "FLAME_CACHE_ENDPOINT";
+pub const FLAME_ENDPOINT: &str = "FLAME_ENDPOINT";
 
 pub fn init_logger() -> Result<(), FlameError> {
     let filter = tracing_subscriber::EnvFilter::from_default_env()

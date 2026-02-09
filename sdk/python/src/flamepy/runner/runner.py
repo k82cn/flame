@@ -352,10 +352,11 @@ class Runner:
         """Internal method to start the runner and set up the application environment.
 
         Steps:
-        1. Package the current working directory into a .tar.gz archive
-        2. Upload the package to the storage location
-        3. Retrieve the flmrun application template
-        4. Register a new application with the package URL
+        1. Check if application already exists (skip packaging if reusing)
+        2. Package the current working directory into a .tar.gz archive
+        3. Upload the package to the storage location
+        4. Retrieve the flmrun application template
+        5. Register a new application with the package URL
 
         Raises:
             FlameError: If setup fails at any step
@@ -366,7 +367,17 @@ class Runner:
 
         logger.debug(f"Starting Runner '{self._name}'")
 
-        # Check that package configuration is available
+        # Check if application already exists first (before packaging)
+        existing_app = get_application(self._name)
+        if existing_app is not None:
+            if self._fail_if_exists:
+                raise FlameError(FlameErrorCode.ALREADY_EXISTS, f"Application '{self._name}' already exists. Set fail_if_exists=False to skip registration.")
+            else:
+                logger.debug(f"Application '{self._name}' already exists, skipping registration")
+                self._started = True
+                return
+
+        # Check that package configuration is available (only needed for new apps)
         if self._context.package is None:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "Package configuration is not set in FlameContext. Please configure the 'package' field in your flame.yaml.")
 
@@ -395,19 +406,6 @@ class Runner:
             if self._package_path and os.path.exists(self._package_path):
                 os.remove(self._package_path)
             raise FlameError(FlameErrorCode.INTERNAL, f"Failed to get application template '{template_name}': {str(e)}")
-
-        # Check if application already exists
-        existing_app = get_application(self._name)
-        if existing_app is not None:
-            if self._fail_if_exists:
-                self._cleanup_storage()
-                if self._package_path and os.path.exists(self._package_path):
-                    os.remove(self._package_path)
-                raise FlameError(FlameErrorCode.ALREADY_EXISTS, f"Application '{self._name}' already exists. Set fail_if_exists=False to skip registration.")
-            else:
-                logger.debug(f"Application '{self._name}' already exists, skipping registration")
-                self._started = True
-                return
 
         # Register the new application
         try:
