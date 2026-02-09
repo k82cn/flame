@@ -464,9 +464,14 @@ class Runner:
         This method can be called explicitly or is automatically called when
         exiting the context manager. It performs the following cleanup:
         1. Closes all RunnerService instances
-        2. Unregisters the application (if registered)
-        3. Deletes the package from storage
-        4. Removes the local package file
+        2. Unregisters the application (only if registered by this Runner instance)
+        3. Deletes the package from storage (only if uploaded by this Runner)
+        4. Removes the local package file (only if created by this Runner)
+
+        Note: If the application already existed when the Runner was created
+        (fail_if_exists=False), the application will NOT be unregistered.
+        This allows recursive runners to reuse existing applications without
+        affecting their lifecycle.
         """
         if not self._started:
             logger.debug(f"Runner '{self._name}' not started, nothing to close")
