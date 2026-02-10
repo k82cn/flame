@@ -490,10 +490,40 @@ class FlameRunpyService(FlameService):
         return True
 
 
+def _setup_logging():
+    """Setup logging based on FLAME_LOG environment variable."""
+    flame_log = os.environ.get("FLAME_LOG", "info").upper()
+
+    # Map log level strings to logging constants
+    level_map = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "WARN": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+
+    level = level_map.get(flame_log, logging.INFO)
+
+    # Configure root logger for flamepy modules
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Also set level for flamepy loggers specifically
+    logging.getLogger("flamepy").setLevel(level)
+    logging.getLogger("e2e").setLevel(level)
+
+    logger.info(f"Logging configured with level: {flame_log} ({level})")
+
+
 def main():
     """Main entrypoint for the flamepy.runner.runpy module."""
     from ..core.service import run
 
+    _setup_logging()
     logger.info("Starting FlameRunpyService")
     service = FlameRunpyService()
     run(service)

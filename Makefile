@@ -96,7 +96,10 @@ format-rust: ## Format Rust code with cargo fmt
 format-python: ## Format Python code with ruff
 	cd sdk/python && make format
 
-format: format-rust format-python ## Format both Rust and Python code
+format-e2e: ## Format E2E code with ruff
+	cd e2e && uv run --extra dev ruff format src tests
+
+format: format-rust format-python format-e2e ## Format both Rust, Python and E2E code
 
 # E2E testing targets
 e2e-py: ## Run Python E2E tests (use e2e-py-docker for docker compose or e2e-py-local for local cluster)

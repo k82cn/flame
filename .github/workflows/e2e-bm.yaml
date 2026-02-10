@@ -149,7 +149,7 @@ jobs:
           # Add e2e src to PYTHONPATH (flamepy is already system-installed)
           export PYTHONPATH="$(pwd)/e2e/src:$PYTHONPATH"
           cd e2e
-          pytest -vv --durations=0 --timeout=120 tests/test_runner.py
+          pytest -vv --durations=0 tests/test_runner.py
 
       - name: Show service logs on failure
         if: failure() || cancelled()

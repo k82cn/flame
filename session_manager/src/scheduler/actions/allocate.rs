@@ -52,6 +52,12 @@ impl Action for AllocateAction {
             nodes.push(node.clone());
         }
 
+        tracing::debug!(
+            "AllocateAction: {} open sessions, {} nodes available",
+            open_ssns.len(),
+            nodes.len()
+        );
+
         let node_order_fn = node_order_fn(ctx);
 
         // Allocate executors for open sessions on nodes.
@@ -62,9 +68,23 @@ impl Action for AllocateAction {
 
             let ssn = open_ssns.pop().unwrap();
 
-            if !ctx.is_underused(&ssn)? {
+            let is_underused = ctx.is_underused(&ssn)?;
+            if !is_underused {
+                tracing::debug!(
+                    "Session <{}> is NOT underused (pending={:?}, running={:?}), skipping allocation",
+                    ssn.id,
+                    ssn.tasks_status.get(&common::apis::TaskState::Pending),
+                    ssn.tasks_status.get(&common::apis::TaskState::Running)
+                );
                 continue;
             }
+
+            tracing::debug!(
+                "Session <{}> IS underused (pending={:?}, running={:?}), attempting allocation",
+                ssn.id,
+                ssn.tasks_status.get(&common::apis::TaskState::Pending),
+                ssn.tasks_status.get(&common::apis::TaskState::Running)
+            );
 
             // Explicit max_instances check (safety guard)
             // The fairshare plugin caches allocated count from snapshot at the start of the cycle.
@@ -90,27 +110,49 @@ impl Action for AllocateAction {
             // If there're still some executors in pipeline, skip allocate new executor to the session.
             let pipelined_executors = ss.pipelined_executors(ssn.clone())?;
             if !pipelined_executors.is_empty() {
-                tracing::debug!("Skip allocate resources for session <{}> because there are <{}> exectors in pipeline.", ssn.id, pipelined_executors.len());
+                tracing::debug!("Skip allocate resources for session <{}> because there are <{}> executors in pipeline.", ssn.id, pipelined_executors.len());
                 continue;
             }
 
+            let mut allocated = false;
             for node in nodes.iter() {
                 tracing::debug!(
-                    "Start to allocate resources for session <{}> on node <{}>",
+                    "Checking node <{}> for session <{}> allocation",
+                    node.name,
+                    ssn.id
+                );
+
+                let is_allocatable = ctx.is_allocatable(node, &ssn)?;
+                if !is_allocatable {
+                    tracing::debug!(
+                        "Node <{}> is NOT allocatable for session <{}> (node may be at capacity)",
+                        node.name,
+                        ssn.id
+                    );
+                    continue;
+                }
+
+                tracing::info!(
+                    "Allocating executor for session <{}> on node <{}>",
                     ssn.id,
                     node.name
                 );
 
-                if !ctx.is_allocatable(node, &ssn)? {
-                    continue;
-                }
-
                 ctx.create_executor(node, &ssn).await?;
+                allocated = true;
 
                 nodes.sort_by(|a, b| node_order_fn.cmp(a, b));
                 open_ssns.push(ssn.clone());
 
                 break;
+            }
+
+            if !allocated {
+                tracing::warn!(
+                    "Failed to allocate executor for underused session <{}>: no allocatable nodes found (total nodes: {})",
+                    ssn.id,
+                    nodes.len()
+                );
             }
         }
 

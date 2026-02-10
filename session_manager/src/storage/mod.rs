@@ -247,10 +247,32 @@ impl Storage {
     ) -> Result<Session, FlameError> {
         trace_fn!("Storage::open_session");
 
-        // Delegate to engine for atomic get-or-create operation
+        // Check if session already exists in cache - if so, return it directly
+        // to preserve in-memory task state
+        {
+            let ssn_map = lock_ptr!(self.sessions)?;
+            if let Some(ssn_ptr) = ssn_map.get(&id) {
+                let ssn = lock_ptr!(ssn_ptr)?;
+                // Verify the session is still open before returning cached version
+                if ssn.status.state == SessionState::Open {
+                    // If spec provided, validate it matches the existing session
+                    if let Some(ref attr) = spec {
+                        ssn.validate_spec(attr)?;
+                    }
+                    tracing::debug!(
+                        "Session <{}> already exists in cache with {} tasks, returning cached version",
+                        id,
+                        ssn.tasks.len()
+                    );
+                    return Ok(ssn.clone());
+                }
+            }
+        }
+
+        // Session not in cache or not open, delegate to engine for atomic get-or-create operation
         let ssn = self.engine.open_session(id.clone(), spec).await?;
 
-        // Update in-memory cache
+        // Update in-memory cache (only for newly created sessions)
         let mut ssn_map = lock_ptr!(self.sessions)?;
         ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
 

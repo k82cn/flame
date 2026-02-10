@@ -21,6 +21,9 @@ use crate::states::State;
 use common::apis::{Event, EventOwner, ExecutorState};
 use common::{new_async_ptr, FlameError};
 
+const ON_SESSION_ENTER_MAX_RETRIES: u32 = 5;
+const ON_SESSION_ENTER_RETRY_DELAY_SECS: u64 = 5;
+
 #[derive(Clone)]
 pub struct IdleState {
     pub client: BackendClient,
@@ -58,12 +61,42 @@ impl State for IdleState {
         );
 
         let shim_ptr = shims::new(&self.executor.clone(), &ssn.application).await?;
-        {
-            // TODO(k82cn): if on_session_enter failed, add retry limits.
+
+        // Retry on_session_enter with delay between attempts
+        let mut last_error: Option<FlameError> = None;
+        for attempt in 1..=ON_SESSION_ENTER_MAX_RETRIES {
             let mut shim = shim_ptr.lock().await;
-            shim.on_session_enter(&ssn).await?;
-            tracing::debug!("Shim on_session_enter completed.");
-        };
+            match shim.on_session_enter(&ssn).await {
+                Ok(()) => {
+                    tracing::debug!("Shim on_session_enter completed on attempt {}.", attempt);
+                    last_error = None;
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "on_session_enter failed on attempt {}/{}: {}",
+                        attempt,
+                        ON_SESSION_ENTER_MAX_RETRIES,
+                        e
+                    );
+                    last_error = Some(e);
+                    if attempt < ON_SESSION_ENTER_MAX_RETRIES {
+                        let delay = (attempt * attempt) as u64 * ON_SESSION_ENTER_RETRY_DELAY_SECS;
+                        tracing::debug!("Retrying in {} seconds...", delay);
+                        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                    }
+                }
+            }
+        }
+
+        if let Some(e) = last_error {
+            tracing::error!(
+                "on_session_enter failed after {} retries: {}",
+                ON_SESSION_ENTER_MAX_RETRIES,
+                e
+            );
+            return Err(e);
+        }
 
         self.client
             .bind_executor_completed(&self.executor.clone())

@@ -19,7 +19,6 @@ use chrono::{DateTime, Duration, Utc};
 use rustix::system;
 use stdng::{lock_ptr, MutexPtr};
 
-use ::rpc::flame::ApplicationSpec;
 use rpc::flame as rpc;
 
 use crate::FlameError;
@@ -536,12 +535,25 @@ impl Session {
             let old_task = lock_ptr!(old_task_ptr)?;
             if old_task.version >= task.version {
                 tracing::debug!(
-                    "Update task: <{task_id}> with an old version, ignore it.",
-                    task_id = task.id
+                    "Update task: <{task_id}> with an old version (old={old_version}, new={new_version}), ignore it.",
+                    task_id = task.id,
+                    old_version = old_task.version,
+                    new_version = task.version
                 );
                 return Ok(());
             }
         }
+
+        tracing::debug!(
+            "Updating task <{}> from state {:?} to {:?} (version {})",
+            task.id,
+            self.tasks
+                .get(&task.id)
+                .and_then(|t| lock_ptr!(t).ok())
+                .map(|t| t.state),
+            task.state,
+            task.version
+        );
 
         self.tasks.insert(task.id, task_ptr.clone());
         self.tasks_index.entry(task.state).or_default();
@@ -557,6 +569,24 @@ impl Session {
             .unwrap()
             .insert(task.id, task_ptr);
 
+        // Log the current tasks_index state for debugging
+        let pending_count = self
+            .tasks_index
+            .get(&TaskState::Pending)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let running_count = self
+            .tasks_index
+            .get(&TaskState::Running)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        tracing::debug!(
+            "Session <{}> tasks_index after update: pending={}, running={}",
+            self.id,
+            pending_count,
+            running_count
+        );
+
         Ok(())
     }
 
@@ -567,6 +597,36 @@ impl Session {
         }
 
         None
+    }
+
+    /// Validate that the provided session attributes match this session's spec.
+    /// Returns error if specs don't match.
+    pub fn validate_spec(&self, attr: &SessionAttributes) -> Result<(), FlameError> {
+        if self.application != attr.application {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
+                self.id, self.application, attr.application
+            )));
+        }
+        if self.slots != attr.slots {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: slots differs (expected {}, got {})",
+                self.id, self.slots, attr.slots
+            )));
+        }
+        if self.min_instances != attr.min_instances {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: min_instances differs (expected {}, got {})",
+                self.id, self.min_instances, attr.min_instances
+            )));
+        }
+        if self.max_instances != attr.max_instances {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: max_instances differs (expected {:?}, got {:?})",
+                self.id, self.max_instances, attr.max_instances
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -888,7 +948,7 @@ impl From<Application> for rpc::Application {
 
 impl From<&Application> for rpc::Application {
     fn from(app: &Application) -> Self {
-        let spec = Some(ApplicationSpec {
+        let spec = Some(rpc::ApplicationSpec {
             shim: app.shim.into(),
             image: app.image.clone(),
             description: app.description.clone(),

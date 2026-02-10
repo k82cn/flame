@@ -22,12 +22,13 @@ from typing import Any, Callable, List, Optional
 import cloudpickle
 
 from flamepy.core import ObjectRef, get_object, put_object
-from flamepy.core.client import create_session, get_application, register_application, unregister_application
+from flamepy.core.client import open_session, get_application, register_application, unregister_application
 from flamepy.core.types import (
     ApplicationAttributes,
     FlameContext,
     FlameError,
     FlameErrorCode,
+    SessionAttributes,
     short_name,
 )
 from flamepy.runner.storage import StorageBackend, create_storage_backend
@@ -156,10 +157,7 @@ class RunnerService:
                 if ctx.application_name:
                     logger.debug(f"SessionContext application_name: {ctx.application_name}")
             else:
-                logger.warning(
-                    f"_session_context attribute found but is not SessionContext "
-                    f"(got {type(ctx).__name__}), ignoring"
-                )
+                logger.warning(f"_session_context attribute found but is not SessionContext (got {type(ctx).__name__}), ignoring")
 
         # Determine session_id: use custom if provided, otherwise generate
         session_id = custom_session_id if custom_session_id else short_name(app)
@@ -174,8 +172,17 @@ class RunnerService:
         object_ref = put_object(session_id, serialized_ctx)
         # Encode ObjectRef to bytes for core API
         common_data_bytes = object_ref.encode()
-        # Pass min_instances and max_instances from RunnerContext to create_session
-        self._session = create_session(application=app, common_data=common_data_bytes, session_id=session_id, min_instances=runner_context.min_instances, max_instances=runner_context.max_instances)
+        # Pass min_instances and max_instances from RunnerContext to open_session
+        # Use open_session to allow reusing existing sessions (e.g., for recursive calls)
+        session_spec = SessionAttributes(
+            id=session_id,
+            application=app,
+            common_data=common_data_bytes,
+            slots=1,
+            min_instances=runner_context.min_instances,
+            max_instances=runner_context.max_instances,
+        )
+        self._session = open_session(session_id=session_id, spec=session_spec)
 
         logger.debug(f"Created RunnerService for app '{app}' with session '{self._session.id}' (stateful={stateful}, autoscale={autoscale}, custom_session_id={custom_session_id is not None})")
 
@@ -342,10 +349,11 @@ class Runner:
         """Internal method to start the runner and set up the application environment.
 
         Steps:
-        1. Package the current working directory into a .tar.gz archive
-        2. Upload the package to the storage location
-        3. Retrieve the flmrun application template
-        4. Register a new application with the package URL
+        1. Check if application already exists (skip packaging if reusing)
+        2. Package the current working directory into a .tar.gz archive
+        3. Upload the package to the storage location
+        4. Retrieve the flmrun application template
+        5. Register a new application with the package URL
 
         Raises:
             FlameError: If setup fails at any step
@@ -356,7 +364,17 @@ class Runner:
 
         logger.debug(f"Starting Runner '{self._name}'")
 
-        # Check that package configuration is available
+        # Check if application already exists first (before packaging)
+        existing_app = get_application(self._name)
+        if existing_app is not None:
+            if self._fail_if_exists:
+                raise FlameError(FlameErrorCode.ALREADY_EXISTS, f"Application '{self._name}' already exists. Set fail_if_exists=False to skip registration.")
+            else:
+                logger.debug(f"Application '{self._name}' already exists, skipping registration")
+                self._started = True
+                return
+
+        # Check that package configuration is available (only needed for new apps)
         if self._context.package is None:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "Package configuration is not set in FlameContext. Please configure the 'package' field in your flame.yaml.")
 
@@ -385,19 +403,6 @@ class Runner:
             if self._package_path and os.path.exists(self._package_path):
                 os.remove(self._package_path)
             raise FlameError(FlameErrorCode.INTERNAL, f"Failed to get application template '{template_name}': {str(e)}")
-
-        # Check if application already exists
-        existing_app = get_application(self._name)
-        if existing_app is not None:
-            if self._fail_if_exists:
-                self._cleanup_storage()
-                if self._package_path and os.path.exists(self._package_path):
-                    os.remove(self._package_path)
-                raise FlameError(FlameErrorCode.ALREADY_EXISTS, f"Application '{self._name}' already exists. Set fail_if_exists=False to skip registration.")
-            else:
-                logger.debug(f"Application '{self._name}' already exists, skipping registration")
-                self._started = True
-                return
 
         # Register the new application
         try:
@@ -455,13 +460,25 @@ class Runner:
 
         This method can be called explicitly or is automatically called when
         exiting the context manager. It performs the following cleanup:
-        1. Closes all RunnerService instances
-        2. Unregisters the application (if registered)
-        3. Deletes the package from storage
-        4. Removes the local package file
+        1. Closes all RunnerService instances (only if app was registered by this Runner)
+        2. Unregisters the application (only if registered by this Runner instance)
+        3. Deletes the package from storage (only if uploaded by this Runner)
+        4. Removes the local package file (only if created by this Runner)
+
+        Note: If the application already existed when the Runner was created
+        (fail_if_exists=False), the Runner will NOT perform any cleanup.
+        This allows recursive runners to reuse existing applications without
+        affecting their lifecycle.
         """
         if not self._started:
             logger.debug(f"Runner '{self._name}' not started, nothing to close")
+            return
+
+        # If this Runner did not register the application, skip all cleanup
+        # to allow recursive/nested runners to reuse existing apps safely
+        if not self._app_registered:
+            logger.debug(f"Runner '{self._name}' did not register app, skipping cleanup")
+            self._started = False
             return
 
         logger.debug(f"Closing Runner '{self._name}'")
@@ -472,13 +489,12 @@ class Runner:
             except Exception as e:
                 logger.error(f"Error closing service: {e}", exc_info=True)
 
-        if self._app_registered:
-            try:
-                unregister_application(self._name)
-                self._app_registered = False
-                logger.debug(f"Unregistered application '{self._name}'")
-            except Exception as e:
-                logger.error(f"Error unregistering application: {e}", exc_info=True)
+        try:
+            unregister_application(self._name)
+            self._app_registered = False
+            logger.debug(f"Unregistered application '{self._name}'")
+        except Exception as e:
+            logger.error(f"Error unregistering application: {e}", exc_info=True)
 
         self._cleanup_storage()
 

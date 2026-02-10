@@ -45,7 +45,10 @@ use crate::executor::Executor;
 use crate::shims::grpc_shim::GrpcShim;
 use crate::shims::{Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
-use common::{FlameError, FLAME_CACHE_ENDPOINT, FLAME_INSTANCE_ENDPOINT, FLAME_WORKING_DIRECTORY};
+use common::{
+    FlameError, FLAME_CACHE_ENDPOINT, FLAME_ENDPOINT, FLAME_INSTANCE_ENDPOINT,
+    FLAME_WORKING_DIRECTORY,
+};
 
 struct HostInstance {
     child: tokio::process::Child,
@@ -119,6 +122,7 @@ pub struct HostShim {
 }
 
 const RUST_LOG: &str = "RUST_LOG";
+const FLAME_LOG: &str = "FLAME_LOG";
 const DEFAULT_SVC_LOG_LEVEL: &str = "info";
 
 impl HostShim {
@@ -226,9 +230,12 @@ impl HostShim {
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
 
         let mut envs = app.environments.clone();
-        envs.insert(RUST_LOG.to_string(), log_level);
+        envs.insert(RUST_LOG.to_string(), log_level.clone());
+        envs.insert(FLAME_LOG.to_string(), log_level);
         envs.insert(FLAME_INSTANCE_ENDPOINT.to_string(), endpoint.to_string());
         if let Some(context) = &executor.context {
+            // Pass session manager endpoint for recursive runner calls
+            envs.insert(FLAME_ENDPOINT.to_string(), context.cluster.endpoint.clone());
             if let Some(cache) = &context.cache {
                 envs.insert(FLAME_CACHE_ENDPOINT.to_string(), cache.endpoint.clone());
             }

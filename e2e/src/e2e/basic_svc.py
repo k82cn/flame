@@ -45,26 +45,15 @@ class BasicTestService(flamepy.FlameService):
 
     def on_session_enter(self, context: flamepy.SessionContext):
         """Handle session enter and store context."""
-        logger.info(
-            f"Session entered: session_id={context.session_id}, "
-            f"app_name={context.application.name if context.application else None}"
-        )
+        logger.info(f"Session entered: session_id={context.session_id}, app_name={context.application.name if context.application else None}")
         self._session_context = context
         self._session_enter_count += 1
         self._task_count = 0
-        logger.debug(
-            f"Session enter count: {self._session_enter_count}, "
-            f"task count reset to: {self._task_count}"
-        )
+        logger.debug(f"Session enter count: {self._session_enter_count}, task count reset to: {self._task_count}")
 
     def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[flamepy.TaskOutput]:
         """Handle task invoke and return response with optional context information."""
-        logger.info(
-            f"Task invoked: task_id={context.task_id}, "
-            f"session_id={context.session_id}, "
-            f"has_input={context.input is not None}, "
-            f"input_size={len(context.input) if context.input else 0}"
-        )
+        logger.info(f"Task invoked: task_id={context.task_id}, session_id={context.session_id}, has_input={context.input is not None}, input_size={len(context.input) if context.input else 0}")
         self._task_count += 1
         logger.debug(f"Task count incremented to: {self._task_count}")
 
@@ -73,13 +62,7 @@ class BasicTestService(flamepy.FlameService):
         if context.input is not None:
             logger.debug(f"Deserializing request from {len(context.input)} bytes")
             request = deserialize_request(context.input)
-            logger.debug(
-                f"Request deserialized: input={request.input}, "
-                f"update_common_data={request.update_common_data}, "
-                f"request_task_context={request.request_task_context}, "
-                f"request_session_context={request.request_session_context}, "
-                f"request_application_context={request.request_application_context}"
-            )
+            logger.debug(f"Request deserialized: input={request.input}, update_common_data={request.update_common_data}, request_task_context={request.request_task_context}, request_session_context={request.request_session_context}, request_application_context={request.request_application_context}")
         else:
             logger.debug("No input provided for this task")
 
@@ -91,11 +74,7 @@ class BasicTestService(flamepy.FlameService):
             if common_data_bytes is not None:
                 logger.debug(f"Common data bytes found: {len(common_data_bytes)} bytes")
                 cxt_data = deserialize_common_data(common_data_bytes)
-                common_data = (
-                    cxt_data.common_data
-                    if cxt_data and hasattr(cxt_data, "common_data")
-                    else None
-                )
+                common_data = cxt_data.common_data if cxt_data and hasattr(cxt_data, "common_data") else None
                 logger.debug(f"Common data extracted: {common_data}")
             else:
                 logger.debug("No common data bytes in session context")
@@ -117,9 +96,7 @@ class BasicTestService(flamepy.FlameService):
             logger.warning("Cannot update common data: session context is None")
 
         # Use updated context if available, otherwise use original
-        response_common_data = (
-            updated_context.common_data if updated_context else common_data
-        )
+        response_common_data = updated_context.common_data if updated_context else common_data
         logger.debug(f"Response common data set to: {response_common_data}")
 
         # Build response
@@ -145,11 +122,7 @@ class BasicTestService(flamepy.FlameService):
             logger.debug(f"Task context added: {response.task_context}")
 
         # Add session context information if requested
-        if (
-            request
-            and request.request_session_context
-            and self._session_context is not None
-        ):
+        if request and request.request_session_context and self._session_context is not None:
             logger.debug("Adding session context information to response")
             common_data_bytes = self._session_context.common_data()
             cxt_data = deserialize_common_data(common_data_bytes)
@@ -157,22 +130,12 @@ class BasicTestService(flamepy.FlameService):
             response.session_context = SessionContextInfo(
                 session_id=self._session_context.session_id,
                 has_common_data=cxt_data is not None,
-                common_data_type=type(cxt_data).__name__
-                if cxt_data is not None
-                else None,
+                common_data_type=type(cxt_data).__name__ if cxt_data is not None else None,
             )
-            logger.debug(
-                f"Session context added: session_id={response.session_context.session_id}, "
-                f"has_common_data={response.session_context.has_common_data}, "
-                f"common_data_type={response.session_context.common_data_type}"
-            )
+            logger.debug(f"Session context added: session_id={response.session_context.session_id}, has_common_data={response.session_context.has_common_data}, common_data_type={response.session_context.common_data_type}")
 
         # Add application context information if requested
-        if (
-            request
-            and request.request_application_context
-            and self._session_context is not None
-        ):
+        if request and request.request_application_context and self._session_context is not None:
             logger.debug("Adding application context information to response")
             app_ctx = self._session_context.application
 
@@ -186,10 +149,7 @@ class BasicTestService(flamepy.FlameService):
             )
 
             response.application_context = app_info
-            logger.debug(
-                f"Application context added: name={app_info.name}, "
-                f"shim={app_info.shim}, image={app_info.image}"
-            )
+            logger.debug(f"Application context added: name={app_info.name}, shim={app_info.shim}, image={app_info.image}")
 
             # Also add to session_context if it exists
             if response.session_context is not None:
@@ -199,20 +159,13 @@ class BasicTestService(flamepy.FlameService):
         # Serialize response to bytes using helper function
         logger.debug("Serializing response to bytes")
         response_bytes = serialize_response(response)
-        logger.info(
-            f"Task completed successfully: task_id={context.task_id}, "
-            f"response_size={len(response_bytes)} bytes"
-        )
+        logger.info(f"Task completed successfully: task_id={context.task_id}, response_size={len(response_bytes)} bytes")
         return flamepy.TaskOutput(response_bytes)
 
     def on_session_leave(self):
         """Handle session leave."""
         session_id = self._session_context.session_id if self._session_context else None
-        logger.info(
-            f"Session leaving: session_id={session_id}, "
-            f"total_tasks={self._task_count}, "
-            f"session_leave_count={self._session_leave_count + 1}"
-        )
+        logger.info(f"Session leaving: session_id={session_id}, total_tasks={self._task_count}, session_leave_count={self._session_leave_count + 1}")
         self._session_leave_count += 1
         self._session_context = None
         logger.debug("Session context cleared")

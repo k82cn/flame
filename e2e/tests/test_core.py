@@ -133,10 +133,7 @@ def test_application_context_info():
     assert response.application_context is not None
     assert response.application_context.name == FLM_TEST_SVC_APP
     assert response.application_context.shim is not None
-    assert (
-        "Host" in response.application_context.shim
-        or "host" in response.application_context.shim.lower()
-    )
+    assert "Host" in response.application_context.shim or "host" in response.application_context.shim.lower()
     # Command should use FLAME_HOME environment variable
     assert response.application_context.command == "${FLAME_HOME}/bin/uv"
     assert response.application_context.working_directory == "/opt/e2e"
@@ -210,9 +207,7 @@ def test_common_data_without_context_request():
     test_context = TestContext(common_data=sys_context)
     common_data_bytes = serialize_common_data(test_context, FLM_TEST_SVC_APP)
 
-    session = flamepy.create_session(
-        application=FLM_TEST_SVC_APP, common_data=common_data_bytes
-    )
+    session = flamepy.create_session(application=FLM_TEST_SVC_APP, common_data=common_data_bytes)
 
     input_data = random_string()
     request = TestRequest(input=input_data)
@@ -229,9 +224,7 @@ def test_common_data_with_session_context():
     common_data = TestContext(common_data=random_string())
     common_data_bytes = serialize_common_data(common_data, FLM_TEST_SVC_APP)
 
-    session = flamepy.create_session(
-        application=FLM_TEST_SVC_APP, common_data=common_data_bytes
-    )
+    session = flamepy.create_session(application=FLM_TEST_SVC_APP, common_data=common_data_bytes)
 
     request = TestRequest(
         input="test",
@@ -261,9 +254,7 @@ def test_update_common_data():
     test_context = TestContext(common_data=sys_context)
     common_data_bytes = serialize_common_data(test_context, FLM_TEST_SVC_APP)
 
-    session = flamepy.create_session(
-        application=FLM_TEST_SVC_APP, common_data=common_data_bytes
-    )
+    session = flamepy.create_session(application=FLM_TEST_SVC_APP, common_data=common_data_bytes)
 
     previous_common_data = sys_context
     for i in range(3):
@@ -384,9 +375,7 @@ def test_task_invoke_exception_handling():
     )
 
     try:
-        session = flamepy.create_session(
-            application=FLM_ERROR_SVC_APP, common_data=None
-        )
+        session = flamepy.create_session(application=FLM_ERROR_SVC_APP, common_data=None)
 
         # Create a task that will fail
         input_data = b"test input"
@@ -407,9 +396,7 @@ def test_task_invoke_exception_handling():
         # Verify the task failed
         assert failed_task is not None, "Task should have failed"
         assert failed_task.is_failed(), "Task state should be Failed"
-        assert failed_task.state == flamepy.TaskState.FAILED, (
-            f"Task state should be FAILED, got {failed_task.state}"
-        )
+        assert failed_task.state == flamepy.TaskState.FAILED, f"Task state should be FAILED, got {failed_task.state}"
 
         # Get the task again to ensure we have the latest events
         refreshed_task = session.get_task(task.id)
@@ -417,21 +404,13 @@ def test_task_invoke_exception_handling():
         # Verify error message is recorded in events
 
         # Check events from refreshed task
-        error_events = [
-            e
-            for e in refreshed_task.events
-            if e.code == flamepy.TaskState.FAILED or e.code == 3
-        ]
-        assert len(error_events) > 0, (
-            f"Should have at least one FAILED event, got events: {[(e.code, e.message) for e in refreshed_task.events]}"
-        )
+        error_events = [e for e in refreshed_task.events if e.code == flamepy.TaskState.FAILED or e.code == 3]
+        assert len(error_events) > 0, f"Should have at least one FAILED event, got events: {[(e.code, e.message) for e in refreshed_task.events]}"
 
         # Check that the error message contains the exception message from Python service
         error_message = error_events[0].message
         assert error_message is not None, "Error event should have a message"
-        assert "Test error in task" in error_message, (
-            f"Error message should contain exception info from Python service, got: {error_message}"
-        )
+        assert "Test error in task" in error_message, f"Error message should contain exception info from Python service, got: {error_message}"
 
         session.close()
     finally:
