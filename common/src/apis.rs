@@ -598,6 +598,36 @@ impl Session {
 
         None
     }
+
+    /// Validate that the provided session attributes match this session's spec.
+    /// Returns error if specs don't match.
+    pub fn validate_spec(&self, attr: &SessionAttributes) -> Result<(), FlameError> {
+        if self.application != attr.application {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
+                self.id, self.application, attr.application
+            )));
+        }
+        if self.slots != attr.slots {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: slots differs (expected {}, got {})",
+                self.id, self.slots, attr.slots
+            )));
+        }
+        if self.min_instances != attr.min_instances {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: min_instances differs (expected {}, got {})",
+                self.id, self.min_instances, attr.min_instances
+            )));
+        }
+        if self.max_instances != attr.max_instances {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: max_instances differs (expected {:?}, got {:?})",
+                self.id, self.max_instances, attr.max_instances
+            )));
+        }
+        Ok(())
+    }
 }
 
 impl Clone for Session {

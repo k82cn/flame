@@ -255,6 +255,10 @@ impl Storage {
                 let ssn = lock_ptr!(ssn_ptr)?;
                 // Verify the session is still open before returning cached version
                 if ssn.status.state == SessionState::Open {
+                    // If spec provided, validate it matches the existing session
+                    if let Some(ref attr) = spec {
+                        ssn.validate_spec(attr)?;
+                    }
                     tracing::debug!(
                         "Session <{}> already exists in cache with {} tasks, returning cached version",
                         id,
