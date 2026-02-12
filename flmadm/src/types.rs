@@ -95,6 +95,7 @@ pub struct InstallationPaths {
     pub prefix: PathBuf,
     pub bin: PathBuf,
     pub sdk_python: PathBuf,
+    pub wheels: PathBuf,
     pub work: PathBuf,
     pub logs: PathBuf,
     pub conf: PathBuf,
@@ -108,6 +109,7 @@ impl InstallationPaths {
         Self {
             bin: prefix.join("bin"),
             sdk_python: prefix.join("sdk/python"),
+            wheels: prefix.join("wheels"),
             work: prefix.join("work"),
             logs: prefix.join("logs"),
             conf: prefix.join("conf"),
