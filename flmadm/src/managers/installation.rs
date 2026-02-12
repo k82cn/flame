@@ -245,7 +245,7 @@ impl InstallationManager {
         // Install flamepy and dependencies to populate the cache
         // Using --target to a temp directory avoids needing a venv
         let cache_target = paths.work.join(".flamepy-cache-target");
-        fs::create_dir_all(&cache_target).ok();
+        fs::create_dir_all(&cache_target).context("Failed to create temporary directory for caching")?;
 
         let install_output = std::process::Command::new(&uv_path)
             .arg("pip")
