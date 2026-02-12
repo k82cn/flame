@@ -205,7 +205,7 @@ impl InstallationManager {
         Ok(())
     }
 
-    /// Build Python wheel from SDK source
+    /// Build Python wheel from SDK source and pre-cache dependencies
     fn build_python_wheel(&self, paths: &InstallationPaths) -> Result<()> {
         println!("  📦 Building Python wheel...");
 
@@ -235,6 +235,31 @@ impl InstallationManager {
         }
 
         println!("  ✓ Built wheel to: {}", paths.wheels.display());
+
+        // Pre-cache dependencies by downloading them to the wheels directory
+        // This way "uv run --find-links <wheels>" can use cached packages
+        println!("  📥 Downloading dependencies...");
+
+        let output = std::process::Command::new(&uv_path)
+            .arg("pip")
+            .arg("download")
+            .arg("--dest")
+            .arg(&paths.wheels)
+            .arg(&paths.sdk_python)
+            .output()
+            .context("Failed to execute uv pip download")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Don't fail installation if download fails (might be offline)
+            println!(
+                "  ⚠️  Failed to download dependencies (will fetch at runtime): {}",
+                stderr.lines().next().unwrap_or(&stderr)
+            );
+        } else {
+            println!("  ✓ Downloaded dependencies to: {}", paths.wheels.display());
+        }
+
         Ok(())
     }
 
