@@ -188,7 +188,9 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
     let flmping_cmd = "${FLAME_HOME}/bin/flmping-service".to_string();
     let uv_cmd = "${FLAME_HOME}/bin/uv".to_string();
     let flmping_url = "file://${FLAME_HOME}/bin/flmping-service".to_string();
-    let flamepy_sdk_path = "file://${FLAME_HOME}/sdk/python".to_string();
+    // Use pre-built wheel from wheels directory to avoid rebuild on every run
+    // The wheel is built during installation via "flmadm install"
+    let flamepy_wheels_dir = "${FLAME_HOME}/wheels".to_string();
 
     HashMap::from([
         (
@@ -227,10 +229,12 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                 command: Some(uv_cmd),
                 arguments: vec![
                     "run".to_string(),
+                    "--find-links".to_string(),
+                    flamepy_wheels_dir,
                     "--with".to_string(),
                     "pip".to_string(),
                     "--with".to_string(),
-                    format!("flamepy @ {}", flamepy_sdk_path),
+                    "flamepy".to_string(),
                     "python".to_string(),
                     "-m".to_string(),
                     "flamepy.runner.runpy".to_string(),

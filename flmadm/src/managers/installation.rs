@@ -193,21 +193,72 @@ impl InstallationManager {
         }
 
         // Copy SDK source to the installation directory, excluding development artifacts
-        // uv will use this directly with --with "flamepy @ file://..."
         self.copy_sdk_excluding_artifacts(&sdk_src, &paths.sdk_python)
             .context("Failed to copy SDK to installation directory")?;
 
-        println!("✓ Copied Python SDK to: {}", paths.sdk_python.display());
+        println!("  ✓ Copied Python SDK to: {}", paths.sdk_python.display());
 
-        // Create a note in the sdk_python directory for reference
-        let readme_path = paths.sdk_python.join("README.txt");
-        std::fs::write(
-            &readme_path,
-            "Python SDK source copied to this directory.\n\
-             Applications use 'uv run --with \"flamepy @ file://...\"' to access it.\n\
-             No separate installation required.\n",
-        )
-        .ok(); // Ignore errors for this informational file
+        // Build wheel for faster runtime loading
+        // uv always rebuilds local directory dependencies, but wheel files are cached
+        self.build_python_wheel(paths)?;
+
+        Ok(())
+    }
+
+    /// Build Python wheel from SDK source and pre-cache dependencies
+    fn build_python_wheel(&self, paths: &InstallationPaths) -> Result<()> {
+        println!("  📦 Building Python wheel...");
+
+        // Create wheels directory
+        fs::create_dir_all(&paths.wheels).context("Failed to create wheels directory")?;
+
+        // Find uv binary
+        let uv_path = paths.bin.join("uv");
+        if !uv_path.exists() {
+            println!("  ⚠️  uv not found, skipping wheel build (will build at runtime)");
+            return Ok(());
+        }
+
+        // Build wheel using uv
+        let output = std::process::Command::new(&uv_path)
+            .arg("build")
+            .arg("--wheel")
+            .arg("--out-dir")
+            .arg(&paths.wheels)
+            .arg(&paths.sdk_python)
+            .output()
+            .context("Failed to execute uv build")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to build wheel: {}", stderr);
+        }
+
+        println!("  ✓ Built wheel to: {}", paths.wheels.display());
+
+        // Pre-cache dependencies by downloading them to the wheels directory
+        // This way "uv run --find-links <wheels>" can use cached packages
+        println!("  📥 Downloading dependencies...");
+
+        let output = std::process::Command::new(&uv_path)
+            .arg("pip")
+            .arg("download")
+            .arg("--dest")
+            .arg(&paths.wheels)
+            .arg(&paths.sdk_python)
+            .output()
+            .context("Failed to execute uv pip download")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Don't fail installation if download fails (might be offline)
+            println!(
+                "  ⚠️  Failed to download dependencies (will fetch at runtime): {}",
+                stderr.lines().next().unwrap_or(&stderr)
+            );
+        } else {
+            println!("  ✓ Downloaded dependencies to: {}", paths.wheels.display());
+        }
 
         Ok(())
     }
@@ -400,6 +451,12 @@ impl InstallationManager {
             fs::remove_dir_all(paths.sdk_python.parent().unwrap())
                 .context("Failed to remove sdk directory")?;
             println!("  ✓ Removed Python SDK");
+        }
+
+        // Remove wheels
+        if paths.wheels.exists() {
+            fs::remove_dir_all(&paths.wheels).context("Failed to remove wheels directory")?;
+            println!("  ✓ Removed wheels");
         }
 
         // Remove migrations
