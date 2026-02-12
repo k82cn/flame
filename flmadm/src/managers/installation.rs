@@ -221,12 +221,10 @@ impl InstallationManager {
 
         // Build wheel using uv
         let output = std::process::Command::new(&uv_path)
-            .args([
-                "build",
-                "--wheel",
-                "--out-dir",
-                paths.wheels.to_str().unwrap(),
-            ])
+            .arg("build")
+            .arg("--wheel")
+            .arg("--out-dir")
+            .arg(&paths.wheels)
             .arg(&paths.sdk_python)
             .output()
             .context("Failed to execute uv build")?;
