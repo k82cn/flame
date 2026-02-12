@@ -191,6 +191,8 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
     // Use pre-built wheel from wheels directory to avoid rebuild on every run
     // The wheel is built during installation via "flmadm install"
     let flamepy_wheels_dir = "${FLAME_HOME}/wheels".to_string();
+    // Use the same cache directory that was populated during installation
+    let uv_cache_dir = "${FLAME_HOME}/data/cache/uv".to_string();
 
     HashMap::from([
         (
@@ -239,6 +241,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
                     "-m".to_string(),
                     "flamepy.runner.runpy".to_string(),
                 ],
+                environments: HashMap::from([("UV_CACHE_DIR".to_string(), uv_cache_dir)]),
                 working_directory: None,
                 ..ApplicationAttributes::default()
             },

@@ -229,7 +229,12 @@ impl HostShim {
 
         let log_level = env::var(RUST_LOG).unwrap_or(String::from(DEFAULT_SVC_LOG_LEVEL));
 
-        let mut envs = app.environments.clone();
+        // Expand environment variables in the application's environment settings
+        let mut envs: HashMap<String, String> = app
+            .environments
+            .iter()
+            .map(|(k, v)| (k.clone(), Self::expand_env_vars(v)))
+            .collect();
         envs.insert(RUST_LOG.to_string(), log_level.clone());
         envs.insert(FLAME_LOG.to_string(), log_level);
         envs.insert(FLAME_INSTANCE_ENDPOINT.to_string(), endpoint.to_string());
