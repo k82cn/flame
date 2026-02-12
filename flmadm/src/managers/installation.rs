@@ -236,28 +236,42 @@ impl InstallationManager {
 
         println!("  ✓ Built wheel to: {}", paths.wheels.display());
 
-        // Pre-cache dependencies by downloading them to the wheels directory
-        // This way "uv run --find-links <wheels>" can use cached packages
-        println!("  📥 Downloading dependencies...");
+        // Pre-cache dependencies using uv's cache
+        // Use FLAME_HOME/data/cache/uv as the cache directory so it's available at runtime
+        println!("  📥 Caching dependencies...");
 
-        let output = std::process::Command::new(&uv_path)
+        let uv_cache_dir = paths.cache.join("uv");
+
+        // Install flamepy and dependencies to populate the cache
+        // Using --target to a temp directory avoids needing a venv
+        let cache_target = paths.work.join(".flamepy-cache-target");
+        fs::create_dir_all(&cache_target).ok();
+
+        let install_output = std::process::Command::new(&uv_path)
             .arg("pip")
-            .arg("download")
-            .arg("--dest")
+            .arg("install")
+            .arg("--target")
+            .arg(&cache_target)
+            .arg("--find-links")
             .arg(&paths.wheels)
-            .arg(&paths.sdk_python)
+            .arg("flamepy")
+            .arg("pip") // Also cache pip as it's used by flmrun
+            .env("UV_CACHE_DIR", &uv_cache_dir)
             .output()
-            .context("Failed to execute uv pip download")?;
+            .context("Failed to execute uv pip install")?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            // Don't fail installation if download fails (might be offline)
+        // Clean up target directory (we only needed to populate the cache)
+        let _ = fs::remove_dir_all(&cache_target);
+
+        if !install_output.status.success() {
+            let stderr = String::from_utf8_lossy(&install_output.stderr);
+            // Don't fail installation if caching fails (might be offline)
             println!(
-                "  ⚠️  Failed to download dependencies (will fetch at runtime): {}",
+                "  ⚠️  Failed to cache dependencies (will fetch at runtime): {}",
                 stderr.lines().next().unwrap_or(&stderr)
             );
         } else {
-            println!("  ✓ Downloaded dependencies to: {}", paths.wheels.display());
+            println!("  ✓ Cached dependencies to: {}", uv_cache_dir.display());
         }
 
         Ok(())
