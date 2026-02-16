@@ -272,9 +272,14 @@ impl HostShim {
         };
 
         let work_dir = cur_dir.clone();
-        // Setup working directory and get environment overrides
+        // Setup working directory and get environment defaults
+        // Use entry().or_insert() so application-specific envs take precedence over defaults
+        // This allows applications like flmrun to specify UV_CACHE_DIR pointing to
+        // the pre-cached directory instead of using a per-instance empty cache
         let wd_envs = Self::setup_working_directory(&work_dir)?;
-        envs.extend(wd_envs);
+        for (key, value) in wd_envs {
+            envs.entry(key).or_insert(value);
+        }
 
         let log_out = OpenOptions::new()
             .create(true)

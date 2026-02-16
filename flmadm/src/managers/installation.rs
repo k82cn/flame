@@ -242,10 +242,11 @@ impl InstallationManager {
 
         let uv_cache_dir = paths.cache.join("uv");
 
-        // Install flamepy and dependencies to populate the cache
-        // Using --target to a temp directory avoids needing a venv
+        // Phase 1: Cache flamepy and all its dependencies (grpcio, protobuf, cloudpickle, etc.)
+        // Using --target to a temp directory to populate the cache without needing a venv
         let cache_target = paths.work.join(".flamepy-cache-target");
-        fs::create_dir_all(&cache_target).context("Failed to create temporary directory for caching")?;
+        fs::create_dir_all(&cache_target)
+            .context("Failed to create temporary directory for caching")?;
 
         let install_output = std::process::Command::new(&uv_path)
             .arg("pip")
@@ -255,7 +256,7 @@ impl InstallationManager {
             .arg("--find-links")
             .arg(&paths.wheels)
             .arg("flamepy")
-            .arg("pip") // Also cache pip as it's used by flmrun
+            .arg("pip") // Also cache pip as it's used by flmrun for user packages
             .env("UV_CACHE_DIR", &uv_cache_dir)
             .output()
             .context("Failed to execute uv pip install")?;
@@ -271,7 +272,41 @@ impl InstallationManager {
                 stderr.lines().next().unwrap_or(&stderr)
             );
         } else {
-            println!("  ✓ Cached dependencies to: {}", uv_cache_dir.display());
+            println!(
+                "  ✓ Cached flamepy and dependencies to: {}",
+                uv_cache_dir.display()
+            );
+        }
+
+        // Phase 2: Pre-warm uv's ephemeral environment cache by running the exact command
+        // that flmrun uses at startup. This ensures all packages are cached in the format
+        // that 'uv run --with' expects (which differs from 'uv pip install').
+        println!("  🔄 Pre-warming uv run cache...");
+
+        // Create a simple Python script that just exits successfully
+        let run_output = std::process::Command::new(&uv_path)
+            .arg("run")
+            .arg("--find-links")
+            .arg(&paths.wheels)
+            .arg("--with")
+            .arg("pip")
+            .arg("--with")
+            .arg("flamepy")
+            .arg("python")
+            .arg("-c")
+            .arg("import sys; sys.exit(0)")
+            .env("UV_CACHE_DIR", &uv_cache_dir)
+            .output()
+            .context("Failed to execute uv run warmup")?;
+
+        if !run_output.status.success() {
+            let stderr = String::from_utf8_lossy(&run_output.stderr);
+            println!(
+                "  ⚠️  Failed to pre-warm uv run cache (will warm at runtime): {}",
+                stderr.lines().next().unwrap_or(&stderr)
+            );
+        } else {
+            println!("  ✓ Pre-warmed uv run cache");
         }
 
         Ok(())
