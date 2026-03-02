@@ -47,6 +47,7 @@ from flamepy.proto.frontend_pb2 import (
     GetTaskRequest,
     ListApplicationRequest,
     ListSessionRequest,
+    ListTaskRequest,
     OpenSessionRequest,
     RegisterApplicationRequest,
     UnregisterApplicationRequest,
@@ -633,6 +634,26 @@ class Session:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get task: {e.details()}")
 
+    def list_tasks(self) -> "TaskIterator":
+        """List all tasks in the session.
+
+        Returns:
+            An iterator of Task objects in this session. Tasks are streamed
+            lazily to save memory when dealing with large numbers of tasks.
+
+        Example:
+            >>> for task in session.list_tasks():
+            ...     print(f"Task {task.id}: {task.state}")
+        """
+        request = ListTaskRequest(session_id=self.id)
+
+        try:
+            task_stream = self.connection._frontend.ListTask(request)
+            return TaskIterator(task_stream, self.id)
+
+        except grpc.RpcError as e:
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to list tasks: {e.details()}")
+
     def watch_task(self, task_id: TaskID) -> "TaskWatcher":
         """Watch a task for updates."""
         request = WatchTaskRequest(task_id=task_id, session_id=self.id)
@@ -715,6 +736,26 @@ class Session:
         self.connection.close_session(self.id)
 
 
+def _task_from_proto(response, session_id: str) -> Task:
+    """Convert a protobuf Task response to a Task object."""
+    return Task(
+        id=response.metadata.id,
+        session_id=session_id,
+        state=TaskState(response.status.state),
+        creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
+        input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
+        output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
+        completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
+        events=[
+            Event(
+                code=event.code,
+                message=event.message,
+                creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
+            )
+            for event in response.status.events
+        ],
+    )
+
 class TaskWatcher:
     """Iterator for watching task updates."""
 
@@ -727,26 +768,34 @@ class TaskWatcher:
     def __next__(self) -> Task:
         try:
             response = next(self._stream)
-
-            return Task(
-                id=response.metadata.id,
-                session_id=response.spec.session_id,
-                state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
-                output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
-                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                events=[
-                    Event(
-                        code=event.code,
-                        message=event.message,
-                        creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
-                    )
-                    for event in response.status.events
-                ],
-            )
+            return _task_from_proto(response, response.spec.session_id)
 
         except StopIteration:
             raise
+        except grpc.RpcError as e:
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
         except Exception as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {str(e)}")
+
+
+class TaskIterator:
+    """Iterator for listing tasks in a session."""
+
+    def __init__(self, stream, session_id: str):
+        self._stream = stream
+        self._session_id = session_id
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> Task:
+        try:
+            response = next(self._stream)
+            return _task_from_proto(response, self._session_id)
+
+        except StopIteration:
+            raise
+        except grpc.RpcError as e:
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to list tasks: {e.details()}")
+        except Exception as e:
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to list tasks: {str(e)}")

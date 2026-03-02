@@ -201,6 +201,33 @@ def test_service_state_tracking():
     session.close()
 
 
+def test_list_tasks():
+    """Test that list_tasks returns all tasks in a session as an iterator."""
+    session = flamepy.create_session(application=FLM_TEST_SVC_APP, common_data=None)
+
+    num_tasks = 5
+
+    # Create multiple tasks
+    for i in range(num_tasks):
+        request = TestRequest(input=f"list_task_{i}")
+        response = invoke_task(session, request)
+        assert response.output == f"list_task_{i}"
+
+    # Get all tasks using list_tasks iterator
+    tasks = list(session.list_tasks())
+
+    # Verify we got all tasks
+    assert len(tasks) == num_tasks, f"Expected {num_tasks} tasks, got {len(tasks)}"
+
+    # Verify each task has valid properties
+    for task in tasks:
+        assert task.id is not None
+        assert task.session_id == session.id
+        assert task.state is not None
+        assert task.creation_time is not None
+    session.close()
+
+
 def test_common_data_without_context_request():
     """Test common data handling without requesting context info."""
     sys_context = random_string()
