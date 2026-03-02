@@ -736,6 +736,26 @@ class Session:
         self.connection.close_session(self.id)
 
 
+def _task_from_proto(response, session_id: str) -> Task:
+    """Convert a protobuf Task response to a Task object."""
+    return Task(
+        id=response.metadata.id,
+        session_id=session_id,
+        state=TaskState(response.status.state),
+        creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
+        input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
+        output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
+        completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
+        events=[
+            Event(
+                code=event.code,
+                message=event.message,
+                creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
+            )
+            for event in response.status.events
+        ],
+    )
+
 class TaskWatcher:
     """Iterator for watching task updates."""
 
@@ -748,27 +768,12 @@ class TaskWatcher:
     def __next__(self) -> Task:
         try:
             response = next(self._stream)
-
-            return Task(
-                id=response.metadata.id,
-                session_id=response.spec.session_id,
-                state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
-                output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
-                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                events=[
-                    Event(
-                        code=event.code,
-                        message=event.message,
-                        creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
-                    )
-                    for event in response.status.events
-                ],
-            )
+            return _task_from_proto(response, response.spec.session_id)
 
         except StopIteration:
             raise
+        except grpc.RpcError as e:
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
         except Exception as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {str(e)}")
 
@@ -786,26 +791,11 @@ class TaskIterator:
     def __next__(self) -> Task:
         try:
             response = next(self._stream)
-
-            return Task(
-                id=response.metadata.id,
-                session_id=self._session_id,
-                state=TaskState(response.status.state),
-                creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
-                input=response.spec.input if response.spec.HasField("input") and response.spec.input else None,
-                output=response.spec.output if response.spec.HasField("output") and response.spec.output else None,
-                completion_time=(datetime.fromtimestamp(response.status.completion_time / 1000, tz=timezone.utc) if response.status.HasField("completion_time") else None),
-                events=[
-                    Event(
-                        code=event.code,
-                        message=event.message,
-                        creation_time=datetime.fromtimestamp(event.creation_time / 1000, tz=timezone.utc),
-                    )
-                    for event in response.status.events
-                ],
-            )
+            return _task_from_proto(response, self._session_id)
 
         except StopIteration:
             raise
+        except grpc.RpcError as e:
+            raise FlameError(FlameErrorCode.INTERNAL, f"failed to list tasks: {e.details()}")
         except Exception as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list tasks: {str(e)}")

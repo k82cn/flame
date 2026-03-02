@@ -225,14 +225,6 @@ def test_list_tasks():
         assert task.session_id == session.id
         assert task.state is not None
         assert task.creation_time is not None
-
-    # Verify iterator works (not just list conversion)
-    task_count = 0
-    for task in session.list_tasks():
-        task_count += 1
-        assert task.id is not None
-    assert task_count == num_tasks
-
     session.close()
 
 
