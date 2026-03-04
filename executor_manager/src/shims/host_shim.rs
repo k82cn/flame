@@ -227,8 +227,12 @@ impl HostShim {
         // Spawn child process
         let mut cmd = tokio::process::Command::new(&command);
 
-        // Use app_dir from work_dir
+        // Use app_dir for logs and temp files (per-instance isolation)
         let app_work_dir = work_dir.app_dir();
+        // Use process_dir for the actual process working directory
+        // - User-specified: runs in top_dir (to find pyproject.toml, etc.)
+        // - Auto-generated: runs in app_dir
+        let process_work_dir = work_dir.process_dir();
 
         // Setup working directory and tmp (per-instance)
         let work_dir_envs = Self::setup_working_directory(app_work_dir)?;
@@ -264,7 +268,7 @@ impl HostShim {
         let child = cmd
             .envs(envs)
             .args(args)
-            .current_dir(app_work_dir)
+            .current_dir(process_work_dir)
             .stdout(Stdio::from(log_out))
             .stderr(Stdio::from(log_err))
             .process_group(0)

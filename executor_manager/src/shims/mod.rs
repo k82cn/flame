@@ -35,16 +35,20 @@ use common::{FlameError, FLAME_WORKING_DIRECTORY};
 pub type ShimPtr = Arc<Mutex<dyn Shim>>;
 
 /// Represents the executor's working directory with cleanup management.
-/// Manages top_work_dir, app_work_dir, and socket path.
-/// - top_dir: cleaned up only if auto-generated
-/// - app_dir: always created and always cleaned up
-/// - socket: always cleaned up
+/// Directory structure:
+///   top_dir/                     - Process working directory (user-specified or auto-generated)
+///   top_dir/work/<app_name>/     - App-specific directory for logs, tmp, cache
+///   top_dir/work/<executor_id>.sock - Socket for gRPC communication
+/// Cleanup:
+///   - top_dir: cleaned up only if auto-generated
+///   - app_dir: always cleaned up
+///   - socket: always cleaned up
 pub struct ExecutorWorkDir {
-    /// Top-level working directory for the executor
+    /// Top-level working directory (process runs here)
     top_dir: PathBuf,
-    /// Application working directory: top_dir/work/<app-name>
+    /// Application working directory: top_dir/work/<app-name> (for logs, tmp, cache)
     app_dir: PathBuf,
-    /// Socket path for gRPC communication: top_dir/fsi.sock
+    /// Socket path: top_dir/work/<executor_id>.sock
     socket: PathBuf,
     /// If true, top_dir was auto-generated and should be cleaned up on release.
     auto_dir: bool,
@@ -52,7 +56,6 @@ pub struct ExecutorWorkDir {
 
 impl ExecutorWorkDir {
     /// Create an ExecutorWorkDir from application context and executor ID.
-    /// Always creates app_dir. Creates top_dir only if auto-generated.
     pub fn new(app: &ApplicationContext, executor_id: &str) -> Result<Self, FlameError> {
         let (top_dir, auto_dir) = match &app.working_directory {
             Some(wd) if !wd.is_empty() => (Path::new(wd).to_path_buf(), false),
@@ -64,8 +67,10 @@ impl ExecutorWorkDir {
             ),
         };
 
-        let app_dir = top_dir.join("work").join(&app.name);
-        let socket = top_dir.join("fsi.sock");
+        let work_dir = top_dir.join("work");
+        let app_dir = work_dir.join(&app.name);
+        // Socket in work dir with executor_id ensures uniqueness per executor
+        let socket = work_dir.join(format!("{}.sock", executor_id));
 
         // Create top_dir if auto-generated
         if auto_dir {
@@ -77,7 +82,15 @@ impl ExecutorWorkDir {
             })?;
         }
 
-        // Always create app_dir
+        // Always create work dir (needed for socket)
+        fs::create_dir_all(&work_dir).map_err(|e| {
+            FlameError::Internal(format!(
+                "failed to create work directory {}: {e}",
+                work_dir.display()
+            ))
+        })?;
+
+        // Always create app_dir (for logs, tmp, cache)
         fs::create_dir_all(&app_dir).map_err(|e| {
             FlameError::Internal(format!(
                 "failed to create app working directory {}: {e}",
@@ -93,9 +106,14 @@ impl ExecutorWorkDir {
         })
     }
 
-    /// Returns the application working directory path.
+    /// Returns the application working directory path (for logs, tmp, cache).
     pub fn app_dir(&self) -> &Path {
         &self.app_dir
+    }
+
+    /// Returns the directory where the process should run (always top_dir).
+    pub fn process_dir(&self) -> &Path {
+        &self.top_dir
     }
 
     /// Returns the socket path for gRPC communication.
