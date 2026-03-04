@@ -36,8 +36,8 @@ pub type ShimPtr = Arc<Mutex<dyn Shim>>;
 
 /// Represents the executor's working directory with cleanup management.
 /// Directory structure:
-///   top_dir/                     - Process working directory (user-specified or auto-generated)
-///   top_dir/work/<app_name>/     - App-specific directory for logs, tmp, cache
+///   top_dir/                     - Process working directory, stdout/stderr logs
+///   top_dir/work/<app_name>/     - App-specific directory for tmp, cache
 ///   top_dir/work/<executor_id>.sock - Socket for gRPC communication
 /// Cleanup:
 ///   - top_dir: cleaned up only if auto-generated
@@ -106,7 +106,7 @@ impl ExecutorWorkDir {
         })
     }
 
-    /// Returns the application working directory path (for logs, tmp, cache).
+    /// Returns the application working directory path (for tmp, cache).
     pub fn app_dir(&self) -> &Path {
         &self.app_dir
     }
