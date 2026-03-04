@@ -10,6 +10,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+use std::path::Path;
 use std::pin::Pin;
 
 use async_trait::async_trait;
@@ -35,6 +36,17 @@ use rpc::flame as rpc;
 use common::{apis, FlameError};
 
 use crate::apiserver::Flame;
+
+fn validate_working_directory(working_dir: &Option<String>) -> Result<(), FlameError> {
+    if let Some(wd) = working_dir {
+        if !wd.is_empty() && !Path::new(wd).is_absolute() {
+            return Err(FlameError::InvalidConfig(format!(
+                "working_directory must be an absolute path, got: {wd}"
+            )));
+        }
+    }
+    Ok(())
+}
 
 #[async_trait]
 impl Frontend for Flame {
@@ -109,6 +121,8 @@ impl Frontend for Flame {
             }
         }
 
+        validate_working_directory(&spec.working_directory)?;
+
         let res = self
             .controller
             .register_application(req.name, ApplicationAttributes::from(spec))
@@ -179,6 +193,8 @@ impl Frontend for Flame {
                 })?;
             }
         }
+
+        validate_working_directory(&spec.working_directory)?;
 
         let res = self
             .controller
