@@ -11,26 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::env;
-use std::fs::{self, create_dir_all, File, OpenOptions};
+use std::fs;
 use std::future::Future;
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::pin::Pin;
-use std::process::{self, Command, Stdio};
-use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Duration;
-use std::{thread, time};
 
 use async_trait::async_trait;
-use futures::join;
 use hyper_util::rt::TokioIo;
-use nix::sys::signal::{killpg, Signal};
-use nix::unistd::Pid;
 use tokio::net::UnixStream;
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tonic::transport::{Endpoint, Uri};
 use tonic::Request;
@@ -39,51 +28,30 @@ use tower::service_fn;
 use ::rpc::flame as rpc;
 use rpc::instance_client::InstanceClient;
 use rpc::EmptyRequest;
-use uuid::Uuid;
 
-use crate::executor::Executor;
-use crate::shims::{Shim, ShimPtr};
-use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskResult, TaskState};
-use common::{FlameError, FLAME_WORKING_DIRECTORY};
+use crate::shims::{ExecutorWorkDir, Shim};
+use common::apis::{SessionContext, TaskContext, TaskResult, TaskState};
+use common::FlameError;
 use stdng::{logs::TraceFn, trace_fn};
 
 pub struct GrpcShim {
     client: Option<InstanceClient<Channel>>,
-    working_directory: String,
     endpoint: String,
 }
 
-const RUST_LOG: &str = "RUST_LOG";
-const DEFAULT_SVC_LOG_LEVEL: &str = "info";
-
 impl GrpcShim {
-    pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<Self, FlameError> {
+    pub fn new(work_dir: &ExecutorWorkDir) -> Result<Self, FlameError> {
         trace_fn!("GrpcShim::new");
-
-        let working_directory = env::current_dir()
-            .unwrap_or(Path::new(FLAME_WORKING_DIRECTORY).to_path_buf())
-            .join(executor.id.as_str());
-        let endpoint = working_directory.join("fsi.sock");
-
-        // Create executor working directory for shims.
-        fs::create_dir_all(working_directory.clone())
-            .map_err(|e| FlameError::Internal(format!("failed to create shim directory: {e}")))?;
 
         Ok(Self {
             client: None,
-            working_directory: working_directory.to_string_lossy().to_string(),
-            endpoint: endpoint.to_string_lossy().to_string(),
+            endpoint: work_dir.socket().to_string_lossy().to_string(),
         })
     }
 
     pub fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
-
-    pub fn socket_path(&self) -> &Path {
-        Path::new(&self.endpoint)
-    }
-
     pub async fn connect(&mut self) -> Result<(), FlameError> {
         trace_fn!("GrpcShim::connect");
 
