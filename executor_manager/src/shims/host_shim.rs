@@ -227,11 +227,9 @@ impl HostShim {
         // Spawn child process
         let mut cmd = tokio::process::Command::new(&command);
 
-        // Use app_dir for logs and temp files (per-instance isolation)
+        // Use app_dir for temp files (per-instance isolation)
         let app_work_dir = work_dir.app_dir();
-        // Use process_dir for the actual process working directory
-        // - User-specified: runs in top_dir (to find pyproject.toml, etc.)
-        // - Auto-generated: runs in app_dir
+        // Use process_dir for actual process working directory and stdout/stderr logs
         let process_work_dir = work_dir.process_dir();
 
         // Setup working directory and tmp (per-instance)
@@ -254,7 +252,7 @@ impl HostShim {
             .read(true)
             .write(true)
             .truncate(true)
-            .open(app_work_dir.join(format!("{}.out", executor.id)))
+            .open(process_work_dir.join(format!("{}.out", executor.id)))
             .map_err(|e| FlameError::Internal(format!("failed to open stdout log file: {e}")))?;
 
         let log_err = OpenOptions::new()
@@ -262,7 +260,7 @@ impl HostShim {
             .read(true)
             .write(true)
             .truncate(true)
-            .open(app_work_dir.join(format!("{}.err", executor.id)))
+            .open(process_work_dir.join(format!("{}.err", executor.id)))
             .map_err(|e| FlameError::Internal(format!("failed to open stderr log file: {e}")))?;
 
         let child = cmd

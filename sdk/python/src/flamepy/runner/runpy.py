@@ -187,22 +187,25 @@ class FlameRunpyService(FlameService):
             except Exception as e:
                 raise RuntimeError(f"Failed to create storage backend: {e}")
 
-            # Get the working directory and tmp directory
-            working_dir = os.getcwd()
-            tmp_dir = os.path.join(working_dir, "tmp")
+            tmp_dir = os.environ.get("TMP", os.path.join(os.getcwd(), "tmp"))
             os.makedirs(tmp_dir, exist_ok=True)
 
             local_package_path = os.path.join(tmp_dir, filename)
-            try:
-                self._storage_backend.download(filename, local_package_path)
-                logger.info(f"Downloaded package to: {local_package_path}")
-            except Exception as e:
-                logger.error(f"Failed to download package from storage: {e}")
-                raise RuntimeError(f"Failed to download package from storage: {e}")
+            extract_dir = os.path.join(tmp_dir, f"extracted_{filename.split('.')[0]}")
 
-            logger.info("Package is an archive file, extracting...")
-            extract_dir = os.path.join(working_dir, f"extracted_{os.path.basename(local_package_path).split('.')[0]}")
-            extracted_dir = self._extract_archive(local_package_path, extract_dir)
+            if os.path.exists(extract_dir):
+                logger.info(f"Package already extracted at: {extract_dir}, skipping download")
+                extracted_dir = extract_dir
+            else:
+                try:
+                    self._storage_backend.download(filename, local_package_path)
+                    logger.info(f"Downloaded package to: {local_package_path}")
+                except Exception as e:
+                    logger.error(f"Failed to download package from storage: {e}")
+                    raise RuntimeError(f"Failed to download package from storage: {e}")
+
+                logger.info("Package is an archive file, extracting...")
+                extracted_dir = self._extract_archive(local_package_path, extract_dir)
 
             install_path = extracted_dir
         else:
