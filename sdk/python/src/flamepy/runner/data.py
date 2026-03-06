@@ -13,7 +13,7 @@ limitations under the License.
 
 import cloudpickle
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Union
+from typing import Any, Dict
 
 from flamepy.core import ObjectRef, get_object
 from flamepy.runner.types import RunnerRequest
