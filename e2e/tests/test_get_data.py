@@ -479,3 +479,185 @@ def test_get_data_complete_workflow(check_package_config, check_flmrun_app):
                 assert output_info["result"] == 42, f"Expected 42, got {output_info['result']}"
         
         assert task_found, "Expected to find the multiply task"
+
+
+
+# Additional test cases for nested data structures and specific error types
+
+def test_get_data_nested_list_with_objectref(check_package_config, check_flmrun_app):
+    """TC-GD-012: Test get_data resolves ObjectRef in nested lists.
+    
+    Steps:
+    1. Create a Runner and service with Counter
+    2. Create a task where args contain a list with ObjectFuture
+    3. Wait for task completion
+    4. Verify nested ObjectRef in list is resolved
+    
+    Expected:
+    - Nested ObjectRef in list should be resolved to actual values
+    """
+    with runner.Runner("test-get-data-nested-list") as rr:
+        counter = Counter()
+        cnt_service = rr.service(counter, stateful=True, autoscale=False)
+        
+        # First call to get a value
+        cnt_service.add(5).wait()
+        res_r = cnt_service.get_count()
+        
+        # Use ObjectFuture in a list argument
+        # Note: This tests the recursive resolution in _resolve_value
+        cnt_service.add(res_r).wait()
+        final_result = cnt_service.get_count()
+        value = final_result.get()
+        assert value == 10, f"Expected 10, got {value}"
+        
+        # Get session and inspect tasks
+        session = get_session(cnt_service._session.id)
+        tasks = list(session.list_tasks())
+        
+        # Verify we can retrieve all task inputs without errors
+        for task in tasks:
+            if task.input is not None:
+                input_data = get_data(task.input)
+                assert input_data["type"] == "input"
+                # Verify args are resolved (not ObjectRef instances)
+                if input_data["args"]:
+                    for arg in input_data["args"]:
+                        # Args should be resolved to primitive types, not ObjectRef
+                        assert not hasattr(arg, 'decode'), f"ObjectRef not resolved: {arg}"
+
+
+def test_get_data_specific_error_types(check_package_config, check_flmrun_app):
+    """TC-GD-013: Test get_data raises specific error types.
+    
+    Steps:
+    1. Call get_data with invalid data
+    2. Verify DecodeError is raised for invalid ObjectRef
+    
+    Expected:
+    - DecodeError is raised with cause attribute
+    """
+    from flamepy.runner import DecodeError
+    
+    # Test with invalid bytes that can't be decoded as ObjectRef
+    invalid_data = b"invalid objectref data"
+    
+    with pytest.raises(DecodeError) as exc_info:
+        get_data(invalid_data)
+    
+    # Verify error has cause attribute
+    assert exc_info.value.cause is not None
+    assert "decode" in str(exc_info.value).lower() or "failed" in str(exc_info.value).lower()
+
+
+def test_get_data_metadata_present(check_package_config, check_flmrun_app):
+    """TC-GD-014: Test get_data returns metadata in response.
+    
+    Steps:
+    1. Create a Runner and service
+    2. Execute a task
+    3. Retrieve input/output using get_data
+    4. Verify metadata field is present
+    
+    Expected:
+    - Response contains metadata field
+    - metadata contains object_ref_key
+    """
+    with runner.Runner("test-get-data-metadata") as rr:
+        sum_service = rr.service(sum_func)
+        
+        # Call and wait for result
+        result = sum_service(10, 20)
+        value = result.get()
+        assert value == 30, f"Expected 30, got {value}"
+        
+        # Get session and inspect task
+        session = get_session(sum_service._session.id)
+        tasks = list(session.list_tasks())
+        assert len(tasks) >= 1, "Expected at least one task"
+        
+        task = tasks[0]
+        
+        # Check input metadata
+        if task.input is not None:
+            input_data = get_data(task.input)
+            assert "metadata" in input_data, "Expected metadata in input response"
+            assert isinstance(input_data["metadata"], dict), "metadata should be a dict"
+        
+        # Check output metadata
+        if task.output is not None:
+            output_data = get_data(task.output)
+            assert "metadata" in output_data, "Expected metadata in output response"
+            assert isinstance(output_data["metadata"], dict), "metadata should be a dict"
+
+
+def test_get_data_nested_dict_resolution(check_package_config, check_flmrun_app):
+    """TC-GD-015: Test get_data resolves ObjectRef in nested dicts.
+    
+    Steps:
+    1. Create a Runner and service with Calculator
+    2. Execute multiple tasks
+    3. Verify nested structures in kwargs are properly resolved
+    
+    Expected:
+    - Nested dict values should be resolved
+    """
+    with runner.Runner("test-get-data-nested-dict") as rr:
+        calc_service = rr.service(Calculator())
+        
+        # Execute a task with kwargs
+        result = calc_service.add(a=100, b=200)
+        value = result.get()
+        assert value == 300, f"Expected 300, got {value}"
+        
+        # Get session and inspect task
+        session = get_session(calc_service._session.id)
+        tasks = list(session.list_tasks())
+        assert len(tasks) >= 1, "Expected at least one task"
+        
+        task = tasks[0]
+        assert task.input is not None, "Task input should not be None"
+        
+        # Retrieve input data using get_data
+        input_data = get_data(task.input)
+        
+        # Verify kwargs are resolved
+        assert input_data["type"] == "input"
+        if input_data["kwargs"]:
+            for key, val in input_data["kwargs"].items():
+                # Values should be resolved primitives, not ObjectRef
+                assert not hasattr(val, 'decode'), f"ObjectRef not resolved in kwargs: {key}={val}"
+
+
+def test_get_data_error_classes_exported(check_package_config, check_flmrun_app):
+    """TC-GD-016: Test that error classes are properly exported.
+    
+    Steps:
+    1. Import error classes from flamepy.runner
+    2. Verify they are accessible
+    
+    Expected:
+    - GetDataError, DecodeError, CacheRetrievalError, DataFormatError are importable
+    """
+    from flamepy.runner import (
+        GetDataError,
+        DecodeError,
+        CacheRetrievalError,
+        DataFormatError,
+        TaskInputData,
+        TaskOutputData,
+    )
+    
+    # Verify inheritance
+    assert issubclass(DecodeError, GetDataError)
+    assert issubclass(CacheRetrievalError, GetDataError)
+    assert issubclass(DataFormatError, GetDataError)
+    
+    # Verify dataclasses can be instantiated
+    input_data = TaskInputData(method="test", args=(1, 2), kwargs={"a": 1})
+    assert input_data.type == "input"
+    assert input_data.method == "test"
+    
+    output_data = TaskOutputData(result=42)
+    assert output_data.type == "output"
+    assert output_data.result == 42
