@@ -14,6 +14,7 @@ limitations under the License.
 from .runner import ObjectFuture, ObjectFutureIterator, Runner, RunnerService
 from .runpy import FlameRunpyService
 from .types import SessionContext, RunnerContext, RunnerRequest
+from .data import get_data
 
 __all__ = [
     "SessionContext",
@@ -24,4 +25,5 @@ __all__ = [
     "FlameRunpyService",
     "RunnerContext",
     "RunnerRequest",
+    "get_data",
 ]
