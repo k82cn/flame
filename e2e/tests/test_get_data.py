@@ -31,7 +31,7 @@ Test Coverage:
 import pytest
 import flamepy
 from flamepy import runner
-from flamepy.runner import get_data, DecodeError
+from flamepy.runner import get_data, RunnerError, ErrorType
 from flamepy.core import get_session
 from e2e.helpers import (
     sum_func,
@@ -317,16 +317,18 @@ def test_get_data_invalid_data_format(check_package_config, check_flmrun_app):
     2. Verify appropriate error is raised
     
     Expected:
-    - DecodeError is raised with descriptive message
+    - RunnerError is raised with ErrorType.DECODE_ERROR
     """
     # Test with random invalid bytes
     invalid_data = b"this is not valid objectref data"
     
-    with pytest.raises(DecodeError) as exc_info:
+    with pytest.raises(RunnerError) as exc_info:
         get_data(invalid_data)
     
+    # Verify error type
+    assert exc_info.value.error_type == ErrorType.DECODE_ERROR
     # Verify error message is descriptive
-    assert "decode" in str(exc_info.value).lower() or "invalid" in str(exc_info.value).lower() or "failed" in str(exc_info.value).lower()
+    assert "decode" in str(exc_info.value).lower() or "failed" in str(exc_info.value).lower()
 
 
 def test_get_data_empty_bytes(check_package_config, check_flmrun_app):
@@ -337,12 +339,14 @@ def test_get_data_empty_bytes(check_package_config, check_flmrun_app):
     2. Verify appropriate error is raised
     
     Expected:
-    - DecodeError is raised
+    - RunnerError is raised with ErrorType.DECODE_ERROR
     """
     empty_data = b""
     
-    with pytest.raises(DecodeError):
+    with pytest.raises(RunnerError) as exc_info:
         get_data(empty_data)
+    
+    assert exc_info.value.error_type == ErrorType.DECODE_ERROR
 
 
 def test_get_data_multiple_tasks(check_package_config, check_flmrun_app):
@@ -484,7 +488,6 @@ def test_get_data_complete_workflow(check_package_config, check_flmrun_app):
         assert task_found, "Expected to find the multiply task"
 
 
-
 # Additional test cases for nested data structures and specific error types
 
 def test_get_data_nested_list_with_objectref(check_package_config, check_flmrun_app):
@@ -536,20 +539,19 @@ def test_get_data_specific_error_types(check_package_config, check_flmrun_app):
     
     Steps:
     1. Call get_data with invalid data
-    2. Verify DecodeError is raised for invalid ObjectRef
+    2. Verify RunnerError is raised with correct ErrorType
     
     Expected:
-    - DecodeError is raised with cause attribute
+    - RunnerError is raised with ErrorType.DECODE_ERROR and cause attribute
     """
-    from flamepy.runner import DecodeError
-    
     # Test with invalid bytes that can't be decoded as ObjectRef
     invalid_data = b"invalid objectref data"
     
-    with pytest.raises(DecodeError) as exc_info:
+    with pytest.raises(RunnerError) as exc_info:
         get_data(invalid_data)
     
-    # Verify error has cause attribute
+    # Verify error type and cause attribute
+    assert exc_info.value.error_type == ErrorType.DECODE_ERROR
     assert exc_info.value.cause is not None
     assert "decode" in str(exc_info.value).lower() or "failed" in str(exc_info.value).lower()
 
@@ -633,35 +635,32 @@ def test_get_data_nested_dict_resolution(check_package_config, check_flmrun_app)
                 assert not hasattr(val, 'decode'), f"ObjectRef not resolved in kwargs: {key}={val}"
 
 
-def test_get_data_error_classes_exported(check_package_config, check_flmrun_app):
-    """TC-GD-016: Test that error classes are properly exported.
+def test_get_data_runner_error_exported(check_package_config, check_flmrun_app):
+    """TC-GD-016: Test that RunnerError and ErrorType are properly exported.
     
     Steps:
-    1. Import error classes from flamepy.runner
-    2. Verify they are accessible
+    1. Import RunnerError and ErrorType from flamepy.runner
+    2. Verify they are accessible and work correctly
     
     Expected:
-    - GetDataError, DecodeError, CacheRetrievalError, DataFormatError are importable
+    - RunnerError and ErrorType are importable
+    - ErrorType enum has expected values
     """
-    from flamepy.runner import (
-        GetDataError,
-        DecodeError,
-        CacheRetrievalError,
-        DataFormatError,
-        TaskInputData,
-        TaskOutputData,
+    from flamepy.runner import RunnerError, ErrorType
+    
+    # Verify ErrorType enum values
+    assert ErrorType.DECODE_ERROR.value == "decode_error"
+    assert ErrorType.CACHE_RETRIEVAL_ERROR.value == "cache_retrieval_error"
+    assert ErrorType.DATA_FORMAT_ERROR.value == "data_format_error"
+    
+    # Verify RunnerError can be instantiated
+    error = RunnerError(
+        ErrorType.DECODE_ERROR,
+        "Test error message",
+        cause=ValueError("test cause"),
+        key="test_key",
     )
-    
-    # Verify inheritance
-    assert issubclass(DecodeError, GetDataError)
-    assert issubclass(CacheRetrievalError, GetDataError)
-    assert issubclass(DataFormatError, GetDataError)
-    
-    # Verify dataclasses can be instantiated
-    input_data = TaskInputData(method="test", args=(1, 2), kwargs={"a": 1})
-    assert input_data.type == "input"
-    assert input_data.method == "test"
-    
-    output_data = TaskOutputData(result=42)
-    assert output_data.type == "output"
-    assert output_data.result == 42
+    assert error.error_type == ErrorType.DECODE_ERROR
+    assert error.cause is not None
+    assert error.key == "test_key"
+    assert "decode_error" in str(error).lower()

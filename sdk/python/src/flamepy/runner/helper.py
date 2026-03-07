@@ -13,41 +13,48 @@ limitations under the License.
 
 import cloudpickle
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from enum import Enum
+from typing import Any, Dict, Optional
 
 from flamepy.core import ObjectRef, get_object
 from flamepy.runner.types import RunnerRequest
 
 
-class GetDataError(Exception):
-    """Base exception for get_data errors."""
+class ErrorType(Enum):
+    """Error types for RunnerError."""
 
-    pass
+    DECODE_ERROR = "decode_error"
+    CACHE_RETRIEVAL_ERROR = "cache_retrieval_error"
+    DATA_FORMAT_ERROR = "data_format_error"
 
 
-class DecodeError(GetDataError):
-    """Raised when ObjectRef decoding fails."""
+class RunnerError(Exception):
+    """Exception for runner helper errors.
 
-    def __init__(self, message: str, cause: Exception = None):
+    Attributes:
+        error_type: The type of error (from ErrorType enum).
+        message: Human-readable error message.
+        cause: The underlying exception that caused this error (if any).
+        key: The cache key involved (for cache retrieval errors).
+        data_type: The data type involved (for data format errors).
+    """
+
+    def __init__(
+        self,
+        error_type: ErrorType,
+        message: str,
+        cause: Optional[Exception] = None,
+        key: Optional[str] = None,
+        data_type: Optional[str] = None,
+    ):
         super().__init__(message)
+        self.error_type = error_type
         self.cause = cause
-
-
-class CacheRetrievalError(GetDataError):
-    """Raised when cache retrieval fails."""
-
-    def __init__(self, message: str, key: str = None, cause: Exception = None):
-        super().__init__(message)
         self.key = key
-        self.cause = cause
-
-
-class DataFormatError(GetDataError):
-    """Raised when data format is not recognized."""
-
-    def __init__(self, message: str, data_type: str = None):
-        super().__init__(message)
         self.data_type = data_type
+
+    def __str__(self) -> str:
+        return f"[{self.error_type.value}] {super().__str__()}"
 
 
 @dataclass
@@ -135,9 +142,10 @@ def get_data(data: bytes) -> Dict[str, Any]:
         }
 
     Raises:
-        DecodeError: If the data cannot be decoded as ObjectRef
-        CacheRetrievalError: If the object cannot be retrieved from cache
-        DataFormatError: If the data format is not recognized
+        RunnerError: With error_type indicating the specific error:
+            - ErrorType.DECODE_ERROR: If the data cannot be decoded as ObjectRef
+            - ErrorType.CACHE_RETRIEVAL_ERROR: If the object cannot be retrieved from cache
+            - ErrorType.DATA_FORMAT_ERROR: If the data format is not recognized
 
     Example:
         >>> from flamepy.runner import get_data
@@ -157,16 +165,21 @@ def get_data(data: bytes) -> Dict[str, Any]:
     try:
         object_ref = ObjectRef.decode(data)
     except Exception as e:
-        raise DecodeError(f"Failed to decode ObjectRef from data: {e}", cause=e)
+        raise RunnerError(
+            ErrorType.DECODE_ERROR,
+            f"Failed to decode ObjectRef from data: {e}",
+            cause=e,
+        )
 
     # Step 2: Retrieve object from cache
     try:
         cached_data = get_object(object_ref)
     except Exception as e:
-        raise CacheRetrievalError(
+        raise RunnerError(
+            ErrorType.CACHE_RETRIEVAL_ERROR,
             f"Failed to retrieve object from cache: {e}",
-            key=getattr(object_ref, "key", None),
             cause=e,
+            key=getattr(object_ref, "key", None),
         )
 
     # Step 3: Check if it's serialized data (bytes) that needs unpickling
@@ -238,7 +251,7 @@ def _resolve_value(value: Any, max_depth: int = 10, _current_depth: int = 0) -> 
         The resolved value with all ObjectRef instances replaced by their actual data.
 
     Raises:
-        CacheRetrievalError: If an ObjectRef cannot be resolved from cache.
+        RunnerError: With ErrorType.CACHE_RETRIEVAL_ERROR if an ObjectRef cannot be resolved.
     """
     # Prevent infinite recursion
     if _current_depth > max_depth:
@@ -249,10 +262,11 @@ def _resolve_value(value: Any, max_depth: int = 10, _current_depth: int = 0) -> 
         try:
             return get_object(value)
         except Exception as e:
-            raise CacheRetrievalError(
+            raise RunnerError(
+                ErrorType.CACHE_RETRIEVAL_ERROR,
                 f"Failed to resolve ObjectRef: {e}",
-                key=getattr(value, "key", None),
                 cause=e,
+                key=getattr(value, "key", None),
             )
 
     # Handle bytes that might be encoded ObjectRef
