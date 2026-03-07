@@ -31,7 +31,7 @@ Test Coverage:
 import pytest
 import flamepy
 from flamepy import runner
-from flamepy.runner import get_data
+from flamepy.runner import get_data, DecodeError
 from flamepy.core import get_session
 from e2e.helpers import (
     sum_func,
@@ -139,6 +139,7 @@ def test_get_data_task_output(check_package_config, check_flmrun_app):
         # Verify structure
         assert output_data["type"] == "output", f"Expected type 'output', got {output_data['type']}"
         assert output_data["result"] == 28, f"Expected result 28, got {output_data['result']}"
+
 
 
 def test_get_data_task_input_kwargs(check_package_config, check_flmrun_app):
@@ -268,6 +269,7 @@ def test_get_data_task_input_objectref_resolved(check_package_config, check_flmr
         assert len(tasks) >= 3, f"Expected at least 3 tasks, got {len(tasks)}"
 
 
+
 def test_get_data_class_method_input(check_package_config, check_flmrun_app):
     """TC-GD-006: Test get_data retrieves class method invocation input.
     
@@ -315,12 +317,12 @@ def test_get_data_invalid_data_format(check_package_config, check_flmrun_app):
     2. Verify appropriate error is raised
     
     Expected:
-    - ValueError or TypeError is raised with descriptive message
+    - DecodeError is raised with descriptive message
     """
     # Test with random invalid bytes
     invalid_data = b"this is not valid objectref data"
     
-    with pytest.raises((ValueError, TypeError)) as exc_info:
+    with pytest.raises(DecodeError) as exc_info:
         get_data(invalid_data)
     
     # Verify error message is descriptive
@@ -335,11 +337,11 @@ def test_get_data_empty_bytes(check_package_config, check_flmrun_app):
     2. Verify appropriate error is raised
     
     Expected:
-    - ValueError or TypeError is raised
+    - DecodeError is raised
     """
     empty_data = b""
     
-    with pytest.raises((ValueError, TypeError)):
+    with pytest.raises(DecodeError):
         get_data(empty_data)
 
 
@@ -393,6 +395,7 @@ def test_get_data_multiple_tasks(check_package_config, check_flmrun_app):
         
         # Verify we found the expected results
         assert 3 in output_results_found or 30 in output_results_found or 300 in output_results_found
+
 
 
 def test_get_data_task_no_arguments(check_package_config, check_flmrun_app):
@@ -525,6 +528,7 @@ def test_get_data_nested_list_with_objectref(check_package_config, check_flmrun_
                     for arg in input_data["args"]:
                         # Args should be resolved to primitive types, not ObjectRef
                         assert not hasattr(arg, 'decode'), f"ObjectRef not resolved: {arg}"
+
 
 
 def test_get_data_specific_error_types(check_package_config, check_flmrun_app):
