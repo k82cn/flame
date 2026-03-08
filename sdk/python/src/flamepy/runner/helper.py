@@ -109,18 +109,47 @@ class TaskOutputData:
         }
 
 
+def _is_pickle_data(data: bytes) -> bool:
+    """Check if data appears to be pickle-serialized.
+
+    Pickle protocol headers:
+    - Protocol 0: starts with '(' or various opcodes
+    - Protocol 1: starts with ']' or various opcodes
+    - Protocol 2: starts with b'\\x80\\x02'
+    - Protocol 3: starts with b'\\x80\\x03'
+    - Protocol 4: starts with b'\\x80\\x04'
+    - Protocol 5: starts with b'\\x80\\x05'
+
+    Args:
+        data: Raw bytes to check.
+
+    Returns:
+        True if data appears to be pickle-serialized.
+    """
+    if len(data) < 2:
+        return False
+    # Check for pickle protocol 2-5 header (0x80 followed by protocol version)
+    if data[0] == 0x80 and data[1] in (0x02, 0x03, 0x04, 0x05):
+        return True
+    return False
+
+
 def get_data(data: bytes) -> Dict[str, Any]:
     """Retrieve the real data from task input or output.
 
     This function takes the raw bytes from a Flame task's input or output,
-    decodes the ObjectRef, retrieves the data from cache, and resolves
-    any nested ObjectRef instances to their actual values.
+    decodes the data, and resolves any nested ObjectRef instances to their
+    actual values.
+
+    The data can be in one of two formats:
+    1. An encoded ObjectRef (BSON format) pointing to cached data
+    2. Directly pickled data (RunnerRequest or result)
 
     Args:
-        data: Raw bytes from task input or output. This is expected to be
-              an encoded ObjectRef pointing to either:
-              - A RunnerRequest (for task input)
-              - A result object (for task output)
+        data: Raw bytes from task input or output. This can be either:
+              - An encoded ObjectRef pointing to cached data
+              - Directly pickled RunnerRequest (for task input)
+              - Directly pickled result object (for task output)
 
     Returns:
         A dictionary containing the resolved data:
@@ -143,7 +172,7 @@ def get_data(data: bytes) -> Dict[str, Any]:
 
     Raises:
         RunnerError: With error_type indicating the specific error:
-            - ErrorType.DECODE_ERROR: If the data cannot be decoded as ObjectRef
+            - ErrorType.DECODE_ERROR: If the data cannot be decoded
             - ErrorType.CACHE_RETRIEVAL_ERROR: If the object cannot be retrieved from cache
             - ErrorType.DATA_FORMAT_ERROR: If the data format is not recognized
 
@@ -161,44 +190,61 @@ def get_data(data: bytes) -> Dict[str, Any]:
         ...         output_data = get_data(task.output)
         ...         print(f"Task {task.id} output: {output_data}")
     """
-    # Step 1: Decode ObjectRef from bytes
-    try:
-        object_ref = ObjectRef.decode(data)
-    except Exception as e:
-        raise RunnerError(
-            ErrorType.DECODE_ERROR,
-            f"Failed to decode ObjectRef from data: {e}",
-            cause=e,
-        )
+    # Try to determine the data format and decode accordingly
+    object_ref = None
+    cached_data = None
 
-    # Step 2: Retrieve object from cache
-    try:
-        cached_data = get_object(object_ref)
-    except Exception as e:
-        raise RunnerError(
-            ErrorType.CACHE_RETRIEVAL_ERROR,
-            f"Failed to retrieve object from cache: {e}",
-            cause=e,
-            key=getattr(object_ref, "key", None),
-        )
-
-    # Step 3: Check if it's serialized data (bytes) that needs unpickling
-    if isinstance(cached_data, bytes):
+    # Strategy 1: Try to decode as pickled data first if it looks like pickle
+    if _is_pickle_data(data):
         try:
-            cached_data = cloudpickle.loads(cached_data)
+            cached_data = cloudpickle.loads(data)
         except Exception:
-            # Not pickled data, use as-is
+            # Not valid pickle, try ObjectRef decode
             pass
 
-    # Step 4: Determine type and process accordingly
+    # Strategy 2: Try to decode as ObjectRef (BSON format)
+    if cached_data is None:
+        try:
+            object_ref = ObjectRef.decode(data)
+        except Exception as decode_error:
+            # If both pickle and ObjectRef decode failed, raise error
+            raise RunnerError(
+                ErrorType.DECODE_ERROR,
+                f"Failed to decode data: not valid ObjectRef or pickled data: {decode_error}",
+                cause=decode_error,
+            )
+
+        # Retrieve object from cache
+        try:
+            cached_data = get_object(object_ref)
+        except Exception as e:
+            raise RunnerError(
+                ErrorType.CACHE_RETRIEVAL_ERROR,
+                f"Failed to retrieve object from cache: {e}",
+                cause=e,
+                key=getattr(object_ref, "key", None),
+            )
+
+        # Check if cached data is serialized bytes that needs unpickling
+        if isinstance(cached_data, bytes):
+            try:
+                cached_data = cloudpickle.loads(cached_data)
+            except Exception:
+                # Not pickled data, use as-is
+                pass
+
+    # Determine type and process accordingly
     if isinstance(cached_data, RunnerRequest):
         # This is task input
         return _process_runner_request(cached_data, object_ref)
     else:
         # This is task output (result)
+        metadata = {}
+        if object_ref is not None:
+            metadata["object_ref_key"] = object_ref.key
         output_data = TaskOutputData(
             result=cached_data,
-            metadata={"object_ref_key": object_ref.key},
+            metadata=metadata,
         )
         return output_data.to_dict()
 
