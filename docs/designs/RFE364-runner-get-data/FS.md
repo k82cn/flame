@@ -1,10 +1,4 @@
----
-Issue: #1
-Author: xflops-bots
-Date: 2026-03-06
----
-
-# RFE001: Retrieve Input/Output of Runner Task in flamepy
+# RFE364: Retrieve Input/Output of Runner Task in flamepy
 
 ## 1. Motivation
 
