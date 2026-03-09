@@ -37,7 +37,7 @@ No configuration changes required. The function uses existing cache configuratio
 **New Function: `get_data`**
 
 ```python
-def get_data(data: bytes) -> dict:
+def get_data(data: bytes) -> Dict[str, Any]:
     """Retrieve the real data from task input or output.
     
     This function takes the raw bytes from a Flame task's input or output,
@@ -58,32 +58,39 @@ def get_data(data: bytes) -> dict:
             "type": "input",
             "method": str | None,  # Method name or None for callable
             "args": tuple | None,  # Resolved positional arguments
-            "kwargs": dict | None  # Resolved keyword arguments
+            "kwargs": dict | None,  # Resolved keyword arguments
+            "metadata": dict       # Additional metadata
         }
         
         For task output (result):
         {
             "type": "output",
-            "result": Any  # The actual result value
+            "result": Any,  # The actual result value
+            "metadata": dict  # Additional metadata
         }
     
     Raises:
-        ValueError: If the data cannot be decoded or retrieved from cache
-        TypeError: If the data format is not recognized
+        RunnerError: With error_type indicating the specific error:
+            - ErrorType.DECODE_ERROR: If the data cannot be decoded
+            - ErrorType.CACHE_RETRIEVAL_ERROR: If the object cannot be retrieved from cache
+            - ErrorType.DATA_FORMAT_ERROR: If the data format is not recognized
     
     Example:
-        >>> from flamepy.runner import get_data
+        >>> from flamepy.runner import get_data, RunnerError, ErrorType
         >>> from flamepy.core import get_session
         >>> 
         >>> # Get a session and its tasks
         >>> session = get_session("my-session-id")
         >>> for task in session.tasks:
-        ...     if task.input:
-        ...         input_data = get_data(task.input)
-        ...         print(f"Task {task.id} input: {input_data}")
-        ...     if task.output:
-        ...         output_data = get_data(task.output)
-        ...         print(f"Task {task.id} output: {output_data}")
+        ...     try:
+        ...         if task.input:
+        ...             input_data = get_data(task.input)
+        ...             print(f"Task {task.id} input: {input_data}")
+        ...         if task.output:
+        ...             output_data = get_data(task.output)
+        ...             print(f"Task {task.id} output: {output_data}")
+        ...     except RunnerError as e:
+        ...         print(f"Error retrieving data: {e}")
     """
 ```
 
@@ -151,7 +158,7 @@ for task_id, task in session.tasks.items():
 
 **Updates Required:**
 1. **`flamepy/runner/__init__.py`**: Export `get_data` function
-2. **`flamepy/runner/runner.py`** (or new file): Implement `get_data` function
+2. **`flamepy/runner/helper.py`**: Implement `get_data` function
 
 **Integration Points:**
 - Uses `ObjectRef.decode()` from `flamepy.core.cache`
@@ -198,7 +205,7 @@ flowchart TB
 ### Components
 
 **1. `get_data` Function**
-- **Location**: `sdk/python/src/flamepy/runner/runner.py` (or new file `data.py`)
+- **Location**: `sdk/python/src/flamepy/runner/helper.py`
 - **Responsibilities**:
   - Decode `ObjectRef` from raw bytes
   - Retrieve data from cache
@@ -227,7 +234,8 @@ RunnerRequest(method, args, kwargs)
     "type": "input",
     "method": str | None,
     "args": tuple | None,
-    "kwargs": dict | None
+    "kwargs": dict | None,
+    "metadata": dict
 }
 ```
 
@@ -244,7 +252,8 @@ Result Object (any type)
     │
 {
     "type": "output",
-    "result": Any
+    "result": Any,
+    "metadata": dict
 }
 ```
 
@@ -253,20 +262,20 @@ Result Object (any type)
 **Algorithm: get_data Implementation**
 
 ```python
-def get_data(data: bytes) -> dict:
+def get_data(data: bytes) -> Dict[str, Any]:
     """Retrieve the real data from task input or output."""
     
     # Step 1: Decode ObjectRef from bytes
     try:
         object_ref = ObjectRef.decode(data)
     except Exception as e:
-        raise ValueError(f"Failed to decode ObjectRef from data: {e}")
+        raise RunnerError(ErrorType.DECODE_ERROR, f"Failed to decode ObjectRef: {e}")
     
     # Step 2: Retrieve object from cache
     try:
         cached_data = get_object(object_ref)
     except Exception as e:
-        raise ValueError(f"Failed to retrieve object from cache: {e}")
+        raise RunnerError(ErrorType.CACHE_RETRIEVAL_ERROR, f"Failed to retrieve object: {e}")
     
     # Step 3: Check if it's serialized data (bytes) that needs unpickling
     if isinstance(cached_data, bytes):
@@ -284,50 +293,9 @@ def get_data(data: bytes) -> dict:
         # This is task output (result)
         return {
             "type": "output",
-            "result": cached_data
+            "result": cached_data,
+            "metadata": {"object_ref_key": object_ref.key}
         }
-
-
-def _process_runner_request(request: RunnerRequest) -> dict:
-    """Process a RunnerRequest and resolve any ObjectRef instances."""
-    
-    # Resolve args
-    resolved_args = None
-    if request.args is not None:
-        resolved_args = tuple(_resolve_value(arg) for arg in request.args)
-    
-    # Resolve kwargs
-    resolved_kwargs = None
-    if request.kwargs is not None:
-        resolved_kwargs = {
-            key: _resolve_value(value) 
-            for key, value in request.kwargs.items()
-        }
-    
-    return {
-        "type": "input",
-        "method": request.method,
-        "args": resolved_args,
-        "kwargs": resolved_kwargs
-    }
-
-
-def _resolve_value(value: Any) -> Any:
-    """Resolve a value, fetching from cache if it's an ObjectRef."""
-    
-    if isinstance(value, ObjectRef):
-        return get_object(value)
-    
-    # Handle bytes that might be encoded ObjectRef
-    if isinstance(value, bytes):
-        try:
-            object_ref = ObjectRef.decode(value)
-            return get_object(object_ref)
-        except Exception:
-            # Not an ObjectRef, return as-is
-            return value
-    
-    return value
 ```
 
 ### System Considerations
@@ -342,7 +310,7 @@ def _resolve_value(value: Any) -> Any:
 - Cache backend handles concurrent access
 
 **Reliability:**
-- If cache data is evicted, retrieval will fail with clear error message
+- If cache data has been evicted, retrieval will fail with clear error message
 - Network failures to cache will propagate as exceptions
 
 **Resource Usage:**
@@ -448,7 +416,7 @@ for task_id, task in session.tasks.items():
 
 ```python
 from flamepy.core import list_sessions, get_session
-from flamepy.runner import get_data
+from flamepy.runner import get_data, RunnerError
 import json
 
 def audit_session(session_id: str) -> list:
@@ -465,13 +433,13 @@ def audit_session(session_id: str) -> list:
         if task.input:
             try:
                 entry["input"] = get_data(task.input)
-            except Exception as e:
+            except RunnerError as e:
                 entry["input_error"] = str(e)
         
         if task.output:
             try:
                 entry["output"] = get_data(task.output)
-            except Exception as e:
+            except RunnerError as e:
                 entry["output_error"] = str(e)
         
         audit_log.append(entry)
