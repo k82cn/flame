@@ -1,9 +1,19 @@
 ---
-name: flame
-endpoint: "http://flame-session-manager.flame-system:8080"
-slot: "cpu=1,mem=2g"
-policy: priority
-storage: mem
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager.flame-system:8080"
+  slot: "cpu=1,mem=2g"
+  policy: priority
+  storage: mem
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  network_interface: "eth0"
+  storage: "/var/lib/flame/cache"
+  eviction:
+    policy: "lru"                    # Eviction policy: "lru" | "none" (default: "lru")
+    max_memory: "1G"                 # Maximum memory for cached objects (default: "1G")
+                                     # Supports units: B, K/KB, M/MB, G/GB, T/TB
+    max_objects: 10000               # Maximum number of objects in memory (default: unlimited)
 applications:
   - name: "flmexec"
     shim: Log

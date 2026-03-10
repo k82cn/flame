@@ -716,6 +716,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
+name = "bytesize"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e93abca9e28e0a1b9877922aacb20576e05d4679ffa78c3d6dc22a26a216659"
+
+[[package]]
 name = "cap-fs-ext"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -895,6 +901,7 @@ dependencies = [
  "async-trait",
  "bincode 2.0.1",
  "bytes",
+ "bytesize",
  "chrono",
  "num_cpus",
  "prost",
@@ -1515,6 +1522,7 @@ dependencies = [
  "base64 0.22.1",
  "bson",
  "bytes",
+ "bytesize",
  "clap",
  "common",
  "futures",

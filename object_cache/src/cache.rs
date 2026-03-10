@@ -30,6 +30,7 @@ use arrow_flight::{
 use async_trait::async_trait;
 use base64::Engine;
 use bytes::Bytes;
+use bytesize::ByteSize;
 use futures::Stream;
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use regex::Regex;
@@ -40,6 +41,47 @@ use url::Url;
 use common::apis::SessionID;
 use common::ctx::FlameCache;
 use common::FlameError;
+
+use crate::eviction::{new_policy, EvictionConfig, EvictionPolicyPtr};
+
+/// Default batch size for eviction operations
+const EVICTION_BATCH_SIZE: usize = 10;
+
+/// Validate that a key (session_id/object_id format) does not contain path traversal sequences.
+/// Security: Prevents directory traversal attacks via user-controlled input.
+fn validate_key(key: &str) -> Result<(), FlameError> {
+    if key.contains("..") || key.starts_with('/') || key.contains("//") {
+        return Err(FlameError::InvalidConfig(format!(
+            "Invalid key '{}': contains path traversal sequences",
+            key
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a session ID does not contain path traversal sequences.
+/// Security: Prevents directory traversal attacks via user-controlled session IDs.
+fn validate_session_id(session_id: &str) -> Result<(), FlameError> {
+    if session_id.contains("..") || session_id.contains('/') || session_id.contains('\\') {
+        return Err(FlameError::InvalidConfig(format!(
+            "Invalid session_id '{}': contains path traversal sequences",
+            session_id
+        )));
+    }
+    Ok(())
+}
+
+/// Validate an object ID does not contain path traversal sequences.
+/// Security: Prevents directory traversal attacks via user-controlled object IDs.
+fn validate_object_id(object_id: &str) -> Result<(), FlameError> {
+    if object_id.contains("..") || object_id.contains('/') || object_id.contains('\\') {
+        return Err(FlameError::InvalidConfig(format!(
+            "Invalid object_id '{}': contains path traversal sequences",
+            object_id
+        )));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 pub struct Object {
@@ -134,15 +176,28 @@ impl TryFrom<&String> for CacheEndpoint {
 pub struct ObjectCache {
     endpoint: CacheEndpoint,
     storage_path: Option<PathBuf>,
-    objects: MutexPtr<HashMap<String, ObjectMetadata>>, // key -> metadata
+    /// In-memory object storage (key present = in memory)
+    objects: MutexPtr<HashMap<String, Object>>,
+    /// Object metadata index (always in memory, tracks all objects)
+    metadata: MutexPtr<HashMap<String, ObjectMetadata>>,
+    /// Eviction policy
+    eviction_policy: EvictionPolicyPtr,
 }
 
 impl ObjectCache {
-    fn new(endpoint: CacheEndpoint, storage_path: Option<PathBuf>) -> Result<Self, FlameError> {
+    fn new(
+        endpoint: CacheEndpoint,
+        storage_path: Option<PathBuf>,
+        eviction_config: Option<&EvictionConfig>,
+    ) -> Result<Self, FlameError> {
+        let eviction_policy = new_policy(eviction_config);
+
         let cache = Self {
             endpoint,
             storage_path: storage_path.clone(),
             objects: new_ptr(HashMap::new()),
+            metadata: new_ptr(HashMap::new()),
+            eviction_policy,
         };
 
         // Load existing objects from disk
@@ -165,7 +220,8 @@ impl ObjectCache {
     fn load_session_objects(
         &self,
         session_path: &Path,
-        objects: &mut HashMap<String, ObjectMetadata>,
+        objects: &mut HashMap<String, Object>,
+        metadata_map: &mut HashMap<String, ObjectMetadata>,
     ) -> Result<(), FlameError> {
         let session_id = session_path
             .file_name()
@@ -189,10 +245,17 @@ impl ObjectCache {
 
             let key = format!("{}/{}", session_id, object_id);
             let size = fs::metadata(&object_path)?.len();
-            let metadata = self.create_metadata(key.clone(), size);
+            let meta = self.create_metadata(key.clone(), size);
+
+            // Load object into memory
+            let object = self.load_object_from_disk_internal(&object_path)?;
 
             tracing::debug!("Loaded object: {}", key);
-            objects.insert(key, metadata);
+            objects.insert(key.clone(), object);
+            metadata_map.insert(key.clone(), meta);
+
+            // Track in eviction policy
+            self.eviction_policy.on_add(&key, size);
         }
 
         Ok(())
@@ -207,6 +270,7 @@ impl ObjectCache {
 
         tracing::info!("Loading objects from disk: {:?}", storage_path);
         let mut objects = lock_ptr!(self.objects)?;
+        let mut metadata = lock_ptr!(self.metadata)?;
 
         for session_entry in fs::read_dir(storage_path)? {
             let session_entry = session_entry?;
@@ -216,65 +280,42 @@ impl ObjectCache {
                 continue;
             }
 
-            self.load_session_objects(&session_path, &mut objects)?;
+            self.load_session_objects(&session_path, &mut objects, &mut metadata)?;
         }
 
         tracing::info!("Loaded {} objects from disk", objects.len());
+
+        // Run eviction if needed after loading
+        drop(objects);
+        drop(metadata);
+        self.run_eviction()?;
+
         Ok(())
     }
 
-    async fn put(
-        &self,
-        session_id: SessionID,
-        object: Object,
-    ) -> Result<ObjectMetadata, FlameError> {
-        self.put_with_id(session_id, None, object).await
-    }
+    /// Run eviction if needed, removing least recently used objects from memory.
+    fn run_eviction(&self) -> Result<(), FlameError> {
+        loop {
+            let keys_to_evict = self.eviction_policy.victims(EVICTION_BATCH_SIZE);
+            if keys_to_evict.is_empty() {
+                break;
+            }
 
-    async fn put_with_id(
-        &self,
-        session_id: SessionID,
-        object_id: Option<String>,
-        object: Object,
-    ) -> Result<ObjectMetadata, FlameError> {
-        let object_id = object_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let key = format!("{}/{}", session_id, object_id);
-
-        // Write to disk if storage is configured
-        if let Some(storage_path) = &self.storage_path {
-            // Create session directory
-            let session_dir = storage_path.join(&session_id);
-            fs::create_dir_all(&session_dir)?;
-
-            // Write object to Arrow IPC file
-            let object_path = session_dir.join(format!("{}.arrow", object_id));
-            let batch = object_to_batch(&object)
-                .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
-
-            write_batch_to_file(&object_path, &batch)?;
-            tracing::debug!("Wrote object to disk: {:?}", object_path);
+            let mut objects = lock_ptr!(self.objects)?;
+            for key in keys_to_evict {
+                if objects.contains_key(&key) {
+                    // Remove from in-memory storage (metadata is kept)
+                    objects.remove(&key);
+                    self.eviction_policy.on_evict(&key);
+                    tracing::debug!("Evicted object from memory: {}", key);
+                }
+            }
         }
-
-        let metadata = self.create_metadata(key.clone(), object.data.len() as u64);
-
-        // Update in-memory index
-        let mut objects = lock_ptr!(self.objects)?;
-        objects.insert(key.clone(), metadata.clone());
-
-        tracing::debug!("Object put: {}", key);
-
-        Ok(metadata)
+        Ok(())
     }
 
-    fn load_object_from_disk(&self, key: &str) -> Result<Object, FlameError> {
-        let storage_path = self
-            .storage_path
-            .as_ref()
-            .ok_or_else(|| FlameError::InvalidConfig("Storage path not configured".to_string()))?;
-
-        let object_path = storage_path.join(format!("{}.arrow", key));
-
-        let file = fs::File::open(&object_path)
+    fn load_object_from_disk_internal(&self, object_path: &Path) -> Result<Object, FlameError> {
+        let file = fs::File::open(object_path)
             .map_err(|e| FlameError::NotFound(format!("Object file not found: {}", e)))?;
         let reader = FileReader::try_new(file, None)
             .map_err(|e| FlameError::Internal(format!("Failed to create reader: {}", e)))?;
@@ -291,7 +332,74 @@ impl ObjectCache {
         Ok(object)
     }
 
+    async fn put(
+        &self,
+        session_id: SessionID,
+        object: Object,
+    ) -> Result<ObjectMetadata, FlameError> {
+        self.put_with_id(session_id, None, object).await
+    }
+
+    async fn put_with_id(
+        &self,
+        session_id: SessionID,
+        object_id: Option<String>,
+        object: Object,
+    ) -> Result<ObjectMetadata, FlameError> {
+        validate_session_id(&session_id)?;
+        let object_id = object_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        validate_object_id(&object_id)?;
+
+        let key = format!("{}/{}", session_id, object_id);
+        let size = object.data.len() as u64;
+
+        if let Some(storage_path) = &self.storage_path {
+            let session_dir = storage_path.join(&session_id);
+            fs::create_dir_all(&session_dir)?;
+
+            let object_path = session_dir.join(format!("{}.arrow", object_id));
+            let batch = object_to_batch(&object)
+                .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
+
+            write_batch_to_file(&object_path, &batch)?;
+            tracing::debug!("Wrote object to disk: {:?}", object_path);
+        }
+
+        let meta = self.create_metadata(key.clone(), size);
+
+        // Update in-memory storage
+        {
+            let mut objects = lock_ptr!(self.objects)?;
+            let mut metadata = lock_ptr!(self.metadata)?;
+
+            objects.insert(key.clone(), object);
+            metadata.insert(key.clone(), meta.clone());
+        }
+
+        // Track in eviction policy and run eviction if needed
+        self.eviction_policy.on_add(&key, size);
+        self.run_eviction()?;
+
+        tracing::debug!("Object put: {}", key);
+
+        Ok(meta)
+    }
+
+    fn load_object_from_disk(&self, key: &str) -> Result<Object, FlameError> {
+        validate_key(key)?;
+
+        let storage_path = self
+            .storage_path
+            .as_ref()
+            .ok_or_else(|| FlameError::InvalidConfig("Storage path not configured".to_string()))?;
+
+        let object_path = storage_path.join(format!("{}.arrow", key));
+        self.load_object_from_disk_internal(&object_path)
+    }
+
     fn try_load_and_index(&self, key: &str) -> Result<Option<Object>, FlameError> {
+        validate_key(key)?;
+
         let storage_path = match &self.storage_path {
             Some(path) => path,
             None => return Ok(None),
@@ -302,41 +410,78 @@ impl ObjectCache {
             return Ok(None);
         }
 
-        let object = self.load_object_from_disk(key)?;
+        let object = self.load_object_from_disk_internal(&object_path)?;
+        let size = object.data.len() as u64;
 
-        // Add to in-memory index
-        let metadata = self.create_metadata(key.to_string(), object.data.len() as u64);
-        let mut objects = lock_ptr!(self.objects)?;
-        objects.insert(key.to_string(), metadata);
+        // Add to in-memory storage
+        {
+            let mut objects = lock_ptr!(self.objects)?;
+            let mut metadata = lock_ptr!(self.metadata)?;
+
+            objects.insert(key.to_string(), object.clone());
+
+            let meta = self.create_metadata(key.to_string(), size);
+            metadata.insert(key.to_string(), meta);
+        }
+
+        // Track in eviction policy
+        self.eviction_policy.on_add(key, size);
+        self.run_eviction()?;
 
         tracing::debug!("Loaded object from disk: {}", key);
         Ok(Some(object))
     }
 
     async fn get(&self, key: String) -> Result<Object, FlameError> {
-        // Check if object exists in index
-        let exists_in_index = {
-            let objects = lock_ptr!(self.objects)?;
-            objects.contains_key(&key)
-        };
+        validate_key(&key)?;
 
-        // If not in index, try to load from disk and add to index
-        if !exists_in_index {
-            if let Some(object) = self.try_load_and_index(&key)? {
-                return Ok(object);
+        self.eviction_policy.on_access(&key);
+
+        // Check if object is in memory
+        {
+            let objects = lock_ptr!(self.objects)?;
+            if let Some(object) = objects.get(&key) {
+                tracing::debug!("Object get from memory: {}", key);
+                return Ok(object.clone());
             }
-            return Err(FlameError::NotFound(format!("object <{}> not found", key)));
         }
 
-        // Object is in index, load from disk
-        let object = self.load_object_from_disk(&key)?;
-        tracing::debug!("Object get from disk: {}", key);
-        Ok(object)
+        // Check if object exists in metadata (on disk but not in memory)
+        let exists_in_metadata = {
+            let metadata = lock_ptr!(self.metadata)?;
+            metadata.contains_key(&key)
+        };
+
+        if exists_in_metadata {
+            // Object is on disk, reload into memory
+            let object = self.load_object_from_disk(&key)?;
+            let size = object.data.len() as u64;
+
+            // Add back to memory
+            {
+                let mut objects = lock_ptr!(self.objects)?;
+                objects.insert(key.clone(), object.clone());
+            }
+
+            // Track in eviction policy and run eviction
+            self.eviction_policy.on_add(&key, size);
+            self.run_eviction()?;
+
+            tracing::debug!("Object reloaded from disk: {}", key);
+            return Ok(object);
+        }
+
+        // Try to load from disk (not in index)
+        if let Some(object) = self.try_load_and_index(&key)? {
+            return Ok(object);
+        }
+
+        Err(FlameError::NotFound(format!("object <{}> not found", key)))
     }
 
     async fn update(&self, key: String, new_object: Object) -> Result<ObjectMetadata, FlameError> {
-        // For now, update is the same as put (overwrites the file)
-        // Parse key to get session_id
+        validate_key(&key)?;
+
         let parts: Vec<&str> = key.split('/').collect();
         if parts.len() != 2 {
             return Err(FlameError::InvalidConfig(format!(
@@ -344,8 +489,8 @@ impl ObjectCache {
                 key
             )));
         }
-        let _session_id = parts[0].to_string();
-        let _object_id = parts[1].to_string();
+
+        let size = new_object.data.len() as u64;
 
         // Write to disk if storage is configured
         if let Some(storage_path) = &self.storage_path {
@@ -357,19 +502,42 @@ impl ObjectCache {
             tracing::debug!("Updated object on disk: {:?}", object_path);
         }
 
-        let metadata = self.create_metadata(key.clone(), new_object.data.len() as u64);
+        let meta = self.create_metadata(key.clone(), size);
 
-        // Update in-memory index
-        let mut objects = lock_ptr!(self.objects)?;
-        objects.insert(key.clone(), metadata.clone());
+        // Update in-memory storage
+        {
+            let mut objects = lock_ptr!(self.objects)?;
+            let mut metadata = lock_ptr!(self.metadata)?;
+
+            objects.insert(key.clone(), new_object);
+            metadata.insert(key.clone(), meta.clone());
+        }
+
+        // Track in eviction policy
+        self.eviction_policy.on_add(&key, size);
+        self.run_eviction()?;
 
         tracing::debug!("Object update: {}", key);
 
-        Ok(metadata)
+        Ok(meta)
     }
 
     async fn delete(&self, session_id: SessionID) -> Result<(), FlameError> {
-        // Delete session directory and all objects
+        validate_session_id(&session_id)?;
+
+        let keys_to_remove: Vec<String> = {
+            let metadata = lock_ptr!(self.metadata)?;
+            metadata
+                .keys()
+                .filter(|k| k.starts_with(&format!("{}/", session_id)))
+                .cloned()
+                .collect()
+        };
+
+        for key in &keys_to_remove {
+            self.eviction_policy.on_remove(key);
+        }
+
         if let Some(storage_path) = &self.storage_path {
             let session_dir = storage_path.join(&session_id);
             if session_dir.exists() {
@@ -378,9 +546,13 @@ impl ObjectCache {
             }
         }
 
-        // Remove from in-memory index
-        let mut objects = lock_ptr!(self.objects)?;
-        objects.retain(|key, _| !key.starts_with(&format!("{}/", session_id)));
+        {
+            let mut objects = lock_ptr!(self.objects)?;
+            let mut metadata = lock_ptr!(self.metadata)?;
+
+            objects.retain(|key, _| !key.starts_with(&format!("{}/", session_id)));
+            metadata.retain(|key, _| !key.starts_with(&format!("{}/", session_id)));
+        }
 
         tracing::debug!("Session deleted: <{}>", session_id);
 
@@ -388,8 +560,8 @@ impl ObjectCache {
     }
 
     async fn list_all(&self) -> Result<Vec<ObjectMetadata>, FlameError> {
-        let objects = lock_ptr!(self.objects)?;
-        Ok(objects.values().cloned().collect())
+        let metadata = lock_ptr!(self.metadata)?;
+        Ok(metadata.values().cloned().collect())
     }
 }
 
@@ -963,7 +1135,26 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
         tracing::warn!("No storage path configured - cache will not persist");
     }
 
-    let cache = Arc::new(ObjectCache::new(endpoint.clone(), storage_path)?);
+    // Create eviction config from FlameCache.eviction
+    // Environment variables can still override config values (handled in new_policy)
+    let eviction_config = EvictionConfig {
+        policy: Some(cache_config.eviction.policy.clone()),
+        max_memory: Some(ByteSize::b(cache_config.eviction.max_memory).to_string()),
+        max_objects: cache_config.eviction.max_objects,
+    };
+
+    tracing::info!(
+        "Eviction config: policy={}, max_memory={}, max_objects={:?}",
+        cache_config.eviction.policy,
+        ByteSize::b(cache_config.eviction.max_memory),
+        cache_config.eviction.max_objects
+    );
+
+    let cache = Arc::new(ObjectCache::new(
+        endpoint.clone(),
+        storage_path,
+        Some(&eviction_config),
+    )?);
     let server = FlightCacheServer::new(Arc::clone(&cache));
 
     tracing::info!("Starting Arrow Flight cache server at {}", address_str);

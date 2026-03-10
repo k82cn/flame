@@ -15,6 +15,7 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
 
+use bytesize::ByteSize;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::apis::ResourceRequirement;
@@ -31,6 +32,8 @@ const DEFAULT_MAX_EXECUTORS_PER_NODE: u32 = 128;
 const DEFAULT_SHIM: &str = "host";
 const DEFAULT_FLAME_CACHE_ENDPOINT: &str = "http://127.0.0.1:9090";
 const DEFAULT_FLAME_CACHE_NETWORK_INTERFACE: &str = "eth0";
+const DEFAULT_EVICTION_POLICY: &str = "lru";
+const DEFAULT_MAX_MEMORY: &str = "1G";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FlameClusterContextYaml {
@@ -59,6 +62,17 @@ struct FlameCacheYaml {
     pub endpoint: Option<String>,
     pub network_interface: Option<String>,
     pub storage: Option<String>,
+    pub eviction: Option<FlameEvictionYaml>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FlameEvictionYaml {
+    /// Eviction policy: "lru" or "none"
+    pub policy: Option<String>,
+    /// Maximum memory for cached objects (string with units: "1G", "512M", "1024K")
+    pub max_memory: Option<String>,
+    /// Maximum number of objects in memory
+    pub max_objects: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +107,30 @@ pub struct FlameCache {
     pub endpoint: String,
     pub network_interface: String,
     pub storage: Option<String>,
+    pub eviction: FlameEviction,
+}
+
+/// Eviction configuration for the cache.
+#[derive(Debug, Clone)]
+pub struct FlameEviction {
+    /// Eviction policy: "lru" or "none"
+    pub policy: String,
+    /// Maximum memory for cached objects in bytes
+    pub max_memory: u64,
+    /// Maximum number of objects in memory (None means unlimited)
+    pub max_objects: Option<usize>,
+}
+
+impl Default for FlameEviction {
+    fn default() -> Self {
+        let default_max_memory =
+            parse_memory_size(DEFAULT_MAX_MEMORY).unwrap_or(1024 * 1024 * 1024); // 1GiB fallback
+        FlameEviction {
+            policy: DEFAULT_EVICTION_POLICY.to_string(),
+            max_memory: default_max_memory,
+            max_objects: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +146,65 @@ impl Display for FlameClusterContext {
             self.cluster.name, self.cluster.endpoint
         )
     }
+}
+
+/// Convert SI unit suffixes to binary (IEC) unit suffixes.
+///
+/// **Why this is needed:** The `bytesize` crate treats G/M/K as SI (decimal) units:
+/// - bytesize: "1G" = 1,000,000,000 bytes (1 GB, powers of 1000)
+/// - bytesize: "1GiB" = 1,073,741,824 bytes (1 GiB, powers of 1024)
+///
+/// For memory configuration, we want "1G" to mean 1 GiB (binary), not 1 GB (decimal).
+/// This helper converts SI suffixes to IEC suffixes before parsing with bytesize.
+fn convert_to_binary_units(s: &str) -> String {
+    let s = s.trim();
+    if s.is_empty() {
+        return s.to_string();
+    }
+
+    // Find where the numeric part ends and the unit begins
+    let unit_start = s.find(|c: char| c.is_alphabetic()).unwrap_or(s.len());
+    let (num_part, unit_part) = s.split_at(unit_start);
+
+    // Convert SI units to binary units (case-insensitive)
+    let unit_upper = unit_part.to_uppercase();
+    let binary_unit = match unit_upper.as_str() {
+        "G" | "GB" => "GiB",
+        "M" | "MB" => "MiB",
+        "K" | "KB" => "KiB",
+        "T" | "TB" => "TiB",
+        "P" | "PB" => "PiB",
+        // Already binary or bytes - pass through
+        _ => unit_part,
+    };
+
+    format!("{}{}", num_part, binary_unit)
+}
+
+/// Parse a memory size string with optional unit suffix using bytesize crate.
+/// Treats G/M/K as binary units (GiB/MiB/KiB) for memory configuration.
+/// Returns the size in bytes.
+///
+/// Examples:
+/// - "1G" or "1g" or "1GB" -> 1073741824 bytes (1 GiB)
+/// - "512M" or "512m" or "512MB" -> 536870912 bytes (512 MiB)
+/// - "1024K" or "1024k" or "1024KB" -> 1048576 bytes (1024 KiB)
+/// - "512" (no unit) -> 512 bytes
+pub fn parse_memory_size(s: &str) -> Result<u64, FlameError> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err(FlameError::InvalidConfig(
+            "empty memory size string".to_string(),
+        ));
+    }
+
+    // Convert SI units to binary units before parsing
+    let binary_str = convert_to_binary_units(s);
+
+    binary_str
+        .parse::<ByteSize>()
+        .map(|bs| bs.as_u64())
+        .map_err(|e| FlameError::InvalidConfig(format!("invalid memory size '{}': {}", s, e)))
 }
 
 impl FlameClusterContext {
@@ -213,6 +310,31 @@ impl TryFrom<FlameCacheYaml> for FlameCache {
                 .network_interface
                 .unwrap_or(DEFAULT_FLAME_CACHE_NETWORK_INTERFACE.to_string()),
             storage: cache.storage,
+            eviction: cache
+                .eviction
+                .map(FlameEviction::try_from)
+                .transpose()?
+                .unwrap_or_default(),
+        })
+    }
+}
+
+impl TryFrom<FlameEvictionYaml> for FlameEviction {
+    type Error = FlameError;
+    fn try_from(eviction: FlameEvictionYaml) -> Result<Self, Self::Error> {
+        // Parse max_memory using bytesize crate
+        let max_memory = if let Some(ref max_memory_str) = eviction.max_memory {
+            parse_memory_size(max_memory_str)?
+        } else {
+            parse_memory_size(DEFAULT_MAX_MEMORY)?
+        };
+
+        Ok(FlameEviction {
+            policy: eviction
+                .policy
+                .unwrap_or(DEFAULT_EVICTION_POLICY.to_string()),
+            max_memory,
+            max_objects: eviction.max_objects,
         })
     }
 }
@@ -253,5 +375,373 @@ executors:
         assert_eq!(ctx.executors.limits.max_executors, 10);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_flame_context_with_cache_eviction() -> Result<(), FlameError> {
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  network_interface: "eth0"
+  storage: "/var/lib/flame/cache"
+  eviction:
+    policy: "lru"
+    max_memory: "512M"
+    max_objects: 5000
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+
+        fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))?;
+
+        assert!(ctx.cache.is_some());
+        let cache = ctx.cache.unwrap();
+        assert_eq!(cache.endpoint, "grpc://127.0.0.1:9090");
+        assert_eq!(cache.network_interface, "eth0");
+        assert_eq!(cache.storage, Some("/var/lib/flame/cache".to_string()));
+        assert_eq!(cache.eviction.policy, "lru");
+        assert_eq!(cache.eviction.max_memory, 512 * 1024 * 1024); // 512MB in bytes
+        assert_eq!(cache.eviction.max_objects, Some(5000));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flame_context_with_cache_no_eviction() -> Result<(), FlameError> {
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  eviction:
+    policy: "none"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+
+        fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))
+            .map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        assert!(ctx.cache.is_some());
+        let cache = ctx.cache.unwrap();
+        assert_eq!(cache.eviction.policy, "none");
+        // Default max_memory should be applied (1G = 1073741824 bytes)
+        assert_eq!(cache.eviction.max_memory, 1024 * 1024 * 1024);
+        assert_eq!(cache.eviction.max_objects, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flame_context_with_cache_default_eviction() -> Result<(), FlameError> {
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+
+        fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))
+            .map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        assert!(ctx.cache.is_some());
+        let cache = ctx.cache.unwrap();
+        // Default eviction config should be applied
+        assert_eq!(cache.eviction.policy, DEFAULT_EVICTION_POLICY);
+        assert_eq!(cache.eviction.max_memory, 1024 * 1024 * 1024); // 1G in bytes
+        assert_eq!(cache.eviction.max_objects, None);
+
+        Ok(())
+    }
+
+    // ============================================================
+    // Tests for max_memory config parsing with units (using bytesize)
+    // ============================================================
+
+    #[test]
+    fn test_parse_memory_size_gigabytes_uppercase() {
+        // Test uppercase G unit
+        assert_eq!(parse_memory_size("1G").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_memory_size("2G").unwrap(), 2 * 1024 * 1024 * 1024);
+        assert_eq!(parse_memory_size("4G").unwrap(), 4 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_gigabytes_lowercase() {
+        // Test lowercase g unit
+        assert_eq!(parse_memory_size("1g").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_memory_size("2g").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_gigabytes_with_b() {
+        // Test GB unit
+        assert_eq!(parse_memory_size("1GB").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_memory_size("1gb").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_memory_size("2GB").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_megabytes_uppercase() {
+        // Test uppercase M unit
+        assert_eq!(parse_memory_size("512M").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_memory_size("1024M").unwrap(), 1024 * 1024 * 1024);
+        assert_eq!(parse_memory_size("256M").unwrap(), 256 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_megabytes_lowercase() {
+        // Test lowercase m unit
+        assert_eq!(parse_memory_size("512m").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_memory_size("1024m").unwrap(), 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_megabytes_with_b() {
+        // Test MB unit
+        assert_eq!(parse_memory_size("512MB").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_memory_size("512mb").unwrap(), 512 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_kilobytes_uppercase() {
+        // Test uppercase K unit
+        assert_eq!(parse_memory_size("1024K").unwrap(), 1024 * 1024);
+        assert_eq!(parse_memory_size("2048K").unwrap(), 2048 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_kilobytes_lowercase() {
+        // Test lowercase k unit
+        assert_eq!(parse_memory_size("1024k").unwrap(), 1024 * 1024);
+        assert_eq!(parse_memory_size("2048k").unwrap(), 2048 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_kilobytes_with_b() {
+        // Test KB unit
+        assert_eq!(parse_memory_size("1024KB").unwrap(), 1024 * 1024);
+        assert_eq!(parse_memory_size("1024kb").unwrap(), 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_bytes() {
+        // Test B unit and no unit (bytes)
+        assert_eq!(parse_memory_size("512B").unwrap(), 512);
+        assert_eq!(parse_memory_size("512b").unwrap(), 512);
+        assert_eq!(parse_memory_size("1024").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_with_whitespace() {
+        // Test with leading/trailing whitespace
+        assert_eq!(parse_memory_size("  512M  ").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_memory_size(" 1G ").unwrap(), 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_memory_size_invalid_unit() {
+        // Test invalid unit
+        let result = parse_memory_size("512X");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, FlameError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_parse_memory_size_invalid_number() {
+        // Test invalid number
+        let result = parse_memory_size("abcM");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, FlameError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_parse_memory_size_empty_string() {
+        // Test empty string
+        let result = parse_memory_size("");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, FlameError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_parse_memory_size_only_whitespace() {
+        // Test only whitespace
+        let result = parse_memory_size("   ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_memory_size_zero() {
+        // Test zero value
+        assert_eq!(parse_memory_size("0").unwrap(), 0);
+        assert_eq!(parse_memory_size("0M").unwrap(), 0);
+        assert_eq!(parse_memory_size("0G").unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_memory_size_large_values() {
+        // Test large values
+        assert_eq!(parse_memory_size("100G").unwrap(), 100 * 1024 * 1024 * 1024);
+    }
+
+    // ============================================================
+    // Integration tests for max_memory in config files
+    // ============================================================
+
+    #[test]
+    fn test_flame_context_with_max_memory_gigabytes() -> Result<(), FlameError> {
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  eviction:
+    policy: "lru"
+    max_memory: "1G"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+        fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))?;
+
+        assert!(ctx.cache.is_some());
+        let cache = ctx.cache.unwrap();
+        assert_eq!(cache.eviction.max_memory, 1024 * 1024 * 1024); // 1G in bytes
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flame_context_with_max_memory_megabytes() -> Result<(), FlameError> {
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  eviction:
+    policy: "lru"
+    max_memory: "512M"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+        fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))?;
+
+        assert!(ctx.cache.is_some());
+        let cache = ctx.cache.unwrap();
+        assert_eq!(cache.eviction.max_memory, 512 * 1024 * 1024); // 512M in bytes
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flame_context_with_max_memory_lowercase() -> Result<(), FlameError> {
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  eviction:
+    policy: "lru"
+    max_memory: "2g"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+        fs::write(&tmp_file, context_string).map_err(|e| FlameError::Internal(e.to_string()))?;
+
+        let ctx = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()))?;
+
+        assert!(ctx.cache.is_some());
+        let cache = ctx.cache.unwrap();
+        assert_eq!(cache.eviction.max_memory, 2 * 1024 * 1024 * 1024); // 2G in bytes
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flame_context_with_invalid_max_memory_unit() {
+        // Test invalid unit should fail
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  eviction:
+    policy: "lru"
+    max_memory: "512X"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+        fs::write(&tmp_file, context_string).unwrap();
+
+        let result = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_flame_context_with_invalid_max_memory_number() {
+        // Test invalid number should fail
+        let context_string = r#"---
+cluster:
+  name: flame
+  endpoint: "http://flame-session-manager:8080"
+executors:
+  shim: host
+cache:
+  endpoint: "grpc://127.0.0.1:9090"
+  eviction:
+    policy: "lru"
+    max_memory: "abcM"
+        "#;
+
+        let tmp_dir = TempDir::new().unwrap();
+        let tmp_file = tmp_dir.path().join("flame-cluster.yaml");
+        fs::write(&tmp_file, context_string).unwrap();
+
+        let result = FlameClusterContext::from_file(Some(tmp_file.to_string_lossy().to_string()));
+        assert!(result.is_err());
     }
 }

@@ -13,3 +13,7 @@ cache:
   endpoint: "grpc://flame-executor-manager:9090"
   network_interface: "eth0"
   storage: "/var/lib/flame/cache"
+  eviction:
+    policy: "lru"
+    max_memory: "512M"
+    max_objects: 10000
