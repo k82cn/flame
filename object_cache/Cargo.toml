@@ -25,6 +25,7 @@ bytes = { workspace = true }
 url = { workspace = true }
 network-interface = "2"
 regex = "1"
+bytesize = "1.3"
 
 arrow = "53"
 arrow-flight = "53"

@@ -11,13 +11,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::collections::HashMap;
 use std::env;
 use std::fs::{self, create_dir_all, OpenOptions};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use async_trait::async_trait;
 use nix::sys::signal::{killpg, Signal};
@@ -33,7 +33,6 @@ use common::{
     FlameError, FLAME_CACHE_ENDPOINT, FLAME_ENDPOINT, FLAME_HOME, FLAME_INSTANCE_ENDPOINT,
     FLAME_LOG, FLAME_WORKING_DIRECTORY,
 };
-
 
 struct HostInstance {
     child: tokio::process::Child,
