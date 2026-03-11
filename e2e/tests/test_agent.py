@@ -28,7 +28,6 @@ def setup_test_env():
     flamepy.register_application(
         FLM_TEST_APP,
         flamepy.ApplicationAttributes(
-            shim=flamepy.Shim.Host,
             command="${FLAME_HOME}/bin/uv",
             working_directory="/opt/e2e",
             environments={"FLAME_LOG_LEVEL": "DEBUG"},

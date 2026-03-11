@@ -132,7 +132,7 @@ async fn view_application(
         "Description:",
         application.attributes.description.unwrap_or_default()
     );
-    println!("{:<15}{}", "Shim:", application.attributes.shim);
+    // CHANGED: Removed shim field - shim is now configured in executor-manager
     println!(
         "{:<15}{}",
         "Image:",

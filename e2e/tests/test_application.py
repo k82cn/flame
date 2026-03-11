@@ -18,14 +18,11 @@ import flamepy
 def test_register_application():
     flamepy.register_application(
         "flmtestapp",
-        flamepy.ApplicationAttributes(
-            shim=flamepy.Shim.Host,
-        ),
+        flamepy.ApplicationAttributes(),
     )
 
     app = flamepy.get_application("flmtestapp")
     assert app.name == "flmtestapp"
-    assert app.shim == flamepy.Shim.Host
     assert app.state == flamepy.ApplicationState.ENABLED
 
     flamepy.unregister_application("flmtestapp")
@@ -37,7 +34,6 @@ def test_list_application():
 
     for app in apps:
         assert app.name in ["flmexec", "flmping", "flmrun"]
-        assert app.shim == flamepy.Shim.Host
         assert app.state == flamepy.ApplicationState.ENABLED
 
 
@@ -49,7 +45,6 @@ def test_application_with_url():
     flamepy.register_application(
         "flmtestapp-url",
         flamepy.ApplicationAttributes(
-            shim=flamepy.Shim.Host,
             url=test_url,
             description="Test application with URL",
         ),
@@ -58,7 +53,6 @@ def test_application_with_url():
     # Retrieve and verify URL field
     app = flamepy.get_application("flmtestapp-url")
     assert app.name == "flmtestapp-url"
-    assert app.shim == flamepy.Shim.Host
     assert app.state == flamepy.ApplicationState.ENABLED
     assert app.url == test_url, f"Expected url to be '{test_url}', got '{app.url}'"
     # Note: description field persistence is a separate pre-existing issue
@@ -73,7 +67,6 @@ def test_application_without_url():
     flamepy.register_application(
         "flmtestapp-no-url",
         flamepy.ApplicationAttributes(
-            shim=flamepy.Shim.Host,
             description="Test application without URL",
         ),
     )
@@ -81,10 +74,47 @@ def test_application_without_url():
     # Retrieve and verify URL field is None
     app = flamepy.get_application("flmtestapp-no-url")
     assert app.name == "flmtestapp-no-url"
-    assert app.shim == flamepy.Shim.Host
     assert app.state == flamepy.ApplicationState.ENABLED
     assert app.url is None, f"Expected url to be None, got '{app.url}'"
     # Note: description field persistence is a separate pre-existing issue
 
     # Clean up
     flamepy.unregister_application("flmtestapp-no-url")
+
+
+def test_register_application_no_shim():
+    """Test registering an application without shim field (shim removed from SDK).
+    
+    This test verifies that applications can be registered and retrieved
+    successfully after the shim field has been removed from the Python SDK.
+    The shim configuration is now managed by the ExecutorManager backend.
+    """
+    app_name = "flmtestapp-no-shim"
+    
+    # Register application without shim (shim field no longer exists)
+    flamepy.register_application(
+        app_name,
+        flamepy.ApplicationAttributes(
+            description="Test application without shim field",
+            command="/usr/bin/python3",
+            arguments=["-c", "print('hello')"],
+        ),
+    )
+
+    # Retrieve and verify the application
+    app = flamepy.get_application(app_name)
+    assert app is not None, f"Application '{app_name}' should exist"
+    assert app.name == app_name
+    assert app.state == flamepy.ApplicationState.ENABLED
+    assert app.command == "/usr/bin/python3"
+    assert app.arguments == ["-c", "print('hello')"]
+    
+    # Verify that Application class no longer has shim attribute
+    assert not hasattr(app, 'shim'), "Application should not have 'shim' attribute after migration"
+
+    # Clean up
+    flamepy.unregister_application(app_name)
+    
+    # Verify cleanup
+    app_after_cleanup = flamepy.get_application(app_name)
+    assert app_after_cleanup is None, f"Application '{app_name}' should be unregistered"

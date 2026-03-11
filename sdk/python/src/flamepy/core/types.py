@@ -62,13 +62,6 @@ class ApplicationState(IntEnum):
     DISABLED = 1
 
 
-class Shim(IntEnum):
-    """Shim type enumeration."""
-
-    Host = 0
-    Wasm = 1
-
-
 class FlameErrorCode(IntEnum):
     """Flame error code enumeration."""
 
@@ -123,7 +116,6 @@ class ApplicationSchema:
 class ApplicationAttributes:
     """Attributes for an application."""
 
-    shim: Shim
     image: Optional[str] = None
     description: Optional[str] = None
     labels: Optional[List[str]] = None
@@ -165,7 +157,6 @@ class Application:
 
     id: ApplicationID
     name: str
-    shim: Shim
     state: ApplicationState
     creation_time: datetime
     image: Optional[str] = None

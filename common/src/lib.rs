@@ -27,7 +27,7 @@ use tonic::Status;
 use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tracing_subscriber::fmt::time::LocalTime;
 
-use crate::apis::{ApplicationAttributes, ApplicationSchema, Shim};
+use crate::apis::{ApplicationAttributes, ApplicationSchema};
 
 #[derive(Error, Debug)]
 pub enum FlameError {
@@ -200,7 +200,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         (
             "flmexec".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 description: Some(
                     "The Flame Executor application, which is used to run scripts.".to_string(),
                 ),
@@ -216,7 +216,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         (
             "flmping".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 url: Some(flmping_url),
                 command: Some(flmping_cmd),
                 ..ApplicationAttributes::default()
@@ -225,7 +225,7 @@ pub fn default_applications() -> HashMap<String, ApplicationAttributes> {
         (
             "flmrun".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 description: Some(
                     "The Flame Runner application for executing customized Python applications."
                         .to_string(),

@@ -31,7 +31,6 @@ from flamepy.core.types import (
     SessionAttributes,
     SessionID,
     SessionState,
-    Shim,
     Task,
     TaskID,
     TaskInformer,
@@ -151,6 +150,7 @@ class ConnectionInstance:
             return cls._connection
 
 
+
 class Connection:
     """Connection to the Flame service."""
 
@@ -218,7 +218,6 @@ class Connection:
                 environments.append(Environment(name=k, value=v))
 
         app_spec = ApplicationSpec(
-            shim=app_attrs.shim,
             image=app_attrs.image,
             command=app_attrs.command,
             description=app_attrs.description,
@@ -254,6 +253,7 @@ class Connection:
                 f"failed to unregister application: {e.details()}",
             )
 
+
     def list_applications(self) -> List[Application]:
         """List all applications."""
         request = ListApplicationRequest()
@@ -279,7 +279,6 @@ class Connection:
                     Application(
                         id=app.metadata.id,
                         name=app.metadata.name,
-                        shim=Shim(app.spec.shim),
                         state=ApplicationState(app.status.state),
                         creation_time=datetime.fromtimestamp(app.status.creation_time / 1000, tz=timezone.utc),
                         image=app.spec.image,
@@ -321,7 +320,6 @@ class Connection:
             return Application(
                 id=response.metadata.id,
                 name=response.metadata.name,
-                shim=Shim(response.spec.shim),
                 state=ApplicationState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
                 image=response.spec.image,
@@ -339,6 +337,7 @@ class Connection:
             if e.code() == grpc.StatusCode.NOT_FOUND:
                 return None
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get application: {e.details()}")
+
 
     def create_session(self, attrs: SessionAttributes) -> "Session":
         """Create a new session."""
@@ -417,6 +416,7 @@ class Connection:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list sessions: {e.details()}")
 
+
     def open_session(self, session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
         """Open an existing session or create a new one if spec is provided.
 
@@ -490,6 +490,7 @@ class Connection:
 
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to get session: {e.details()}")
+
 
     def close_session(self, session_id: SessionID) -> "Session":
         """Close a session."""
@@ -568,6 +569,7 @@ class Session:
     def common_data(self) -> Optional[bytes]:
         """Get the common data of Session as bytes."""
         return self._common_data
+
 
     def create_task(self, input_data: bytes) -> Task:
         """Create a new task in the session.
@@ -665,6 +667,7 @@ class Session:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
 
+
     def invoke(self, input_data: Any, informer: Optional[TaskInformer] = None) -> Any:
         """Invoke a task with the given input and optional informer (synchronous).
 
@@ -755,6 +758,7 @@ def _task_from_proto(response, session_id: str) -> Task:
             for event in response.status.events
         ],
     )
+
 
 class TaskWatcher:
     """Iterator for watching task updates."""

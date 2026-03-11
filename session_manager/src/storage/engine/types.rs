@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::FlameError;
 use bytes::Bytes;
 use common::apis::{
-    Application, ApplicationSchema, ApplicationState, Session, SessionStatus, Shim, Task,
+    Application, ApplicationSchema, ApplicationState, Session, SessionStatus, Task,
 };
 use common::apis::{ApplicationID, Event, SessionID, TaskID};
 
@@ -54,8 +54,6 @@ pub struct ApplicationDao {
     pub delay_release: i64,
     pub schema: Option<Json<AppSchemaDao>>,
     pub url: Option<String>,
-
-    pub shim: i32,
     pub creation_time: i64,
     pub state: i32,
 }
@@ -168,14 +166,10 @@ impl TryFrom<&ApplicationDao> for Application {
     type Error = FlameError;
 
     fn try_from(app: &ApplicationDao) -> Result<Self, Self::Error> {
-        tracing::debug!("Application Shim is {}", app.shim);
-
         Ok(Self {
             name: app.name.clone(),
             version: app.version,
             state: ApplicationState::try_from(app.state)?,
-            shim: Shim::try_from(app.shim)
-                .map_err(|_| FlameError::Internal("unknown shim".to_string()))?,
             creation_time: DateTime::<Utc>::from_timestamp(app.creation_time, 0)
                 .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
             image: app.image.clone(),

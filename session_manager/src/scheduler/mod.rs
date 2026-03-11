@@ -67,7 +67,7 @@ mod tests {
     use chrono::Duration;
     use chrono::Utc;
     use common::apis::{
-        Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement, Shim,
+        Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement,
     };
     use common::ctx::FlameCluster;
     use common::ctx::FlameClusterContext;
@@ -86,7 +86,6 @@ mod tests {
             arguments: Vec::new(),
             working_directory: Some("/tmp".to_string()),
             environments: HashMap::new(),
-            shim: Shim::Host,
             max_instances: 10,
             delay_release: Duration::seconds(0),
             schema: None,

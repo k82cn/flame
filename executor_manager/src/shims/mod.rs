@@ -168,11 +168,26 @@ impl Drop for ExecutorWorkDir {
     }
 }
 
+/// Create a new shim instance based on executor's cluster context configuration.
+/// The shim type is determined by the executor-manager's flame-cluster.yaml config,
+/// not from the application context (which is deprecated).
 pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<ShimPtr, FlameError> {
-    match app.shim {
+    // Get shim type from executor's cluster context configuration
+    let shim_type = executor
+        .context
+        .as_ref()
+        .map(|ctx| ctx.executors.shim)
+        .unwrap_or(ShimType::Host);
+
+    tracing::info!(
+        "Creating shim for executor <{}> with type: {:?} (from executor-manager config)",
+        executor.id,
+        shim_type
+    );
+
+    match shim_type {
         ShimType::Wasm => Ok(WasmShim::new_ptr(executor, app).await?),
         ShimType::Host => Ok(HostShim::new_ptr(executor, app).await?),
-        _ => Ok(HostShim::new_ptr(executor, app).await?),
     }
 }
 

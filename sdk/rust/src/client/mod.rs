@@ -33,7 +33,6 @@ use self::rpc::{
     UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
-use crate::apis::Shim;
 use crate::apis::{
     ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,
     SessionState, TaskID, TaskInput, TaskOutput, TaskState,
@@ -86,8 +85,7 @@ pub struct ApplicationSchema {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ApplicationAttributes {
-    pub shim: Shim,
-
+    // DEPRECATED: shim field removed - now configured in executor-manager
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -577,7 +575,7 @@ impl From<&rpc::Application> for Application {
 impl From<ApplicationAttributes> for ApplicationSpec {
     fn from(app: ApplicationAttributes) -> Self {
         Self {
-            shim: app.shim.into(),
+            // shim removed - now configured in executor-manager
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app.labels.clone(),
@@ -601,7 +599,7 @@ impl From<ApplicationAttributes> for ApplicationSpec {
 impl From<ApplicationSpec> for ApplicationAttributes {
     fn from(app: ApplicationSpec) -> Self {
         Self {
-            shim: app.shim().into(),
+            // shim removed - now configured in executor-manager
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app.labels.clone(),

@@ -26,7 +26,6 @@ class ExampleService(flamepy.FlameService):
         """Handle session enter."""
         print(f"🟢 Entering session: {context.session_id}")
         print(f"   Application: {context.application.name}")
-        print(f"   Shim: {context.application.shim}")
         print(f"   Common data: {context.common_data}")
 
         self._session_context = context

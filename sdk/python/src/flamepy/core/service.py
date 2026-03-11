@@ -33,7 +33,7 @@ else:
 
 import grpc
 
-from flamepy.core.types import FlameError, FlameErrorCode, Shim, TaskOutput
+from flamepy.core.types import FlameError, FlameErrorCode, TaskOutput
 from flamepy.proto.shim_pb2_grpc import InstanceServicer, add_InstanceServicer_to_server
 from flamepy.proto.types_pb2 import (
     Result,
@@ -59,7 +59,6 @@ class ApplicationContext:
     """Context for an application."""
 
     name: str
-    shim: Shim
     image: Optional[str] = None
     command: Optional[str] = None
     working_directory: Optional[str] = None
@@ -146,7 +145,6 @@ class FlameInstanceServicer(InstanceServicer):
             # Convert protobuf request to SessionContext
             app_context = ApplicationContext(
                 name=request.application.name,
-                shim=Shim(request.application.shim),
                 image=(request.application.image if request.application.HasField("image") else None),
                 command=(request.application.command if request.application.HasField("command") else None),
                 working_directory=(request.application.working_directory if request.application.HasField("working_directory") else None),

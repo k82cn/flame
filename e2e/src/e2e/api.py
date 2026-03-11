@@ -25,7 +25,6 @@ class ApplicationContextInfo:
     """Information about the application context."""
 
     name: Optional[str] = None
-    shim: Optional[str] = None
     image: Optional[str] = None
     command: Optional[str] = None
     working_directory: Optional[str] = None

@@ -42,9 +42,10 @@ async fn list_application(conn: Connection) -> Result<(), Box<dyn Error>> {
     let app_list = conn.list_application().await?;
 
     let mut table = Table::new();
+    // CHANGED: Removed "Shim" column - shim is now configured in executor-manager
     table
         .load_preset(NOTHING)
-        .set_header(vec!["Name", "State", "Tags", "Created", "Shim", "Command"]);
+        .set_header(vec!["Name", "State", "Tags", "Created", "Command"]);
 
     for app in &app_list {
         table.add_row(vec![
@@ -52,7 +53,7 @@ async fn list_application(conn: Connection) -> Result<(), Box<dyn Error>> {
             app.state.to_string(),
             app.attributes.labels.join(", "),
             app.creation_time.format("%T").to_string(),
-            app.attributes.shim.to_string(),
+            // CHANGED: Removed shim column
             app.attributes.command.clone().unwrap_or("-".to_string()),
         ]);
     }

@@ -413,7 +413,6 @@ class Runner:
             logger.debug(f"Working directory: {working_directory}")
 
             app_attrs = ApplicationAttributes(
-                shim=template_app.shim,
                 image=template_app.image,
                 command=template_app.command,
                 description=f"Runner application: {self._name}",

@@ -14,7 +14,6 @@ limitations under the License.
 use std::collections::HashMap;
 
 use chrono::Duration;
-use flame_rs::apis::Shim;
 use flame_rs::{
     apis::FlameError,
     client::{ApplicationAttributes, ApplicationSchema},
@@ -36,6 +35,9 @@ pub struct SchemaYaml {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpecYaml {
+    /// DEPRECATED: shim field is no longer supported.
+    /// Configure shim in executor-manager's flame-cluster.yaml instead.
+    #[serde(default)]
     pub shim: Option<String>,
     pub image: Option<String>,
     pub description: Option<String>,
@@ -60,21 +62,14 @@ impl TryFrom<&ApplicationYaml> for ApplicationAttributes {
     type Error = FlameError;
 
     fn try_from(yaml: &ApplicationYaml) -> Result<Self, Self::Error> {
-        let shim = match yaml
-            .spec
-            .shim
-            .clone()
-            .unwrap_or(String::from("host"))
-            .to_lowercase()
-            .as_str()
-        {
-            "host" => Ok(Shim::Host),
-            "wasm" => Ok(Shim::Wasm),
-            _ => Err(FlameError::InvalidConfig("invalid shim".to_string())),
-        }?;
+        if yaml.spec.shim.is_some() {
+            eprintln!(
+                "Warning: 'shim' field in application spec is deprecated and will be ignored. \
+                Configure shim in executor-manager's flame-cluster.yaml instead."
+            );
+        }
 
         Ok(Self {
-            shim,
             image: yaml.spec.image.clone(),
             description: yaml.spec.description.clone(),
             labels: yaml.spec.labels.clone().unwrap_or_default(),
