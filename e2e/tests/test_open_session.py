@@ -21,9 +21,7 @@ def setup_test_app():
     """Setup test application for open_session tests."""
     flamepy.register_application(
         "flmtest-open-session",
-        flamepy.ApplicationAttributes(
-            shim=flamepy.Shim.Host,
-        ),
+        flamepy.ApplicationAttributes(),
     )
 
     yield

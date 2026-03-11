@@ -26,9 +26,6 @@ mod manager;
 mod shims;
 mod states;
 
-// Import cache functionality
-use flame_cache;
-
 #[derive(Parser)]
 #[command(name = "flame-executor-manager")]
 #[command(author = "XFLOPS <support@xflops.io>")]

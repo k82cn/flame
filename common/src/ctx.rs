@@ -18,9 +18,8 @@ use std::path::Path;
 use bytesize::ByteSize;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::apis::ResourceRequirement;
+use crate::apis::{ResourceRequirement, Shim};
 use crate::FlameError;
-use crate::Shim;
 
 const DEFAULT_FLAME_CONF: &str = "flame-cluster.yaml";
 const DEFAULT_CONTEXT_NAME: &str = "flame";

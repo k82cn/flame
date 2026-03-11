@@ -98,7 +98,11 @@ message ApplicationSchema {
 }
 
 message ApplicationSpec {
-  Shim shim = 1;
+  // DEPRECATED: shim field is deprecated and will be ignored.
+  // Configure shim in executor-manager's flame-cluster.yaml instead.
+  // This field is reserved for backward compatibility.
+  reserved 1;
+  reserved "shim";
   optional string description = 2;
   repeated string labels = 3;
   optional string image = 4;

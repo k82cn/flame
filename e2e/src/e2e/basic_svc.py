@@ -141,7 +141,6 @@ class BasicTestService(flamepy.FlameService):
 
             app_info = ApplicationContextInfo(
                 name=app_ctx.name,
-                shim=app_ctx.shim.name,
                 image=app_ctx.image,
                 command=app_ctx.command,
                 working_directory=app_ctx.working_directory,
@@ -149,7 +148,7 @@ class BasicTestService(flamepy.FlameService):
             )
 
             response.application_context = app_info
-            logger.debug(f"Application context added: name={app_info.name}, shim={app_info.shim}, image={app_info.image}")
+            logger.debug(f"Application context added: name={app_info.name}, image={app_info.image}")
 
             # Also add to session_context if it exists
             if response.session_context is not None:

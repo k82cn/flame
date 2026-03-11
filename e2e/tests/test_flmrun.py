@@ -51,7 +51,6 @@ def setup_flmrun_with_e2e():
     flamepy.register_application(
         FLMRUN_E2E_APP,
         flamepy.ApplicationAttributes(
-            shim=flmrun.shim,
             url="file:///opt/e2e",  # e2e directory to be installed
             working_directory=flmrun.working_directory,
             command=flmrun.command,
@@ -75,7 +74,6 @@ def test_flmrun_application_registered():
     # Get the flmrun application and verify its configuration
     flmrun = flamepy.get_application(FLMRUN_E2E_APP)
     assert flmrun.name == FLMRUN_E2E_APP
-    assert flmrun.shim == flamepy.Shim.Host
     assert flmrun.state == flamepy.ApplicationState.ENABLED
     # Command should use FLAME_HOME environment variable
     assert flmrun.command == "${FLAME_HOME}/bin/uv"

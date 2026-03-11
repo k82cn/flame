@@ -8,7 +8,11 @@ option go_package = "github.com/flame-sh/flame/sdk/go/rpc";
 
 message ApplicationContext {
     string name = 1;
-    Shim shim = 2;
+    // DEPRECATED: shim field is deprecated and will be ignored.
+    // Configure shim in executor-manager's flame-cluster.yaml instead.
+    // This field is reserved for backward compatibility.
+    reserved 2;
+    reserved "shim";
     optional string image = 3;
     optional string command = 4;
     optional string working_directory = 5;

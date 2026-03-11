@@ -33,8 +33,8 @@ use common::{
     apis::{
         Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
         CommonData, Event, Session, SessionAttributes, SessionID, SessionState, SessionStatus,
-        Shim, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState,
-        DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
+        Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState, DEFAULT_DELAY_RELEASE,
+        DEFAULT_MAX_INSTANCES,
     },
     FlameError,
 };
@@ -55,19 +55,19 @@ impl SqliteEngine {
 
         let options = SqliteConnectOptions::from_str(url)
             .map_err(|e| FlameError::Storage(e.to_string()))?
-            .journal_mode(SqliteJournalMode::Wal) // Enables better concurrency
+            .journal_mode(SqliteJournalMode::Wal)
             .foreign_keys(true)
             .busy_timeout(time::Duration::from_secs(15))
             .synchronous(SqliteSynchronous::Normal)
             .create_if_missing(true);
 
         let db = SqlitePoolOptions::new()
-            .max_connections(50) // Start conservative
-            .min_connections(3) // Keep some warm connections
+            .max_connections(50)
+            .min_connections(3)
             .acquire_timeout(time::Duration::from_secs(30))
-            .idle_timeout(time::Duration::from_secs(5 * 60)) // 5 minutes
-            .max_lifetime(time::Duration::from_secs(30 * 60)) // 30 minutes
-            .test_before_acquire(true) // Verify connection is still valid
+            .idle_timeout(time::Duration::from_secs(5 * 60))
+            .max_lifetime(time::Duration::from_secs(30 * 60))
+            .test_before_acquire(true)
             .connect_with(options)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
@@ -246,7 +246,6 @@ impl Engine for SqliteEngine {
                 name, 
                 description, 
                 labels, 
-                shim, 
                 command, 
                 arguments, 
                 environments, 
@@ -257,13 +256,12 @@ impl Engine for SqliteEngine {
                 url,
                 creation_time, 
                 state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *"#;
         let app: ApplicationDao = sqlx::query_as(sql)
             .bind(name)
             .bind(attr.description)
             .bind(Json(attr.labels))
-            .bind::<i32>(attr.shim.into())
             .bind(attr.command)
             .bind(Json(attr.arguments))
             .bind(Json(attr.environments))
@@ -614,6 +612,7 @@ impl Engine for SqliteEngine {
 
         task.try_into()
     }
+
     async fn get_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
         let mut tx = self
             .pool
@@ -779,7 +778,7 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let mut tasks: Vec<Task> = task_list
+        let tasks: Vec<Task> = task_list
             .iter()
             .map(Task::try_from)
             .filter_map(Result::ok)
@@ -868,7 +867,6 @@ mod tests {
         let app_2 = tokio_test::block_on(storage.update_application(
             "flmexec".to_string(),
             ApplicationAttributes {
-                shim: Shim::Wasm,
                 description: Some("This is my agent for testing.".to_string()),
                 labels: vec!["test".to_string(), "agent".to_string()],
                 image: Some("may-agent".to_string()),
@@ -963,6 +961,7 @@ mod tests {
 
         Ok(())
     }
+
     #[test]
     fn test_register_application() -> Result<(), FlameError> {
         let url = format!(
@@ -981,7 +980,7 @@ mod tests {
             (
                 "my-test-agent-1".to_string(),
                 ApplicationAttributes {
-                    shim: Shim::Host,
+                    // shim removed - now configured in executor-manager
                     image: Some("may-agent".to_string()),
                     description: Some("This is my agent for testing.".to_string()),
                     labels: vec!["test".to_string(), "agent".to_string()],
@@ -1002,7 +1001,7 @@ mod tests {
             (
                 "empty-app".to_string(),
                 ApplicationAttributes {
-                    shim: Shim::Host,
+                    // shim removed - now configured in executor-manager
                     image: None,
                     description: None,
                     labels: vec![],
@@ -1064,7 +1063,7 @@ mod tests {
         let app = tokio_test::block_on(storage.register_application(
             "flmtestapp-url".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 image: None,
                 description: Some("Test application with URL".to_string()),
                 labels: vec!["test".to_string()],
@@ -1118,7 +1117,7 @@ mod tests {
         let app = tokio_test::block_on(storage.register_application(
             "flmtestapp-no-url".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 image: None,
                 description: Some("Test application without URL".to_string()),
                 labels: vec!["test".to_string()],
@@ -1164,7 +1163,7 @@ mod tests {
         tokio_test::block_on(storage.register_application(
             "flmtestapp-update".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 image: None,
                 description: Some("Initial description".to_string()),
                 labels: vec![],
@@ -1188,7 +1187,7 @@ mod tests {
         let updated_app = tokio_test::block_on(storage.update_application(
             "flmtestapp-update".to_string(),
             ApplicationAttributes {
-                shim: Shim::Host,
+                // shim removed - now configured in executor-manager
                 image: Some("updated-image".to_string()),
                 description: Some("Updated description".to_string()),
                 labels: vec!["updated".to_string()],

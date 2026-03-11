@@ -87,7 +87,6 @@ pub struct Application {
     pub version: u32,
     pub state: ApplicationState,
     pub creation_time: DateTime<Utc>,
-    pub shim: Shim,
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -103,7 +102,7 @@ pub struct Application {
 
 #[derive(Clone, Debug)]
 pub struct ApplicationAttributes {
-    pub shim: Shim,
+    // DEPRECATED: shim field removed - now configured in executor-manager
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -120,7 +119,7 @@ pub struct ApplicationAttributes {
 impl Default for ApplicationAttributes {
     fn default() -> Self {
         Self {
-            shim: Shim::default(),
+            // shim removed - now configured in executor-manager
             image: None,
             description: None,
             labels: vec![],
@@ -272,8 +271,7 @@ pub struct ApplicationContext {
     pub working_directory: Option<String>,
     pub environments: HashMap<String, String>,
     pub url: Option<String>,
-
-    pub shim: Shim,
+    // DEPRECATED: shim field removed - now configured in executor-manager
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
@@ -730,8 +728,7 @@ impl TryFrom<rpc::Application> for ApplicationContext {
                 .map(|e| (e.name, e.value))
                 .collect(),
             url: spec.url.clone(),
-            shim: Shim::try_from(spec.shim)
-                .map_err(|_| FlameError::InvalidConfig("shim".to_string()))?,
+            // shim removed - now configured in executor-manager
         })
     }
 }
@@ -761,7 +758,7 @@ impl From<ApplicationContext> for rpc::ApplicationContext {
         Self {
             name: ctx.name.clone(),
             image: ctx.image.clone(),
-            shim: ctx.shim.into(),
+            // shim removed - now configured in executor-manager
             command: ctx.command.clone(),
             working_directory: ctx.working_directory.clone(),
             url: ctx.url.clone(),
@@ -916,7 +913,7 @@ impl TryFrom<&rpc::Application> for Application {
             creation_time: DateTime::<Utc>::from_timestamp(status.creation_time, 0).ok_or(
                 FlameError::InvalidState("invalid creation time".to_string()),
             )?,
-            shim: Shim::try_from(spec.shim).unwrap_or(Shim::default()),
+            // shim removed - now configured in executor-manager
             image: spec.image.clone(),
             description: spec.description.clone(),
             labels: spec.labels.clone(),
@@ -949,7 +946,7 @@ impl From<Application> for rpc::Application {
 impl From<&Application> for rpc::Application {
     fn from(app: &Application) -> Self {
         let spec = Some(rpc::ApplicationSpec {
-            shim: app.shim.into(),
+            // shim removed - now configured in executor-manager
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app.labels.clone(),
@@ -987,7 +984,7 @@ impl From<&Application> for rpc::Application {
 impl From<rpc::ApplicationSpec> for ApplicationAttributes {
     fn from(spec: rpc::ApplicationSpec) -> Self {
         Self {
-            shim: spec.shim().into(),
+            // shim removed - now configured in executor-manager
             image: spec.image.clone(),
             description: spec.description.clone(),
             labels: spec.labels.clone(),
