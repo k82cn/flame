@@ -78,27 +78,21 @@ mod tests {
             },
         };
 
-        // Simulate a heartbeat status update (partial update)
+        // Simulate a heartbeat status update with updated allocatable but no info
         // In the fix, when status.info is None, we preserve existing.info
-        let updated_state = NodeState::Ready;
-        let updated_capacity = Some(ResourceRequirement {
-            cpu: 4,
-            memory: 8192,
-        });
-        let updated_allocatable = Some(ResourceRequirement {
+        let updated_allocatable = ResourceRequirement {
             cpu: 3,
             memory: 6144,
-        }); // Changed!
-        let updated_info: Option<NodeInfo> = None; // Heartbeat might not include info
+        };
 
         // Merge logic (as implemented in backend.rs fix)
+        // capacity and info preserved from existing, allocatable updated
         let merged_node = Node {
             name: existing_node.name.clone(),
-            state: updated_state,
-            capacity: updated_capacity.unwrap_or(existing_node.capacity.clone()),
-            allocatable: updated_allocatable.unwrap_or(existing_node.allocatable.clone()),
-            // Key fix: preserve existing info when update doesn't provide it
-            info: updated_info.unwrap_or(existing_node.info.clone()),
+            state: NodeState::Ready,
+            capacity: existing_node.capacity.clone(),
+            allocatable: updated_allocatable,
+            info: existing_node.info.clone(),
         };
 
         // Verify the merge preserved existing info
@@ -120,28 +114,22 @@ mod tests {
     #[test]
     fn test_node_status_update_without_existing_node() {
         // Simulate a heartbeat status update for a node that doesn't exist yet
-        let node_name = "new-worker".to_string();
-        let updated_state = NodeState::Ready;
-        let updated_capacity = Some(ResourceRequirement {
-            cpu: 2,
-            memory: 4096,
-        });
-        let updated_allocatable = Some(ResourceRequirement {
-            cpu: 2,
-            memory: 4096,
-        });
-        let updated_info = Some(NodeInfo {
-            arch: "x86_64".to_string(),
-            os: "linux".to_string(),
-        });
-
         // When no existing node, create from status data (as in backend.rs fix)
         let new_node = Node {
-            name: node_name,
-            state: updated_state,
-            capacity: updated_capacity.unwrap_or_default(),
-            allocatable: updated_allocatable.unwrap_or_default(),
-            info: updated_info.unwrap_or_default(),
+            name: "new-worker".to_string(),
+            state: NodeState::Ready,
+            capacity: ResourceRequirement {
+                cpu: 2,
+                memory: 4096,
+            },
+            allocatable: ResourceRequirement {
+                cpu: 2,
+                memory: 4096,
+            },
+            info: NodeInfo {
+                arch: "x86_64".to_string(),
+                os: "linux".to_string(),
+            },
         };
 
         // Verify the new node was created correctly
@@ -177,18 +165,13 @@ mod tests {
         };
 
         // Partial update: only state and allocatable changed
-        let updated_state = NodeState::NotReady; // Node became unhealthy
-        let updated_capacity: Option<ResourceRequirement> = None; // Not provided
-        let updated_allocatable = Some(ResourceRequirement { cpu: 0, memory: 0 }); // No resources available
-        let updated_info: Option<NodeInfo> = None; // Not provided
-
-        // Merge with existing
+        // capacity and info preserved from existing
         let merged_node = Node {
             name: existing_node.name.clone(),
-            state: updated_state,
-            capacity: updated_capacity.unwrap_or(existing_node.capacity.clone()),
-            allocatable: updated_allocatable.unwrap_or(existing_node.allocatable.clone()),
-            info: updated_info.unwrap_or(existing_node.info.clone()),
+            state: NodeState::NotReady,
+            capacity: existing_node.capacity.clone(),
+            allocatable: ResourceRequirement { cpu: 0, memory: 0 },
+            info: existing_node.info.clone(),
         };
 
         // Verify partial update worked correctly

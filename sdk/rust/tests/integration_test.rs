@@ -20,7 +20,7 @@ use stdng::{lock_ptr, new_ptr};
 use flame_rs as flame;
 
 use flame::{
-    apis::{FlameError, SessionState, Shim, TaskState},
+    apis::{FlameError, SessionState, TaskState},
     client::{ApplicationAttributes, ApplicationSchema, SessionAttributes, Task, TaskInformer},
 };
 

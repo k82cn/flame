@@ -50,7 +50,7 @@ impl HostInstance {
             killpg(ig, Signal::SIGTERM);
             tracing::debug!("Killed process group <{}>", id);
         } else {
-            let _ = self.child.kill();
+            drop(self.child.kill());
             tracing::debug!("Killed child process");
         }
     }
