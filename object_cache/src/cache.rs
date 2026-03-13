@@ -1056,6 +1056,7 @@ impl FlightService for FlightCacheServer {
         Err(Status::unimplemented("Handshake not implemented"))
     }
 
+    #[allow(clippy::result_large_err)]
     async fn list_flights(
         &self,
         _request: Request<Criteria>,

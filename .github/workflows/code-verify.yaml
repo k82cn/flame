@@ -20,26 +20,13 @@ jobs:
           toolchain: ${{ matrix.rust }}
           profile: minimal
           override: true
-      - name: Install cargo-make
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --debug cargo-make
+          components: rustfmt, clippy
       - name: Install gRPC
         run: |
           sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: make
-          args: check-format-ci-flow
+        run: cargo fmt --all -- --check
       - name: Cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: make
-          args: clippy-ci-flow
-      - name: Cargo make
-        uses: actions-rs/cargo@v1
-        with:
-          command: make
-          args: build-release
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Cargo build
+        run: cargo build --release
