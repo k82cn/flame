@@ -144,6 +144,18 @@ impl Storage {
         Ok(())
     }
 
+    /// Gets a node by name. Returns None if the node doesn't exist.
+    pub fn get_node(&self, name: &str) -> Result<Option<Node>, FlameError> {
+        let node_map = lock_ptr!(self.nodes)?;
+        match node_map.get(name) {
+            Some(node_ptr) => {
+                let node = lock_ptr!(node_ptr)?;
+                Ok(Some(node.clone()))
+            }
+            None => Ok(None),
+        }
+    }
+
     pub async fn sync_node(
         &self,
         node: &Node,
@@ -596,3 +608,6 @@ impl Storage {
         self.event_manager.record_event(owner, event)
     }
 }
+
+#[cfg(test)]
+mod node_tests;

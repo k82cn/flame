@@ -13,7 +13,9 @@ limitations under the License.
 use std::time::Duration;
 
 use stdng::{lock_ptr, MutexPtr};
+use tokio_stream::Stream;
 use tonic::transport::Channel;
+use tonic::Streaming;
 
 use rpc::backend_client::BackendClient as FlameBackendClient;
 use rpc::flame as rpc;
@@ -21,6 +23,7 @@ use rpc::{
     BindExecutorCompletedRequest, BindExecutorRequest, CompleteTaskRequest, LaunchTaskRequest,
     RegisterExecutorRequest, RegisterNodeRequest, ReleaseNodeRequest, SyncNodeRequest,
     UnbindExecutorCompletedRequest, UnbindExecutorRequest, UnregisterExecutorRequest,
+    WatchNodeRequest, WatchNodeResponse,
 };
 
 use crate::executor::Executor;
@@ -102,6 +105,35 @@ impl BackendClient {
         Ok(executors)
     }
 
+    /// Establishes a bidirectional streaming connection for WatchNode.
+    ///
+    /// This method creates a streaming RPC that allows the client to send
+    /// registration and heartbeat messages while receiving executor action
+    /// notifications from the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_stream` - A stream of WatchNodeRequest messages to send
+    ///
+    /// # Returns
+    ///
+    /// Returns a streaming response that yields WatchNodeResponse messages.
+    pub async fn watch_node<S>(
+        &mut self,
+        request_stream: S,
+    ) -> Result<Streaming<WatchNodeResponse>, FlameError>
+    where
+        S: Stream<Item = WatchNodeRequest> + Send + 'static,
+    {
+        let resp = self
+            .client
+            .watch_node(request_stream)
+            .await
+            .map_err(FlameError::from)?;
+
+        Ok(resp.into_inner())
+    }
+
     pub async fn release_node(&mut self, node: &Node) -> Result<(), FlameError> {
         let req = ReleaseNodeRequest {
             node_name: node.name.clone(),
@@ -169,10 +201,6 @@ impl BackendClient {
 
         Ok(())
     }
-
-    //
-    // rpc UnregisterExecutor (UnregisterExecutorRequest) returns (Result) {}
-    //
 
     pub async fn unbind_executor(&mut self, exe: &Executor) -> Result<(), FlameError> {
         let req = UnbindExecutorRequest {

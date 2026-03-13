@@ -13,14 +13,16 @@ Unless required by applicable law or agreed to in writing, software
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
-use std::{thread, time};
+
+use tokio::sync::mpsc;
 
 use common::apis::{ExecutorState, Node};
 use common::{ctx::FlameClusterContext, FlameError};
-use stdng::{lock_ptr, MutexPtr};
+use stdng::lock_ptr;
 
 use crate::client::BackendClient;
 use crate::executor::{self, Executor, ExecutorPtr};
+use crate::stream_handler::StreamHandler;
 
 pub struct ExecutorManager {
     ctx: FlameClusterContext,
@@ -43,51 +45,84 @@ impl ExecutorManager {
         })
     }
 
+    /// Runs the executor manager in streaming mode using WatchNode.
+    ///
+    /// This mode establishes a bidirectional gRPC stream with the session manager,
+    /// receiving executor updates in real-time and deriving appropriate actions.
     pub async fn run(&mut self) -> Result<(), FlameError> {
-        let mut node = Node::new();
-        self.client.register_node(&node).await?;
-        let one_second = time::Duration::from_secs(1);
+        let node = Node::new();
 
-        tracing::debug!("Starting executor manager loop...");
-        loop {
-            node.refresh();
+        // Create channel for executor updates
+        let (executor_tx, mut executor_rx) = mpsc::channel::<Executor>(32);
 
-            // TODO(k82cn): also sync the executors in that node.
-            let mut executors = self.client.sync_node(&node, vec![]).await?;
+        // Clone what we need for the stream handler
+        let client = self.client.clone();
+        let node_clone = node.clone();
 
-            for mut executor in &mut executors {
-                if self.executors.contains_key(&executor.id) {
-                    // If the executor is already running, skip it.
-                    continue;
-                }
+        // Spawn the stream handler (long-running, self-recovering task)
+        let stream_handle = tokio::spawn(async move {
+            let mut handler = StreamHandler::new(client, node_clone);
+            handler.run(executor_tx).await;
+        });
 
-                // Skip the released executors.
-                if executor.state == ExecutorState::Released {
-                    continue;
-                }
+        tracing::info!(
+            "Starting executor manager in streaming mode for node <{}>",
+            node.name
+        );
 
-                tracing::debug!("Executor <{}> is starting.", executor.id);
+        // Process executor updates from the stream
+        while let Some(executor) = executor_rx.recv().await {
+            self.handle_executor_update(executor)?;
+        }
 
-                // Put the context into the executor.
-                executor.context = Some(self.ctx.clone());
+        // Wait for stream handler to finish
+        let _ = stream_handle.await;
 
-                let executor_ptr = Arc::new(Mutex::new(executor.clone()));
-                self.executors
-                    .insert(executor.id.clone(), executor_ptr.clone());
-                executor::start(self.client.clone(), executor_ptr.clone());
-            }
+        Ok(())
+    }
 
-            // Remove the released executors.
-            self.executors
-                .retain(|_, e| e.lock().unwrap().state != ExecutorState::Released);
+    /// Handles an executor update by deriving and executing the appropriate action.
+    ///
+    /// Action derivation logic:
+    /// - If state is Released -> Remove from map
+    /// - If ID is new -> Create and start executor
+    /// - Otherwise -> Log debug message (existing executor, no action needed)
+    fn handle_executor_update(&mut self, mut executor: Executor) -> Result<(), FlameError> {
+        let executor_id = executor.id.clone();
+        let state = executor.state;
 
-            tracing::debug!(
-                "There are {} executors in node {}",
-                executors.len(),
-                node.name
+        // 1. If state is Released, remove from map
+        if state == ExecutorState::Released {
+            tracing::info!(
+                "Removing executor <{}> from map (state={:?})",
+                executor_id,
+                state
             );
+            self.executors.remove(&executor_id);
+            return Ok(());
+        }
 
-            thread::sleep(one_second);
+        // 2. If ID is new (not in map), create and start executor
+        if !self.executors.contains_key(&executor_id) {
+            tracing::info!("Creating executor <{}> (state={:?})", executor_id, state);
+            executor.context = Some(self.ctx.clone());
+
+            let executor_ptr = Arc::new(Mutex::new(executor));
+            self.executors
+                .insert(executor_id.clone(), executor_ptr.clone());
+            executor::start(self.client.clone(), executor_ptr);
+            return Ok(());
+        }
+
+        // 3. Otherwise (existing ID, not Released), just log debug message
+        if let Some(existing) = self.executors.get(&executor_id) {
+            let existing = lock_ptr!(existing)?;
+            tracing::debug!(
+                "Executor <{}> already exists (current_state={:?}, received_state={:?})",
+                executor_id,
+                existing.state,
+                state
+            );
         }
 
         Ok(())

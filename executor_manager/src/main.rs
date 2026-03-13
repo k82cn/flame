@@ -25,6 +25,7 @@ mod executor;
 mod manager;
 mod shims;
 mod states;
+mod stream_handler;
 
 #[derive(Parser)]
 #[command(name = "flame-executor-manager")]

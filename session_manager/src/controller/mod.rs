@@ -25,24 +25,40 @@ use common::apis::{
 use common::FlameError;
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
-use crate::model::{Executor, ExecutorPtr, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
+use crate::model::{
+    Executor, ExecutorPtr, NodeInfoPtr, SessionInfoPtr, SnapShotPtr, WatchRegistry,
+};
 use crate::storage::StoragePtr;
 
 mod states;
 
 pub struct Controller {
     storage: StoragePtr,
+    watch_registry: WatchRegistry,
 }
 
 pub type ControllerPtr = Arc<Controller>;
 
 pub fn new_ptr(storage: StoragePtr) -> ControllerPtr {
-    Arc::new(Controller { storage })
+    Arc::new(Controller {
+        storage,
+        watch_registry: WatchRegistry::new(),
+    })
 }
 
 impl Controller {
+    /// Returns a reference to the WatchRegistry for stream management.
+    pub fn watch_registry(&self) -> &WatchRegistry {
+        &self.watch_registry
+    }
+
     pub async fn register_node(&self, node: &Node) -> Result<(), FlameError> {
         self.storage.register_node(node).await
+    }
+
+    /// Gets a node by name. Returns None if the node doesn't exist.
+    pub fn get_node(&self, name: &str) -> Result<Option<Node>, FlameError> {
+        self.storage.get_node(name)
     }
 
     pub async fn sync_node(
@@ -136,7 +152,25 @@ impl Controller {
         ssn_id: SessionID,
     ) -> Result<Executor, FlameError> {
         trace_fn!("Controller::create_executor");
-        self.storage.create_executor(node_name, ssn_id).await
+        let executor = self
+            .storage
+            .create_executor(node_name.clone(), ssn_id)
+            .await?;
+
+        // Notify the node about the new executor
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_created(&node_name, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about executor creation: {}",
+                node_name,
+                e
+            );
+        }
+
+        Ok(executor)
     }
 
     pub async fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
@@ -150,6 +184,19 @@ impl Controller {
         let exe_ptr = self.storage.get_executor_ptr(e.id.clone())?;
         let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.register_executor().await?;
+
+        // Notify the node about the executor registration
+        if let Err(err) = self
+            .watch_registry
+            .notify_executor_updated(&e.node, e)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about executor registration: {}",
+                e.node,
+                err
+            );
+        }
 
         Ok(())
     }
@@ -217,11 +264,28 @@ impl Controller {
     pub async fn bind_session(&self, id: ExecutorID, ssn_id: SessionID) -> Result<(), FlameError> {
         trace_fn!("Controller::bind_session");
 
-        let exe_ptr = self.storage.get_executor_ptr(id)?;
-        let state = states::from(self.storage.clone(), exe_ptr)?;
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let state = states::from(self.storage.clone(), exe_ptr.clone())?;
 
         let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
         state.bind_session(ssn_ptr).await?;
+
+        // Notify the node about the executor binding
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_updated(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about executor binding: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }
@@ -229,10 +293,27 @@ impl Controller {
     pub async fn bind_session_completed(&self, id: ExecutorID) -> Result<(), FlameError> {
         trace_fn!("Controller::bind_session_completed");
 
-        let exe_ptr = self.storage.get_executor_ptr(id)?;
-        let state = states::from(self.storage.clone(), exe_ptr)?;
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let state = states::from(self.storage.clone(), exe_ptr.clone())?;
 
         state.bind_session_completed().await?;
+
+        // Notify the node about the executor state change
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_updated(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about bind completion: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }
@@ -334,36 +415,104 @@ impl Controller {
             ..task_result
         };
 
-        let state = states::from(self.storage.clone(), exe_ptr)?;
+        let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.complete_task(ssn_ptr, task_ptr, task_result).await?;
+
+        // Notify the node about the executor state change after task completion
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_updated(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about task completion: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }
 
     pub async fn unbind_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
         trace_fn!("Controller::unbind_executor");
-        let exe_ptr = self.storage.get_executor_ptr(id)?;
-        let state = states::from(self.storage.clone(), exe_ptr)?;
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.unbind_executor().await?;
+
+        // Notify the node about the executor unbinding
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_updated(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about executor unbinding: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }
 
     pub async fn unbind_executor_completed(&self, id: ExecutorID) -> Result<(), FlameError> {
         trace_fn!("Controller::unbind_executor_completed");
-        let exe_ptr = self.storage.get_executor_ptr(id)?;
-        let state = states::from(self.storage.clone(), exe_ptr)?;
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let state = states::from(self.storage.clone(), exe_ptr.clone())?;
 
         state.unbind_executor_completed().await?;
+
+        // Notify the node about the executor state change
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_updated(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about unbind completion: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }
 
     pub async fn release_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
         trace_fn!("Controller::release_executor");
-        let exe_ptr = self.storage.get_executor_ptr(id)?;
-        let state = states::from(self.storage.clone(), exe_ptr)?;
+        let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+        let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.release_executor().await?;
+
+        // Notify the node about the executor release
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_deleted(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about executor release: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }
@@ -371,10 +520,30 @@ impl Controller {
     pub async fn unregister_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
         trace_fn!("Controller::unregister_executor");
         let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
+
+        // Get executor info before unregistering for notification
+        let executor = {
+            let exe = lock_ptr!(exe_ptr)?;
+            (*exe).clone()
+        };
+
         let state = states::from(self.storage.clone(), exe_ptr)?;
         state.unregister_executor().await?;
 
         self.storage.delete_executor(id).await?;
+
+        // Notify the node about the executor deletion
+        if let Err(e) = self
+            .watch_registry
+            .notify_executor_deleted(&executor.node, &executor)
+            .await
+        {
+            tracing::debug!(
+                "Failed to notify node <{}> about executor unregistration: {}",
+                executor.node,
+                e
+            );
+        }
 
         Ok(())
     }

@@ -11,7 +11,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Server;
@@ -21,6 +20,7 @@ use rpc::flame::backend_server::BackendServer;
 use rpc::flame::frontend_server::FrontendServer;
 
 use crate::controller::ControllerPtr;
+use crate::model::WatchRegistry;
 use crate::{FlameError, FlameThread};
 
 mod backend;
@@ -31,6 +31,7 @@ const ALL_HOST_ADDRESS: &str = "0.0.0.0";
 
 pub struct Flame {
     controller: ControllerPtr,
+    watch_registry: WatchRegistry,
 }
 
 pub fn new_frontend(controller: ControllerPtr) -> Arc<dyn FlameThread> {
@@ -61,8 +62,10 @@ impl FlameThread for FrontendRunner {
             FlameError::InvalidConfig(format!("failed to parse url <{address_str}>"))
         })?;
 
+        // Frontend doesn't need WatchRegistry, create a dummy one
         let frontend_service = Flame {
             controller: self.controller.clone(),
+            watch_registry: WatchRegistry::new(),
         };
 
         Server::builder()
@@ -95,8 +98,10 @@ impl FlameThread for BackendRunner {
             FlameError::InvalidConfig(format!("failed to parse url <{address_str}>"))
         })?;
 
+        // Use the WatchRegistry from the Controller for proper notification flow
         let backend_service = Flame {
             controller: self.controller.clone(),
+            watch_registry: self.controller.watch_registry().clone(),
         };
 
         Server::builder()
