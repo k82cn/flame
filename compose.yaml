@@ -8,7 +8,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.fsm
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
     volumes:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
     ports:
@@ -23,7 +23,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.fem
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
     deploy:
       mode: replicated
       replicas: 3

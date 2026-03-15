@@ -23,14 +23,11 @@ use crate::scheduler::plugins::{PluginManager, PluginManagerPtr};
 use common::apis::ExecutorState;
 use common::FlameError;
 
-const DEFAULT_SCHEDULE_INTERVAL: u64 = 500;
-
 pub struct Context {
     pub snapshot: SnapShotPtr,
     pub controller: ControllerPtr,
     pub actions: Vec<ActionPtr>,
     pub plugins: PluginManagerPtr,
-    pub schedule_interval: u64,
 }
 
 impl Context {
@@ -47,7 +44,6 @@ impl Context {
                 AllocateAction::new_ptr(),
                 ShuffleAction::new_ptr(),
             ],
-            schedule_interval: DEFAULT_SCHEDULE_INTERVAL,
         })
     }
 

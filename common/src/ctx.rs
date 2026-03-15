@@ -28,6 +28,7 @@ const DEFAULT_SLOT: &str = "cpu=1,mem=2g";
 const DEFAULT_POLICY: &str = "proportion";
 const DEFAULT_STORAGE: &str = "sqlite://flame.db";
 const DEFAULT_MAX_EXECUTORS_PER_NODE: u32 = 128;
+const DEFAULT_SCHEDULE_INTERVAL: u64 = 500;
 const DEFAULT_SHIM: &str = "host";
 const DEFAULT_FLAME_CACHE_ENDPOINT: &str = "http://127.0.0.1:9090";
 const DEFAULT_FLAME_CACHE_NETWORK_INTERFACE: &str = "eth0";
@@ -48,6 +49,8 @@ struct FlameClusterYaml {
     pub slot: Option<String>,
     pub policy: Option<String>,
     pub storage: Option<String>,
+    /// Schedule interval in milliseconds for the session scheduler loop
+    pub schedule_interval: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +96,8 @@ pub struct FlameCluster {
     pub slot: ResourceRequirement,
     pub policy: String,
     pub storage: String,
+    /// Schedule interval in milliseconds for the session scheduler loop
+    pub schedule_interval: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -250,6 +255,9 @@ impl TryFrom<FlameClusterYaml> for FlameCluster {
             slot: ResourceRequirement::from(&cluster.slot.unwrap_or(DEFAULT_SLOT.to_string())),
             policy: cluster.policy.unwrap_or(DEFAULT_POLICY.to_string()),
             storage: cluster.storage.unwrap_or(DEFAULT_STORAGE.to_string()),
+            schedule_interval: cluster
+                .schedule_interval
+                .unwrap_or(DEFAULT_SCHEDULE_INTERVAL),
         })
     }
 }
@@ -294,6 +302,7 @@ impl Default for FlameCluster {
             slot: ResourceRequirement::from(&DEFAULT_SLOT.to_string()),
             policy: DEFAULT_POLICY.to_string(),
             storage: DEFAULT_STORAGE.to_string(),
+            schedule_interval: DEFAULT_SCHEDULE_INTERVAL,
         }
     }
 }

@@ -36,7 +36,10 @@ struct ScheduleRunner {
 
 #[async_trait]
 impl FlameThread for ScheduleRunner {
-    async fn run(&self, _flame_ctx: FlameClusterContext) -> Result<(), FlameError> {
+    async fn run(&self, flame_ctx: FlameClusterContext) -> Result<(), FlameError> {
+        let schedule_interval = flame_ctx.cluster.schedule_interval;
+        tracing::info!("Scheduler started with interval: {}ms", schedule_interval);
+
         loop {
             let mut ctx = Context::new(self.controller.clone())?;
 
@@ -47,8 +50,7 @@ impl FlameThread for ScheduleRunner {
                 };
             }
 
-            let delay = time::Duration::from_millis(ctx.schedule_interval);
-            thread::sleep(delay);
+            tokio::time::sleep(tokio::time::Duration::from_millis(schedule_interval)).await;
         }
     }
 }
@@ -191,7 +193,6 @@ mod tests {
                 controller: controller.clone(),
                 plugins,
                 actions: vec![],
-                schedule_interval: 1000,
             };
 
             let dispatch = DispatchAction::new_ptr();
