@@ -50,8 +50,7 @@ impl FlameThread for ScheduleRunner {
                 };
             }
 
-            let delay = time::Duration::from_millis(schedule_interval);
-            thread::sleep(delay);
+            tokio::time::sleep(tokio::time::Duration::from_millis(schedule_interval)).await;
         }
     }
 }
