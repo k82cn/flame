@@ -15,6 +15,7 @@ limitations under the License.
 from .cache import (
     ObjectRef,
     get_object,
+    patch_object,
     put_object,
     update_object,
 )
@@ -157,6 +158,7 @@ __all__ = [
     "ObjectRef",
     # Cache functions
     "get_object",
+    "patch_object",
     "put_object",
     "update_object",
 ]

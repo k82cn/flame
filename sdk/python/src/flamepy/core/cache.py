@@ -11,10 +11,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import base64
+import json
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, List, Optional
 
 import bson
 import cloudpickle
@@ -22,6 +24,8 @@ import pyarrow as pa
 import pyarrow.flight as flight
 
 from flamepy.core.types import FlameContext
+
+Deserializer = Callable[[Any, List[Any]], Any]
 
 
 @dataclass
@@ -235,40 +239,47 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
         return _do_put_remote(client, upload_descriptor, batch)
 
 
-def get_object(ref: ObjectRef) -> Any:
+def get_object(ref: ObjectRef, deserializer: Optional[Deserializer] = None) -> Any:
     """Get an object from the cache.
 
     Args:
         ref: ObjectRef pointing to the cached object
+        deserializer: Optional function to combine base and deltas.
+            Signature: (base: Any, deltas: List[Any]) -> Any
+            If None, returns just the base object (backward compatible).
 
     Returns:
-        The deserialized object
+        The deserialized object. If deserializer is provided, returns
+        deserializer(base, deltas). Otherwise returns the base object.
 
     Raises:
         Exception: If request fails
     """
-    # Connect to cache server using ref.endpoint
     client = _get_flight_client(ref.endpoint)
-
-    # Create ticket from key
     ticket = flight.Ticket(ref.key.encode())
-
-    # Get object data
     reader = client.do_get(ticket)
 
     table = reader.read_all()
     if table.num_rows == 0:
         raise ValueError(f"No data received for object {ref.key}")
 
-    # The object is stored as a single RecordBatch
-    batch = table.to_batches()[0]
+    batches = table.to_batches()
+    base = _deserialize_object(batches[0])
 
-    # Deserialize object
-    return _deserialize_object(batch)
+    if deserializer is None:
+        return base
+
+    deltas: List[Any] = []
+    for batch in batches[1:]:
+        deltas.append(_deserialize_object(batch))
+
+    return deserializer(base, deltas)
 
 
 def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
     """Update an object in the cache.
+
+    This replaces the entire object (base + all deltas) with the new object as base.
 
     Args:
         ref: ObjectRef pointing to the cached object to update
@@ -294,3 +305,51 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
     # Use full key (session_id/object_id) in FlightDescriptor to update existing object
     upload_descriptor = flight.FlightDescriptor.for_path(ref.key)
     return _do_put_remote(client, upload_descriptor, batch)
+
+
+def patch_object(ref: ObjectRef, delta: Any) -> "ObjectRef":
+    """Append delta data to an existing cached object.
+
+    This appends the delta to the object's delta list without modifying the base.
+    The delta will be included in subsequent get_object() calls.
+
+    Args:
+        ref: ObjectRef pointing to the cached object to patch
+        delta: The delta data to append (will be pickled)
+
+    Returns:
+        Updated ObjectRef (same key, potentially updated metadata)
+
+    Raises:
+        ValueError: If the object doesn't exist (must put first)
+        Exception: If request fails
+    """
+    # Serialize delta to bytes using cloudpickle
+    delta_bytes = cloudpickle.dumps(delta, protocol=cloudpickle.DEFAULT_PROTOCOL)
+
+    # Connect to cache server
+    client = _get_flight_client(ref.endpoint)
+
+    # Encode action body: {key}:{base64(delta_bytes)}
+    delta_b64 = base64.b64encode(delta_bytes).decode("utf-8")
+    action_body = f"{ref.key}:{delta_b64}"
+
+    # Call do_action with action type "PATCH"
+    action = flight.Action("PATCH", action_body.encode("utf-8"))
+
+    # Execute action and get result
+    results = list(client.do_action(action))
+
+    if not results:
+        raise ValueError("No result received from PATCH action")
+
+    # Parse response to get updated ObjectMetadata
+    result_body = results[0].body.to_pybytes().decode("utf-8")
+    metadata = json.loads(result_body)
+
+    # Return ObjectRef with same key
+    return ObjectRef(
+        endpoint=metadata.get("endpoint", ref.endpoint),
+        key=metadata.get("key", ref.key),
+        version=metadata.get("version", ref.version),
+    )

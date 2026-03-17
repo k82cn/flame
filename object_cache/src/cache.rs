@@ -44,6 +44,12 @@ use common::FlameError;
 
 use crate::eviction::{new_policy, EvictionConfig, EvictionPolicyPtr};
 
+/// Maximum number of deltas allowed per object before requiring compaction.
+/// This prevents unbounded growth of delta files.
+/// When this limit is reached, patch operations will return an error suggesting
+/// the client should use update_object to compact the deltas.
+const MAX_DELTAS_PER_OBJECT: u64 = 1000;
+
 /// Default batch size for eviction operations
 const EVICTION_BATCH_SIZE: usize = 10;
 
@@ -83,10 +89,37 @@ fn validate_object_id(object_id: &str) -> Result<(), FlameError> {
     Ok(())
 }
 
+/// Object with optional delta support
+/// Per HLD: deltas field is empty for delta objects themselves
+/// Note: This struct is immutable after construction - use with_deltas() to create
+/// a new Object with deltas populated rather than mutating an existing one.
 #[derive(Debug, Clone)]
 pub struct Object {
     pub version: u64,
     pub data: Vec<u8>,
+    pub deltas: Vec<Object>,
+}
+
+impl Object {
+    /// Create a new Object with no deltas
+    pub fn new(version: u64, data: Vec<u8>) -> Self {
+        Self {
+            version,
+            data,
+            deltas: Vec::new(),
+        }
+    }
+
+    /// Create a new Object with deltas
+    /// This is the preferred way to create an Object with deltas rather than
+    /// mutating an existing Object's deltas field.
+    pub fn with_deltas(version: u64, data: Vec<u8>, deltas: Vec<Object>) -> Self {
+        Self {
+            version,
+            data,
+            deltas,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -95,6 +128,7 @@ pub struct ObjectMetadata {
     pub key: String,
     pub version: u64,
     pub size: u64,
+    pub delta_count: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -208,13 +242,56 @@ impl ObjectCache {
         Ok(cache)
     }
 
-    fn create_metadata(&self, key: String, size: u64) -> ObjectMetadata {
+    fn create_metadata(&self, key: String, size: u64, delta_count: u64) -> ObjectMetadata {
         ObjectMetadata {
             endpoint: self.endpoint.to_uri(),
             key,
             version: 0,
             size,
+            delta_count,
         }
+    }
+
+    /// Get the delta directory path for an object
+    fn get_delta_dir(&self, key: &str) -> Option<PathBuf> {
+        self.storage_path
+            .as_ref()
+            .map(|p| p.join(format!("{}.deltas", key)))
+    }
+
+    /// Count the number of delta files for an object.
+    /// Returns 0 if the delta directory doesn't exist or is empty.
+    fn count_deltas(&self, key: &str) -> u64 {
+        let delta_dir = match self.get_delta_dir(key) {
+            Some(dir) => dir,
+            None => return 0,
+        };
+
+        if !delta_dir.exists() {
+            return 0;
+        }
+
+        match fs::read_dir(&delta_dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("arrow"))
+                .count() as u64,
+            Err(e) => {
+                tracing::warn!("Failed to read delta directory {:?}: {}", delta_dir, e);
+                0
+            }
+        }
+    }
+
+    /// Delete all deltas for an object
+    fn clear_deltas(&self, key: &str) -> Result<(), FlameError> {
+        if let Some(delta_dir) = self.get_delta_dir(key) {
+            if delta_dir.exists() {
+                fs::remove_dir_all(&delta_dir)?;
+                tracing::debug!("Cleared deltas for object: {}", key);
+            }
+        }
+        Ok(())
     }
 
     fn load_session_objects(
@@ -232,9 +309,12 @@ impl ObjectCache {
             let object_entry = object_entry?;
             let object_path = object_entry.path();
 
-            if !object_path.is_file()
-                || object_path.extension().and_then(|e| e.to_str()) != Some("arrow")
-            {
+            // Skip delta directories
+            if object_path.is_dir() {
+                continue;
+            }
+
+            if object_path.extension().and_then(|e| e.to_str()) != Some("arrow") {
                 continue;
             }
 
@@ -245,12 +325,13 @@ impl ObjectCache {
 
             let key = format!("{}/{}", session_id, object_id);
             let size = fs::metadata(&object_path)?.len();
-            let meta = self.create_metadata(key.clone(), size);
+            let delta_count = self.count_deltas(&key);
 
             // Load object into memory
             let object = self.load_object_from_disk_internal(&object_path)?;
+            let meta = self.create_metadata(key.clone(), size, delta_count);
 
-            tracing::debug!("Loaded object: {}", key);
+            tracing::debug!("Loaded object: {} (deltas: {})", key, delta_count);
             objects.insert(key.clone(), object);
             metadata_map.insert(key.clone(), meta);
 
@@ -353,19 +434,25 @@ impl ObjectCache {
         let key = format!("{}/{}", session_id, object_id);
         let size = object.data.len() as u64;
 
+        // Write to disk if storage is configured
         if let Some(storage_path) = &self.storage_path {
+            // Create session directory
             let session_dir = storage_path.join(&session_id);
             fs::create_dir_all(&session_dir)?;
 
+            // Write object to Arrow IPC file
             let object_path = session_dir.join(format!("{}.arrow", object_id));
             let batch = object_to_batch(&object)
                 .map_err(|e| FlameError::Internal(format!("Failed to create batch: {}", e)))?;
 
             write_batch_to_file(&object_path, &batch)?;
             tracing::debug!("Wrote object to disk: {:?}", object_path);
+
+            // Clear any existing deltas (clean slate per HLD)
+            self.clear_deltas(&key)?;
         }
 
-        let meta = self.create_metadata(key.clone(), size);
+        let meta = self.create_metadata(key.clone(), size, 0);
 
         // Update in-memory storage
         {
@@ -397,6 +484,71 @@ impl ObjectCache {
         self.load_object_from_disk_internal(&object_path)
     }
 
+    /// Load all deltas for an object from disk.
+    /// Returns an empty Vec if no deltas exist (not an error).
+    /// Deltas are sorted by their numeric index to ensure correct ordering.
+    fn load_deltas_from_disk(&self, key: &str) -> Result<Vec<Object>, FlameError> {
+        let delta_dir = match self.get_delta_dir(key) {
+            Some(dir) if dir.exists() => dir,
+            _ => return Ok(Vec::new()),
+        };
+
+        let entries = match fs::read_dir(&delta_dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::warn!("Failed to read delta directory {:?}: {}", delta_dir, e);
+                return Ok(Vec::new());
+            }
+        };
+
+        // Collect and filter delta files
+        let mut delta_files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("arrow"))
+            .collect();
+
+        // Sort by index (filename is {index}.arrow) to ensure correct ordering
+        // Files that don't parse as u64 are sorted to the end
+        delta_files.sort_by_key(|e| {
+            e.path()
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(u64::MAX)
+        });
+
+        let mut deltas = Vec::with_capacity(delta_files.len());
+        for entry in delta_files {
+            let path = entry.path();
+            let file = fs::File::open(&path).map_err(|e| {
+                FlameError::Internal(format!("Failed to open delta file {:?}: {}", path, e))
+            })?;
+            let reader = FileReader::try_new(file, None).map_err(|e| {
+                FlameError::Internal(format!("Failed to create reader for {:?}: {}", path, e))
+            })?;
+
+            let batch = reader
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
+                    FlameError::Internal(format!("No batches in delta file {:?}", path))
+                })?
+                .map_err(|e| {
+                    FlameError::Internal(format!(
+                        "Failed to read delta batch from {:?}: {}",
+                        path, e
+                    ))
+                })?;
+
+            let delta = batch_to_object(&batch).map_err(|e| {
+                FlameError::Internal(format!("Failed to parse delta from {:?}: {}", path, e))
+            })?;
+            deltas.push(delta);
+        }
+
+        Ok(deltas)
+    }
+
     fn try_load_and_index(&self, key: &str) -> Result<Option<Object>, FlameError> {
         validate_key(key)?;
 
@@ -412,6 +564,7 @@ impl ObjectCache {
 
         let object = self.load_object_from_disk_internal(&object_path)?;
         let size = object.data.len() as u64;
+        let delta_count = self.count_deltas(key);
 
         // Add to in-memory storage
         {
@@ -420,7 +573,7 @@ impl ObjectCache {
 
             objects.insert(key.to_string(), object.clone());
 
-            let meta = self.create_metadata(key.to_string(), size);
+            let meta = self.create_metadata(key.to_string(), size, delta_count);
             metadata.insert(key.to_string(), meta);
         }
 
@@ -428,10 +581,12 @@ impl ObjectCache {
         self.eviction_policy.on_add(key, size);
         self.run_eviction()?;
 
-        tracing::debug!("Loaded object from disk: {}", key);
+        tracing::debug!("Loaded object from disk: {} (deltas: {})", key, delta_count);
         Ok(Some(object))
     }
 
+    /// Get an object with all its deltas populated in the deltas field.
+    /// Creates a new Object with deltas rather than mutating an existing one.
     async fn get(&self, key: String) -> Result<Object, FlameError> {
         validate_key(&key)?;
 
@@ -442,7 +597,13 @@ impl ObjectCache {
             let objects = lock_ptr!(self.objects)?;
             if let Some(object) = objects.get(&key) {
                 tracing::debug!("Object get from memory: {}", key);
-                return Ok(object.clone());
+                // Load deltas and return object with deltas
+                let deltas = self.load_deltas_from_disk(&key)?;
+                return Ok(Object::with_deltas(
+                    object.version,
+                    object.data.clone(),
+                    deltas,
+                ));
             }
         }
 
@@ -467,13 +628,20 @@ impl ObjectCache {
             self.eviction_policy.on_add(&key, size);
             self.run_eviction()?;
 
-            tracing::debug!("Object reloaded from disk: {}", key);
-            return Ok(object);
+            // Load deltas and return
+            let deltas = self.load_deltas_from_disk(&key)?;
+            tracing::debug!(
+                "Object reloaded from disk: {} (deltas: {})",
+                key,
+                deltas.len()
+            );
+            return Ok(Object::with_deltas(object.version, object.data, deltas));
         }
 
         // Try to load from disk (not in index)
-        if let Some(object) = self.try_load_and_index(&key)? {
-            return Ok(object);
+        if let Some(base) = self.try_load_and_index(&key)? {
+            let deltas = self.load_deltas_from_disk(&key)?;
+            return Ok(Object::with_deltas(base.version, base.data, deltas));
         }
 
         Err(FlameError::NotFound(format!("object <{}> not found", key)))
@@ -500,9 +668,12 @@ impl ObjectCache {
 
             write_batch_to_file(&object_path, &batch)?;
             tracing::debug!("Updated object on disk: {:?}", object_path);
+
+            // Clear all deltas per HLD
+            self.clear_deltas(&key)?;
         }
 
-        let meta = self.create_metadata(key.clone(), size);
+        let meta = self.create_metadata(key.clone(), size, 0);
 
         // Update in-memory storage
         {
@@ -522,6 +693,87 @@ impl ObjectCache {
         Ok(meta)
     }
 
+    /// Append a delta to an existing object (PATCH operation).
+    ///
+    /// # Errors
+    /// - Returns NotFound if the base object doesn't exist
+    /// - Returns InvalidConfig if storage path is not configured
+    /// - Returns InvalidState if delta count exceeds MAX_DELTAS_PER_OBJECT
+    async fn patch(&self, key: String, delta: Object) -> Result<ObjectMetadata, FlameError> {
+        validate_key(&key)?;
+
+        self.eviction_policy.on_access(&key);
+
+        let storage_path = self
+            .storage_path
+            .as_ref()
+            .ok_or_else(|| FlameError::InvalidConfig("Storage path not configured".to_string()))?;
+
+        // Reserve the next delta index atomically under the lock
+        let next_index = {
+            let mut metadata = lock_ptr!(self.metadata)?;
+            let current_delta_count = match metadata.get(&key) {
+                Some(meta) => meta.delta_count,
+                None => {
+                    drop(metadata);
+                    if self.try_load_and_index(&key)?.is_none() {
+                        return Err(FlameError::NotFound(format!(
+                            "object <{}> not found, must put first",
+                            key
+                        )));
+                    }
+                    metadata = lock_ptr!(self.metadata)?;
+                    metadata.get(&key).map(|m| m.delta_count).unwrap_or(0)
+                }
+            };
+
+            if current_delta_count >= MAX_DELTAS_PER_OBJECT {
+                return Err(FlameError::InvalidState(format!(
+                    "object <{}> has reached maximum delta count ({}). Use update_object to compact deltas.",
+                    key, MAX_DELTAS_PER_OBJECT
+                )));
+            }
+
+            // Reserve the index by incrementing delta_count now
+            if let Some(meta) = metadata.get_mut(&key) {
+                meta.delta_count = current_delta_count + 1;
+            }
+            current_delta_count
+        };
+
+        // Write delta file outside the lock (I/O can be slow)
+        let delta_dir = storage_path.join(format!("{}.deltas", key));
+        fs::create_dir_all(&delta_dir)?;
+
+        let delta_path = delta_dir.join(format!("{}.arrow", next_index));
+        let batch = object_to_batch(&delta)
+            .map_err(|e| FlameError::Internal(format!("Failed to create delta batch: {}", e)))?;
+
+        if let Err(e) = write_batch_to_file(&delta_path, &batch) {
+            // Rollback: decrement delta_count on write failure
+            let mut metadata = lock_ptr!(self.metadata)?;
+            if let Some(meta) = metadata.get_mut(&key) {
+                meta.delta_count = meta.delta_count.saturating_sub(1);
+            }
+            return Err(e);
+        }
+
+        tracing::debug!("Wrote delta {} to disk: {:?}", next_index, delta_path);
+
+        let metadata = lock_ptr!(self.metadata)?;
+        let updated = metadata
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| FlameError::Internal("Failed to get metadata".to_string()))?;
+
+        tracing::debug!(
+            "Object patch: {} (delta_count: {})",
+            key,
+            updated.delta_count
+        );
+        Ok(updated)
+    }
+
     async fn delete(&self, session_id: SessionID) -> Result<(), FlameError> {
         validate_session_id(&session_id)?;
 
@@ -536,8 +788,11 @@ impl ObjectCache {
 
         for key in &keys_to_remove {
             self.eviction_policy.on_remove(key);
+            // Also clear deltas for each object
+            self.clear_deltas(key)?;
         }
 
+        // Delete session directory and all objects (including deltas)
         if let Some(storage_path) = &self.storage_path {
             let session_dir = storage_path.join(&session_id);
             if session_dir.exists() {
@@ -706,7 +961,7 @@ impl FlightCacheServer {
             .decode(data_b64)
             .map_err(|e| FlameError::InvalidState(format!("Invalid base64: {}", e)))?;
 
-        let object = Object { version: 0, data };
+        let object = Object::new(0, data);
         let metadata = self.cache.put(session_id, object).await?;
 
         serde_json::to_string(&metadata)
@@ -723,7 +978,7 @@ impl FlightCacheServer {
             .decode(data_b64)
             .map_err(|e| FlameError::InvalidState(format!("Invalid base64: {}", e)))?;
 
-        let object = Object { version: 0, data };
+        let object = Object::new(0, data);
         let metadata = self.cache.update(key, object).await?;
 
         serde_json::to_string(&metadata)
@@ -733,6 +988,24 @@ impl FlightCacheServer {
     async fn handle_delete_action(&self, session_id: String) -> Result<String, FlameError> {
         self.cache.delete(session_id).await?;
         Ok("OK".to_string())
+    }
+
+    /// Handle PATCH action: append delta to an existing object
+    async fn handle_patch_action(&self, action_body: &str) -> Result<String, FlameError> {
+        let (key_str, data_b64) = action_body
+            .split_once(':')
+            .ok_or_else(|| FlameError::InvalidState("Invalid PATCH action format".to_string()))?;
+
+        let key = key_str.to_string();
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(data_b64)
+            .map_err(|e| FlameError::InvalidState(format!("Invalid base64: {}", e)))?;
+
+        let delta = Object::new(0, data);
+        let metadata = self.cache.patch(key, delta).await?;
+
+        serde_json::to_string(&metadata)
+            .map_err(|e| FlameError::Internal(format!("Failed to serialize: {}", e)))
     }
 }
 
@@ -752,70 +1025,6 @@ fn encode_schema(schema: &Schema) -> Result<Vec<u8>, FlameError> {
     Ok(encoded.ipc_message)
 }
 
-// Helper function to convert RecordBatch to FlightData
-fn batch_to_flight_data_vec(batch: &RecordBatch) -> Result<Vec<FlightData>, FlameError> {
-    use arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
-
-    tracing::debug!(
-        "batch_to_flight_data_vec: batch rows={}, cols={}",
-        batch.num_rows(),
-        batch.num_columns()
-    );
-
-    // Create IPC write options with alignment to ensure proper encoding
-    let options = IpcWriteOptions::default()
-        .try_with_compression(None)
-        .map_err(|e| FlameError::Internal(format!("Failed to set compression: {}", e)))?;
-
-    let mut flight_data_vec = Vec::new();
-
-    // Encode using IpcDataGenerator directly with DictionaryTracker
-    let data_gen = IpcDataGenerator::default();
-    let mut dict_tracker = DictionaryTracker::new(false);
-
-    // First, encode and send schema
-    let encoded_schema = data_gen.schema_to_bytes_with_dictionary_tracker(
-        batch.schema().as_ref(),
-        &mut dict_tracker,
-        &options,
-    );
-
-    let schema_flight_data = FlightData {
-        flight_descriptor: None,
-        app_metadata: vec![].into(),
-        data_header: encoded_schema.ipc_message.into(),
-        data_body: vec![].into(),
-    };
-    flight_data_vec.push(schema_flight_data);
-
-    // Then, send the batch data
-    let (encoded_dictionaries, encoded_batch) = data_gen
-        .encoded_batch(batch, &mut dict_tracker, &options)
-        .map_err(|e| FlameError::Internal(format!("Failed to encode batch: {}", e)))?;
-
-    // Add dictionary batches if any
-    for dict_batch in encoded_dictionaries {
-        flight_data_vec.push(dict_batch.into());
-    }
-
-    // Add the data batch
-    flight_data_vec.push(encoded_batch.into());
-
-    tracing::debug!(
-        "batch_to_flight_data_vec: final {} FlightData messages",
-        flight_data_vec.len()
-    );
-
-    if flight_data_vec.is_empty() {
-        Err(FlameError::Internal(
-            "No FlightData generated from batch".to_string(),
-        ))
-    } else {
-        Ok(flight_data_vec)
-    }
-}
-
-// Helper function to get the object schema
 fn get_object_schema() -> Schema {
     Schema::new(vec![
         Field::new("version", DataType::UInt64, false),
@@ -838,6 +1047,7 @@ fn write_batch_to_file(path: &Path, batch: &RecordBatch) -> Result<(), FlameErro
 }
 
 // Helper function to create a RecordBatch from object data
+// Note: Only serializes version and data; deltas are stored separately
 fn object_to_batch(object: &Object) -> Result<RecordBatch, FlameError> {
     let schema = get_object_schema();
 
@@ -852,6 +1062,7 @@ fn object_to_batch(object: &Object) -> Result<RecordBatch, FlameError> {
 }
 
 // Helper function to extract data from RecordBatch
+// Note: Returns Object with empty deltas; caller populates deltas separately
 fn batch_to_object(batch: &RecordBatch) -> Result<Object, FlameError> {
     if batch.num_rows() != 1 {
         return Err(FlameError::InvalidState(
@@ -873,7 +1084,58 @@ fn batch_to_object(batch: &RecordBatch) -> Result<Object, FlameError> {
     let version = version_col.value(0);
     let data = data_col.value(0).to_vec();
 
-    Ok(Object { version, data })
+    Ok(Object::new(version, data))
+}
+
+/// Convert Object (with deltas) to FlightData stream
+/// Sends schema once, followed by base batch, then delta batches
+fn object_to_flight_data_vec(obj: &Object) -> Result<Vec<FlightData>, FlameError> {
+    use arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
+
+    let options = IpcWriteOptions::default()
+        .try_with_compression(None)
+        .map_err(|e| FlameError::Internal(format!("Failed to set compression: {}", e)))?;
+
+    let data_gen = IpcDataGenerator::default();
+    let mut dict_tracker = DictionaryTracker::new(false);
+
+    let base_batch = object_to_batch(obj)?;
+    let schema = base_batch.schema();
+
+    let mut all_flight_data = Vec::new();
+
+    let encoded_schema = data_gen.schema_to_bytes_with_dictionary_tracker(
+        schema.as_ref(),
+        &mut dict_tracker,
+        &options,
+    );
+    all_flight_data.push(FlightData {
+        flight_descriptor: None,
+        app_metadata: vec![].into(),
+        data_header: encoded_schema.ipc_message.into(),
+        data_body: vec![].into(),
+    });
+
+    let (encoded_dicts, encoded_batch) = data_gen
+        .encoded_batch(&base_batch, &mut dict_tracker, &options)
+        .map_err(|e| FlameError::Internal(format!("Failed to encode base batch: {}", e)))?;
+    for dict_batch in encoded_dicts {
+        all_flight_data.push(dict_batch.into());
+    }
+    all_flight_data.push(encoded_batch.into());
+
+    for delta in &obj.deltas {
+        let delta_batch = object_to_batch(delta)?;
+        let (encoded_dicts, encoded_batch) = data_gen
+            .encoded_batch(&delta_batch, &mut dict_tracker, &options)
+            .map_err(|e| FlameError::Internal(format!("Failed to encode delta batch: {}", e)))?;
+        for dict_batch in encoded_dicts {
+            all_flight_data.push(dict_batch.into());
+        }
+        all_flight_data.push(encoded_batch.into());
+    }
+
+    Ok(all_flight_data)
 }
 
 #[async_trait]
@@ -943,16 +1205,17 @@ impl FlightService for FlightCacheServer {
             .map_err(|e| Status::invalid_argument(format!("Invalid ticket: {}", e)))?;
 
         // Key format: "session_id/object_id"
+        // Returns Object with base data and all deltas populated per HLD
         let object = self.cache.get(key.clone()).await?;
 
-        let batch = object_to_batch(&object)?;
         tracing::debug!(
-            "do_get: batch has {} rows, {} columns",
-            batch.num_rows(),
-            batch.num_columns()
+            "do_get: key={}, base_size={}, delta_count={}",
+            key,
+            object.data.len(),
+            object.deltas.len()
         );
 
-        let flight_data_vec = batch_to_flight_data_vec(&batch)?;
+        let flight_data_vec = object_to_flight_data_vec(&object)?;
         tracing::debug!(
             "do_get: generated {} FlightData messages",
             flight_data_vec.len()
@@ -997,6 +1260,7 @@ impl FlightService for FlightCacheServer {
             "PUT" => self.handle_put_action(&action_body).await?,
             "UPDATE" => self.handle_update_action(&action_body).await?,
             "DELETE" => self.handle_delete_action(action_body).await?,
+            "PATCH" => self.handle_patch_action(&action_body).await?,
             _ => {
                 return Err(Status::invalid_argument(format!(
                     "Unknown action type: {}",
@@ -1024,11 +1288,16 @@ impl FlightService for FlightCacheServer {
             },
             ActionType {
                 r#type: "UPDATE".to_string(),
-                description: "Update an existing object".to_string(),
+                description: "Update an existing object (replaces base and clears deltas)"
+                    .to_string(),
             },
             ActionType {
                 r#type: "DELETE".to_string(),
                 description: "Delete a session and all its objects".to_string(),
+            },
+            ActionType {
+                r#type: "PATCH".to_string(),
+                description: "Append delta data to an existing object".to_string(),
             },
         ];
 
