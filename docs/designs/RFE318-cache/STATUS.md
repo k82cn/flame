@@ -150,3 +150,18 @@ docker compose exec flame-console uv run pytest -vv tests/test_cache.py::test_ob
 - Arrow Flight Spec: https://arrow.apache.org/docs/format/Flight.html
 - PyArrow Flight: https://arrow.apache.org/docs/python/api/flight.html
 - Arrow IPC: https://arrow.apache.org/docs/format/Columnar.html#ipc-file-format
+
+## ✅ Completed (Patch Operation)
+
+### Core Implementation
+- ✅ `patch` operation implemented in `ObjectCache` (append-only semantics)
+- ✅ `PATCH` action added to `FlightCacheServer`
+- ✅ `deltas` field added to `Object` struct
+- ✅ `get_object` updated to return base object + deltas
+
+### Python SDK
+- ✅ `patch_object` function added to `flamepy.core.cache`
+- ✅ `get_object` updated to handle `{base, deltas}` response structure
+
+### Testing
+- ✅ Comprehensive unit tests for `patch` operation added to `e2e/tests/test_cache.py`

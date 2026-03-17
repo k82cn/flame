@@ -20,6 +20,7 @@ This design aims to improve the object cache implementation by leveraging Apache
 3. **Backward Compatibility**: Maintain compatibility with existing Python SDK clients while improving the underlying implementation.
 4. **Scalability**: Support both local and remote cache access patterns to enable distributed caching scenarios.
 5. **Standardization**: Use Arrow Flight as the communication protocol, which is a standard for high-performance data services.
+6. **Incremental Updates**: Support `patch` operation for appending delta data to objects, enabling efficient distributed operations with multiple clients.
 
 ## 2. Function Specification
 
@@ -29,6 +30,7 @@ This design aims to improve the object cache implementation by leveraging Apache
 - Add a new `storage` field under the `cache` section to specify the local storage path for cache persistence.
 - The storage path should be a directory path where Arrow IPC files will be stored.
 - If not specified, the cache will operate in-memory only (backward compatible behavior).
+- **Add a `capacity` field to specify the maximum storage usage (e.g., "10GB").**
 
 Example configuration:
 ```yaml
@@ -36,6 +38,7 @@ cache:
   endpoint: "grpc://127.0.0.1:9090"
   network_interface: "eth0"
   storage: "/var/lib/flame/cache"  # New field
+  capacity: "10GB"                 # New field: Max cache size (triggers LRU eviction)
 ```
 
 **FlameContext for Python SDK (flame.yaml):**
@@ -80,6 +83,7 @@ context.cache.storage   # "/tmp/flame_cache" (optional)
 **Environment Variables:**
 - `FLAME_CACHE_STORAGE`: Override cache storage path (for both cluster and client)
 - `FLAME_CACHE_ENDPOINT`: Override cache endpoint (existing)
+- `FLAME_CACHE_CAPACITY`: Override cache capacity
 
 ### API
 
@@ -95,7 +99,7 @@ The cache server implements the Arrow Flight protocol with the following operati
 2. **do_get**: Retrieve an object from the cache
    - Request: Ticket containing key (`ssn_id/object_id`)
    - Response: Streaming FlightData containing RecordBatch with object data
-   - Behavior: Reads data from disk using Arrow IPC
+   - Behavior: Reads base object and all deltas from disk, returns combined data
 
 3. **get_flight_info**: Get metadata about a flight
    - Request: FlightDescriptor with path (`{session_id}/{object_id}`)
@@ -105,10 +109,49 @@ The cache server implements the Arrow Flight protocol with the following operati
    - Request: Criteria (optional filtering)
    - Response: Streaming FlightInfo for all objects, aligned with key structure
 
-5. **do_action**: Perform cache operations (PUT, UPDATE, DELETE)
+5. **do_action**: Perform cache operations (PUT, UPDATE, DELETE, PATCH)
    - PUT: Put object (legacy support)
-   - UPDATE: Update existing object
+   - UPDATE: Update existing object (replaces base and all deltas)
    - DELETE: Delete session and all its objects
+   - **PATCH**: Append delta data to an existing object (new)
+
+
+### Patch Operation Semantics
+
+The `patch` operation enables incremental updates to cached objects by appending delta data. This is particularly useful for:
+- **Log aggregation**: Multiple clients appending log entries to a shared object
+- **Distributed data collection**: Aggregating results from multiple workers
+- **Streaming data**: Building up data incrementally over time
+
+**Semantic Model:**
+An object in the cache consists of:
+- **Base object**: The initial object data (created via `put_object`)
+- **Delta list**: An ordered list of delta data (appended via `patch_object`)
+
+```
+Object = Base + [Delta_0, Delta_1, Delta_2, ...]
+```
+
+**Key Behaviors:**
+
+| Operation | Behavior |
+|-----------|----------|
+| `put_object(key, obj)` | Creates new object with `obj` as base, clears any existing deltas |
+| `patch_object(key, delta)` | Appends `delta` to the object's delta list |
+| `get_object(key)` | Returns `{base: <base_data>, deltas: [<delta_0>, <delta_1>, ...]}` |
+| `update_object(key, obj)` | Replaces entire object (base + deltas) with new `obj` as base |
+
+**LRU Interaction:**
+The `patch` operation is treated as an **active access** to the object.
+- **Recency Update**: Patching an object updates its LRU (Least Recently Used) recency, marking it as the most recently used item.
+- **Eviction Protection**: This ensures that objects receiving frequent updates (like active logs) remain in the cache and are not evicted, even if they are not being read via `get_object`.
+- **Size Accounting**: The size of the delta is added to the total cache usage, potentially triggering eviction of *other* (older) objects if the capacity is exceeded.
+
+**Why Append-Only (Not Random Access):**
+1. **Simplicity**: Append-only semantics are simpler to implement and reason about
+2. **Concurrency**: Multiple clients can safely append without coordination
+3. **Arrow Flight Alignment**: Maps naturally to Arrow Flight's streaming model
+4. **Use Case Fit**: Primary use cases (logs, aggregation) are append-oriented
 
 **ObjectRef Structure:**
 The ObjectRef structure is updated to include:
@@ -125,43 +168,27 @@ class ObjectRef:
 - If object not found: return `Status::not_found`
 - If storage path is invalid: return `Status::invalid_argument`
 - If Arrow IPC operations fail: return `Status::internal` with error details
+- **PATCH on non-existent object**: return `Status::not_found` (must `put` first)
 
-### CLI
+### Cache Eviction Policy
 
-**flame-object-cache library:**
-- Embedded in `flame-executor-manager`
-- Runs as a dedicated thread
-- Options:
-  - `-c, --config <PATH>`: Path to flame cluster configuration file (default: `~/.flame/flame-cluster.yaml`)
-- Exit codes:
-  - `0`: Success
-  - `1`: Configuration error
-  - `2`: Server startup error
-  - `3`: Runtime error
+To manage disk usage, the cache implements a Least Recently Used (LRU) eviction policy.
 
-### Other Interfaces
+**Configuration:**
+- `capacity`: Maximum storage size (e.g., "10GB", "500MB"). Defined in `flame-cluster.yaml`.
+- If `capacity` is not set or 0, eviction is disabled (unbounded growth).
 
-**Python SDK Interface:**
+**Eviction Logic:**
+1. **Trigger**: Eviction is triggered when a write operation (`put`, `patch`, `update`) would cause the total storage usage to exceed the configured `capacity`.
+2. **Selection**: The cache identifies the Least Recently Used (LRU) object.
+3. **Removal**: The LRU object (base file + all delta files) is deleted from disk and removed from the in-memory index.
+4. **Repeat**: Steps 2-3 are repeated until there is sufficient space for the new data.
 
-1. **put_object(session_id: str, obj: Any) -> ObjectRef**
-   - If `cache.storage` is set:
-     - Write data to local storage using Arrow IPC
-     - Get flight info to construct an ObjectRef with cache's remote endpoint
-   - If `cache.storage` is not set:
-     - Connect to remote cache server via endpoint
-     - Use Arrow Flight do_put to upload object
-   - If endpoint is not set: raise exception
-   - Returns ObjectRef built from FlightInfo
-
-2. **get_object(ref: ObjectRef) -> Any**
-   - Connect to cache server using ref.endpoint
-   - Use Arrow Flight do_get with ref.key as ticket
-   - Deserialize and return object
-
-3. **update_object(ref: ObjectRef, new_obj: Any) -> ObjectRef**
-   - Re-use do_put to overwrite old data
-   - No version check for now (version always 0)
-   - Returns updated ObjectRef
+**Interaction with Operations:**
+- **`get_object`**: Updates access time. Object becomes MRU (Most Recently Used).
+- **`put_object`**: Updates access time. Object becomes MRU.
+- **`patch_object`**: Updates access time. Object becomes MRU.
+- **`list_flights`**: Does NOT update access time.
 
 ### Scope
 
@@ -178,7 +205,6 @@ class ObjectRef:
 
 **Out of Scope:**
 - Version checking and conflict resolution (version always 0 for now)
-- Cache eviction policies
 - Distributed cache coordination
 - Cache replication
 - Authentication and authorization
@@ -328,6 +354,7 @@ pub struct ObjectMetadata {
 - Each object stored as a single RecordBatch in Arrow IPC file
 - Schema: `{version: UInt64, data: Binary}`
 - File naming: `{object_id}.arrow`
+
 
 ### Algorithms
 

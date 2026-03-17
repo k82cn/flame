@@ -15,14 +15,13 @@ import inspect
 import logging
 import os
 import tarfile
-from abc import ABC, abstractmethod
 from concurrent.futures import Future, as_completed
 from typing import Any, Callable, List, Optional
 
 import cloudpickle
 
 from flamepy.core import ObjectRef, get_object, put_object
-from flamepy.core.client import open_session, get_application, register_application, unregister_application
+from flamepy.core.client import get_application, open_session, register_application, unregister_application
 from flamepy.core.types import (
     ApplicationAttributes,
     FlameContext,
@@ -33,9 +32,9 @@ from flamepy.core.types import (
 )
 from flamepy.runner.storage import StorageBackend, create_storage_backend
 from flamepy.runner.types import (
-    SessionContext,
     RunnerContext,
     RunnerRequest,
+    SessionContext,
 )
 
 logger = logging.getLogger(__name__)

@@ -130,7 +130,6 @@ The object cache runs as a dedicated thread within the executor-manager process,
 ## Limitations
 
 - Version is always 0 (no version conflict detection)
-- No automatic cache cleanup or eviction
 - Single-node cache (no distributed coordination)
 - No authentication/authorization
 - Objects are per-session (no cross-session sharing)
