@@ -4,7 +4,7 @@ cluster:
   endpoint: "http://127.0.0.1:30080"
   slot: "cpu=1,mem=1g"
   policy: priority
-  storage: sqlite://flame.db
+  storage: fs://data/
   schedule_interval: 100           # Scheduler loop interval in milliseconds (default: 500)
 executors:
   shim: host
