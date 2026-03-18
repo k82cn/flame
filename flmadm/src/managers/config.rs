@@ -43,7 +43,7 @@ cluster:
   endpoint: "http://127.0.0.1:8080"
   slot: "cpu=1,mem=2g"
   policy: proportion
-  storage: "sqlite://{prefix}/data/sessions.db"
+  storage: "fs://{prefix}/data"
 executors:
   shim: host
   limits:

@@ -21,6 +21,7 @@ use common::apis::{
     SessionAttributes, SessionID, Task, TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
 };
 
+mod filesystem;
 mod sqlite;
 mod types;
 
@@ -81,6 +82,34 @@ pub trait Engine: Send + Sync + 'static {
     async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError>;
 }
 
+/// Connect to a storage engine based on the URL scheme.
+///
+/// Supported URL schemes:
+/// - `sqlite://` or `sqlite:` - SQLite database (default)
+/// - `filesystem://`, `file://`, `fs://` - Filesystem-based storage
+///
+/// Path resolution:
+/// - Triple slash (e.g., `fs:///data`) - Absolute path (`/data`)
+/// - Double slash (e.g., `fs://data`) - Relative to FLAME_HOME (`${FLAME_HOME}/data`)
+///
+/// # Examples
+///
+/// ```ignore
+/// // SQLite storage
+/// let engine = connect("sqlite:///var/lib/flame/sessions.db").await?;
+///
+/// // Filesystem storage (absolute path)
+/// let engine = connect("fs:///var/lib/flame").await?;
+///
+/// // Filesystem storage (relative to FLAME_HOME)
+/// let engine = connect("fs://data").await?;  // -> ${FLAME_HOME}/data
+/// ```
 pub async fn connect(url: &str) -> Result<EnginePtr, FlameError> {
-    sqlite::SqliteEngine::new_ptr(url).await
+    if url.starts_with("filesystem://") || url.starts_with("file://") || url.starts_with("fs://") {
+        tracing::info!("Using filesystem storage engine: {}", url);
+        filesystem::FilesystemEngine::new_ptr(url).await
+    } else {
+        tracing::info!("Using SQLite storage engine: {}", url);
+        sqlite::SqliteEngine::new_ptr(url).await
+    }
 }

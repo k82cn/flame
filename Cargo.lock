@@ -1620,6 +1620,7 @@ dependencies = [
  "chrono",
  "clap",
  "common",
+ "crc32fast",
  "futures",
  "jsonschema",
  "prost",
