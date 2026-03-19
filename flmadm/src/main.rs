@@ -102,11 +102,13 @@ enum Commands {
 }
 
 fn main() {
-    // Initialize logging
-    if let Err(e) = common::init_logger() {
-        eprintln!("Failed to initialize logger: {}", e);
-        std::process::exit(types::exit_codes::INSTALL_FAILURE);
-    }
+    let _log_guard = match common::init_logger(None) {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("Failed to initialize logger: {}", e);
+            std::process::exit(types::exit_codes::INSTALL_FAILURE);
+        }
+    };
 
     let cli = Cli::parse();
 

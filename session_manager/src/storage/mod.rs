@@ -92,6 +92,12 @@ impl Storage {
             tracing::debug!("There are {} executors in snapshot.", exe_map.len());
             for exe in exe_map.deref().values() {
                 let exe = lock_ptr!(exe)?;
+                tracing::debug!(
+                    "Executor <{}> state={:?}, ssn_id={:?}",
+                    exe.id,
+                    exe.state,
+                    exe.ssn_id
+                );
                 let info = ExecutorInfo::from(&(*exe));
                 res.add_executor(Arc::new(info))?;
             }

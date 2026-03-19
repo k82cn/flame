@@ -148,7 +148,7 @@ impl Action for AllocateAction {
             }
 
             if !allocated {
-                tracing::warn!(
+                tracing::debug!(
                     "Failed to allocate executor for underused session <{}>: no allocatable nodes found (total nodes: {})",
                     ssn.id,
                     nodes.len()

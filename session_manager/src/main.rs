@@ -39,7 +39,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), FlameError> {
-    common::init_logger()?;
+    let _log_guard = common::init_logger(Some("fsm"))?;
 
     let cli = Cli::parse();
     let ctx = FlameClusterContext::from_file(cli.config)?;
@@ -63,10 +63,32 @@ async fn main() -> Result<(), FlameError> {
             .map_err(|e| FlameError::Internal(format!("failed to build runtime <{name}>: {e}")))
     };
 
-    let frontend_rt = build_runtime("frontend", 1)?;
-    let backend_rt = build_runtime("backend", 1)?;
-    let scheduler_rt = build_runtime("scheduler", 1)?;
-    let provider_rt = build_runtime("provider", 1)?;
+    let num_cpus = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4);
+    let frontend_threads = 1;
+    let scheduler_threads = 1;
+    let provider_threads = 1;
+    let reserved_threads = frontend_threads + scheduler_threads + provider_threads;
+    let backend_threads = if num_cpus > reserved_threads {
+        num_cpus - reserved_threads
+    } else {
+        1
+    };
+
+    tracing::info!(
+        "CPU allocation: total={}, frontend={}, scheduler={}, provider={}, backend={}",
+        num_cpus,
+        frontend_threads,
+        scheduler_threads,
+        provider_threads,
+        backend_threads
+    );
+
+    let frontend_rt = build_runtime("frontend", frontend_threads)?;
+    let backend_rt = build_runtime("backend", backend_threads)?;
+    let scheduler_rt = build_runtime("scheduler", scheduler_threads)?;
+    let provider_rt = build_runtime("provider", provider_threads)?;
 
     // Start provider thread.
     #[allow(clippy::let_underscore_future)]

@@ -37,6 +37,7 @@ uuid = { version = "1.19", features = ["v4", "serde"] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }
+tracing-appender = "0.2"
 
 strum = { version = "0.26", features = ["derive"] }
 strum_macros = "0.26"
@@ -59,3 +60,4 @@ tokio-stream = "0.1"
 tempfile = "3"
 comfy-table = "7"
 jsonschema = "0.33.0"
+gethostname = "1.0"
