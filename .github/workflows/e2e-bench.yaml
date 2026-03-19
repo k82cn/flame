@@ -1,0 +1,41 @@
+name: Flame Benchmark CI
+on: [push, pull_request]
+env:
+  CLICOLOR_FORCE: 1
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Compose
+        uses: docker/setup-compose-action@v1
+        with:
+          version: latest
+
+      - name: Start Flame
+        run: |
+          docker compose up --build --force-recreate -d
+
+      - name: Install gRPC
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Run Benchmark
+        run: |
+          cargo test --package flame-rs --test benchmark_test -- --nocapture
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose logs flame-session-manager
+          docker compose logs flame-executor-manager

@@ -38,18 +38,16 @@ limitations under the License.
 //! - **CRC32 checksums**: Detects corruption on read
 
 use std::collections::HashMap;
-use std::io::SeekFrom;
+use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use bincode::{Decode, Encode};
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::{Mutex, RwLock};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
@@ -162,29 +160,36 @@ fn calculate_checksum(meta: &TaskMetadata) -> u32 {
     hasher.finalize()
 }
 
-macro_rules! lock_ssn {
-    ($self:expr, $ssn_id:expr) => {{
-        let locks = $self.locks.read().await;
-        let ssn_lock = locks
-            .get($ssn_id)
-            .ok_or_else(|| FlameError::NotFound(format!("Session lock not found: {}", $ssn_id)))?
-            .clone();
-        drop(locks);
-        Ok::<_, FlameError>(ssn_lock.lock_owned().await)
-    }};
-}
-
-macro_rules! lock_app {
-    ($self:expr) => {
-        $self.locks.write().await
-    };
-}
-
-/// Filesystem-based storage engine.
 pub struct FilesystemEngine {
     base_path: PathBuf,
     record_size: usize,
     locks: RwLock<HashMap<String, Arc<Mutex<()>>>>,
+}
+
+macro_rules! lock_ssn {
+    ($self:expr, $ssn_id:expr) => {
+        let __fs_local_ssn_lock = {
+            let locks = $self
+                .locks
+                .read()
+                .map_err(|e| FlameError::Storage(format!("Lock poisoned: {}", e)))?;
+            locks.get($ssn_id).cloned().ok_or_else(|| {
+                FlameError::NotFound(format!("Session lock not found: {}", $ssn_id))
+            })?
+        };
+        let __fs_local_ssn_guard = __fs_local_ssn_lock
+            .lock()
+            .map_err(|e| FlameError::Storage(format!("Session lock poisoned: {}", e)))?;
+    };
+}
+
+macro_rules! lock_app {
+    ($self:expr) => {
+        $self
+            .locks
+            .write()
+            .map_err(|e| FlameError::Storage(format!("Lock poisoned: {}", e)))
+    };
 }
 
 impl FilesystemEngine {
@@ -198,10 +203,10 @@ impl FilesystemEngine {
         let sessions_path = path.join("sessions");
         let applications_path = path.join("applications");
 
-        fs::create_dir_all(&sessions_path).await.map_err(|e| {
+        fs::create_dir_all(&sessions_path).map_err(|e| {
             FlameError::Storage(format!("Failed to create sessions directory: {e}"))
         })?;
-        fs::create_dir_all(&applications_path).await.map_err(|e| {
+        fs::create_dir_all(&applications_path).map_err(|e| {
             FlameError::Storage(format!("Failed to create applications directory: {e}"))
         })?;
 
@@ -251,9 +256,9 @@ impl FilesystemEngine {
     }
 
     /// Read session metadata from disk.
-    async fn read_session_metadata(&self, session_id: &str) -> Result<SessionMetadata, FlameError> {
+    fn read_session_metadata(&self, session_id: &str) -> Result<SessionMetadata, FlameError> {
         let path = self.session_path(session_id).join("metadata");
-        let content = fs::read_to_string(&path).await.map_err(|e| {
+        let content = fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 FlameError::NotFound(format!("Session {session_id} not found: {e}"))
             } else {
@@ -267,7 +272,7 @@ impl FilesystemEngine {
     }
 
     /// Write session metadata to disk atomically.
-    async fn write_session_metadata(
+    fn write_session_metadata(
         &self,
         session_id: &str,
         meta: &SessionMetadata,
@@ -282,24 +287,19 @@ impl FilesystemEngine {
 
         // Write to temp file first
         fs::write(&tmp_path, &content)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to write session metadata: {e}")))?;
 
         // Atomic rename
         fs::rename(&tmp_path, &path)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to rename session metadata: {e}")))?;
 
         Ok(())
     }
 
     /// Read application metadata from disk.
-    async fn read_application_metadata(
-        &self,
-        app_name: &str,
-    ) -> Result<ApplicationMetadata, FlameError> {
+    fn read_application_metadata(&self, app_name: &str) -> Result<ApplicationMetadata, FlameError> {
         let path = self.application_path(app_name).join("metadata");
-        let content = fs::read_to_string(&path).await.map_err(|e| {
+        let content = fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 FlameError::NotFound(format!("Application {app_name} not found: {e}"))
             } else {
@@ -313,13 +313,13 @@ impl FilesystemEngine {
     }
 
     /// Write application metadata to disk atomically.
-    async fn write_application_metadata(
+    fn write_application_metadata(
         &self,
         app_name: &str,
         meta: &ApplicationMetadata,
     ) -> Result<(), FlameError> {
         let app_dir = self.application_path(app_name);
-        fs::create_dir_all(&app_dir).await.map_err(|e| {
+        fs::create_dir_all(&app_dir).map_err(|e| {
             FlameError::Storage(format!("Failed to create application directory: {e}"))
         })?;
 
@@ -331,12 +331,12 @@ impl FilesystemEngine {
         })?;
 
         // Write to temp file first
-        fs::write(&tmp_path, &content).await.map_err(|e| {
+        fs::write(&tmp_path, &content).map_err(|e| {
             FlameError::Storage(format!("Failed to write application metadata: {e}"))
         })?;
 
         // Atomic rename
-        fs::rename(&tmp_path, &path).await.map_err(|e| {
+        fs::rename(&tmp_path, &path).map_err(|e| {
             FlameError::Storage(format!("Failed to rename application metadata: {e}"))
         })?;
 
@@ -344,7 +344,7 @@ impl FilesystemEngine {
     }
 
     /// Read task metadata from tasks.bin.
-    async fn read_task_metadata(
+    fn read_task_metadata(
         &self,
         session_id: &str,
         task_id: TaskID,
@@ -357,20 +357,17 @@ impl FilesystemEngine {
 
         let path = self.session_path(session_id).join("tasks.bin");
 
-        let mut file = tokio::fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .read(true)
             .open(&path)
-            .await
             .map_err(|e| FlameError::NotFound(format!("Tasks file not found: {e}")))?;
 
         let offset = (task_id as u64 - 1) * self.record_size as u64;
         file.seek(SeekFrom::Start(offset))
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to seek to task {task_id}: {e}")))?;
 
         let mut buffer = vec![0u8; self.record_size];
         file.read_exact(&mut buffer)
-            .await
             .map_err(|e| FlameError::NotFound(format!("Task {task_id} not found: {e}")))?;
 
         let (meta, _): (TaskMetadata, _) = bincode::decode_from_slice(&buffer, bincode_config())
@@ -391,42 +388,34 @@ impl FilesystemEngine {
     }
 
     /// Write task metadata to tasks.bin at the specified offset.
-    async fn write_task_metadata(
-        &self,
-        session_id: &str,
-        meta: &TaskMetadata,
-    ) -> Result<(), FlameError> {
+    fn write_task_metadata(&self, session_id: &str, meta: &TaskMetadata) -> Result<(), FlameError> {
         let path = self.session_path(session_id).join("tasks.bin");
 
-        let mut file = tokio::fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(false)
             .open(&path)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to open tasks file: {e}")))?;
 
         let offset = (meta.id - 1) * self.record_size as u64;
         file.seek(SeekFrom::Start(offset))
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to seek to task {}: {e}", meta.id)))?;
 
         let buffer = bincode::encode_to_vec(meta, bincode_config())
             .map_err(|e| FlameError::Storage(format!("Failed to serialize task metadata: {e}")))?;
 
         file.write_all(&buffer)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to write task metadata: {e}")))?;
 
         file.sync_data()
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to sync task metadata: {e}")))?;
 
         Ok(())
     }
 
     /// Append data to a file and return the offset where it was written.
-    async fn append_data(
+    fn append_data(
         &self,
         session_id: &str,
         filename: &str,
@@ -434,32 +423,28 @@ impl FilesystemEngine {
     ) -> Result<u64, FlameError> {
         let path = self.session_path(session_id).join(filename);
 
-        let mut file = tokio::fs::OpenOptions::new()
-            .write(true)
+        let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to open {filename}: {e}")))?;
 
         // Get current file size (this is where we'll write)
-        let offset = file.seek(SeekFrom::End(0)).await.map_err(|e| {
+        let offset = file.seek(SeekFrom::End(0)).map_err(|e| {
             FlameError::Storage(format!("Failed to seek to end of {filename}: {e}"))
         })?;
 
         file.write_all(data)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to write to {filename}: {e}")))?;
 
         file.sync_data()
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to sync {filename}: {e}")))?;
 
         Ok(offset)
     }
 
     /// Read data from a file at the specified offset and length.
-    async fn read_data(
+    fn read_data(
         &self,
         session_id: &str,
         filename: &str,
@@ -472,84 +457,73 @@ impl FilesystemEngine {
 
         let path = self.session_path(session_id).join(filename);
 
-        let mut file = tokio::fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .read(true)
             .open(&path)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to open {filename}: {e}")))?;
 
         file.seek(SeekFrom::Start(offset))
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to seek in {filename}: {e}")))?;
 
         let mut buffer = vec![0u8; len as usize];
         file.read_exact(&mut buffer)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to read from {filename}: {e}")))?;
 
         Ok(buffer)
     }
 
     /// Get the number of tasks in a session by checking the tasks.bin file size.
-    async fn get_task_count(&self, session_id: &str) -> Result<u64, FlameError> {
+    fn get_task_count(&self, session_id: &str) -> Result<u64, FlameError> {
         let path = self.session_path(session_id).join("tasks.bin");
 
-        match fs::metadata(&path).await {
+        match fs::metadata(&path) {
             Ok(metadata) => Ok(metadata.len() / self.record_size as u64),
             Err(_) => Ok(0),
         }
     }
 
     /// Read common data for a session.
-    async fn read_common_data(
-        &self,
-        session_id: &str,
-        len: u64,
-    ) -> Result<Option<Bytes>, FlameError> {
+    fn read_common_data(&self, session_id: &str, len: u64) -> Result<Option<Bytes>, FlameError> {
         if len == 0 {
             return Ok(None);
         }
 
         let path = self.session_path(session_id).join("common_data.bin");
-        match fs::read(&path).await {
+        match fs::read(&path) {
             Ok(data) => Ok(Some(Bytes::from(data))),
             Err(_) => Ok(None),
         }
     }
 
     /// Write common data for a session.
-    async fn write_common_data(&self, session_id: &str, data: &[u8]) -> Result<(), FlameError> {
+    fn write_common_data(&self, session_id: &str, data: &[u8]) -> Result<(), FlameError> {
         let path = self.session_path(session_id).join("common_data.bin");
         fs::write(&path, data)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to write common data: {e}")))?;
         Ok(())
     }
 
     /// Convert TaskMetadata to Task.
-    async fn task_from_metadata(
+    fn task_from_metadata(
         &self,
         session_id: &str,
         meta: &TaskMetadata,
     ) -> Result<Task, FlameError> {
         let input = if meta.input_len > 0 {
-            let data = self
-                .read_data(session_id, "inputs.bin", meta.input_offset, meta.input_len)
-                .await?;
+            let data =
+                self.read_data(session_id, "inputs.bin", meta.input_offset, meta.input_len)?;
             Some(Bytes::from(data))
         } else {
             None
         };
 
         let output = if meta.output_len > 0 {
-            let data = self
-                .read_data(
-                    session_id,
-                    "outputs.bin",
-                    meta.output_offset,
-                    meta.output_len,
-                )
-                .await?;
+            let data = self.read_data(
+                session_id,
+                "outputs.bin",
+                meta.output_offset,
+                meta.output_len,
+            )?;
             Some(Bytes::from(data))
         } else {
             None
@@ -577,11 +551,9 @@ impl FilesystemEngine {
     }
 
     /// Convert SessionMetadata to Session.
-    async fn session_from_metadata(&self, meta: &SessionMetadata) -> Result<Session, FlameError> {
+    fn session_from_metadata(&self, meta: &SessionMetadata) -> Result<Session, FlameError> {
         let state = SessionState::try_from(meta.state)?;
-        let common_data = self
-            .read_common_data(&meta.id, meta.common_data_len)
-            .await?;
+        let common_data = self.read_common_data(&meta.id, meta.common_data_len)?;
         let completion_time = meta
             .completion_time
             .and_then(|t| DateTime::from_timestamp(t, 0));
@@ -634,8 +606,8 @@ impl FilesystemEngine {
     }
 
     /// Check if an application exists and is enabled.
-    async fn check_application_enabled(&self, app_name: &str) -> Result<(), FlameError> {
-        let meta = self.read_application_metadata(app_name).await?;
+    fn check_application_enabled(&self, app_name: &str) -> Result<(), FlameError> {
+        let meta = self.read_application_metadata(app_name)?;
         if meta.state != ApplicationState::Enabled as i32 {
             return Err(FlameError::InvalidState(format!(
                 "Application {app_name} is not enabled"
@@ -652,6 +624,13 @@ impl Engine for FilesystemEngine {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError> {
+        if self.read_application_metadata(&name).is_ok() {
+            return Err(FlameError::AlreadyExist(format!(
+                "Application '{}' already exists",
+                name
+            )));
+        }
+
         let schema = attr.schema.map(|s| ApplicationSchemaMetadata {
             input: s.input,
             output: s.output,
@@ -676,18 +655,18 @@ impl Engine for FilesystemEngine {
             url: attr.url,
         };
 
-        self.write_application_metadata(&name, &meta).await?;
+        self.write_application_metadata(&name, &meta)?;
         Self::application_from_metadata(&meta)
     }
 
     async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
-        let _guard = lock_app!(self);
+        let _guard = lock_app!(self)?;
 
         let sessions_dir = self.base_path.join("sessions");
-        if let Ok(mut entries) = fs::read_dir(&sessions_dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(entries) = fs::read_dir(&sessions_dir) {
+            for entry in entries.flatten() {
                 let session_id = entry.file_name().to_string_lossy().to_string();
-                if let Ok(meta) = self.read_session_metadata(&session_id).await {
+                if let Ok(meta) = self.read_session_metadata(&session_id) {
                     if meta.application == name && meta.state == SessionState::Open as i32 {
                         return Err(FlameError::Storage(format!(
                             "Cannot unregister application '{}': has open sessions",
@@ -699,7 +678,7 @@ impl Engine for FilesystemEngine {
         }
 
         let app_dir = self.application_path(&name);
-        fs::remove_dir_all(&app_dir).await.map_err(|e| {
+        fs::remove_dir_all(&app_dir).map_err(|e| {
             FlameError::Storage(format!("Failed to delete application '{}': {e}", name))
         })?;
 
@@ -711,15 +690,15 @@ impl Engine for FilesystemEngine {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError> {
-        let _guard = lock_app!(self);
+        let _guard = lock_app!(self)?;
 
-        let mut meta = self.read_application_metadata(&name).await?;
+        let mut meta = self.read_application_metadata(&name)?;
 
         let sessions_dir = self.base_path.join("sessions");
-        if let Ok(mut entries) = fs::read_dir(&sessions_dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(entries) = fs::read_dir(&sessions_dir) {
+            for entry in entries.flatten() {
                 let session_id = entry.file_name().to_string_lossy().to_string();
-                if let Ok(ssn_meta) = self.read_session_metadata(&session_id).await {
+                if let Ok(ssn_meta) = self.read_session_metadata(&session_id) {
                     if ssn_meta.application == name && ssn_meta.state == SessionState::Open as i32 {
                         return Err(FlameError::Storage(format!(
                             "Cannot update application '{}': has open sessions",
@@ -749,12 +728,12 @@ impl Engine for FilesystemEngine {
         meta.schema = schema;
         meta.url = attr.url;
 
-        self.write_application_metadata(&name, &meta).await?;
+        self.write_application_metadata(&name, &meta)?;
         Self::application_from_metadata(&meta)
     }
 
     async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError> {
-        let meta = self.read_application_metadata(&id).await?;
+        let meta = self.read_application_metadata(&id)?;
         Self::application_from_metadata(&meta)
     }
 
@@ -762,10 +741,10 @@ impl Engine for FilesystemEngine {
         let mut apps = Vec::new();
         let apps_dir = self.base_path.join("applications");
 
-        if let Ok(mut entries) = fs::read_dir(&apps_dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(entries) = fs::read_dir(&apps_dir) {
+            for entry in entries.flatten() {
                 let app_name = entry.file_name().to_string_lossy().to_string();
-                if let Ok(meta) = self.read_application_metadata(&app_name).await {
+                if let Ok(meta) = self.read_application_metadata(&app_name) {
                     if let Ok(app) = Self::application_from_metadata(&meta) {
                         apps.push(app);
                     }
@@ -777,20 +756,26 @@ impl Engine for FilesystemEngine {
     }
 
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
-        self.check_application_enabled(&attr.application).await?;
+        self.check_application_enabled(&attr.application)?;
+
+        if self.read_session_metadata(&attr.id).is_ok() {
+            return Err(FlameError::AlreadyExist(format!(
+                "Session '{}' already exists",
+                attr.id
+            )));
+        }
 
         {
-            let mut locks = lock_app!(self);
+            let mut locks = lock_app!(self)?;
             locks.insert(attr.id.clone(), Arc::new(Mutex::new(())));
         }
 
         let session_dir = self.session_path(&attr.id);
         fs::create_dir_all(&session_dir)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to create session directory: {e}")))?;
 
         let common_data_len = if let Some(ref data) = attr.common_data {
-            self.write_common_data(&attr.id, data).await?;
+            self.write_common_data(&attr.id, data)?;
             data.len() as u64
         } else {
             0
@@ -809,28 +794,25 @@ impl Engine for FilesystemEngine {
             common_data_len,
         };
 
-        self.write_session_metadata(&attr.id, &meta).await?;
+        self.write_session_metadata(&attr.id, &meta)?;
 
         let tasks_path = session_dir.join("tasks.bin");
         let inputs_path = session_dir.join("inputs.bin");
         let outputs_path = session_dir.join("outputs.bin");
 
-        fs::write(&tasks_path, &[])
-            .await
+        fs::write(&tasks_path, [])
             .map_err(|e| FlameError::Storage(format!("Failed to create tasks.bin: {e}")))?;
-        fs::write(&inputs_path, &[])
-            .await
+        fs::write(&inputs_path, [])
             .map_err(|e| FlameError::Storage(format!("Failed to create inputs.bin: {e}")))?;
-        fs::write(&outputs_path, &[])
-            .await
+        fs::write(&outputs_path, [])
             .map_err(|e| FlameError::Storage(format!("Failed to create outputs.bin: {e}")))?;
 
-        self.session_from_metadata(&meta).await
+        self.session_from_metadata(&meta)
     }
 
     async fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
-        let meta = self.read_session_metadata(&id).await?;
-        self.session_from_metadata(&meta).await
+        let meta = self.read_session_metadata(&id)?;
+        self.session_from_metadata(&meta)
     }
 
     async fn open_session(
@@ -839,7 +821,7 @@ impl Engine for FilesystemEngine {
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         // Try to get existing session
-        match self.read_session_metadata(&id).await {
+        match self.read_session_metadata(&id) {
             Ok(meta) => {
                 // Session exists - validate state
                 if meta.state != SessionState::Open as i32 {
@@ -862,7 +844,7 @@ impl Engine for FilesystemEngine {
                     }
                 }
 
-                self.session_from_metadata(&meta).await
+                self.session_from_metadata(&meta)
             }
             Err(_) => {
                 // Session doesn't exist
@@ -875,11 +857,11 @@ impl Engine for FilesystemEngine {
     }
 
     async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
-        let mut meta = self.read_session_metadata(&id).await?;
+        let mut meta = self.read_session_metadata(&id)?;
 
-        let task_count = self.get_task_count(&id).await?;
+        let task_count = self.get_task_count(&id)?;
         for task_id in 1..=task_count {
-            if let Ok(task_meta) = self.read_task_metadata(&id, task_id as TaskID).await {
+            if let Ok(task_meta) = self.read_task_metadata(&id, task_id as TaskID) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
                     Ok(s) => s,
                     Err(e) => {
@@ -907,12 +889,12 @@ impl Engine for FilesystemEngine {
         meta.completion_time = Some(Utc::now().timestamp());
         meta.version += 1;
 
-        self.write_session_metadata(&id, &meta).await?;
-        self.session_from_metadata(&meta).await
+        self.write_session_metadata(&id, &meta)?;
+        self.session_from_metadata(&meta)
     }
 
     async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {
-        let meta = self.read_session_metadata(&id).await?;
+        let meta = self.read_session_metadata(&id)?;
 
         if meta.state != SessionState::Closed as i32 {
             return Err(FlameError::Storage(
@@ -920,9 +902,9 @@ impl Engine for FilesystemEngine {
             ));
         }
 
-        let task_count = self.get_task_count(&id).await?;
+        let task_count = self.get_task_count(&id)?;
         for task_id in 1..=task_count {
-            if let Ok(task_meta) = self.read_task_metadata(&id, task_id as TaskID).await {
+            if let Ok(task_meta) = self.read_task_metadata(&id, task_id as TaskID) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
                     Ok(s) => s,
                     Err(e) => {
@@ -946,15 +928,14 @@ impl Engine for FilesystemEngine {
             }
         }
 
-        let session = self.session_from_metadata(&meta).await?;
+        let session = self.session_from_metadata(&meta)?;
 
         let session_dir = self.session_path(&id);
         fs::remove_dir_all(&session_dir)
-            .await
             .map_err(|e| FlameError::Storage(format!("Failed to delete session: {e}")))?;
 
         {
-            let mut locks = lock_app!(self);
+            let mut locks = lock_app!(self)?;
             locks.remove(&id);
         }
 
@@ -965,11 +946,15 @@ impl Engine for FilesystemEngine {
         let mut sessions = Vec::new();
         let sessions_dir = self.base_path.join("sessions");
 
-        if let Ok(mut entries) = fs::read_dir(&sessions_dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(entries) = fs::read_dir(&sessions_dir) {
+            for entry in entries.flatten() {
                 let session_id = entry.file_name().to_string_lossy().to_string();
-                if let Ok(meta) = self.read_session_metadata(&session_id).await {
-                    if let Ok(session) = self.session_from_metadata(&meta).await {
+                if let Ok(meta) = self.read_session_metadata(&session_id) {
+                    if let Ok(session) = self.session_from_metadata(&meta) {
+                        {
+                            let mut locks = lock_app!(self)?;
+                            locks.insert(session_id.clone(), Arc::new(Mutex::new(())));
+                        }
                         sessions.push(session);
                     }
                 }
@@ -984,20 +969,20 @@ impl Engine for FilesystemEngine {
         ssn_id: SessionID,
         input: Option<TaskInput>,
     ) -> Result<Task, FlameError> {
-        let ssn_meta = self.read_session_metadata(&ssn_id).await?;
+        let ssn_meta = self.read_session_metadata(&ssn_id)?;
         if ssn_meta.state != SessionState::Open as i32 {
             return Err(FlameError::InvalidState(
                 "Cannot create task in closed session".to_string(),
             ));
         }
 
-        let _guard = lock_ssn!(self, &ssn_id)?;
+        lock_ssn!(self, &ssn_id);
 
-        let task_count = self.get_task_count(&ssn_id).await?;
+        let task_count = self.get_task_count(&ssn_id)?;
         let task_id = task_count + 1;
 
         let (input_offset, input_len) = if let Some(ref data) = input {
-            let offset = self.append_data(&ssn_id, "inputs.bin", data).await?;
+            let offset = self.append_data(&ssn_id, "inputs.bin", data)?;
             (offset, data.len() as u64)
         } else {
             (0, 0)
@@ -1018,28 +1003,28 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&ssn_id, &meta).await?;
+        self.write_task_metadata(&ssn_id, &meta)?;
 
-        self.task_from_metadata(&ssn_id, &meta).await
+        self.task_from_metadata(&ssn_id, &meta)
     }
 
     async fn get_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
-        let _guard = lock_ssn!(self, &gid.ssn_id)?;
-        let meta = self.read_task_metadata(&gid.ssn_id, gid.task_id).await?;
-        self.task_from_metadata(&gid.ssn_id, &meta).await
+        lock_ssn!(self, &gid.ssn_id);
+        let meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
+        self.task_from_metadata(&gid.ssn_id, &meta)
     }
 
     async fn retry_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
-        let _guard = lock_ssn!(self, &gid.ssn_id)?;
+        lock_ssn!(self, &gid.ssn_id);
 
-        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id).await?;
+        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
 
         meta.state = TaskState::Pending as u8;
         meta.version += 1;
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid.ssn_id, &meta).await?;
-        self.task_from_metadata(&gid.ssn_id, &meta).await
+        self.write_task_metadata(&gid.ssn_id, &meta)?;
+        self.task_from_metadata(&gid.ssn_id, &meta)
     }
 
     async fn delete_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
@@ -1059,9 +1044,9 @@ impl Engine for FilesystemEngine {
         task_state: TaskState,
         _message: Option<String>,
     ) -> Result<Task, FlameError> {
-        let _guard = lock_ssn!(self, &gid.ssn_id)?;
+        lock_ssn!(self, &gid.ssn_id);
 
-        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id).await?;
+        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
 
         meta.state = task_state as u8;
         meta.version += 1;
@@ -1072,8 +1057,8 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid.ssn_id, &meta).await?;
-        self.task_from_metadata(&gid.ssn_id, &meta).await
+        self.write_task_metadata(&gid.ssn_id, &meta)?;
+        self.task_from_metadata(&gid.ssn_id, &meta)
     }
 
     async fn update_task_result(
@@ -1081,12 +1066,12 @@ impl Engine for FilesystemEngine {
         gid: TaskGID,
         task_result: TaskResult,
     ) -> Result<Task, FlameError> {
-        let _guard = lock_ssn!(self, &gid.ssn_id)?;
+        lock_ssn!(self, &gid.ssn_id);
 
-        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id).await?;
+        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
 
         if let Some(ref output) = task_result.output {
-            let offset = self.append_data(&gid.ssn_id, "outputs.bin", output).await?;
+            let offset = self.append_data(&gid.ssn_id, "outputs.bin", output)?;
             meta.output_offset = offset;
             meta.output_len = output.len() as u64;
         }
@@ -1100,19 +1085,19 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid.ssn_id, &meta).await?;
-        self.task_from_metadata(&gid.ssn_id, &meta).await
+        self.write_task_metadata(&gid.ssn_id, &meta)?;
+        self.task_from_metadata(&gid.ssn_id, &meta)
     }
 
     async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
-        let _guard = lock_ssn!(self, &ssn_id)?;
+        lock_ssn!(self, &ssn_id);
 
         let mut tasks = Vec::new();
-        let task_count = self.get_task_count(&ssn_id).await?;
+        let task_count = self.get_task_count(&ssn_id)?;
 
         for task_id in 1..=task_count {
-            if let Ok(meta) = self.read_task_metadata(&ssn_id, task_id as TaskID).await {
-                if let Ok(task) = self.task_from_metadata(&ssn_id, &meta).await {
+            if let Ok(meta) = self.read_task_metadata(&ssn_id, task_id as TaskID) {
+                if let Ok(task) = self.task_from_metadata(&ssn_id, &meta) {
                     tasks.push(task);
                 }
             }
@@ -1445,5 +1430,77 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
+    }
+
+    #[tokio::test]
+    async fn test_register_application_already_exists() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let attr = ApplicationAttributes {
+            image: Some("test-image".to_string()),
+            description: Some("Test application".to_string()),
+            labels: vec![],
+            command: Some("/bin/test".to_string()),
+            arguments: vec![],
+            environments: std::collections::HashMap::new(),
+            working_directory: None,
+            max_instances: 10,
+            delay_release: Duration::seconds(0),
+            schema: None,
+            url: None,
+        };
+
+        engine
+            .register_application("test-app".to_string(), attr.clone())
+            .await
+            .unwrap();
+
+        let result = engine
+            .register_application("test-app".to_string(), attr)
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, FlameError::AlreadyExist(_)));
+    }
+
+    #[tokio::test]
+    async fn test_create_session_already_exists() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let app_attr = ApplicationAttributes {
+            image: None,
+            description: None,
+            labels: vec![],
+            command: Some("/bin/test".to_string()),
+            arguments: vec![],
+            environments: std::collections::HashMap::new(),
+            working_directory: None,
+            max_instances: 10,
+            delay_release: Duration::seconds(0),
+            schema: None,
+            url: None,
+        };
+        engine
+            .register_application("test-app".to_string(), app_attr)
+            .await
+            .unwrap();
+
+        let ssn_attr = SessionAttributes {
+            id: "test-session".to_string(),
+            application: "test-app".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        };
+
+        engine.create_session(ssn_attr.clone()).await.unwrap();
+
+        let result = engine.create_session(ssn_attr).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, FlameError::AlreadyExist(_)));
     }
 }

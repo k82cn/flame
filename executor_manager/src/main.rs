@@ -41,7 +41,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), FlameError> {
-    common::init_logger();
+    let _log_guard = common::init_logger(Some("fem"))?;
 
     let cli = Cli::parse();
     let ctx = FlameClusterContext::from_file(cli.config)?;

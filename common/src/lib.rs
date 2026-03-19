@@ -24,8 +24,11 @@ use std::sync::Arc;
 use thiserror::Error;
 use time::macros::format_description;
 use tonic::Status;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling;
 use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tracing_subscriber::fmt::time::LocalTime;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 use crate::apis::{ApplicationAttributes, ApplicationSchema};
 
@@ -33,6 +36,9 @@ use crate::apis::{ApplicationAttributes, ApplicationSchema};
 pub enum FlameError {
     #[error("{0}")]
     NotFound(String),
+
+    #[error("{0}")]
+    AlreadyExist(String),
 
     #[error("{0}")]
     Internal(String),
@@ -66,6 +72,7 @@ impl From<FlameError> for Status {
     fn from(value: FlameError) -> Self {
         match value {
             FlameError::NotFound(msg) => Status::not_found(msg),
+            FlameError::AlreadyExist(msg) => Status::already_exists(msg),
             FlameError::InvalidConfig(msg) | FlameError::InvalidState(msg) => {
                 Status::invalid_argument(msg)
             }
@@ -127,7 +134,7 @@ pub const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 pub const FLAME_CACHE_ENDPOINT: &str = "FLAME_CACHE_ENDPOINT";
 pub const FLAME_ENDPOINT: &str = "FLAME_ENDPOINT";
 
-pub fn init_logger() -> Result<(), FlameError> {
+pub fn init_logger(component: Option<&str>) -> Result<Option<WorkerGuard>, FlameError> {
     let filter = tracing_subscriber::EnvFilter::from_default_env()
         .add_directive("h2=error".parse()?)
         .add_directive("hyper_util=error".parse()?)
@@ -138,17 +145,38 @@ pub fn init_logger() -> Result<(), FlameError> {
         "[hour repr:24]:[minute]:[second].[subsecond digits:3]"
     ));
 
-    // Initialize tracing with a custom format
-    tracing_subscriber::fmt()
+    let fmt_builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_timer(time_format)
         .with_ansi(false)
-        .with_target(true)
-        // .with_thread_ids(true)
-        // .with_process_ids(true)
-        .init();
+        .with_target(true);
 
-    Ok(())
+    match component {
+        Some(name) => {
+            let hostname = gethostname::gethostname().to_string_lossy().into_owned();
+            let log_file = format!("{}-{}", name, hostname);
+
+            let log_dir = std::env::var(FLAME_HOME)
+                .map(|h| format!("{}/logs", h))
+                .unwrap_or_else(|_| format!("{}/logs", FLAME_WORKING_DIRECTORY));
+
+            std::fs::create_dir_all(&log_dir)?;
+
+            let file_appender = rolling::daily(&log_dir, log_file);
+            let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
+
+            fmt_builder
+                .with_writer(non_blocking_file.and(std::io::stdout))
+                .init();
+
+            Ok(Some(guard))
+        }
+        None => {
+            fmt_builder.init();
+
+            Ok(None)
+        }
+    }
 }
 
 pub fn default_applications() -> HashMap<String, ApplicationAttributes> {

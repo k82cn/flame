@@ -72,7 +72,19 @@ impl SnapShot {
                 exes.len()
             };
 
-            tracing::debug!("Session: <{ssn_num}>, Executor: <{exe_num}>");
+            let state_counts = {
+                let exec_index = lock_ptr!(self.exec_index)?;
+                let mut counts = std::collections::HashMap::new();
+                for (state, execs) in exec_index.iter() {
+                    counts.insert(*state, execs.len());
+                }
+                counts
+            };
+
+            tracing::debug!(
+                "Session: <{ssn_num}>, Executor: <{exe_num}>, States: {:?}",
+                state_counts
+            );
         }
 
         Ok(())
