@@ -132,6 +132,12 @@ pub enum TaskState {
     Cancelled = 4,
 }
 
+impl TaskState {
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Succeed | Self::Failed | Self::Cancelled)
+    }
+}
+
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Enumeration, strum_macros::Display, Serialize, Deserialize,
 )]
