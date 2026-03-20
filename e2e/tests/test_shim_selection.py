@@ -212,7 +212,10 @@ class TestShimSelectionNegative:
 
             assert task_status.state == flamepy.TaskState.PENDING, f"Task should remain PENDING when no compatible executor available, got {task_status.state}"
 
-            session.close()
+            try:
+                session.close()
+            except:
+                pass
 
         finally:
             try:
