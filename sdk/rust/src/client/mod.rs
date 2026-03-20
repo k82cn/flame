@@ -165,7 +165,9 @@ pub trait TaskInformer: Send + Sync + 'static {
 
 impl Task {
     pub fn is_completed(&self) -> bool {
-        self.state == TaskState::Succeed || self.state == TaskState::Failed
+        self.state == TaskState::Succeed
+            || self.state == TaskState::Failed
+            || self.state == TaskState::Cancelled
     }
 
     pub fn is_succeed(&self) -> bool {
@@ -174,6 +176,10 @@ impl Task {
 
     pub fn is_failed(&self) -> bool {
         self.state == TaskState::Failed
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.state == TaskState::Cancelled
     }
 }
 

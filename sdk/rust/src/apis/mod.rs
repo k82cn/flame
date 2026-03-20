@@ -129,6 +129,7 @@ pub enum TaskState {
     Running = 1,
     Succeed = 2,
     Failed = 3,
+    Cancelled = 4,
 }
 
 #[derive(

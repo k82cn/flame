@@ -72,11 +72,8 @@ def setup_shim_test_app():
 
     sessions = flamepy.list_sessions()
     for sess in sessions:
-        try:
-            if sess.application == FLM_SHIM_TEST_APP:
-                flamepy.close_session(sess.id)
-        except:
-            pass
+        if sess.application == FLM_SHIM_TEST_APP:
+            flamepy.close_session(sess.id)
 
     flamepy.unregister_application(FLM_SHIM_TEST_APP)
 
@@ -212,10 +209,7 @@ class TestShimSelectionNegative:
 
             assert task_status.state == flamepy.TaskState.PENDING, f"Task should remain PENDING when no compatible executor available, got {task_status.state}"
 
-            try:
-                session.close()
-            except:
-                pass
+            session.close()
 
         finally:
             try:

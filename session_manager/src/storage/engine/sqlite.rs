@@ -529,17 +529,39 @@ impl Engine for SqliteEngine {
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
-        let sql = r#"UPDATE sessions 
-            SET state=?, completion_time=?, version=version+1
-            WHERE id=? AND (SELECT COUNT(*) FROM tasks WHERE ssn_id=? AND state NOT IN (?, ?))=0
-            RETURNING *"#;
-        let ssn: SessionDao = sqlx::query_as(sql)
-            .bind(SessionState::Closed as i32)
+        let check_running_sql = "SELECT COUNT(*) as cnt FROM tasks WHERE ssn_id=? AND state=?";
+        let running_count: (i32,) = sqlx::query_as(check_running_sql)
+            .bind(id.clone())
+            .bind(TaskState::Running as i32)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        if running_count.0 > 0 {
+            return Err(FlameError::Storage(
+                "Cannot close session with running tasks".to_string(),
+            ));
+        }
+
+        let cancel_pending_sql =
+            "UPDATE tasks SET state=?, completion_time=? WHERE ssn_id=? AND state=?";
+        sqlx::query(cancel_pending_sql)
+            .bind(TaskState::Cancelled as i32)
             .bind(Utc::now().timestamp())
             .bind(id.clone())
+            .bind(TaskState::Pending as i32)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let close_session_sql = r#"UPDATE sessions 
+            SET state=?, completion_time=?, version=version+1
+            WHERE id=?
+            RETURNING *"#;
+        let ssn: SessionDao = sqlx::query_as(close_session_sql)
+            .bind(SessionState::Closed as i32)
+            .bind(Utc::now().timestamp())
             .bind(id)
-            .bind(TaskState::Failed as i32)
-            .bind(TaskState::Succeed as i32)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| FlameError::Storage(e.to_string()))?;
@@ -694,12 +716,7 @@ impl Engine for SqliteEngine {
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
         let completion_time = match task_state {
-            TaskState::Failed | TaskState::Succeed => {
-                tracing::warn!(
-                    "Invalid task state <{:?}> for task <{}> when updating task state",
-                    task_state,
-                    gid
-                );
+            TaskState::Failed | TaskState::Succeed | TaskState::Cancelled => {
                 Some(Utc::now().timestamp())
             }
             _ => None,
@@ -1399,6 +1416,45 @@ mod tests {
 
         let task_1_2 = tokio_test::block_on(storage.create_task(ssn_1.id, None))?;
         assert_eq!(task_1_2.id, 2);
+
+        let ssn_1 = tokio_test::block_on(storage.close_session(ssn_1_id.clone()))?;
+        assert_eq!(ssn_1.status.state, SessionState::Closed);
+
+        let task_1_1 = tokio_test::block_on(storage.get_task(task_1_1.gid()))?;
+        assert_eq!(task_1_1.state, TaskState::Cancelled);
+
+        let task_1_2 = tokio_test::block_on(storage.get_task(task_1_2.gid()))?;
+        assert_eq!(task_1_2.state, TaskState::Cancelled);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_close_session_with_running_tasks() -> Result<(), FlameError> {
+        let url = format!(
+            "sqlite:///tmp/flame_test_close_session_with_running_tasks_{}.db",
+            Utc::now().timestamp()
+        );
+        let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
+        for (name, attr) in common::default_applications() {
+            tokio_test::block_on(storage.register_application(name.clone(), attr))?;
+        }
+        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1 = tokio_test::block_on(storage.create_session(SessionAttributes {
+            id: ssn_1_id.clone(),
+            application: "flmexec".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        }))?;
+
+        assert_eq!(ssn_1.status.state, SessionState::Open);
+
+        let task_1_1 = tokio_test::block_on(storage.create_task(ssn_1.id.clone(), None))?;
+        assert_eq!(task_1_1.state, TaskState::Pending);
+
+        tokio_test::block_on(storage.update_task_state(task_1_1.gid(), TaskState::Running, None))?;
 
         let res = tokio_test::block_on(storage.close_session(ssn_1_id.clone()));
         assert!(res.is_err());
