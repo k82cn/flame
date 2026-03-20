@@ -22,7 +22,7 @@ use stdng::{lock_ptr, MutexPtr};
 
 use common::apis::{
     Application, ExecutorID, ExecutorState, Node, NodeState, ResourceRequirement, Session,
-    SessionID, SessionState, Task, TaskID, TaskState,
+    SessionID, SessionState, Shim, Task, TaskID, TaskState,
 };
 use common::FlameError;
 use rpc::flame as rpc;
@@ -89,6 +89,12 @@ impl SnapShot {
 
         Ok(())
     }
+
+    /// Get the application info for a session by looking up the application name.
+    pub fn get_application(&self, app_name: &str) -> Result<Option<AppInfoPtr>, FlameError> {
+        let apps = lock_ptr!(self.applications)?;
+        Ok(apps.get(app_name).cloned())
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -124,6 +130,7 @@ pub struct ExecutorInfo {
     pub node: String,
     pub resreq: ResourceRequirement,
     pub slots: u32,
+    pub shim: Shim, // Supported shim type reported by executor
     pub task_id: Option<TaskID>,
     pub ssn_id: Option<SessionID>,
 
@@ -141,6 +148,7 @@ pub struct NodeInfo {
 #[derive(Clone, Debug, Default)]
 pub struct AppInfo {
     pub name: String,
+    pub shim: Shim, // Required shim type for the application
     pub max_instances: u32,
     pub delay_release: Duration,
 }
@@ -165,6 +173,7 @@ impl From<&Application> for AppInfo {
     fn from(app: &Application) -> Self {
         AppInfo {
             name: app.name.to_string(),
+            shim: app.shim, // Get shim from application
             max_instances: app.max_instances,
             delay_release: app.delay_release,
         }
@@ -178,6 +187,7 @@ impl From<&Executor> for ExecutorInfo {
             node: exec.node.clone(),
             resreq: exec.resreq.clone(),
             slots: exec.slots,
+            shim: exec.shim, // Get shim from executor
             task_id: exec.task_id,
             ssn_id: exec.ssn_id.clone(),
             creation_time: exec.creation_time,
@@ -355,7 +365,7 @@ impl SnapShot {
         let mut appinfos = HashMap::new();
 
         {
-            let mut apps = lock_ptr!(self.applications)?;
+            let apps = lock_ptr!(self.applications)?;
 
             for app in apps.values() {
                 appinfos.insert(app.name.clone(), app.clone());
@@ -584,6 +594,7 @@ impl SnapShot {
             resreq: exec.resreq.clone(),
             task_id: exec.task_id,
             slots: exec.slots,
+            shim: exec.shim, // Preserve shim
             ssn_id: exec.ssn_id.clone(),
             creation_time: exec.creation_time,
             state,
@@ -617,8 +628,14 @@ impl SnapShot {
 
         let executors = void_execs.values().chain(idle_execs.values());
 
+        // Get the application's required shim
+        let app_shim = self
+            .get_application(&ssn.application)?
+            .map(|app| app.shim)
+            .unwrap_or(Shim::Host);
+
         Ok(executors
-            .filter(|exec| ssn.slots == exec.slots)
+            .filter(|exec| ssn.slots == exec.slots && exec.shim == app_shim)
             .cloned()
             .collect())
     }
@@ -630,11 +647,28 @@ pub struct Executor {
     pub node: String,
     pub resreq: ResourceRequirement,
     pub slots: u32,
+    pub shim: Shim, // Supported shim type reported by executor
     pub task_id: Option<TaskID>,
     pub ssn_id: Option<SessionID>,
 
     pub creation_time: DateTime<Utc>,
     pub state: ExecutorState,
+}
+
+impl Default for Executor {
+    fn default() -> Self {
+        Executor {
+            id: String::new(),
+            node: String::new(),
+            resreq: ResourceRequirement::default(),
+            slots: 0,
+            shim: Shim::Host,
+            task_id: None,
+            ssn_id: None,
+            creation_time: Utc::now(),
+            state: ExecutorState::default(),
+        }
+    }
 }
 
 pub type ExecutorPtr = MutexPtr<Executor>;
@@ -658,6 +692,7 @@ impl From<&rpc::Executor> for Executor {
             node: spec.node.clone(),
             resreq: spec.resreq.unwrap().into(),
             slots: spec.slots,
+            shim: Shim::from(spec.shim()), // Get shim from spec
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),
@@ -683,6 +718,7 @@ impl From<&Executor> for rpc::Executor {
             resreq: Some(e.resreq.clone().into()),
             node: e.node.clone(),
             slots: e.slots,
+            shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
         });
 
         let status = Some(rpc::ExecutorStatus {
@@ -695,5 +731,237 @@ impl From<&Executor> for rpc::Executor {
             spec,
             status,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    /// Helper to create a test executor with given parameters.
+    fn create_test_executor(id: &str, slots: u32, state: ExecutorState) -> ExecutorInfoPtr {
+        Arc::new(ExecutorInfo {
+            id: id.to_string(),
+            node: "test-node".to_string(),
+            resreq: ResourceRequirement {
+                cpu: 1,
+                memory: 1024,
+            },
+            slots,
+            shim: Shim::Host,
+            task_id: None,
+            ssn_id: None,
+            creation_time: Utc::now(),
+            state,
+        })
+    }
+
+    /// Helper to create a test session with given parameters.
+    fn create_test_session(id: &str, slots: u32, state: SessionState) -> SessionInfoPtr {
+        Arc::new(SessionInfo {
+            id: id.to_string(),
+            application: "test-app".to_string(),
+            slots,
+            tasks_status: HashMap::from([(TaskState::Pending, 1)]),
+            creation_time: Utc::now(),
+            completion_time: None,
+            state,
+            min_instances: 0,
+            max_instances: None,
+        })
+    }
+
+    /// Test that SnapShot correctly filters executors by state.
+    #[test]
+    fn test_snapshot_find_executors_by_state() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        // Add executors with different states
+        let exec_idle1 = create_test_executor("exec-idle-1", 2, ExecutorState::Idle);
+        let exec_idle2 = create_test_executor("exec-idle-2", 2, ExecutorState::Idle);
+        let exec_bound = create_test_executor("exec-bound", 2, ExecutorState::Bound);
+        let exec_void = create_test_executor("exec-void", 2, ExecutorState::Void);
+
+        ss.add_executor(exec_idle1.clone()).unwrap();
+        ss.add_executor(exec_idle2.clone()).unwrap();
+        ss.add_executor(exec_bound.clone()).unwrap();
+        ss.add_executor(exec_void.clone()).unwrap();
+
+        // Find only idle executors
+        let idle_execs = ss.find_executors(IDLE_EXECUTOR).unwrap();
+        assert_eq!(idle_execs.len(), 2);
+        assert!(idle_execs.contains_key("exec-idle-1"));
+        assert!(idle_execs.contains_key("exec-idle-2"));
+
+        // Find only bound executors
+        let bound_execs = ss.find_executors(BOUND_EXECUTOR).unwrap();
+        assert_eq!(bound_execs.len(), 1);
+        assert!(bound_execs.contains_key("exec-bound"));
+
+        // Find only void executors
+        let void_execs = ss.find_executors(VOID_EXECUTOR).unwrap();
+        assert_eq!(void_execs.len(), 1);
+        assert!(void_execs.contains_key("exec-void"));
+
+        // Find all executors
+        let all_execs = ss.find_executors(ALL_EXECUTOR).unwrap();
+        assert_eq!(all_execs.len(), 4);
+    }
+
+    /// Test that SnapShot correctly filters sessions by state.
+    #[test]
+    fn test_snapshot_find_sessions_by_state() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        // Add sessions with different states
+        let ssn_open1 = create_test_session("ssn-open-1", 2, SessionState::Open);
+        let ssn_open2 = create_test_session("ssn-open-2", 2, SessionState::Open);
+        let ssn_closed = create_test_session("ssn-closed", 2, SessionState::Closed);
+
+        ss.add_session(ssn_open1.clone()).unwrap();
+        ss.add_session(ssn_open2.clone()).unwrap();
+        ss.add_session(ssn_closed.clone()).unwrap();
+
+        // Find only open sessions
+        let open_ssns = ss.find_sessions(OPEN_SESSION).unwrap();
+        assert_eq!(open_ssns.len(), 2);
+        assert!(open_ssns.contains_key("ssn-open-1"));
+        assert!(open_ssns.contains_key("ssn-open-2"));
+
+        // Find all sessions
+        let all_ssns = ss.find_sessions(None).unwrap();
+        assert_eq!(all_ssns.len(), 3);
+    }
+
+    /// Test that update_executor_state correctly updates the exec_index.
+    #[test]
+    fn test_snapshot_update_executor_state() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        // Add an idle executor
+        let exec = create_test_executor("exec-1", 2, ExecutorState::Idle);
+        ss.add_executor(exec.clone()).unwrap();
+
+        // Verify it's in the idle index
+        let idle_execs = ss.find_executors(IDLE_EXECUTOR).unwrap();
+        assert_eq!(idle_execs.len(), 1);
+
+        // Update state to Bound
+        ss.update_executor_state(exec.clone(), ExecutorState::Bound)
+            .unwrap();
+
+        // Verify it's no longer in idle index
+        let idle_execs = ss.find_executors(IDLE_EXECUTOR).unwrap();
+        assert_eq!(idle_execs.len(), 0);
+
+        // Verify it's now in bound index
+        let bound_execs = ss.find_executors(BOUND_EXECUTOR).unwrap();
+        assert_eq!(bound_execs.len(), 1);
+    }
+
+    /// Test pipelined_executors filters by slots correctly.
+    #[test]
+    fn test_snapshot_pipelined_executors_filters_by_slots() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        // Add executors with different slots
+        let exec_slots2_idle = create_test_executor("exec-2-idle", 2, ExecutorState::Idle);
+        let exec_slots4_idle = create_test_executor("exec-4-idle", 4, ExecutorState::Idle);
+        let exec_slots2_void = create_test_executor("exec-2-void", 2, ExecutorState::Void);
+        let exec_slots2_bound = create_test_executor("exec-2-bound", 2, ExecutorState::Bound);
+
+        ss.add_executor(exec_slots2_idle.clone()).unwrap();
+        ss.add_executor(exec_slots4_idle.clone()).unwrap();
+        ss.add_executor(exec_slots2_void.clone()).unwrap();
+        ss.add_executor(exec_slots2_bound.clone()).unwrap();
+
+        // Create a session with slots=2
+        let ssn = create_test_session("ssn-1", 2, SessionState::Open);
+
+        // Get pipelined executors (should only include idle and void with matching slots)
+        let pipelined = ss.pipelined_executors(ssn).unwrap();
+
+        // Should include exec-2-idle and exec-2-void (both have slots=2 and are idle/void)
+        // Should NOT include exec-4-idle (wrong slots) or exec-2-bound (wrong state)
+        assert_eq!(pipelined.len(), 2);
+
+        let ids: Vec<&str> = pipelined.iter().map(|e| e.id.as_str()).collect();
+        assert!(ids.contains(&"exec-2-idle"));
+        assert!(ids.contains(&"exec-2-void"));
+        assert!(!ids.contains(&"exec-4-idle"));
+        assert!(!ids.contains(&"exec-2-bound"));
+    }
+
+    /// Test that empty filters return empty results.
+    #[test]
+    fn test_snapshot_empty_filters() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        // Add some executors
+        let exec = create_test_executor("exec-1", 2, ExecutorState::Idle);
+        ss.add_executor(exec).unwrap();
+
+        // Filter by state that doesn't exist
+        let releasing_execs = ss
+            .find_executors(Some(ExecutorFilter {
+                state: Some(ExecutorState::Releasing),
+                ids: vec![],
+            }))
+            .unwrap();
+        assert_eq!(releasing_execs.len(), 0);
+
+        // Filter by ID that doesn't exist
+        let nonexistent = ss
+            .find_executors(Some(ExecutorFilter {
+                state: None,
+                ids: vec!["nonexistent".to_string()],
+            }))
+            .unwrap();
+        assert_eq!(nonexistent.len(), 0);
+    }
+
+    /// Test that delete_executor removes from both main map and index.
+    #[test]
+    fn test_snapshot_delete_executor() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let exec = create_test_executor("exec-1", 2, ExecutorState::Idle);
+        ss.add_executor(exec.clone()).unwrap();
+
+        // Verify it exists
+        let all_execs = ss.find_executors(ALL_EXECUTOR).unwrap();
+        assert_eq!(all_execs.len(), 1);
+
+        let idle_execs = ss.find_executors(IDLE_EXECUTOR).unwrap();
+        assert_eq!(idle_execs.len(), 1);
+
+        // Delete it
+        ss.delete_executor(exec).unwrap();
+
+        // Verify it's gone from both
+        let all_execs = ss.find_executors(ALL_EXECUTOR).unwrap();
+        assert_eq!(all_execs.len(), 0);
+
+        let idle_execs = ss.find_executors(IDLE_EXECUTOR).unwrap();
+        assert_eq!(idle_execs.len(), 0);
     }
 }

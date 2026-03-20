@@ -32,9 +32,13 @@ impl State for UnbindingState {
         trace_fn!("UnbindingState::execute");
 
         self.client.unbind_executor(&self.executor.clone()).await?;
-        let shim_ptr = &mut self.executor.shim.clone().ok_or(FlameError::InvalidState(
-            "no shim in bound state".to_string(),
-        ))?;
+        let shim_ptr = &mut self
+            .executor
+            .shim_instance
+            .clone()
+            .ok_or(FlameError::InvalidState(
+                "no shim instance in unbinding state".to_string(),
+            ))?;
 
         {
             let mut shim = shim_ptr.lock().await;
@@ -47,7 +51,7 @@ impl State for UnbindingState {
 
         self.executor.task = None;
         self.executor.session = None;
-        self.executor.shim = None;
+        self.executor.shim_instance = None;
 
         // After unbound from session, the executor is idle now.
         self.executor.state = ExecutorState::Idle;

@@ -34,7 +34,7 @@ use crate::model::{
     Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr,
     SnapShot, SnapShotPtr, WatchRegistry,
 };
-use common::apis::{Application, ExecutorState, Node, Session, TaskResult};
+use common::apis::{Application, ExecutorState, Node, Session, Shim, TaskResult};
 use common::FlameError;
 
 /// Timeout for heartbeat in seconds. If no heartbeat is received within this
@@ -327,11 +327,13 @@ impl Backend for Flame {
             .executor_spec
             .ok_or(FlameError::InvalidConfig("no executor spec".to_string()))?;
 
+        let shim = Shim::from(spec.shim());
         let e = Executor {
             id: req.executor_id,
             node: spec.node,
             resreq: spec.resreq.unwrap_or_default().into(),
             slots: spec.slots,
+            shim,
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),

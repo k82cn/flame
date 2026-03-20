@@ -22,7 +22,7 @@ use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationPtr, CommonData, Event,
     EventOwner, ExecutorID, ExecutorState, Node, NodePtr, ResourceRequirement, Session,
-    SessionAttributes, SessionID, SessionPtr, SessionState, Task, TaskGID, TaskID, TaskInput,
+    SessionAttributes, SessionID, SessionPtr, SessionState, Shim, Task, TaskGID, TaskID, TaskInput,
     TaskOutput, TaskPtr, TaskResult, TaskState,
 };
 use common::ctx::FlameClusterContext;
@@ -184,6 +184,7 @@ impl Storage {
                     node: exec.node.clone(),
                     resreq: exec.resreq.clone(),
                     slots: exec.slots,
+                    shim: exec.shim,
                     task_id: exec.task_id,
                     ssn_id: exec.ssn_id.clone(),
                     creation_time: exec.creation_time,
@@ -576,6 +577,7 @@ impl Storage {
             node: node_name.clone(),
             resreq,
             slots,
+            shim: Shim::default(),
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),

@@ -87,6 +87,7 @@ pub struct Application {
     pub version: u32,
     pub state: ApplicationState,
     pub creation_time: DateTime<Utc>,
+    pub shim: Shim, // Required shim type (Host or Wasm)
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -102,7 +103,7 @@ pub struct Application {
 
 #[derive(Clone, Debug)]
 pub struct ApplicationAttributes {
-    // DEPRECATED: shim field removed - now configured in executor-manager
+    pub shim: Shim, // Required shim type (Host or Wasm)
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -119,7 +120,7 @@ pub struct ApplicationAttributes {
 impl Default for ApplicationAttributes {
     fn default() -> Self {
         Self {
-            // shim removed - now configured in executor-manager
+            shim: Shim::Host, // Default to Host shim
             image: None,
             description: None,
             labels: vec![],
@@ -265,13 +266,13 @@ pub struct SessionContext {
 #[derive(Clone, Debug)]
 pub struct ApplicationContext {
     pub name: String,
+    pub shim: Shim, // Required shim type for the application
     pub image: Option<String>,
     pub command: Option<String>,
     pub arguments: Vec<String>,
     pub working_directory: Option<String>,
     pub environments: HashMap<String, String>,
     pub url: Option<String>,
-    // DEPRECATED: shim field removed - now configured in executor-manager
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
@@ -717,6 +718,7 @@ impl TryFrom<rpc::Application> for ApplicationContext {
 
         Ok(ApplicationContext {
             name: metadata.name.clone(),
+            shim: Shim::from(spec.shim()), // Get shim from spec
             image: spec.image.clone(),
             command: spec.command.clone(),
             arguments: spec.arguments.clone(),
@@ -728,7 +730,6 @@ impl TryFrom<rpc::Application> for ApplicationContext {
                 .map(|e| (e.name, e.value))
                 .collect(),
             url: spec.url.clone(),
-            // shim removed - now configured in executor-manager
         })
     }
 }
@@ -757,8 +758,8 @@ impl From<ApplicationContext> for rpc::ApplicationContext {
     fn from(ctx: ApplicationContext) -> Self {
         Self {
             name: ctx.name.clone(),
+            shim: rpc::Shim::from(ctx.shim).into(), // Include shim in context
             image: ctx.image.clone(),
-            // shim removed - now configured in executor-manager
             command: ctx.command.clone(),
             working_directory: ctx.working_directory.clone(),
             url: ctx.url.clone(),
@@ -913,7 +914,7 @@ impl TryFrom<&rpc::Application> for Application {
             creation_time: DateTime::<Utc>::from_timestamp(status.creation_time, 0).ok_or(
                 FlameError::InvalidState("invalid creation time".to_string()),
             )?,
-            // shim removed - now configured in executor-manager
+            shim: Shim::from(spec.shim()), // Get shim from spec
             image: spec.image.clone(),
             description: spec.description.clone(),
             labels: spec.labels.clone(),
@@ -946,7 +947,7 @@ impl From<Application> for rpc::Application {
 impl From<&Application> for rpc::Application {
     fn from(app: &Application) -> Self {
         let spec = Some(rpc::ApplicationSpec {
-            // shim removed - now configured in executor-manager
+            shim: rpc::Shim::from(app.shim).into(), // Include shim in spec
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app.labels.clone(),
@@ -984,7 +985,7 @@ impl From<&Application> for rpc::Application {
 impl From<rpc::ApplicationSpec> for ApplicationAttributes {
     fn from(spec: rpc::ApplicationSpec) -> Self {
         Self {
-            // shim removed - now configured in executor-manager
+            shim: Shim::from(spec.shim()), // Get shim from spec
             image: spec.image.clone(),
             description: spec.description.clone(),
             labels: spec.labels.clone(),
@@ -1280,5 +1281,28 @@ mod tests {
             assert_eq!(resreq.cpu, expected.0);
             assert_eq!(resreq.memory, expected.1);
         }
+    }
+
+    #[test]
+    fn test_shim_default() {
+        let shim = Shim::default();
+        assert_eq!(shim, Shim::Host);
+    }
+
+    #[test]
+    fn test_shim_from_string() {
+        assert_eq!(Shim::try_from("host".to_string()).unwrap(), Shim::Host);
+        assert_eq!(Shim::try_from("Host".to_string()).unwrap(), Shim::Host);
+        assert_eq!(Shim::try_from("HOST".to_string()).unwrap(), Shim::Host);
+        assert_eq!(Shim::try_from("wasm".to_string()).unwrap(), Shim::Wasm);
+        assert_eq!(Shim::try_from("Wasm".to_string()).unwrap(), Shim::Wasm);
+        assert_eq!(Shim::try_from("WASM".to_string()).unwrap(), Shim::Wasm);
+        assert!(Shim::try_from("invalid".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_application_attributes_default_shim() {
+        let attrs = ApplicationAttributes::default();
+        assert_eq!(attrs.shim, Shim::Host);
     }
 }

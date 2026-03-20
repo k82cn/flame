@@ -28,7 +28,7 @@ use rpc::{
 
 use crate::executor::Executor;
 use common::apis::{
-    Application, Node, ResourceRequirement, Session, SessionContext, TaskContext, TaskResult,
+    Application, Node, ResourceRequirement, Session, SessionContext, Shim, TaskContext, TaskResult,
 };
 use common::ctx::FlameClusterContext;
 use common::FlameError;
@@ -154,6 +154,7 @@ impl BackendClient {
                 resreq: Some(exe.resreq.clone().into()),
                 node: exe.node.clone(),
                 slots: exe.slots,
+                shim: rpc::Shim::from(exe.shim).into(), // Include shim in registration
             }),
         };
 

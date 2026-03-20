@@ -66,8 +66,9 @@ impl ExecutorManager {
         });
 
         tracing::info!(
-            "Starting executor manager in streaming mode for node <{}>",
-            node.name
+            "Starting executor manager in streaming mode for node <{}> with shim <{:?}>",
+            node.name,
+            self.ctx.executors.shim
         );
 
         // Process executor updates from the stream
@@ -104,8 +105,15 @@ impl ExecutorManager {
 
         // 2. If ID is new (not in map), create and start executor
         if !self.executors.contains_key(&executor_id) {
-            tracing::info!("Creating executor <{}> (state={:?})", executor_id, state);
+            tracing::info!(
+                "Creating executor <{}> (state={:?}, shim={:?})",
+                executor_id,
+                state,
+                self.ctx.executors.shim
+            );
             executor.context = Some(self.ctx.clone());
+            // Set the shim from the executor-manager's configuration
+            executor.shim = self.ctx.executors.shim;
 
             let executor_ptr = Arc::new(Mutex::new(executor));
             self.executors

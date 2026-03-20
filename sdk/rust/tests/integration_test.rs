@@ -228,6 +228,7 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
         (
             "my-test-agent-1".to_string(),
             ApplicationAttributes {
+                shim: None,
                 image: Some("may-agent".to_string()),
                 description: Some("This is my agent for testing.".to_string()),
                 labels: vec!["test".to_string(), "agent".to_string()],
@@ -248,6 +249,7 @@ async fn test_application_lifecycle() -> Result<(), FlameError> {
         (
             "empty-app".to_string(),
             ApplicationAttributes {
+                shim: None,
                 image: None,
                 description: None,
                 labels: vec![],

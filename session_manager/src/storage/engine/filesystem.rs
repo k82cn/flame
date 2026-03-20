@@ -51,8 +51,8 @@ use serde::{Deserialize, Serialize};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
-    Session, SessionAttributes, SessionID, SessionState, SessionStatus, Task, TaskGID, TaskID,
-    TaskInput, TaskOutput, TaskResult, TaskState,
+    Session, SessionAttributes, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID,
+    TaskID, TaskInput, TaskOutput, TaskResult, TaskState,
 };
 use common::{FlameError, FLAME_HOME};
 
@@ -109,6 +109,8 @@ struct ApplicationMetadata {
     pub version: u32,
     pub state: i32,
     pub creation_time: i64,
+    #[serde(default)]
+    pub shim: i32, // 0 = Host (default), 1 = Wasm
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -591,6 +593,7 @@ impl FilesystemEngine {
             state,
             creation_time: DateTime::from_timestamp(meta.creation_time, 0)
                 .ok_or_else(|| FlameError::Storage("Invalid creation time".to_string()))?,
+            shim: Shim::try_from(meta.shim).unwrap_or_default(),
             image: meta.image.clone(),
             description: meta.description.clone(),
             labels: meta.labels.clone(),
@@ -642,6 +645,7 @@ impl Engine for FilesystemEngine {
             version: 1,
             state: ApplicationState::Enabled as i32,
             creation_time: Utc::now().timestamp(),
+            shim: attr.shim as i32,
             image: attr.image,
             description: attr.description,
             labels: attr.labels,
@@ -1214,6 +1218,7 @@ mod tests {
 
         // Register application
         let attr = ApplicationAttributes {
+            shim: Shim::Host,
             image: Some("test-image".to_string()),
             description: Some("Test application".to_string()),
             labels: vec!["test".to_string()],
@@ -1274,6 +1279,7 @@ mod tests {
 
         // First register an application
         let app_attr = ApplicationAttributes {
+            shim: Shim::Host,
             image: None,
             description: None,
             labels: vec![],
@@ -1337,6 +1343,7 @@ mod tests {
 
         // Setup: register app and create session
         let app_attr = ApplicationAttributes {
+            shim: Shim::Host,
             image: None,
             description: None,
             labels: vec![],
@@ -1437,6 +1444,7 @@ mod tests {
         let (engine, _temp_dir) = create_test_engine().await;
 
         let attr = ApplicationAttributes {
+            shim: Shim::Host,
             image: Some("test-image".to_string()),
             description: Some("Test application".to_string()),
             labels: vec![],
@@ -1469,6 +1477,7 @@ mod tests {
         let (engine, _temp_dir) = create_test_engine().await;
 
         let app_attr = ApplicationAttributes {
+            shim: Shim::Host,
             image: None,
             description: None,
             labels: vec![],

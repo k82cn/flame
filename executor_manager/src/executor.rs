@@ -20,7 +20,7 @@ use crate::shims::ShimPtr;
 use ::rpc::flame::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
 
 use crate::states;
-use common::apis::{ExecutorState, ResourceRequirement, SessionContext, TaskContext};
+use common::apis::{ExecutorState, ResourceRequirement, SessionContext, Shim, TaskContext};
 use common::{ctx::FlameClusterContext, FlameError};
 
 #[derive(Clone)]
@@ -29,12 +29,18 @@ pub struct Executor {
     pub resreq: ResourceRequirement,
     pub node: String,
     pub slots: u32,
+    /// Supported shim type from executor-manager config.
+    /// This indicates what type of shim this executor supports (Host or Wasm).
+    pub shim: Shim,
 
     pub session: Option<SessionContext>,
     pub task: Option<TaskContext>,
     pub context: Option<FlameClusterContext>,
 
-    pub shim: Option<ShimPtr>,
+    /// The shim instance used for task execution.
+    /// This holds the actual shim implementation pointer, created when
+    /// the executor binds to a session.
+    pub shim_instance: Option<ShimPtr>,
 
     pub state: ExecutorState,
 }
@@ -60,10 +66,11 @@ impl From<&rpc::Executor> for Executor {
             resreq: spec.resreq.unwrap().into(),
             node: spec.node.clone(),
             slots: spec.slots,
+            shim: Shim::from(spec.shim()), // Get shim from spec
             session: None,
             task: None,
             context: None,
-            shim: None,
+            shim_instance: None,
             state,
         }
     }
@@ -86,6 +93,7 @@ impl From<&Executor> for rpc::Executor {
             resreq: Some(e.resreq.clone().into()),
             slots: e.slots,
             node: e.node.clone(),
+            shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
         });
 
         let status = Some(ExecutorStatus {
@@ -110,7 +118,7 @@ impl Executor {
             next.state
         );
         self.state = next.state;
-        self.shim = next.shim.clone();
+        self.shim_instance = next.shim_instance.clone();
         self.session = next.session.clone();
         self.task = next.task.clone();
     }

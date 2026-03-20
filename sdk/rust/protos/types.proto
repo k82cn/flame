@@ -98,11 +98,7 @@ message ApplicationSchema {
 }
 
 message ApplicationSpec {
-  // DEPRECATED: shim field is deprecated and will be ignored.
-  // Configure shim in executor-manager's flame-cluster.yaml instead.
-  // This field is reserved for backward compatibility.
-  reserved 1;
-  reserved "shim";
+  Shim shim = 1;  // Required shim type (Host or Wasm), defaults to Host
   optional string description = 2;
   repeated string labels = 3;
   optional string image = 4;
@@ -126,6 +122,7 @@ message ExecutorSpec {
   string node = 1;
   ResourceRequirement resreq = 2;
   uint32 slots = 3;
+  Shim shim = 4;  // Supported shim type reported by executor
 }
 
 /* 
