@@ -173,7 +173,7 @@ impl WatchRegistry {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use common::apis::{ExecutorState, ResourceRequirement};
+    use common::apis::{ExecutorState, ResourceRequirement, Shim};
 
     fn create_test_executor(id: &str, node: &str) -> Executor {
         Executor {
@@ -181,6 +181,7 @@ mod tests {
             node: node.to_string(),
             resreq: ResourceRequirement::default(),
             slots: 1,
+            shim: Shim::Host,
             task_id: None,
             ssn_id: None,
             creation_time: Utc::now(),

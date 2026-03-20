@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_executor_conversion() {
-        use common::apis::{ExecutorState, ResourceRequirement};
+        use common::apis::{ExecutorState, ResourceRequirement, Shim};
 
         // Test that Executor can be created with expected fields
         let executor = Executor {
@@ -368,7 +368,8 @@ mod tests {
             session: None,
             task: None,
             context: None,
-            shim: None,
+            shim: Shim::Host,
+            shim_instance: None,
             state: ExecutorState::Idle,
         };
 

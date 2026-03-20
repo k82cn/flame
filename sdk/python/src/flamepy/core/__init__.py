@@ -82,6 +82,7 @@ from .types import (
     SessionAttributes,
     SessionID,
     SessionState,
+    Shim,
     Task,
     TaskID,
     TaskInformer,
@@ -109,6 +110,7 @@ __all__ = [
     "TaskState",
     "ApplicationState",
     "FlameErrorCode",
+    "Shim",
     # Exception classes
     "FlameError",
     # Data classes

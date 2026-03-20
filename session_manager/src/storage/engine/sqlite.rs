@@ -33,8 +33,8 @@ use common::{
     apis::{
         Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
         CommonData, Event, Session, SessionAttributes, SessionID, SessionState, SessionStatus,
-        Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState, DEFAULT_DELAY_RELEASE,
-        DEFAULT_MAX_INSTANCES,
+        Shim, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState,
+        DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
     },
     FlameError,
 };
@@ -867,6 +867,7 @@ mod tests {
         let app_2 = tokio_test::block_on(storage.update_application(
             "flmexec".to_string(),
             ApplicationAttributes {
+                shim: Shim::Host,
                 description: Some("This is my agent for testing.".to_string()),
                 labels: vec!["test".to_string(), "agent".to_string()],
                 image: Some("may-agent".to_string()),
@@ -980,7 +981,7 @@ mod tests {
             (
                 "my-test-agent-1".to_string(),
                 ApplicationAttributes {
-                    // shim removed - now configured in executor-manager
+                    shim: Shim::Host,
                     image: Some("may-agent".to_string()),
                     description: Some("This is my agent for testing.".to_string()),
                     labels: vec!["test".to_string(), "agent".to_string()],
@@ -1001,7 +1002,7 @@ mod tests {
             (
                 "empty-app".to_string(),
                 ApplicationAttributes {
-                    // shim removed - now configured in executor-manager
+                    shim: Shim::Host,
                     image: None,
                     description: None,
                     labels: vec![],
@@ -1063,7 +1064,7 @@ mod tests {
         let app = tokio_test::block_on(storage.register_application(
             "flmtestapp-url".to_string(),
             ApplicationAttributes {
-                // shim removed - now configured in executor-manager
+                shim: Shim::Host,
                 image: None,
                 description: Some("Test application with URL".to_string()),
                 labels: vec!["test".to_string()],
@@ -1117,7 +1118,7 @@ mod tests {
         let app = tokio_test::block_on(storage.register_application(
             "flmtestapp-no-url".to_string(),
             ApplicationAttributes {
-                // shim removed - now configured in executor-manager
+                shim: Shim::Host,
                 image: None,
                 description: Some("Test application without URL".to_string()),
                 labels: vec!["test".to_string()],
@@ -1163,7 +1164,7 @@ mod tests {
         tokio_test::block_on(storage.register_application(
             "flmtestapp-update".to_string(),
             ApplicationAttributes {
-                // shim removed - now configured in executor-manager
+                shim: Shim::Host,
                 image: None,
                 description: Some("Initial description".to_string()),
                 labels: vec![],
@@ -1187,7 +1188,7 @@ mod tests {
         let updated_app = tokio_test::block_on(storage.update_application(
             "flmtestapp-update".to_string(),
             ApplicationAttributes {
-                // shim removed - now configured in executor-manager
+                shim: Shim::Host,
                 image: Some("updated-image".to_string()),
                 description: Some("Updated description".to_string()),
                 labels: vec!["updated".to_string()],

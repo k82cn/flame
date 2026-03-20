@@ -83,19 +83,18 @@ def test_application_without_url():
 
 
 def test_register_application_no_shim():
-    """Test registering an application without shim field (shim removed from SDK).
-    
-    This test verifies that applications can be registered and retrieved
-    successfully after the shim field has been removed from the Python SDK.
-    The shim configuration is now managed by the ExecutorManager backend.
+    """Test registering an application without explicit shim field.
+
+    This test verifies that applications can be registered without explicitly
+    specifying a shim, and the application will default to Host shim.
     """
     app_name = "flmtestapp-no-shim"
-    
-    # Register application without shim (shim field no longer exists)
+
+    # Register application without explicit shim (defaults to Host)
     flamepy.register_application(
         app_name,
         flamepy.ApplicationAttributes(
-            description="Test application without shim field",
+            description="Test application without explicit shim field",
             command="/usr/bin/python3",
             arguments=["-c", "print('hello')"],
         ),
@@ -108,13 +107,14 @@ def test_register_application_no_shim():
     assert app.state == flamepy.ApplicationState.ENABLED
     assert app.command == "/usr/bin/python3"
     assert app.arguments == ["-c", "print('hello')"]
-    
-    # Verify that Application class no longer has shim attribute
-    assert not hasattr(app, 'shim'), "Application should not have 'shim' attribute after migration"
+
+    # Verify that Application has shim attribute and defaults to Host
+    assert hasattr(app, "shim"), "Application should have 'shim' attribute"
+    assert app.shim == flamepy.Shim.HOST, f"Default shim should be HOST, got {app.shim}"
 
     # Clean up
     flamepy.unregister_application(app_name)
-    
+
     # Verify cleanup
     app_after_cleanup = flamepy.get_application(app_name)
     assert app_after_cleanup is None, f"Application '{app_name}' should be unregistered"

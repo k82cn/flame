@@ -42,6 +42,7 @@ from .core import (  # Type aliases; Constants; Enums; Exception classes; Data c
     SessionContext,
     SessionID,
     SessionState,
+    Shim,
     Task,
     TaskContext,
     TaskID,
@@ -86,6 +87,7 @@ __all__ = [
     "TaskState",
     "ApplicationState",
     "FlameErrorCode",
+    "Shim",
     # Exception classes
     "FlameError",
     # Data classes

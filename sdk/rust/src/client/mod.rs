@@ -35,7 +35,7 @@ use self::rpc::{
 use crate::apis::flame as rpc;
 use crate::apis::{
     ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,
-    SessionState, TaskID, TaskInput, TaskOutput, TaskState,
+    SessionState, Shim, TaskID, TaskInput, TaskOutput, TaskState,
 };
 
 type FlameClient = FlameFrontendClient<Channel>;
@@ -85,7 +85,7 @@ pub struct ApplicationSchema {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ApplicationAttributes {
-    // DEPRECATED: shim field removed - now configured in executor-manager
+    pub shim: Option<Shim>,
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Vec<String>,
@@ -575,7 +575,7 @@ impl From<&rpc::Application> for Application {
 impl From<ApplicationAttributes> for ApplicationSpec {
     fn from(app: ApplicationAttributes) -> Self {
         Self {
-            // shim removed - now configured in executor-manager
+            shim: app.shim.map(|s| s as i32).unwrap_or(0),
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app.labels.clone(),
@@ -599,7 +599,9 @@ impl From<ApplicationAttributes> for ApplicationSpec {
 impl From<ApplicationSpec> for ApplicationAttributes {
     fn from(app: ApplicationSpec) -> Self {
         Self {
-            // shim removed - now configured in executor-manager
+            shim: Some(Shim::from(
+                rpc::Shim::try_from(app.shim).unwrap_or(rpc::Shim::Host),
+            )),
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app.labels.clone(),
@@ -611,7 +613,6 @@ impl From<ApplicationSpec> for ApplicationAttributes {
                 .into_iter()
                 .map(|env| (env.name, env.value))
                 .collect(),
-            // Treat empty string as None due to protobuf limitation
             working_directory: app.working_directory.clone().filter(|wd| !wd.is_empty()),
             max_instances: app.max_instances,
             delay_release: app.delay_release.map(Duration::seconds),

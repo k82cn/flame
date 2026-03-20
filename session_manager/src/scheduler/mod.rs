@@ -69,7 +69,7 @@ mod tests {
     use chrono::Duration;
     use chrono::Utc;
     use common::apis::{
-        Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement,
+        Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement, Shim,
     };
     use common::ctx::FlameCluster;
     use common::ctx::FlameClusterContext;
@@ -81,6 +81,7 @@ mod tests {
 
     fn new_test_application() -> ApplicationAttributes {
         ApplicationAttributes {
+            shim: Shim::Host,
             image: None,
             command: None,
             description: None,

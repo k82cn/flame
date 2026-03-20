@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::FlameError;
 use bytes::Bytes;
 use common::apis::{
-    Application, ApplicationSchema, ApplicationState, Session, SessionStatus, Task,
+    Application, ApplicationSchema, ApplicationState, Session, SessionStatus, Shim, Task,
 };
 use common::apis::{ApplicationID, Event, SessionID, TaskID};
 
@@ -43,6 +43,7 @@ pub struct AppSchemaDao {
 pub struct ApplicationDao {
     pub name: ApplicationID,
     pub version: u32,
+    pub shim: i32,
     pub image: Option<String>,
     pub description: Option<String>,
     pub labels: Option<Json<Vec<String>>>,
@@ -172,6 +173,7 @@ impl TryFrom<&ApplicationDao> for Application {
             state: ApplicationState::try_from(app.state)?,
             creation_time: DateTime::<Utc>::from_timestamp(app.creation_time, 0)
                 .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
+            shim: Shim::try_from(app.shim).unwrap_or_default(),
             image: app.image.clone(),
             description: app.description.clone(),
             labels: app

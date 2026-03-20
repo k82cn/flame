@@ -12,7 +12,10 @@ limitations under the License.
  */
 use std::collections::HashMap;
 
-use common::{FlameError, apis::ApplicationContext};
+use common::{
+    FlameError,
+    apis::{ApplicationContext, Shim},
+};
 use cri_rs::{DnsConfig, PodManager, PodRuntime, PodState, SecurityContext};
 
 const RUNTIME_HANDLER: &str = "runc";
@@ -50,6 +53,7 @@ async fn test_run_pod() -> Result<(), FlameError> {
 
     let app = ApplicationContext {
         name: "test-pod".to_string(),
+        shim: Shim::Host,
         image: Some("nginx".to_string()),
         command: None,
         arguments: vec![],
@@ -79,6 +83,7 @@ async fn test_list_pods() -> Result<(), FlameError> {
 
     let app = ApplicationContext {
         name: "test-pod".to_string(),
+        shim: Shim::Host,
         image: Some("nginx".to_string()),
         command: None,
         arguments: vec![],

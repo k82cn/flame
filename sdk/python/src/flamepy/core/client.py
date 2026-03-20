@@ -12,6 +12,7 @@ limitations under the License.
 """
 
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
@@ -31,6 +32,7 @@ from flamepy.core.types import (
     SessionAttributes,
     SessionID,
     SessionState,
+    Shim,
     Task,
     TaskID,
     TaskInformer,
@@ -199,7 +201,6 @@ class Connection:
 
         schema = None
         if app_attrs.schema is not None:
-            # Only create schema if at least one field is non-empty
             has_input = app_attrs.schema.input and app_attrs.schema.input.strip()
             has_output = app_attrs.schema.output and app_attrs.schema.output.strip()
             has_common_data = app_attrs.schema.common_data and app_attrs.schema.common_data.strip()
@@ -216,7 +217,10 @@ class Connection:
             for k, v in app_attrs.environments.items():
                 environments.append(Environment(name=k, value=v))
 
+        shim_value = app_attrs.shim.value if app_attrs.shim is not None else Shim.HOST.value
+
         app_spec = ApplicationSpec(
+            shim=shim_value,
             image=app_attrs.image,
             command=app_attrs.command,
             description=app_attrs.description,
@@ -279,6 +283,7 @@ class Connection:
                         name=app.metadata.name,
                         state=ApplicationState(app.status.state),
                         creation_time=datetime.fromtimestamp(app.status.creation_time / 1000, tz=timezone.utc),
+                        shim=Shim(app.spec.shim),
                         image=app.spec.image,
                         command=app.spec.command,
                         arguments=list(app.spec.arguments),
@@ -320,6 +325,7 @@ class Connection:
                 name=response.metadata.name,
                 state=ApplicationState(response.status.state),
                 creation_time=datetime.fromtimestamp(response.status.creation_time / 1000, tz=timezone.utc),
+                shim=Shim(response.spec.shim),
                 image=response.spec.image,
                 command=response.spec.command,
                 arguments=list(response.spec.arguments),
@@ -650,13 +656,22 @@ class Session:
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to list tasks: {e.details()}")
 
-    def watch_task(self, task_id: TaskID) -> "TaskWatcher":
-        """Watch a task for updates."""
+    def watch_task(self, task_id: TaskID, timeout: Optional[float] = None) -> "TaskWatcher":
+        """Watch a task for updates.
+
+        Args:
+            task_id: The ID of the task to watch
+            timeout: Optional timeout in seconds. If specified, iteration will raise
+                     TimeoutError if no update is received within the timeout period.
+
+        Returns:
+            A TaskWatcher iterator that yields Task updates
+        """
         request = WatchTaskRequest(task_id=task_id, session_id=self.id)
 
         try:
             stream = self.connection._frontend.WatchTask(request)
-            return TaskWatcher(stream)
+            return TaskWatcher(stream, timeout=timeout)
 
         except grpc.RpcError as e:
             raise FlameError(FlameErrorCode.INTERNAL, f"failed to watch task: {e.details()}")
@@ -756,13 +771,20 @@ def _task_from_proto(response, session_id: str) -> Task:
 class TaskWatcher:
     """Iterator for watching task updates."""
 
-    def __init__(self, stream):
+    def __init__(self, stream, timeout: Optional[float] = None):
         self._stream = stream
+        self._timeout = timeout
+        self._deadline = None
+        if timeout is not None:
+            self._deadline = time.monotonic() + timeout
 
     def __iter__(self):
         return self
 
     def __next__(self) -> Task:
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise TimeoutError(f"watch_task timed out after {self._timeout} seconds")
+
         try:
             response = next(self._stream)
             return _task_from_proto(response, response.spec.session_id)
