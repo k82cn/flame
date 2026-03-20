@@ -24,6 +24,7 @@ message SessionStatus {
   int32 running = 5;
   int32 succeed = 6;
   int32 failed = 7;
+  int32 cancelled = 9;
 
   repeated Event events = 8;
 }
@@ -47,6 +48,7 @@ enum TaskState {
   Running = 1;
   Succeed = 2;
   Failed = 3;
+  Cancelled = 4;
 }
 
 message TaskStatus {

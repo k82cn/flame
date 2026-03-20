@@ -129,6 +129,13 @@ pub enum TaskState {
     Running = 1,
     Succeed = 2,
     Failed = 3,
+    Cancelled = 4,
+}
+
+impl TaskState {
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Succeed | Self::Failed | Self::Cancelled)
+    }
 }
 
 #[derive(

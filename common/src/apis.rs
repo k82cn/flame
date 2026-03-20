@@ -197,6 +197,13 @@ pub enum TaskState {
     Running = 1,
     Succeed = 2,
     Failed = 3,
+    Cancelled = 4,
+}
+
+impl TaskState {
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Succeed | Self::Failed | Self::Cancelled)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -224,7 +231,7 @@ pub struct Task {
 
 impl Task {
     pub fn is_completed(&self) -> bool {
-        self.state == TaskState::Succeed || self.state == TaskState::Failed
+        self.state.is_terminal()
     }
 
     pub fn gid(&self) -> TaskGID {
@@ -837,6 +844,7 @@ impl From<&Session> for rpc::Session {
             pending: 0,
             running: 0,
             succeed: 0,
+            cancelled: 0,
             events: ssn.events.clone().into_iter().map(Event::into).collect(),
         };
         for (s, v) in &ssn.tasks_index {
@@ -845,6 +853,7 @@ impl From<&Session> for rpc::Session {
                 TaskState::Running => status.running = v.len() as i32,
                 TaskState::Succeed => status.succeed = v.len() as i32,
                 TaskState::Failed => status.failed = v.len() as i32,
+                TaskState::Cancelled => status.cancelled = v.len() as i32,
             }
         }
 
@@ -1082,6 +1091,7 @@ impl From<rpc::TaskState> for TaskState {
             rpc::TaskState::Running => TaskState::Running,
             rpc::TaskState::Succeed => TaskState::Succeed,
             rpc::TaskState::Failed => TaskState::Failed,
+            rpc::TaskState::Cancelled => TaskState::Cancelled,
         }
     }
 }
@@ -1093,6 +1103,7 @@ impl From<TaskState> for rpc::TaskState {
             TaskState::Running => rpc::TaskState::Running,
             TaskState::Succeed => rpc::TaskState::Succeed,
             TaskState::Failed => rpc::TaskState::Failed,
+            TaskState::Cancelled => rpc::TaskState::Cancelled,
         }
     }
 }

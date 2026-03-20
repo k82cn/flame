@@ -618,6 +618,27 @@ impl FilesystemEngine {
         }
         Ok(())
     }
+
+    fn _update_task_state(
+        &self,
+        ssn_id: &SessionID,
+        task_id: &TaskID,
+        task_state: TaskState,
+    ) -> Result<Task, FlameError> {
+        let mut meta = self.read_task_metadata(ssn_id, *task_id)?;
+
+        meta.state = task_state as u8;
+        meta.version += 1;
+
+        if task_state.is_terminal() {
+            meta.completion_time = Utc::now().timestamp();
+        }
+
+        meta.checksum = calculate_checksum(&meta);
+
+        self.write_task_metadata(ssn_id, &meta)?;
+        self.task_from_metadata(ssn_id, &meta)
+    }
 }
 
 #[async_trait]
@@ -861,9 +882,14 @@ impl Engine for FilesystemEngine {
     }
 
     async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
+        lock_ssn!(self, &id);
+
         let mut meta = self.read_session_metadata(&id)?;
 
         let task_count = self.get_task_count(&id)?;
+        let mut pending_tasks = Vec::new();
+
+        // First pass: check for running tasks and collect pending tasks
         for task_id in 1..=task_count {
             if let Ok(task_meta) = self.read_task_metadata(&id, task_id as TaskID) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
@@ -881,12 +907,20 @@ impl Engine for FilesystemEngine {
                         ));
                     }
                 };
-                if state != TaskState::Succeed && state != TaskState::Failed {
+                if state == TaskState::Running {
                     return Err(FlameError::Storage(
-                        "Cannot close session with open tasks".to_string(),
+                        "Cannot close session with running tasks".to_string(),
                     ));
                 }
+                if state == TaskState::Pending {
+                    pending_tasks.push(task_id as TaskID);
+                }
             }
+        }
+
+        // Second pass: cancel pending tasks
+        for task_id in pending_tasks {
+            self._update_task_state(&id, &task_id, TaskState::Cancelled)?;
         }
 
         meta.state = SessionState::Closed as i32;
@@ -924,9 +958,9 @@ impl Engine for FilesystemEngine {
                         ));
                     }
                 };
-                if state != TaskState::Succeed && state != TaskState::Failed {
+                if !state.is_terminal() {
                     return Err(FlameError::Storage(
-                        "Cannot delete session with open tasks".to_string(),
+                        "Cannot delete session with non-terminal tasks".to_string(),
                     ));
                 }
             }
@@ -1050,19 +1084,7 @@ impl Engine for FilesystemEngine {
     ) -> Result<Task, FlameError> {
         lock_ssn!(self, &gid.ssn_id);
 
-        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
-
-        meta.state = task_state as u8;
-        meta.version += 1;
-
-        if task_state == TaskState::Succeed || task_state == TaskState::Failed {
-            meta.completion_time = Utc::now().timestamp();
-        }
-
-        meta.checksum = calculate_checksum(&meta);
-
-        self.write_task_metadata(&gid.ssn_id, &meta)?;
-        self.task_from_metadata(&gid.ssn_id, &meta)
+        self._update_task_state(&gid.ssn_id, &gid.task_id, task_state)
     }
 
     async fn update_task_result(
@@ -1083,7 +1105,7 @@ impl Engine for FilesystemEngine {
         meta.state = task_result.state as u8;
         meta.version += 1;
 
-        if task_result.state == TaskState::Succeed || task_result.state == TaskState::Failed {
+        if task_result.state.is_terminal() {
             meta.completion_time = Utc::now().timestamp();
         }
 
@@ -1511,5 +1533,110 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, FlameError::AlreadyExist(_)));
+    }
+
+    #[tokio::test]
+    async fn test_close_session_with_pending_tasks() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let app_attr = ApplicationAttributes {
+            shim: Shim::Host,
+            image: None,
+            description: None,
+            labels: vec![],
+            command: Some("/bin/test".to_string()),
+            arguments: vec![],
+            environments: std::collections::HashMap::new(),
+            working_directory: None,
+            max_instances: 10,
+            delay_release: Duration::seconds(0),
+            schema: None,
+            url: None,
+        };
+        engine
+            .register_application("test-app".to_string(), app_attr)
+            .await
+            .unwrap();
+
+        let ssn_attr = SessionAttributes {
+            id: "test-session".to_string(),
+            application: "test-app".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        };
+        engine.create_session(ssn_attr).await.unwrap();
+
+        let task1 = engine
+            .create_task("test-session".to_string(), None)
+            .await
+            .unwrap();
+        assert_eq!(task1.state, TaskState::Pending);
+
+        let task2 = engine
+            .create_task("test-session".to_string(), None)
+            .await
+            .unwrap();
+        assert_eq!(task2.state, TaskState::Pending);
+
+        let closed = engine
+            .close_session("test-session".to_string())
+            .await
+            .unwrap();
+        assert_eq!(closed.status.state, SessionState::Closed);
+
+        let task1_after = engine.get_task(task1.gid()).await.unwrap();
+        assert_eq!(task1_after.state, TaskState::Cancelled);
+
+        let task2_after = engine.get_task(task2.gid()).await.unwrap();
+        assert_eq!(task2_after.state, TaskState::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn test_close_session_with_running_tasks() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let app_attr = ApplicationAttributes {
+            shim: Shim::Host,
+            image: None,
+            description: None,
+            labels: vec![],
+            command: Some("/bin/test".to_string()),
+            arguments: vec![],
+            environments: std::collections::HashMap::new(),
+            working_directory: None,
+            max_instances: 10,
+            delay_release: Duration::seconds(0),
+            schema: None,
+            url: None,
+        };
+        engine
+            .register_application("test-app".to_string(), app_attr)
+            .await
+            .unwrap();
+
+        let ssn_attr = SessionAttributes {
+            id: "test-session".to_string(),
+            application: "test-app".to_string(),
+            slots: 1,
+            common_data: None,
+            min_instances: 0,
+            max_instances: None,
+        };
+        engine.create_session(ssn_attr).await.unwrap();
+
+        let task = engine
+            .create_task("test-session".to_string(), None)
+            .await
+            .unwrap();
+
+        engine
+            .update_task_state(task.gid(), TaskState::Running, None)
+            .await
+            .unwrap();
+
+        let result = engine.close_session("test-session".to_string()).await;
+        assert!(result.is_err());
     }
 }
