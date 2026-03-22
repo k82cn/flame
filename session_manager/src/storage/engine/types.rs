@@ -19,9 +19,12 @@ use std::collections::HashMap;
 use crate::FlameError;
 use bytes::Bytes;
 use common::apis::{
-    Application, ApplicationSchema, ApplicationState, Session, SessionStatus, Shim, Task,
+    Application, ApplicationSchema, ApplicationState, ExecutorState, Node, NodeInfo, NodeState,
+    ResourceRequirement, Session, SessionStatus, Shim, Task,
 };
-use common::apis::{ApplicationID, Event, SessionID, TaskID};
+use common::apis::{ApplicationID, Event, ExecutorID, SessionID, TaskID};
+
+use crate::model::Executor;
 
 #[derive(Clone, FromRow, Debug)]
 pub struct EventDao {
@@ -86,6 +89,46 @@ pub struct TaskDao {
     pub creation_time: i64,
     pub completion_time: Option<i64>,
 
+    pub state: i32,
+}
+
+#[derive(Clone, FromRow, Debug)]
+pub struct NodeDao {
+    pub name: String,
+    pub state: i32,
+
+    // Capacity resources
+    pub capacity_cpu: i64,
+    pub capacity_memory: i64,
+
+    // Allocatable resources
+    pub allocatable_cpu: i64,
+    pub allocatable_memory: i64,
+
+    // Node info
+    pub info_arch: String,
+    pub info_os: String,
+
+    pub creation_time: i64,
+    pub last_heartbeat: i64,
+}
+
+#[derive(Clone, FromRow, Debug)]
+pub struct ExecutorDao {
+    pub id: ExecutorID,
+    pub node: String,
+
+    // Resource requirements
+    pub resreq_cpu: i64,
+    pub resreq_memory: i64,
+
+    pub slots: i64,
+    pub shim: i32,
+
+    pub task_id: Option<TaskID>,
+    pub ssn_id: Option<SessionID>,
+
+    pub creation_time: i64,
     pub state: i32,
 }
 
@@ -235,5 +278,104 @@ impl TryFrom<EventDao> for Event {
             creation_time: DateTime::<Utc>::from_timestamp(event.creation_time, 0)
                 .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
         })
+    }
+}
+
+// Node DAO conversions
+
+impl TryFrom<&NodeDao> for Node {
+    type Error = FlameError;
+
+    fn try_from(dao: &NodeDao) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: dao.name.clone(),
+            state: NodeState::from(dao.state),
+            capacity: ResourceRequirement {
+                cpu: dao.capacity_cpu as u64,
+                memory: dao.capacity_memory as u64,
+            },
+            allocatable: ResourceRequirement {
+                cpu: dao.allocatable_cpu as u64,
+                memory: dao.allocatable_memory as u64,
+            },
+            info: NodeInfo {
+                arch: dao.info_arch.clone(),
+                os: dao.info_os.clone(),
+            },
+        })
+    }
+}
+
+impl TryFrom<NodeDao> for Node {
+    type Error = FlameError;
+
+    fn try_from(dao: NodeDao) -> Result<Self, Self::Error> {
+        Node::try_from(&dao)
+    }
+}
+
+impl From<&Node> for NodeDao {
+    fn from(node: &Node) -> Self {
+        Self {
+            name: node.name.clone(),
+            state: i32::from(node.state),
+            capacity_cpu: node.capacity.cpu as i64,
+            capacity_memory: node.capacity.memory as i64,
+            allocatable_cpu: node.allocatable.cpu as i64,
+            allocatable_memory: node.allocatable.memory as i64,
+            info_arch: node.info.arch.clone(),
+            info_os: node.info.os.clone(),
+            creation_time: Utc::now().timestamp(),
+            last_heartbeat: Utc::now().timestamp(),
+        }
+    }
+}
+
+// Executor DAO conversions
+
+impl TryFrom<&ExecutorDao> for Executor {
+    type Error = FlameError;
+
+    fn try_from(dao: &ExecutorDao) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: dao.id.clone(),
+            node: dao.node.clone(),
+            resreq: ResourceRequirement {
+                cpu: dao.resreq_cpu as u64,
+                memory: dao.resreq_memory as u64,
+            },
+            slots: dao.slots as u32,
+            shim: Shim::try_from(dao.shim).unwrap_or_default(),
+            task_id: dao.task_id,
+            ssn_id: dao.ssn_id.clone(),
+            creation_time: DateTime::<Utc>::from_timestamp(dao.creation_time, 0)
+                .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
+            state: ExecutorState::from(dao.state),
+        })
+    }
+}
+
+impl TryFrom<ExecutorDao> for Executor {
+    type Error = FlameError;
+
+    fn try_from(dao: ExecutorDao) -> Result<Self, Self::Error> {
+        Executor::try_from(&dao)
+    }
+}
+
+impl From<&Executor> for ExecutorDao {
+    fn from(exec: &Executor) -> Self {
+        Self {
+            id: exec.id.clone(),
+            node: exec.node.clone(),
+            resreq_cpu: exec.resreq.cpu as i64,
+            resreq_memory: exec.resreq.memory as i64,
+            slots: exec.slots as i64,
+            shim: i32::from(exec.shim),
+            task_id: exec.task_id,
+            ssn_id: exec.ssn_id.clone(),
+            creation_time: exec.creation_time.timestamp(),
+            state: i32::from(exec.state),
+        }
     }
 }

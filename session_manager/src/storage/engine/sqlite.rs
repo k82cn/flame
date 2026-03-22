@@ -32,14 +32,17 @@ use stdng::{logs::TraceFn, trace_fn};
 use common::{
     apis::{
         Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
-        CommonData, Event, Session, SessionAttributes, SessionID, SessionState, SessionStatus,
-        Shim, Task, TaskGID, TaskID, TaskInput, TaskOutput, TaskResult, TaskState,
-        DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
+        CommonData, Event, ExecutorID, ExecutorState, Node, Session, SessionAttributes, SessionID,
+        SessionState, SessionStatus, Shim, Task, TaskGID, TaskID, TaskInput, TaskOutput,
+        TaskResult, TaskState, DEFAULT_DELAY_RELEASE, DEFAULT_MAX_INSTANCES,
     },
     FlameError,
 };
 
-use crate::storage::engine::types::{AppSchemaDao, ApplicationDao, EventDao, SessionDao, TaskDao};
+use crate::model::Executor;
+use crate::storage::engine::types::{
+    AppSchemaDao, ApplicationDao, EventDao, ExecutorDao, NodeDao, SessionDao, TaskDao,
+};
 
 use crate::storage::engine::{Engine, EnginePtr};
 
@@ -806,6 +809,341 @@ impl Engine for SqliteEngine {
             .map_err(|e| FlameError::Storage(e.to_string()))?;
 
         Ok(tasks)
+    }
+
+    // Node operations
+
+    async fn create_node(&self, node: &Node) -> Result<Node, FlameError> {
+        trace_fn!("Sqlite::create_node");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let now = Utc::now().timestamp();
+        let sql = r#"INSERT INTO nodes 
+            (name, state, capacity_cpu, capacity_memory, allocatable_cpu, allocatable_memory, 
+             info_arch, info_os, creation_time, last_heartbeat)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING *"#;
+
+        let dao: NodeDao = sqlx::query_as(sql)
+            .bind(&node.name)
+            .bind(i32::from(node.state))
+            .bind(node.capacity.cpu as i64)
+            .bind(node.capacity.memory as i64)
+            .bind(node.allocatable.cpu as i64)
+            .bind(node.allocatable.memory as i64)
+            .bind(&node.info.arch)
+            .bind(&node.info.os)
+            .bind(now)
+            .bind(now)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to create node: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        dao.try_into()
+    }
+
+    async fn get_node(&self, name: &str) -> Result<Option<Node>, FlameError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = "SELECT * FROM nodes WHERE name=?";
+        let dao: Option<NodeDao> = sqlx::query_as(sql)
+            .bind(name)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        match dao {
+            Some(d) => Ok(Some(d.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn update_node(&self, node: &Node) -> Result<Node, FlameError> {
+        trace_fn!("Sqlite::update_node");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = r#"UPDATE nodes 
+            SET state=?, capacity_cpu=?, capacity_memory=?, 
+                allocatable_cpu=?, allocatable_memory=?,
+                info_arch=?, info_os=?, last_heartbeat=?
+            WHERE name=?
+            RETURNING *"#;
+
+        let dao: NodeDao = sqlx::query_as(sql)
+            .bind(i32::from(node.state))
+            .bind(node.capacity.cpu as i64)
+            .bind(node.capacity.memory as i64)
+            .bind(node.allocatable.cpu as i64)
+            .bind(node.allocatable.memory as i64)
+            .bind(&node.info.arch)
+            .bind(&node.info.os)
+            .bind(Utc::now().timestamp())
+            .bind(&node.name)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to update node: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        dao.try_into()
+    }
+
+    async fn delete_node(&self, name: &str) -> Result<(), FlameError> {
+        trace_fn!("Sqlite::delete_node");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        // Note: executors are automatically deleted via ON DELETE CASCADE foreign key constraint
+        let sql = "DELETE FROM nodes WHERE name=?";
+        sqlx::query(sql)
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to delete node: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn find_nodes(&self) -> Result<Vec<Node>, FlameError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = "SELECT * FROM nodes";
+        let daos: Vec<NodeDao> = sqlx::query_as(sql)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        Ok(daos
+            .iter()
+            .map(Node::try_from)
+            .filter_map(Result::ok)
+            .collect())
+    }
+
+    // Executor operations
+
+    async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
+        trace_fn!("Sqlite::create_executor");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = r#"INSERT INTO executors 
+            (id, node, resreq_cpu, resreq_memory, slots, shim, task_id, ssn_id, creation_time, state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING *"#;
+
+        let dao: ExecutorDao = sqlx::query_as(sql)
+            .bind(&executor.id)
+            .bind(&executor.node)
+            .bind(executor.resreq.cpu as i64)
+            .bind(executor.resreq.memory as i64)
+            .bind(executor.slots as i64)
+            .bind(i32::from(executor.shim))
+            .bind(executor.task_id)
+            .bind(&executor.ssn_id)
+            .bind(executor.creation_time.timestamp())
+            .bind(i32::from(executor.state))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to create executor: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        dao.try_into()
+    }
+
+    async fn get_executor(&self, id: &ExecutorID) -> Result<Option<Executor>, FlameError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = "SELECT * FROM executors WHERE id=?";
+        let dao: Option<ExecutorDao> = sqlx::query_as(sql)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        match dao {
+            Some(d) => Ok(Some(d.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
+        trace_fn!("Sqlite::update_executor");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = r#"UPDATE executors 
+            SET node=?, resreq_cpu=?, resreq_memory=?, slots=?, shim=?, 
+                task_id=?, ssn_id=?, state=?
+            WHERE id=?
+            RETURNING *"#;
+
+        let dao: ExecutorDao = sqlx::query_as(sql)
+            .bind(&executor.node)
+            .bind(executor.resreq.cpu as i64)
+            .bind(executor.resreq.memory as i64)
+            .bind(executor.slots as i64)
+            .bind(i32::from(executor.shim))
+            .bind(executor.task_id)
+            .bind(&executor.ssn_id)
+            .bind(i32::from(executor.state))
+            .bind(&executor.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to update executor: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        dao.try_into()
+    }
+
+    async fn update_executor_state(
+        &self,
+        id: &ExecutorID,
+        state: ExecutorState,
+    ) -> Result<Executor, FlameError> {
+        trace_fn!("Sqlite::update_executor_state");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = r#"UPDATE executors SET state=? WHERE id=? RETURNING *"#;
+
+        let dao: ExecutorDao = sqlx::query_as(sql)
+            .bind(i32::from(state))
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to update executor state: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        dao.try_into()
+    }
+
+    async fn delete_executor(&self, id: &ExecutorID) -> Result<(), FlameError> {
+        trace_fn!("Sqlite::delete_executor");
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let sql = "DELETE FROM executors WHERE id=?";
+        sqlx::query(sql)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| FlameError::Storage(format!("failed to delete executor: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn find_executors(&self, node: Option<&str>) -> Result<Vec<Executor>, FlameError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        let daos: Vec<ExecutorDao> = match node {
+            Some(node_name) => {
+                let sql = "SELECT * FROM executors WHERE node=?";
+                sqlx::query_as(sql)
+                    .bind(node_name)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| FlameError::Storage(e.to_string()))?
+            }
+            None => {
+                let sql = "SELECT * FROM executors";
+                sqlx::query_as(sql)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| FlameError::Storage(e.to_string()))?
+            }
+        };
+
+        tx.commit()
+            .await
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+
+        Ok(daos
+            .iter()
+            .map(Executor::try_from)
+            .filter_map(Result::ok)
+            .collect())
     }
 }
 

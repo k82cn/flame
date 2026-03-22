@@ -368,6 +368,7 @@ impl From<ResourceRequirement> for rpc::ResourceRequirement {
         Self {
             cpu: req.cpu,
             memory: req.memory,
+            gpu: 0,
         }
     }
 }
@@ -501,6 +502,8 @@ impl From<Node> for rpc::Node {
             capacity: Some(node.capacity.into()),
             allocatable: Some(node.allocatable.into()),
             info: Some(node.info.into()),
+            addresses: vec![],
+            last_heartbeat_time: 0,
         });
 
         Self {
@@ -508,9 +511,17 @@ impl From<Node> for rpc::Node {
                 id: node.name.clone(),
                 name: node.name.clone(),
             }),
-            spec: Some(rpc::NodeSpec {}),
+            spec: Some(rpc::NodeSpec {
+                hostname: node.name.clone(),
+            }),
             status,
         }
+    }
+}
+
+impl From<&Node> for rpc::Node {
+    fn from(node: &Node) -> Self {
+        rpc::Node::from(node.clone())
     }
 }
 
@@ -1202,6 +1213,26 @@ impl From<ExecutorState> for rpc::ExecutorState {
             ExecutorState::Released => rpc::ExecutorState::ExecutorReleased,
             _ => rpc::ExecutorState::ExecutorUnknown,
         }
+    }
+}
+impl From<i32> for ExecutorState {
+    fn from(s: i32) -> Self {
+        match s {
+            1 => ExecutorState::Void,
+            2 => ExecutorState::Idle,
+            3 => ExecutorState::Binding,
+            4 => ExecutorState::Bound,
+            5 => ExecutorState::Unbinding,
+            6 => ExecutorState::Releasing,
+            7 => ExecutorState::Released,
+            _ => ExecutorState::Unknown,
+        }
+    }
+}
+
+impl From<ExecutorState> for i32 {
+    fn from(s: ExecutorState) -> Self {
+        s as i32
     }
 }
 

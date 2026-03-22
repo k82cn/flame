@@ -18,7 +18,9 @@ use comfy_table::Table;
 use serde_json::Value;
 
 use flame_rs::apis::{FlameContext, FlameError, TaskState};
-use flame_rs::client;
+use flame_rs::client::{self, NodeState};
+
+use crate::utils::format_memory;
 
 pub async fn run(
     ctx: &FlameContext,
@@ -26,13 +28,15 @@ pub async fn run(
     application: &Option<String>,
     session: &Option<String>,
     task: &Option<String>,
+    node: &Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let current_cluster = ctx.get_current_cluster()?;
     let conn = client::connect(&current_cluster.endpoint).await?;
-    match (application, session, task) {
-        (Some(application), None, None) => view_application(conn, application).await,
-        (None, Some(session), None) => view_session(conn, output_format, session).await,
-        (None, Some(session), Some(task)) => view_task(conn, session, task).await,
+    match (application, session, task, node) {
+        (Some(application), None, None, None) => view_application(conn, application).await,
+        (None, Some(session), None, None) => view_session(conn, output_format, session).await,
+        (None, Some(session), Some(task), None) => view_task(conn, session, task).await,
+        (None, None, None, Some(node)) => view_node(conn, node).await,
         _ => Err(Box::new(FlameError::InvalidConfig(
             "unsupported parameters".to_string(),
         ))),
@@ -195,6 +199,28 @@ async fn view_application(
         println!("  Output: {output_type}");
         println!("  Common Data: {common_data_type}");
     }
+    Ok(())
+}
+
+async fn view_node(conn: client::Connection, node_name: &str) -> Result<(), Box<dyn Error>> {
+    let node = conn.get_node(node_name).await?;
+
+    let status = match node.state {
+        NodeState::Ready => "Ready",
+        NodeState::NotReady => "NotReady",
+        NodeState::Unknown => "Unknown",
+    };
+
+    println!("{:<15}{}", "Name:", node.name);
+    println!("{:<15}{}", "Hostname:", node.hostname);
+    println!("{:<15}{}", "Status:", status);
+    println!("{:<15}", "Capacity:");
+    println!("  {:<13}{}", "CPU:", node.cpu);
+    println!("  {:<13}{}", "Memory:", format_memory(node.memory));
+    println!("{:<15}", "Info:");
+    println!("  {:<13}{}", "Arch:", node.arch);
+    println!("  {:<13}{}", "OS:", node.os);
+
     Ok(())
 }
 

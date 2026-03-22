@@ -20,6 +20,10 @@ service Frontend {
 
   rpc ListExecutor(ListExecutorRequest) returns (ExecutorList) {}
 
+  // Node operations
+  rpc ListNodes(ListNodesRequest) returns (NodeList) {}
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse) {}
+
   rpc CreateSession (CreateSessionRequest) returns (Session) {}
   rpc DeleteSession (DeleteSessionRequest) returns (Session) {}
 
@@ -61,6 +65,21 @@ message ListApplicationRequest {
 
 message ListExecutorRequest {
   
+}
+
+// ListNodesRequest is the request for listing all registered nodes.
+message ListNodesRequest {
+  // No pagination for now.
+}
+
+// GetNodeRequest is the request for getting a specific node by name.
+message GetNodeRequest {
+  string name = 1;
+}
+
+// GetNodeResponse is the response containing the requested node.
+message GetNodeResponse {
+  Node node = 1;
 }
 
 message CreateSessionRequest {

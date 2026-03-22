@@ -18,20 +18,24 @@ use comfy_table::presets::NOTHING;
 use comfy_table::Table;
 use flame_rs as flame;
 use flame_rs::apis::{FlameContext, FlameError, SessionState};
-use flame_rs::client::Connection;
+use flame_rs::client::{Connection, NodeState};
+
+use crate::utils::format_memory;
 
 pub async fn run(
     ctx: &FlameContext,
     application: bool,
     session: bool,
     executor: bool,
+    node: bool,
 ) -> Result<(), Box<dyn Error>> {
     let current_cluster = ctx.get_current_cluster()?;
     let conn = flame::client::connect(&current_cluster.endpoint).await?;
-    match (application, session, executor) {
-        (true, _, _) => list_application(conn).await,
-        (_, true, _) => list_session(conn).await,
-        (_, _, true) => list_executor(conn).await,
+    match (application, session, executor, node) {
+        (true, _, _, _) => list_application(conn).await,
+        (_, true, _, _) => list_session(conn).await,
+        (_, _, true, _) => list_executor(conn).await,
+        (_, _, _, true) => list_node(conn).await,
         _ => Err(Box::new(FlameError::InvalidConfig(
             "unsupported parameters".to_string(),
         ))),
@@ -117,6 +121,35 @@ async fn list_executor(conn: Connection) -> Result<(), Box<dyn Error>> {
             executor.session_id.clone().unwrap_or("-".to_string()),
             executor.slots.to_string(),
             executor.node.to_string(),
+        ]);
+    }
+
+    println!("{table}");
+
+    Ok(())
+}
+
+async fn list_node(conn: Connection) -> Result<(), Box<dyn Error>> {
+    let node_list = conn.list_node().await?;
+    let mut table = Table::new();
+    table.load_preset(NOTHING).set_header(vec![
+        "NAME", "HOSTNAME", "STATUS", "CPU", "MEMORY", "ARCH", "OS",
+    ]);
+
+    for node in &node_list {
+        let status = match node.state {
+            NodeState::Ready => "Ready",
+            NodeState::NotReady => "NotReady",
+            NodeState::Unknown => "Unknown",
+        };
+        table.add_row(vec![
+            node.name.to_string(),
+            node.hostname.to_string(),
+            status.to_string(),
+            node.cpu.to_string(),
+            format_memory(node.memory),
+            node.arch.to_string(),
+            node.os.to_string(),
         ]);
     }
 

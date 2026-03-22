@@ -176,6 +176,8 @@ impl StreamHandler {
                             capacity: Some(node.capacity.clone().into()),
                             allocatable: Some(node.allocatable.clone().into()),
                             info: Some(node.info.clone().into()),
+                            addresses: vec![],
+                            last_heartbeat_time: 0,
                         };
                         (node.name.clone(), Some(status))
                     }
@@ -305,6 +307,8 @@ mod tests {
             capacity: Some(node.capacity.clone().into()),
             allocatable: Some(node.allocatable.clone().into()),
             info: Some(node.info.clone().into()),
+            addresses: vec![],
+            last_heartbeat_time: 0,
         };
 
         assert_eq!(status.state, proto::NodeState::Ready as i32);
