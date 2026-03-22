@@ -25,6 +25,7 @@ mod migrate;
 mod register;
 mod unregister;
 mod update;
+mod utils;
 mod view;
 
 #[derive(Parser)]
@@ -57,6 +58,10 @@ enum Commands {
         #[arg(short, long)]
         task: Option<String>,
 
+        /// The name of node
+        #[arg(short, long)]
+        node: Option<String>,
+
         /// The output format of the view
         #[arg(short, long)]
         output_format: Option<String>,
@@ -78,6 +83,9 @@ enum Commands {
         /// List the executors of Flame
         #[arg(short, long)]
         executor: bool,
+        /// List the nodes of Flame
+        #[arg(short, long)]
+        node: bool,
     },
     /// Close the session in Flame
     Close {
@@ -129,15 +137,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             application,
             session,
             executor,
-        }) => list::run(&ctx, *application, *session, *executor).await?,
+            node,
+        }) => list::run(&ctx, *application, *session, *executor, *node).await?,
         Some(Commands::Close { session }) => close::run(&ctx, session).await?,
         Some(Commands::Create { app, slots }) => create::run(&ctx, app, slots).await?,
         Some(Commands::View {
             application,
             session,
             task,
+            node,
             output_format,
-        }) => view::run(&ctx, output_format, application, session, task).await?,
+        }) => view::run(&ctx, output_format, application, session, task, node).await?,
         Some(Commands::Migrate { url, sql }) => migrate::run(&ctx, url, sql).await?,
         Some(Commands::Register { file }) => register::run(&ctx, file).await?,
         Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,

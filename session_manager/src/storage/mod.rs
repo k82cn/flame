@@ -140,11 +140,35 @@ impl Storage {
             app_map.insert(app.name.clone(), ApplicationPtr::new(app.into()));
         }
 
+        let node_list = self.engine.find_nodes().await?;
+        for node in node_list {
+            let mut node_map = lock_ptr!(self.nodes)?;
+            node_map.insert(node.name.clone(), stdng::new_ptr(node));
+        }
+
+        let executor_list = self.engine.find_executors(None).await?;
+        for executor in executor_list {
+            let mut exe_map = lock_ptr!(self.executors)?;
+            exe_map.insert(executor.id.clone(), ExecutorPtr::new(executor.into()));
+        }
+
         Ok(())
     }
 
     pub async fn register_node(&self, node: &Node) -> Result<(), FlameError> {
         trace_fn!("Storage::register_node");
+
+        let exists = {
+            let node_map = lock_ptr!(self.nodes)?;
+            node_map.contains_key(&node.name)
+        };
+
+        if exists {
+            self.engine.update_node(node).await?;
+        } else {
+            self.engine.create_node(node).await?;
+        }
+
         let mut node_map = lock_ptr!(self.nodes)?;
         node_map.insert(node.name.clone(), stdng::new_ptr(node.clone()));
         Ok(())
@@ -162,19 +186,41 @@ impl Storage {
         }
     }
 
+    /// Lists all registered nodes.
+    pub fn list_node(&self) -> Result<Vec<Node>, FlameError> {
+        let mut node_list = vec![];
+        let node_map = lock_ptr!(self.nodes)?;
+
+        for node in node_map.deref().values() {
+            let node = lock_ptr!(node)?;
+            node_list.push(node.clone());
+        }
+
+        Ok(node_list)
+    }
+
     pub async fn sync_node(
         &self,
         node: &Node,
         _: &Vec<Executor>,
     ) -> Result<Vec<Executor>, FlameError> {
-        // trace_fn!("Storage::sync_node");
+        let exists = {
+            let node_map = lock_ptr!(self.nodes)?;
+            node_map.contains_key(&node.name)
+        };
+
+        if exists {
+            self.engine.update_node(node).await?;
+        } else {
+            self.engine.create_node(node).await?;
+        }
 
         let mut node_map = lock_ptr!(self.nodes)?;
         node_map.insert(node.name.clone(), stdng::new_ptr(node.clone()));
 
         let mut res = vec![];
 
-        let mut exe_map = lock_ptr!(self.executors)?;
+        let exe_map = lock_ptr!(self.executors)?;
         let execs = exe_map.values();
         for exec in execs {
             let exec = lock_ptr!(exec)?;
@@ -199,6 +245,8 @@ impl Storage {
     }
 
     pub async fn release_node(&self, node_name: &str) -> Result<(), FlameError> {
+        self.engine.delete_node(node_name).await?;
+
         let mut node_map = lock_ptr!(self.nodes)?;
         node_map.remove(node_name);
         Ok(())
@@ -584,8 +632,7 @@ impl Storage {
             state: ExecutorState::Void,
         };
 
-        // TODO: create executor in engine
-        // let e = self.engine.create_executor(node, ssn).await?;
+        self.engine.create_executor(&e).await?;
 
         let mut exe_map = lock_ptr!(self.executors)?;
         let exe = ExecutorPtr::new(e.clone().into());
@@ -603,8 +650,25 @@ impl Storage {
         Ok(exe.clone())
     }
 
+    pub async fn update_executor(&self, executor: &Executor) -> Result<(), FlameError> {
+        trace_fn!("Storage::update_executor");
+        self.engine.update_executor(executor).await?;
+
+        let exe_map = lock_ptr!(self.executors)?;
+        if let Some(exe_ptr) = exe_map.get(&executor.id) {
+            let mut exe = lock_ptr!(exe_ptr)?;
+            exe.state = executor.state;
+            exe.task_id = executor.task_id;
+            exe.ssn_id = executor.ssn_id.clone();
+        }
+
+        Ok(())
+    }
+
     pub async fn delete_executor(&self, id: ExecutorID) -> Result<(), FlameError> {
         trace_fn!("Storage::delete_executor");
+        self.engine.delete_executor(&id).await?;
+
         let mut exe_map = lock_ptr!(self.executors)?;
         exe_map.remove(&id);
 
@@ -619,3 +683,6 @@ impl Storage {
 
 #[cfg(test)]
 mod node_tests;
+
+#[cfg(test)]
+mod node_executor_tests;

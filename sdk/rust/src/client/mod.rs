@@ -27,10 +27,10 @@ use tonic::Request;
 use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
     ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
-    GetApplicationRequest, GetSessionRequest, GetTaskRequest, ListApplicationRequest,
-    ListExecutorRequest, ListSessionRequest, ListTaskRequest, OpenSessionRequest,
-    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
-    UpdateApplicationRequest, WatchTaskRequest,
+    GetApplicationRequest, GetNodeRequest, GetSessionRequest, GetTaskRequest,
+    ListApplicationRequest, ListExecutorRequest, ListNodesRequest, ListSessionRequest,
+    ListTaskRequest, OpenSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
+    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
 use crate::apis::{
@@ -118,6 +118,25 @@ pub struct Executor {
     pub session_id: Option<String>,
     pub slots: u32,
     pub node: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Node {
+    pub name: String,
+    pub hostname: String,
+    pub state: NodeState,
+    pub cpu: u64,
+    pub memory: u64,
+    pub arch: String,
+    pub os: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum NodeState {
+    #[default]
+    Unknown = 0,
+    Ready = 1,
+    NotReady = 2,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -368,6 +387,31 @@ impl Connection {
             .iter()
             .map(Executor::from)
             .collect())
+    }
+
+    pub async fn list_node(&self) -> Result<Vec<Node>, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        let node_list = client.list_nodes(ListNodesRequest {}).await?;
+        Ok(node_list
+            .into_inner()
+            .nodes
+            .iter()
+            .map(Node::from)
+            .collect())
+    }
+
+    pub async fn get_node(&self, name: &str) -> Result<Node, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        let node = client
+            .get_node(GetNodeRequest {
+                name: name.to_string(),
+            })
+            .await?;
+        let node = node
+            .into_inner()
+            .node
+            .ok_or(FlameError::NotFound(format!("node <{}> not found", name)))?;
+        Ok(Node::from(&node))
     }
 }
 
@@ -667,6 +711,39 @@ impl From<&rpc::Executor> for Executor {
 impl From<rpc::Executor> for Executor {
     fn from(e: rpc::Executor) -> Self {
         Executor::from(&e)
+    }
+}
+
+impl From<&rpc::Node> for Node {
+    fn from(n: &rpc::Node) -> Self {
+        let metadata = n.metadata.clone().unwrap_or_default();
+        let spec = n.spec.clone().unwrap_or_default();
+        let status = n.status.clone().unwrap_or_default();
+
+        let state = match rpc::NodeState::try_from(status.state) {
+            Ok(rpc::NodeState::Ready) => NodeState::Ready,
+            Ok(rpc::NodeState::NotReady) => NodeState::NotReady,
+            _ => NodeState::Unknown,
+        };
+
+        let capacity = status.capacity.unwrap_or_default();
+        let info = status.info.unwrap_or_default();
+
+        Node {
+            name: metadata.name,
+            hostname: spec.hostname,
+            state,
+            cpu: capacity.cpu,
+            memory: capacity.memory,
+            arch: info.arch,
+            os: info.os,
+        }
+    }
+}
+
+impl From<rpc::Node> for Node {
+    fn from(n: rpc::Node) -> Self {
+        Node::from(&n)
     }
 }
 

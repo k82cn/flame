@@ -15,20 +15,26 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use crate::model::Executor;
 use crate::FlameError;
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationID, CommonData, Event, Session,
-    SessionAttributes, SessionID, Task, TaskGID, TaskInput, TaskOutput, TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationID, CommonData, Event, ExecutorID,
+    ExecutorState, Node, Session, SessionAttributes, SessionID, Task, TaskGID, TaskInput,
+    TaskOutput, TaskResult, TaskState,
 };
 
 mod filesystem;
 mod sqlite;
-mod types;
+pub mod types;
+
+#[cfg(test)]
+pub use sqlite::SqliteEngine;
 
 pub type EnginePtr = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + 'static {
+    // Application operations
     async fn register_application(
         &self,
         name: String,
@@ -43,6 +49,7 @@ pub trait Engine: Send + Sync + 'static {
     async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError>;
     async fn find_application(&self) -> Result<Vec<Application>, FlameError>;
 
+    // Session operations
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError>;
     async fn get_session(&self, id: SessionID) -> Result<Session, FlameError>;
     async fn open_session(
@@ -54,6 +61,7 @@ pub trait Engine: Send + Sync + 'static {
     async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError>;
     async fn find_session(&self) -> Result<Vec<Session>, FlameError>;
 
+    // Task operations
     async fn create_task(
         &self,
         ssn_id: SessionID,
@@ -80,6 +88,25 @@ pub trait Engine: Send + Sync + 'static {
     ) -> Result<Task, FlameError>;
 
     async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError>;
+
+    // Node operations
+    async fn create_node(&self, node: &Node) -> Result<Node, FlameError>;
+    async fn get_node(&self, name: &str) -> Result<Option<Node>, FlameError>;
+    async fn update_node(&self, node: &Node) -> Result<Node, FlameError>;
+    async fn delete_node(&self, name: &str) -> Result<(), FlameError>;
+    async fn find_nodes(&self) -> Result<Vec<Node>, FlameError>;
+
+    // Executor operations
+    async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError>;
+    async fn get_executor(&self, id: &ExecutorID) -> Result<Option<Executor>, FlameError>;
+    async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError>;
+    async fn update_executor_state(
+        &self,
+        id: &ExecutorID,
+        state: ExecutorState,
+    ) -> Result<Executor, FlameError>;
+    async fn delete_executor(&self, id: &ExecutorID) -> Result<(), FlameError>;
+    async fn find_executors(&self, node: Option<&str>) -> Result<Vec<Executor>, FlameError>;
 }
 
 /// Connect to a storage engine based on the URL scheme.

@@ -61,6 +61,11 @@ impl Controller {
         self.storage.get_node(name)
     }
 
+    /// Lists all registered nodes.
+    pub fn list_node(&self) -> Result<Vec<Node>, FlameError> {
+        self.storage.list_node()
+    }
+
     pub async fn sync_node(
         &self,
         node: &Node,
@@ -270,11 +275,12 @@ impl Controller {
         let ssn_ptr = self.storage.get_session_ptr(ssn_id)?;
         state.bind_session(ssn_ptr).await?;
 
-        // Notify the node about the executor binding
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
             (*exe).clone()
         };
+        self.storage.update_executor(&executor).await?;
+
         if let Err(e) = self
             .watch_registry
             .notify_executor_updated(&executor.node, &executor)
@@ -298,11 +304,12 @@ impl Controller {
 
         state.bind_session_completed().await?;
 
-        // Notify the node about the executor state change
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
             (*exe).clone()
         };
+        self.storage.update_executor(&executor).await?;
+
         if let Err(e) = self
             .watch_registry
             .notify_executor_updated(&executor.node, &executor)
@@ -330,7 +337,6 @@ impl Controller {
         tracing::debug!("Try to launch task for session <{:?}>", ssn_id);
         let Some(ssn_id) = ssn_id else {
             tracing::debug!("No session to launch task for, return.");
-            // As the session was unbound from the executor, there are no tasks to launch for it.
             return Ok(None);
         };
 
@@ -349,7 +355,7 @@ impl Controller {
         tracing::debug!("Launching task for session <{:?}>", ssn_id);
         let ssn_ptr = self.storage.get_session_ptr(ssn_id.clone());
 
-        match ssn_ptr {
+        let result = match ssn_ptr {
             Ok(ssn_ptr) => state.launch_task(ssn_ptr).await,
             Err(FlameError::NotFound(msg)) => {
                 tracing::warn!(
@@ -367,7 +373,17 @@ impl Controller {
                 );
                 Err(e)
             }
+        };
+
+        if result.is_ok() {
+            let executor = {
+                let exe = lock_ptr!(exe_ptr)?;
+                (*exe).clone()
+            };
+            self.storage.update_executor(&executor).await?;
         }
+
+        result
     }
 
     pub async fn complete_task(
@@ -418,11 +434,12 @@ impl Controller {
         let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.complete_task(ssn_ptr, task_ptr, task_result).await?;
 
-        // Notify the node about the executor state change after task completion
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
             (*exe).clone()
         };
+        self.storage.update_executor(&executor).await?;
+
         if let Err(e) = self
             .watch_registry
             .notify_executor_updated(&executor.node, &executor)
@@ -444,11 +461,12 @@ impl Controller {
         let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.unbind_executor().await?;
 
-        // Notify the node about the executor unbinding
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
             (*exe).clone()
         };
+        self.storage.update_executor(&executor).await?;
+
         if let Err(e) = self
             .watch_registry
             .notify_executor_updated(&executor.node, &executor)
@@ -471,11 +489,12 @@ impl Controller {
 
         state.unbind_executor_completed().await?;
 
-        // Notify the node about the executor state change
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
             (*exe).clone()
         };
+        self.storage.update_executor(&executor).await?;
+
         if let Err(e) = self
             .watch_registry
             .notify_executor_updated(&executor.node, &executor)
@@ -497,11 +516,12 @@ impl Controller {
         let state = states::from(self.storage.clone(), exe_ptr.clone())?;
         state.release_executor().await?;
 
-        // Notify the node about the executor release
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
             (*exe).clone()
         };
+        self.storage.update_executor(&executor).await?;
+
         if let Err(e) = self
             .watch_registry
             .notify_executor_deleted(&executor.node, &executor)

@@ -51,11 +51,13 @@ use serde::{Deserialize, Serialize};
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
-    Session, SessionAttributes, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID,
-    TaskID, TaskInput, TaskOutput, TaskResult, TaskState,
+    ExecutorID, ExecutorState, Node, NodeInfo, NodeState, ResourceRequirement, Session,
+    SessionAttributes, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID, TaskID,
+    TaskInput, TaskOutput, TaskResult, TaskState,
 };
 use common::{FlameError, FLAME_HOME};
 
+use crate::model::Executor;
 use crate::storage::engine::{Engine, EnginePtr};
 
 /// Task metadata stored in tasks.bin with fixed-size records.
@@ -131,6 +133,34 @@ struct ApplicationSchemaMetadata {
     pub common_data: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct NodeMetadata {
+    pub name: String,
+    pub state: i32,
+    pub capacity_cpu: u64,
+    pub capacity_memory: u64,
+    pub allocatable_cpu: u64,
+    pub allocatable_memory: u64,
+    pub info_arch: String,
+    pub info_os: String,
+    pub creation_time: i64,
+    pub last_heartbeat: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ExecutorMetadata {
+    pub id: String,
+    pub node: String,
+    pub resreq_cpu: u64,
+    pub resreq_memory: u64,
+    pub slots: u32,
+    pub shim: i32,
+    pub task_id: Option<i64>,
+    pub ssn_id: Option<String>,
+    pub creation_time: i64,
+    pub state: i32,
+}
+
 /// Bincode configuration for fixed-size encoding.
 fn bincode_config() -> impl bincode::config::Config {
     bincode::config::standard()
@@ -165,16 +195,18 @@ fn calculate_checksum(meta: &TaskMetadata) -> u32 {
 pub struct FilesystemEngine {
     base_path: PathBuf,
     record_size: usize,
-    locks: RwLock<HashMap<String, Arc<Mutex<()>>>>,
+    ssn_locks: RwLock<HashMap<String, Arc<Mutex<()>>>>,
+    node_locks: RwLock<HashMap<String, Arc<Mutex<()>>>>,
+    executor_locks: RwLock<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 macro_rules! lock_ssn {
     ($self:expr, $ssn_id:expr) => {
         let __fs_local_ssn_lock = {
             let locks = $self
-                .locks
+                .ssn_locks
                 .read()
-                .map_err(|e| FlameError::Storage(format!("Lock poisoned: {}", e)))?;
+                .map_err(|e| FlameError::Storage(format!("Session lock poisoned: {}", e)))?;
             locks.get($ssn_id).cloned().ok_or_else(|| {
                 FlameError::NotFound(format!("Session lock not found: {}", $ssn_id))
             })?
@@ -188,9 +220,45 @@ macro_rules! lock_ssn {
 macro_rules! lock_app {
     ($self:expr) => {
         $self
-            .locks
+            .ssn_locks
             .write()
-            .map_err(|e| FlameError::Storage(format!("Lock poisoned: {}", e)))
+            .map_err(|e| FlameError::Storage(format!("App lock poisoned: {}", e)))
+    };
+}
+
+macro_rules! lock_node {
+    ($self:expr, $node_name:expr) => {
+        let __fs_local_node_lock = {
+            let mut locks = $self
+                .node_locks
+                .write()
+                .map_err(|e| FlameError::Storage(format!("Node lock poisoned: {}", e)))?;
+            locks
+                .entry($node_name.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let __fs_local_node_guard = __fs_local_node_lock
+            .lock()
+            .map_err(|e| FlameError::Storage(format!("Node lock poisoned: {}", e)))?;
+    };
+}
+
+macro_rules! lock_executor {
+    ($self:expr, $executor_id:expr) => {
+        let __fs_local_exec_lock = {
+            let mut locks = $self
+                .executor_locks
+                .write()
+                .map_err(|e| FlameError::Storage(format!("Executor lock poisoned: {}", e)))?;
+            locks
+                .entry($executor_id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let __fs_local_exec_guard = __fs_local_exec_lock
+            .lock()
+            .map_err(|e| FlameError::Storage(format!("Executor lock poisoned: {}", e)))?;
     };
 }
 
@@ -201,9 +269,9 @@ impl FilesystemEngine {
     pub async fn new_ptr(url: &str) -> Result<EnginePtr, FlameError> {
         let path = Self::parse_url(url)?;
 
-        // Create base directories
         let sessions_path = path.join("sessions");
         let applications_path = path.join("applications");
+        let nodes_path = path.join("nodes");
 
         fs::create_dir_all(&sessions_path).map_err(|e| {
             FlameError::Storage(format!("Failed to create sessions directory: {e}"))
@@ -211,6 +279,8 @@ impl FilesystemEngine {
         fs::create_dir_all(&applications_path).map_err(|e| {
             FlameError::Storage(format!("Failed to create applications directory: {e}"))
         })?;
+        fs::create_dir_all(&nodes_path)
+            .map_err(|e| FlameError::Storage(format!("Failed to create nodes directory: {e}")))?;
 
         let record_size = task_record_size();
         tracing::info!(
@@ -222,7 +292,9 @@ impl FilesystemEngine {
         Ok(Arc::new(FilesystemEngine {
             base_path: path,
             record_size,
-            locks: RwLock::new(HashMap::new()),
+            ssn_locks: RwLock::new(HashMap::new()),
+            node_locks: RwLock::new(HashMap::new()),
+            executor_locks: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -255,6 +327,16 @@ impl FilesystemEngine {
 
     fn application_path(&self, app_name: &str) -> PathBuf {
         self.base_path.join("applications").join(app_name)
+    }
+
+    fn node_path(&self, node_name: &str) -> PathBuf {
+        self.base_path.join("nodes").join(node_name)
+    }
+
+    fn executor_path(&self, node_name: &str, executor_id: &str) -> PathBuf {
+        self.node_path(node_name)
+            .join("executors")
+            .join(executor_id)
     }
 
     /// Read session metadata from disk.
@@ -343,6 +425,101 @@ impl FilesystemEngine {
         })?;
 
         Ok(())
+    }
+
+    fn read_node_metadata(&self, node_name: &str) -> Result<NodeMetadata, FlameError> {
+        let path = self.node_path(node_name).join("metadata");
+        let content = fs::read_to_string(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                FlameError::NotFound(format!("Node {node_name} not found"))
+            } else {
+                FlameError::Storage(format!("Failed to read node metadata for {node_name}: {e}"))
+            }
+        })?;
+        serde_json::from_str(&content)
+            .map_err(|e| FlameError::Storage(format!("Failed to parse node metadata: {e}")))
+    }
+
+    fn write_node_metadata(&self, node_name: &str, meta: &NodeMetadata) -> Result<(), FlameError> {
+        let node_dir = self.node_path(node_name);
+        fs::create_dir_all(&node_dir)
+            .map_err(|e| FlameError::Storage(format!("Failed to create node directory: {e}")))?;
+
+        let path = node_dir.join("metadata");
+        let tmp_path = node_dir.join("metadata.tmp");
+
+        let content = serde_json::to_string_pretty(meta)
+            .map_err(|e| FlameError::Storage(format!("Failed to serialize node metadata: {e}")))?;
+
+        fs::write(&tmp_path, &content)
+            .map_err(|e| FlameError::Storage(format!("Failed to write node metadata: {e}")))?;
+
+        fs::rename(&tmp_path, &path)
+            .map_err(|e| FlameError::Storage(format!("Failed to rename node metadata: {e}")))?;
+
+        Ok(())
+    }
+
+    fn read_executor_metadata(
+        &self,
+        node_name: &str,
+        executor_id: &str,
+    ) -> Result<ExecutorMetadata, FlameError> {
+        let path = self.executor_path(node_name, executor_id).join("metadata");
+        let content = fs::read_to_string(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                FlameError::NotFound(format!("Executor {executor_id} not found"))
+            } else {
+                FlameError::Storage(format!(
+                    "Failed to read executor metadata for {executor_id}: {e}"
+                ))
+            }
+        })?;
+        serde_json::from_str(&content)
+            .map_err(|e| FlameError::Storage(format!("Failed to parse executor metadata: {e}")))
+    }
+
+    fn write_executor_metadata(
+        &self,
+        node_name: &str,
+        executor_id: &str,
+        meta: &ExecutorMetadata,
+    ) -> Result<(), FlameError> {
+        let exec_dir = self.executor_path(node_name, executor_id);
+        fs::create_dir_all(&exec_dir).map_err(|e| {
+            FlameError::Storage(format!("Failed to create executor directory: {e}"))
+        })?;
+
+        let path = exec_dir.join("metadata");
+        let tmp_path = exec_dir.join("metadata.tmp");
+
+        let content = serde_json::to_string_pretty(meta).map_err(|e| {
+            FlameError::Storage(format!("Failed to serialize executor metadata: {e}"))
+        })?;
+
+        fs::write(&tmp_path, &content)
+            .map_err(|e| FlameError::Storage(format!("Failed to write executor metadata: {e}")))?;
+
+        fs::rename(&tmp_path, &path)
+            .map_err(|e| FlameError::Storage(format!("Failed to rename executor metadata: {e}")))?;
+
+        Ok(())
+    }
+
+    fn find_executor_node(&self, executor_id: &str) -> Result<String, FlameError> {
+        let nodes_dir = self.base_path.join("nodes");
+        if let Ok(entries) = fs::read_dir(&nodes_dir) {
+            for entry in entries.flatten() {
+                let node_name = entry.file_name().to_string_lossy().to_string();
+                let exec_path = self.executor_path(&node_name, executor_id).join("metadata");
+                if exec_path.exists() {
+                    return Ok(node_name);
+                }
+            }
+        }
+        Err(FlameError::NotFound(format!(
+            "Executor {executor_id} not found"
+        )))
     }
 
     /// Read task metadata from tasks.bin.
@@ -1131,6 +1308,298 @@ impl Engine for FilesystemEngine {
 
         Ok(tasks)
     }
+
+    async fn create_node(&self, node: &Node) -> Result<Node, FlameError> {
+        lock_node!(self, &node.name);
+
+        let now = Utc::now().timestamp();
+        let meta = NodeMetadata {
+            name: node.name.clone(),
+            state: i32::from(node.state),
+            capacity_cpu: node.capacity.cpu,
+            capacity_memory: node.capacity.memory,
+            allocatable_cpu: node.allocatable.cpu,
+            allocatable_memory: node.allocatable.memory,
+            info_arch: node.info.arch.clone(),
+            info_os: node.info.os.clone(),
+            creation_time: now,
+            last_heartbeat: now,
+        };
+
+        self.write_node_metadata(&node.name, &meta)?;
+        Ok(node.clone())
+    }
+
+    async fn get_node(&self, name: &str) -> Result<Option<Node>, FlameError> {
+        lock_node!(self, name);
+
+        match self.read_node_metadata(name) {
+            Ok(meta) => Ok(Some(Node {
+                name: meta.name,
+                state: NodeState::from(meta.state),
+                capacity: ResourceRequirement {
+                    cpu: meta.capacity_cpu,
+                    memory: meta.capacity_memory,
+                },
+                allocatable: ResourceRequirement {
+                    cpu: meta.allocatable_cpu,
+                    memory: meta.allocatable_memory,
+                },
+                info: NodeInfo {
+                    arch: meta.info_arch,
+                    os: meta.info_os,
+                },
+            })),
+            Err(FlameError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn update_node(&self, node: &Node) -> Result<Node, FlameError> {
+        lock_node!(self, &node.name);
+
+        let existing = self.read_node_metadata(&node.name).ok();
+        let creation_time = existing
+            .as_ref()
+            .map(|m| m.creation_time)
+            .unwrap_or_else(|| Utc::now().timestamp());
+
+        let meta = NodeMetadata {
+            name: node.name.clone(),
+            state: i32::from(node.state),
+            capacity_cpu: node.capacity.cpu,
+            capacity_memory: node.capacity.memory,
+            allocatable_cpu: node.allocatable.cpu,
+            allocatable_memory: node.allocatable.memory,
+            info_arch: node.info.arch.clone(),
+            info_os: node.info.os.clone(),
+            creation_time,
+            last_heartbeat: Utc::now().timestamp(),
+        };
+
+        self.write_node_metadata(&node.name, &meta)?;
+        Ok(node.clone())
+    }
+
+    async fn delete_node(&self, name: &str) -> Result<(), FlameError> {
+        lock_node!(self, name);
+
+        let node_dir = self.node_path(name);
+        if node_dir.exists() {
+            fs::remove_dir_all(&node_dir)
+                .map_err(|e| FlameError::Storage(format!("Failed to delete node {name}: {e}")))?;
+        }
+
+        {
+            let mut locks = self
+                .node_locks
+                .write()
+                .map_err(|e| FlameError::Storage(format!("Node lock poisoned: {}", e)))?;
+            locks.remove(name);
+        }
+
+        Ok(())
+    }
+
+    async fn find_nodes(&self) -> Result<Vec<Node>, FlameError> {
+        let mut nodes = Vec::new();
+        let nodes_dir = self.base_path.join("nodes");
+
+        if let Ok(entries) = fs::read_dir(&nodes_dir) {
+            for entry in entries.flatten() {
+                let node_name = entry.file_name().to_string_lossy().to_string();
+                if let Ok(meta) = self.read_node_metadata(&node_name) {
+                    nodes.push(Node {
+                        name: meta.name,
+                        state: NodeState::from(meta.state),
+                        capacity: ResourceRequirement {
+                            cpu: meta.capacity_cpu,
+                            memory: meta.capacity_memory,
+                        },
+                        allocatable: ResourceRequirement {
+                            cpu: meta.allocatable_cpu,
+                            memory: meta.allocatable_memory,
+                        },
+                        info: NodeInfo {
+                            arch: meta.info_arch,
+                            os: meta.info_os,
+                        },
+                    });
+                }
+            }
+        }
+
+        Ok(nodes)
+    }
+
+    async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
+        lock_executor!(self, &executor.id);
+
+        let meta = ExecutorMetadata {
+            id: executor.id.clone(),
+            node: executor.node.clone(),
+            resreq_cpu: executor.resreq.cpu,
+            resreq_memory: executor.resreq.memory,
+            slots: executor.slots,
+            shim: i32::from(executor.shim),
+            task_id: executor.task_id,
+            ssn_id: executor.ssn_id.clone(),
+            creation_time: executor.creation_time.timestamp(),
+            state: i32::from(executor.state),
+        };
+
+        self.write_executor_metadata(&executor.node, &executor.id, &meta)?;
+        Ok(executor.clone())
+    }
+
+    async fn get_executor(&self, id: &ExecutorID) -> Result<Option<Executor>, FlameError> {
+        lock_executor!(self, id);
+
+        let node_name = match self.find_executor_node(id) {
+            Ok(name) => name,
+            Err(FlameError::NotFound(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+
+        match self.read_executor_metadata(&node_name, id) {
+            Ok(meta) => Ok(Some(Executor {
+                id: meta.id,
+                node: meta.node,
+                resreq: ResourceRequirement {
+                    cpu: meta.resreq_cpu,
+                    memory: meta.resreq_memory,
+                },
+                slots: meta.slots,
+                shim: Shim::try_from(meta.shim).unwrap_or_default(),
+                task_id: meta.task_id.map(|t| t as TaskID),
+                ssn_id: meta.ssn_id,
+                creation_time: DateTime::from_timestamp(meta.creation_time, 0).unwrap_or_default(),
+                state: ExecutorState::from(meta.state),
+            })),
+            Err(FlameError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
+        lock_executor!(self, &executor.id);
+
+        let meta = ExecutorMetadata {
+            id: executor.id.clone(),
+            node: executor.node.clone(),
+            resreq_cpu: executor.resreq.cpu,
+            resreq_memory: executor.resreq.memory,
+            slots: executor.slots,
+            shim: i32::from(executor.shim),
+            task_id: executor.task_id,
+            ssn_id: executor.ssn_id.clone(),
+            creation_time: executor.creation_time.timestamp(),
+            state: i32::from(executor.state),
+        };
+
+        self.write_executor_metadata(&executor.node, &executor.id, &meta)?;
+        Ok(executor.clone())
+    }
+
+    async fn update_executor_state(
+        &self,
+        id: &ExecutorID,
+        state: ExecutorState,
+    ) -> Result<Executor, FlameError> {
+        lock_executor!(self, id);
+
+        let node_name = self.find_executor_node(id)?;
+        let mut meta = self.read_executor_metadata(&node_name, id)?;
+        meta.state = i32::from(state);
+        self.write_executor_metadata(&node_name, id, &meta)?;
+
+        Ok(Executor {
+            id: meta.id,
+            node: meta.node,
+            resreq: ResourceRequirement {
+                cpu: meta.resreq_cpu,
+                memory: meta.resreq_memory,
+            },
+            slots: meta.slots,
+            shim: Shim::try_from(meta.shim).unwrap_or_default(),
+            task_id: meta.task_id.map(|t| t as TaskID),
+            ssn_id: meta.ssn_id,
+            creation_time: DateTime::from_timestamp(meta.creation_time, 0).unwrap_or_default(),
+            state,
+        })
+    }
+
+    async fn delete_executor(&self, id: &ExecutorID) -> Result<(), FlameError> {
+        lock_executor!(self, id);
+
+        let node_name = match self.find_executor_node(id) {
+            Ok(name) => name,
+            Err(FlameError::NotFound(_)) => return Ok(()),
+            Err(e) => return Err(e),
+        };
+
+        let exec_dir = self.executor_path(&node_name, id);
+        if exec_dir.exists() {
+            fs::remove_dir_all(&exec_dir)
+                .map_err(|e| FlameError::Storage(format!("Failed to delete executor {id}: {e}")))?;
+        }
+
+        {
+            let mut locks = self
+                .executor_locks
+                .write()
+                .map_err(|e| FlameError::Storage(format!("Executor lock poisoned: {}", e)))?;
+            locks.remove(id);
+        }
+
+        Ok(())
+    }
+
+    async fn find_executors(&self, node: Option<&str>) -> Result<Vec<Executor>, FlameError> {
+        let mut executors = Vec::new();
+        let nodes_dir = self.base_path.join("nodes");
+
+        let node_names: Vec<String> = match node {
+            Some(n) => vec![n.to_string()],
+            None => {
+                let mut names = Vec::new();
+                if let Ok(entries) = fs::read_dir(&nodes_dir) {
+                    for entry in entries.flatten() {
+                        names.push(entry.file_name().to_string_lossy().to_string());
+                    }
+                }
+                names
+            }
+        };
+
+        for node_name in node_names {
+            let executors_dir = self.node_path(&node_name).join("executors");
+            if let Ok(entries) = fs::read_dir(&executors_dir) {
+                for entry in entries.flatten() {
+                    let executor_id = entry.file_name().to_string_lossy().to_string();
+                    if let Ok(meta) = self.read_executor_metadata(&node_name, &executor_id) {
+                        executors.push(Executor {
+                            id: meta.id,
+                            node: meta.node,
+                            resreq: ResourceRequirement {
+                                cpu: meta.resreq_cpu,
+                                memory: meta.resreq_memory,
+                            },
+                            slots: meta.slots,
+                            shim: Shim::try_from(meta.shim).unwrap_or_default(),
+                            task_id: meta.task_id.map(|t| t as TaskID),
+                            ssn_id: meta.ssn_id,
+                            creation_time: DateTime::from_timestamp(meta.creation_time, 0)
+                                .unwrap_or_default(),
+                            state: ExecutorState::from(meta.state),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(executors)
+    }
 }
 
 #[cfg(test)]
@@ -1146,7 +1615,9 @@ mod tests {
         let engine = FilesystemEngine {
             base_path: temp_dir.path().to_path_buf(),
             record_size: task_record_size(),
-            locks: RwLock::new(HashMap::new()),
+            ssn_locks: RwLock::new(HashMap::new()),
+            node_locks: RwLock::new(HashMap::new()),
+            executor_locks: RwLock::new(HashMap::new()),
         };
 
         (engine, temp_dir)
@@ -1638,5 +2109,160 @@ mod tests {
 
         let result = engine.close_session("test-session".to_string()).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_node_crud() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let node = Node {
+            name: "test-node".to_string(),
+            state: NodeState::Ready,
+            capacity: ResourceRequirement {
+                cpu: 8,
+                memory: 16384,
+            },
+            allocatable: ResourceRequirement {
+                cpu: 6,
+                memory: 12288,
+            },
+            info: NodeInfo {
+                arch: "x86_64".to_string(),
+                os: "linux".to_string(),
+            },
+        };
+
+        let created = engine.create_node(&node).await.unwrap();
+        assert_eq!(created.name, "test-node");
+
+        let found = engine.get_node("test-node").await.unwrap();
+        assert!(found.is_some());
+        let found = found.unwrap();
+        assert_eq!(found.name, "test-node");
+        assert_eq!(found.capacity.cpu, 8);
+
+        let mut updated_node = node.clone();
+        updated_node.state = NodeState::NotReady;
+        let updated = engine.update_node(&updated_node).await.unwrap();
+        assert_eq!(updated.state, NodeState::NotReady);
+
+        let nodes = engine.find_nodes().await.unwrap();
+        assert_eq!(nodes.len(), 1);
+
+        engine.delete_node("test-node").await.unwrap();
+        let deleted = engine.get_node("test-node").await.unwrap();
+        assert!(deleted.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_executor_crud() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let node = Node {
+            name: "exec-test-node".to_string(),
+            state: NodeState::Ready,
+            capacity: ResourceRequirement {
+                cpu: 4,
+                memory: 8192,
+            },
+            allocatable: ResourceRequirement {
+                cpu: 4,
+                memory: 8192,
+            },
+            info: NodeInfo {
+                arch: "x86_64".to_string(),
+                os: "linux".to_string(),
+            },
+        };
+        engine.create_node(&node).await.unwrap();
+
+        let executor = crate::model::Executor {
+            id: "exec-1".to_string(),
+            node: "exec-test-node".to_string(),
+            resreq: ResourceRequirement {
+                cpu: 1,
+                memory: 1024,
+            },
+            slots: 1,
+            shim: Shim::Host,
+            task_id: None,
+            ssn_id: None,
+            creation_time: Utc::now(),
+            state: ExecutorState::Void,
+        };
+
+        let created = engine.create_executor(&executor).await.unwrap();
+        assert_eq!(created.id, "exec-1");
+
+        let found = engine.get_executor(&"exec-1".to_string()).await.unwrap();
+        assert!(found.is_some());
+
+        let updated = engine
+            .update_executor_state(&"exec-1".to_string(), ExecutorState::Idle)
+            .await
+            .unwrap();
+        assert_eq!(updated.state, ExecutorState::Idle);
+
+        let executors = engine.find_executors(None).await.unwrap();
+        assert_eq!(executors.len(), 1);
+
+        let by_node = engine.find_executors(Some("exec-test-node")).await.unwrap();
+        assert_eq!(by_node.len(), 1);
+
+        let by_other = engine.find_executors(Some("other-node")).await.unwrap();
+        assert_eq!(by_other.len(), 0);
+
+        engine.delete_executor(&"exec-1".to_string()).await.unwrap();
+        let deleted = engine.get_executor(&"exec-1".to_string()).await.unwrap();
+        assert!(deleted.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_node_delete_cascades_to_executors() {
+        let (engine, _temp_dir) = create_test_engine().await;
+
+        let node = Node {
+            name: "cascade-node".to_string(),
+            state: NodeState::Ready,
+            capacity: ResourceRequirement {
+                cpu: 4,
+                memory: 8192,
+            },
+            allocatable: ResourceRequirement {
+                cpu: 4,
+                memory: 8192,
+            },
+            info: NodeInfo {
+                arch: "x86_64".to_string(),
+                os: "linux".to_string(),
+            },
+        };
+        engine.create_node(&node).await.unwrap();
+
+        for i in 1..=3 {
+            let executor = crate::model::Executor {
+                id: format!("cascade-exec-{i}"),
+                node: "cascade-node".to_string(),
+                resreq: ResourceRequirement {
+                    cpu: 1,
+                    memory: 1024,
+                },
+                slots: 1,
+                shim: Shim::Host,
+                task_id: None,
+                ssn_id: None,
+                creation_time: Utc::now(),
+                state: ExecutorState::Void,
+            };
+            engine.create_executor(&executor).await.unwrap();
+        }
+
+        let executors = engine.find_executors(Some("cascade-node")).await.unwrap();
+        assert_eq!(executors.len(), 3);
+
+        engine.delete_node("cascade-node").await.unwrap();
+
+        let executors = engine.find_executors(None).await.unwrap();
+        assert_eq!(executors.len(), 0);
     }
 }

@@ -25,10 +25,11 @@ use tonic::{Request, Response, Status};
 use self::rpc::frontend_server::Frontend;
 use self::rpc::{
     ApplicationList, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest,
-    DeleteSessionRequest, DeleteTaskRequest, ExecutorList, GetApplicationRequest,
-    GetSessionRequest, GetTaskRequest, ListApplicationRequest, ListExecutorRequest,
-    ListSessionRequest, ListTaskRequest, OpenSessionRequest, RegisterApplicationRequest, Session,
-    SessionList, Task, UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
+    DeleteSessionRequest, DeleteTaskRequest, ExecutorList, GetApplicationRequest, GetNodeRequest,
+    GetNodeResponse, GetSessionRequest, GetTaskRequest, ListApplicationRequest,
+    ListExecutorRequest, ListNodesRequest, ListSessionRequest, ListTaskRequest, NodeList,
+    OpenSessionRequest, RegisterApplicationRequest, Session, SessionList, Task,
+    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 
 use rpc::flame as rpc;
@@ -255,6 +256,32 @@ impl Frontend for Flame {
             .map_err(Status::from)?;
         let executors = executor_list.iter().map(rpc::Executor::from).collect();
         Ok(Response::new(ExecutorList { executors }))
+    }
+
+    async fn list_nodes(
+        &self,
+        _: tonic::Request<ListNodesRequest>,
+    ) -> Result<Response<NodeList>, Status> {
+        trace_fn!("Frontend::list_nodes");
+        let node_list = self.controller.list_node().map_err(Status::from)?;
+        let nodes = node_list.iter().map(rpc::Node::from).collect();
+        Ok(Response::new(NodeList { nodes }))
+    }
+
+    async fn get_node(
+        &self,
+        req: tonic::Request<GetNodeRequest>,
+    ) -> Result<Response<GetNodeResponse>, Status> {
+        trace_fn!("Frontend::get_node");
+        let name = req.into_inner().name;
+        let node = self
+            .controller
+            .get_node(&name)
+            .map_err(Status::from)?
+            .ok_or_else(|| Status::not_found(format!("node <{}> not found", name)))?;
+        Ok(Response::new(GetNodeResponse {
+            node: Some(rpc::Node::from(node)),
+        }))
     }
 
     async fn create_session(
