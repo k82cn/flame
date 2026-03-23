@@ -6,11 +6,8 @@ COPY . .
 RUN apt-get update && apt-get install -y protobuf-compiler pkg-config libssl-dev
 RUN cargo build --release
 
-# Build flmadm for installation
-RUN cargo install --path ./flmadm
-
 # Install using flmadm with control-plane profile
-RUN /usr/local/cargo/bin/flmadm install \
+RUN ./target/release/flmadm install \
     --src-dir /usr/src/flame \
     --prefix /usr/local/flame \
     --control-plane \
