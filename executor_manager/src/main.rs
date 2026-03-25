@@ -84,16 +84,13 @@ async fn main() -> Result<(), FlameError> {
         let cache_rt = build_runtime("cache", cache_threads)?;
         let cache_config = cache_config.clone();
         let handler = cache_rt.spawn(async move {
-            match flame_cache::run(&cache_config).await {
-                Ok(_) => {
-                    tracing::info!("Object cache exited successfully.");
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!("Object cache exited with error: {e}");
-                    Err(e)
-                }
+            let result = flame_cache::run(&cache_config).await;
+            if let Err(e) = &result {
+                tracing::error!("Object cache exited with error: {e}");
+            } else {
+                tracing::info!("Object cache exited successfully.");
             }
+            result
         });
         handlers.push(handler);
         tracing::info!("Object cache thread started.");
@@ -108,16 +105,13 @@ async fn main() -> Result<(), FlameError> {
     {
         let ctx = ctx.clone();
         let handler = manager_rt.spawn(async move {
-            match manager::run(&ctx).await {
-                Ok(_) => {
-                    tracing::info!("Executor manager exited successfully.");
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!("Executor manager exited with error: {e}");
-                    Err(e)
-                }
+            let result = manager::run(&ctx).await;
+            if let Err(e) = &result {
+                tracing::error!("Executor manager exited with error: {e}");
+            } else {
+                tracing::info!("Executor manager exited successfully.");
             }
+            result
         });
         handlers.push(handler);
     }
