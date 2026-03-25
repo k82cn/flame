@@ -1154,10 +1154,7 @@ mod tests {
     use super::*;
 
     fn test_get_task_with_events() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_get_task_with_events_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_get_task_with_events");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         for (name, attr) in common::default_applications() {
@@ -1205,10 +1202,7 @@ mod tests {
 
     #[test]
     fn test_update_application() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_update_application_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_update_application");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         for (name, attr) in common::default_applications() {
@@ -1261,10 +1255,7 @@ mod tests {
 
     #[test]
     fn test_unregister_application() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_unregister_application_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_unregister_application");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         for (name, attr) in common::default_applications() {
@@ -1320,10 +1311,7 @@ mod tests {
 
     #[test]
     fn test_register_application() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_register_appl_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_register_appl");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         let string_schema = json!({
@@ -1390,7 +1378,7 @@ mod tests {
 
     #[test]
     fn test_get_application() -> Result<(), FlameError> {
-        let url = format!("sqlite:///tmp/flame_test_app_{}.db", Utc::now().timestamp());
+        let url = common::temp_sqlite_url("flame_test_app");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         for (name, attr) in common::default_applications() {
@@ -1407,10 +1395,7 @@ mod tests {
 
     #[test]
     fn test_register_application_with_url() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_register_app_with_url_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_register_app_with_url");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         let test_url = "file:///opt/test-package.whl".to_string();
@@ -1463,10 +1448,7 @@ mod tests {
 
     #[test]
     fn test_register_application_without_url() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_register_app_without_url_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_register_app_without_url");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         // Register application without URL (backward compatibility test)
@@ -1509,10 +1491,7 @@ mod tests {
 
     #[test]
     fn test_update_application_with_url() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_update_application_with_url_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_update_application_with_url");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         // Register initial application without URL
@@ -1583,10 +1562,7 @@ mod tests {
 
     #[test]
     fn test_single_session() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_single_session_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_single_session");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
@@ -1637,10 +1613,7 @@ mod tests {
 
     #[test]
     fn test_multiple_session() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_multiple_session_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_multiple_session");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
@@ -1727,10 +1700,7 @@ mod tests {
 
     #[test]
     fn test_close_session_with_open_tasks() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_close_session_with_open_tasks_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_close_session_with_open_tasks");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
@@ -1769,10 +1739,7 @@ mod tests {
 
     #[test]
     fn test_close_session_with_running_tasks() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_close_session_with_running_tasks_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_close_session_with_running_tasks");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;
@@ -1802,10 +1769,7 @@ mod tests {
 
     #[test]
     fn test_create_task_for_close_session() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_create_task_for_close_session_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_create_task_for_close_session");
 
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
         for (name, attr) in common::default_applications() {
@@ -1846,10 +1810,7 @@ mod tests {
 
     #[test]
     fn test_delete_session_with_open_tasks() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_delete_session_with_open_tasks_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_delete_session_with_open_tasks");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
         for (name, attr) in common::default_applications() {
             tokio_test::block_on(storage.register_application(name.clone(), attr))?;

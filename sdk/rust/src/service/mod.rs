@@ -13,15 +13,22 @@ limitations under the License.
 
 use std::sync::Arc;
 
+#[cfg(unix)]
 use tokio::net::UnixListener;
+#[cfg(unix)]
 use tokio_stream::wrappers::UnixListenerStream;
-use tonic::{transport::Server, Request, Response, Status};
+#[cfg(unix)]
+use tonic::transport::Server;
+#[cfg(unix)]
+use tonic::{Request, Response, Status};
 
+#[cfg(unix)]
 use self::rpc::instance_server::{Instance, InstanceServer};
 use crate::apis::flame as rpc;
 
 use crate::apis::{CommonData, FlameError, TaskInput, TaskOutput};
 
+#[cfg(unix)]
 const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 
 pub struct ApplicationContext {
@@ -51,10 +58,12 @@ pub trait FlameService: Send + Sync + 'static {
 
 pub type FlameServicePtr = Arc<dyn FlameService>;
 
+#[cfg(unix)]
 struct ShimService {
     service: FlameServicePtr,
 }
 
+#[cfg(unix)]
 #[tonic::async_trait]
 impl Instance for ShimService {
     async fn on_session_enter(
@@ -123,6 +132,7 @@ impl Instance for ShimService {
     }
 }
 
+#[cfg(unix)]
 pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::Error>> {
     let shim_service = ShimService {
         service: Arc::new(service),
@@ -139,6 +149,14 @@ pub async fn run(service: impl FlameService) -> Result<(), Box<dyn std::error::E
         .await?;
 
     Ok(())
+}
+
+#[cfg(not(unix))]
+pub async fn run(_service: impl FlameService) -> Result<(), Box<dyn std::error::Error>> {
+    Err(FlameError::InvalidConfig(
+        "Unix domain sockets are not supported on this platform".to_string(),
+    )
+    .into())
 }
 
 impl From<rpc::ApplicationContext> for ApplicationContext {

@@ -1,5 +1,5 @@
 /*
-Copyright 2025 The Flame Authors.
+Copyright 2023 The Flame Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -13,83 +13,77 @@ limitations under the License.
 
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
-use crate::controller::states::States;
+use crate::controller::executors::States;
 use crate::model::ExecutorPtr;
 use crate::storage::StoragePtr;
-
 use common::apis::{ExecutorState, SessionPtr, Task, TaskOutput, TaskPtr, TaskResult};
 use common::FlameError;
 
-pub struct ReleasingState {
+pub struct BindingState {
     pub storage: StoragePtr,
     pub executor: ExecutorPtr,
 }
 
 #[async_trait::async_trait]
-impl States for ReleasingState {
+impl States for BindingState {
     async fn register_executor(&self) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::register_executor");
+        trace_fn!("BindingState::register_executor");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
     }
 
     async fn release_executor(&self) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::release_executor");
+        trace_fn!("BindingState::release_executor");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
     }
 
     async fn unregister_executor(&self) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::unregister_executor");
+        trace_fn!("BindingState::unregister_executor");
+
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
+    }
+
+    async fn bind_session(&self, ssn_ptr: SessionPtr) -> Result<(), FlameError> {
+        trace_fn!("BindingState::bind_session");
+
+        let ssn_id = {
+            let ssn = lock_ptr!(ssn_ptr)?;
+            ssn.id.clone()
+        };
 
         let mut e = lock_ptr!(self.executor)?;
-        e.state = ExecutorState::Released;
+        e.ssn_id = Some(ssn_id);
+        e.state = ExecutorState::Binding;
 
         Ok(())
     }
 
-    async fn bind_session(&self, ssn_ptr: SessionPtr) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::bind_session");
-
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
-    }
-
     async fn bind_session_completed(&self) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::bind_session_completed");
+        trace_fn!("BindingState::bind_session");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        let mut e = lock_ptr!(self.executor)?;
+        e.state = ExecutorState::Bound;
+
+        Ok(())
     }
 
     async fn unbind_executor(&self) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::unbind_executor");
+        trace_fn!("BindingState::unbind_executor");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
     }
 
     async fn unbind_executor_completed(&self) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::unbind_executor_completed");
+        trace_fn!("BindingState::unbind_executor_completed");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
     }
 
     async fn launch_task(&self, _ssn: SessionPtr) -> Result<Option<Task>, FlameError> {
-        trace_fn!("ReleasingState::launch_task");
+        trace_fn!("BindingState::launch_task");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
     }
 
     async fn complete_task(
@@ -98,10 +92,8 @@ impl States for ReleasingState {
         _task: TaskPtr,
         _: TaskResult,
     ) -> Result<(), FlameError> {
-        trace_fn!("ReleasingState::complete_task");
+        trace_fn!("BindingState::complete_task");
 
-        Err(FlameError::InvalidState(
-            "Executor is releasing".to_string(),
-        ))
+        Err(FlameError::InvalidState("Executor is binding".to_string()))
     }
 }

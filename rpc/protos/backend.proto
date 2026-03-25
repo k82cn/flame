@@ -12,6 +12,8 @@ option go_package = "github.com/flame-sh/flame/sdk/go/rpc";
  */
 service Backend {
   rpc RegisterNode(RegisterNodeRequest) returns (Result) {}
+  // Deprecated: Use WatchNode streaming RPC instead for better efficiency.
+  // SyncNode uses polling which is less efficient than server-push.
   rpc SyncNode(SyncNodeRequest) returns (SyncNodeResponse) {}
   rpc ReleaseNode(ReleaseNodeRequest) returns (Result) {}
 
@@ -78,17 +80,20 @@ message CompleteTaskRequest {
 
 message RegisterNodeRequest {
   Node node = 1;
+  repeated Executor executors = 2;  // Current executors on this node for state alignment
 }
 
 message ReleaseNodeRequest {
   string node_name = 1;
 }
 
+// Deprecated: Use WatchNode streaming RPC instead.
 message SyncNodeRequest {
   Node node = 1;
   repeated Executor executors = 2;
 }
 
+// Deprecated: Use WatchNode streaming RPC instead.
 message SyncNodeResponse {
   Node node = 1;
   repeated Executor executors = 2;
@@ -97,14 +102,9 @@ message SyncNodeResponse {
 // WatchNode streaming messages
 
 message WatchNodeRequest {
-  oneof request {
-    NodeRegistration registration = 1;  // Initial registration
-    NodeHeartbeat heartbeat = 2;        // Periodic heartbeat with node status
-  }
-}
-
-message NodeRegistration {
-  Node node = 1;
+  // Heartbeat message with node status
+  // Note: Node registration is done via RegisterNode RPC before starting WatchNode stream
+  NodeHeartbeat heartbeat = 1;
 }
 
 message NodeHeartbeat {
@@ -114,7 +114,7 @@ message NodeHeartbeat {
 
 message WatchNodeResponse {
   oneof response {
-    Executor executor = 1;       // Executor state update (client derives action from state)
+    Executor executor = 1;       // Executor state update (sent one by one, including initial sync)
     Acknowledgement ack = 2;     // Heartbeat acknowledgement
   }
 }

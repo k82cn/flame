@@ -19,6 +19,7 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use hyper_util::rt::TokioIo;
+#[cfg(unix)]
 use tokio::net::UnixStream;
 use tonic::transport::Channel;
 use tonic::transport::{Endpoint, Uri};
@@ -52,6 +53,8 @@ impl GrpcShim {
     pub fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
+
+    #[cfg(unix)]
     pub async fn connect(&mut self) -> Result<(), FlameError> {
         trace_fn!("GrpcShim::connect");
 
@@ -84,6 +87,13 @@ impl GrpcShim {
         self.client = Some(InstanceClient::new(channel));
 
         Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub async fn connect(&mut self) -> Result<(), FlameError> {
+        Err(FlameError::Network(
+            "Unix domain sockets are not supported on this platform".to_string(),
+        ))
     }
 
     pub fn close(&mut self) {

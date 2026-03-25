@@ -133,6 +133,42 @@ flowchart TB
 - **Backend Service:** Hosts the `WatchNode` RPC.
 - **Storage Layer:** Source of truth for executor state.
 - **Executor Manager:** Client that consumes the stream and derives actions from received `Executor` objects.
+- **ConnectionManager:** Manages all node connections using the State Pattern (see [CONNECTION_STATE_MACHINE.md](CONNECTION_STATE_MACHINE.md)).
+
+**Connection State Machine:**
+
+The connection lifecycle is managed through a state machine with three states:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Connected: connect()
+    Connected --> Connected: connect() [idempotent]
+    Connected --> Draining: drain()
+    Draining --> Connected: connect() [reconnect]
+    Draining --> Closed: close() [timeout]
+    Closed --> [*]: removed
+```
+
+- **Connected**: Node is connected, can send/receive via sender/receiver handles
+- **Draining**: Node disconnected, drain timer running (default 30s), can reconnect
+- **Closed**: Connection permanently closed, removed from registry
+
+**Channel Pattern:**
+
+The connection uses a channel pattern with separate sender/receiver handles for async-safe communication:
+
+```rust
+// ConnectionManager returns handles directly, no lock needed at call site
+let (sender, receiver) = connection_manager.connect(node_name).await?;
+
+// Sender: push executor updates to node
+sender.send(executor).await?;
+
+// Receiver: pop executor updates from queue  
+while let Some(executor) = receiver.recv().await {
+    // process executor
+}
+```
 
 ```mermaid
 sequenceDiagram
@@ -140,11 +176,23 @@ sequenceDiagram
     participant Backend as Backend Service
     participant Storage as Storage Layer
     
-    EM->>Backend: WatchNode (open stream)
-    EM->>Backend: NodeRegistration
+    EM->>Backend: RegisterNode (with executors)
+    Backend->>Storage: Store node info
+    Backend->>Backend: ConnectionManager.connect()
+    Note over Backend: Creates Connected state<br/>Returns (sender, receiver)
+    Backend->>Backend: on_connected callback
     Backend->>Storage: Query executors for node
     Storage-->>Backend: Executor list
-    Backend-->>EM: Executor (initial state)
+    Backend->>Backend: sender.send() for each executor
+    Backend-->>EM: OK
+    
+    EM->>Backend: WatchNode (heartbeat)
+    Backend->>Backend: get_channel()
+    Note over Backend: Returns (sender, receiver)
+    
+    loop Receive executors
+        Backend-->>EM: receiver.recv() → Executor
+    end
     
     loop Heartbeat
         EM->>Backend: NodeHeartbeat
@@ -152,7 +200,8 @@ sequenceDiagram
     end
     
     Storage--)Backend: Executor state change event
-    Backend-->>EM: Executor (update)
+    Backend->>Backend: sender.send(executor)
+    Backend-->>EM: receiver.recv() → Executor
     Note over EM: Client derives action<br/>from Executor state
 ```
 
@@ -302,10 +351,27 @@ flowchart LR
 
 **Related Documents:**
 - [RFE-17 Issue Description](http://gitea:3000/xflops/flame/issues/17)
+- [NodeConnection State Machine](CONNECTION_STATE_MACHINE.md) - Detailed design for connection lifecycle management
 
 **External References:**
 - [Tonic gRPC Streaming Documentation](https://github.com/hyperium/tonic/blob/master/examples/src/streaming/server.rs)
 
 **Implementation References:**
-- Backend: `session_manager/src/apiserver/backend.rs`
+- Backend API: `session_manager/src/apiserver/backend.rs`
+- Controller: `session_manager/src/controller/mod.rs`
+  - `register_node()` - Creates connection, syncs executors
+  - `get_node_channel()` - Returns (sender, receiver) handles
+  - `drain_node()` - Starts drain timer
+- Connection State Machine: `session_manager/src/controller/connections/`
+  - `mod.rs` - ConnectionStates trait and from() factory
+  - `manager.rs` - ConnectionManager (connect, get_channel, drain)
+  - `connected.rs` - ConnectedState
+  - `draining.rs` - DrainingState
+  - `closed.rs` - ClosedState
+- Connection Types: `session_manager/src/model/connection/mod.rs`
+  - NodeConnection - Connection data with internal queue
+  - NodeConnectionSender - Async-safe sender handle
+  - NodeConnectionReceiver - Async-safe receiver handle
+  - ConnectionState - Connected, Draining, Closed
+  - ConnectionCallbacks - on_connected, on_draining, on_closed
 - Executor Manager: `executor_manager/src/client/stream_client.rs`

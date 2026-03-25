@@ -31,10 +31,7 @@ mod tests {
     /// Test node CRUD operations.
     #[test]
     fn test_node_crud() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_node_crud_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_node_crud");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         // Create a node
@@ -106,10 +103,7 @@ mod tests {
     /// Test executor CRUD operations.
     #[test]
     fn test_executor_crud() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_executor_crud_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_executor_crud");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         // First create a node (required for foreign key)
@@ -185,10 +179,7 @@ mod tests {
     /// Test that deleting a node cascades to executors.
     #[test]
     fn test_node_delete_cascades_to_executors() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_node_cascade_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_node_cascade");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         // Create a node
@@ -246,10 +237,7 @@ mod tests {
     /// Test executor state transitions.
     #[test]
     fn test_executor_state_transitions() -> Result<(), FlameError> {
-        let url = format!(
-            "sqlite:///tmp/flame_test_executor_states_{}.db",
-            Utc::now().timestamp()
-        );
+        let url = common::temp_sqlite_url("flame_test_executor_states");
         let storage = tokio_test::block_on(SqliteEngine::new_ptr(&url))?;
 
         // Create a node

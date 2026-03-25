@@ -285,9 +285,9 @@ pub struct ApplicationContext {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
 pub enum NodeState {
     #[default]
-    Unknown = 0,
-    Ready = 1,
-    NotReady = 2,
+    Unknown = 0, // Node state unknown (e.g., disconnected, cleanup timer running)
+    Ready = 1,    // Node is connected and ready
+    NotReady = 2, // Node is not ready (e.g., cleanup completed after timeout)
 }
 
 #[derive(Clone, Debug, Default)]

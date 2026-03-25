@@ -249,11 +249,7 @@ impl Frontend for Flame {
         _: tonic::Request<ListExecutorRequest>,
     ) -> Result<Response<ExecutorList>, Status> {
         trace_fn!("Frontend::list_executor");
-        let executor_list = self
-            .controller
-            .list_executor()
-            .await
-            .map_err(Status::from)?;
+        let executor_list = self.controller.list_executor().map_err(Status::from)?;
         let executors = executor_list.iter().map(rpc::Executor::from).collect();
         Ok(Response::new(ExecutorList { executors }))
     }

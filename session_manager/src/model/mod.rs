@@ -1,5 +1,9 @@
-mod watch;
-pub use watch::WatchRegistry;
+pub mod connection;
+
+pub use connection::{
+    ConnectionCallbacks, ConnectionState, NodeConnection, NodeConnectionPtr,
+    NodeConnectionReceiver, NodeConnectionSender, DEFAULT_DRAIN_TIMEOUT_SECS,
+};
 
 /*
 Copyright 2023 The Flame Authors.
@@ -231,57 +235,191 @@ impl From<&Session> for SessionInfo {
     }
 }
 
+/// Filter for listing sessions.
+/// All fields are Option:
+/// - `None` = ignore this filter (match all)
+/// - `Some(value)` = match exactly (empty vec matches nothing)
 pub struct SessionFilter {
+    /// Filter by session state
     pub state: Option<SessionState>,
-    pub ids: Vec<SessionID>,
+    /// Filter by session IDs
+    pub ids: Option<Vec<SessionID>>,
 }
 
-pub const OPEN_SESSION: Option<SessionFilter> = Some(SessionFilter {
-    state: Some(SessionState::Open),
-    ids: vec![],
-});
+impl SessionFilter {
+    /// Creates a new empty filter (matches all sessions).
+    pub const fn new() -> Self {
+        Self {
+            state: None,
+            ids: None,
+        }
+    }
 
+    /// Creates a filter for a specific state.
+    pub const fn by_state(state: SessionState) -> Self {
+        Self {
+            state: Some(state),
+            ids: None,
+        }
+    }
+
+    /// Creates a filter for specific session IDs.
+    pub fn by_ids(ids: Vec<SessionID>) -> Self {
+        Self {
+            state: None,
+            ids: Some(ids),
+        }
+    }
+}
+
+impl Default for SessionFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub const OPEN_SESSION: Option<SessionFilter> = Some(SessionFilter::by_state(SessionState::Open));
+
+/// Filter for listing executors.
+/// All fields are Option:
+/// - `None` = ignore this filter (match all)
+/// - `Some(value)` = match exactly (empty vec/string matches nothing)
 pub struct ExecutorFilter {
+    /// Filter by executor state
     pub state: Option<ExecutorState>,
-    pub ids: Vec<ExecutorID>,
+    /// Filter by executor IDs
+    pub ids: Option<Vec<ExecutorID>>,
+    /// Filter by node name
+    pub node: Option<String>,
 }
 
+impl ExecutorFilter {
+    /// Creates a new empty filter (matches all executors).
+    pub const fn new() -> Self {
+        Self {
+            state: None,
+            ids: None,
+            node: None,
+        }
+    }
+
+    /// Creates a filter for a specific state.
+    pub const fn by_state(state: ExecutorState) -> Self {
+        Self {
+            state: Some(state),
+            ids: None,
+            node: None,
+        }
+    }
+
+    /// Creates a filter for a specific node.
+    pub fn by_node(node: impl Into<String>) -> Self {
+        Self {
+            state: None,
+            ids: None,
+            node: Some(node.into()),
+        }
+    }
+
+    /// Creates a filter for specific executor IDs.
+    pub fn by_ids(ids: Vec<ExecutorID>) -> Self {
+        Self {
+            state: None,
+            ids: Some(ids),
+            node: None,
+        }
+    }
+}
+
+impl Default for ExecutorFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Filter for listing nodes.
+/// All fields are Option:
+/// - `None` = ignore this filter (match all)
+/// - `Some(value)` = match exactly (empty vec matches nothing)
 pub struct NodeFilter {
+    /// Filter by node state
     pub state: Option<NodeState>,
-    pub names: Vec<String>,
+    /// Filter by node names
+    pub names: Option<Vec<String>>,
+}
+
+impl NodeFilter {
+    /// Creates a new empty filter (matches all nodes).
+    pub const fn new() -> Self {
+        Self {
+            state: None,
+            names: None,
+        }
+    }
+
+    /// Creates a filter for a specific state.
+    pub const fn by_state(state: NodeState) -> Self {
+        Self {
+            state: Some(state),
+            names: None,
+        }
+    }
+
+    /// Creates a filter for specific node names.
+    pub fn by_names(names: Vec<String>) -> Self {
+        Self {
+            state: None,
+            names: Some(names),
+        }
+    }
+}
+
+impl Default for NodeFilter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub const ALL_NODE: Option<NodeFilter> = None;
 
-pub const IDLE_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
-    state: Some(ExecutorState::Idle),
-    ids: vec![],
-});
-
-pub const VOID_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
-    state: Some(ExecutorState::Void),
-    ids: vec![],
-});
-
-pub const UNBINDING_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
-    state: Some(ExecutorState::Unbinding),
-    ids: vec![],
-});
-
-pub const BOUND_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
-    state: Some(ExecutorState::Bound),
-    ids: vec![],
-});
-
-pub const BINDING_EXECUTOR: Option<ExecutorFilter> = Some(ExecutorFilter {
-    state: Some(ExecutorState::Binding),
-    ids: vec![],
-});
+pub const IDLE_EXECUTOR: Option<ExecutorFilter> =
+    Some(ExecutorFilter::by_state(ExecutorState::Idle));
+pub const VOID_EXECUTOR: Option<ExecutorFilter> =
+    Some(ExecutorFilter::by_state(ExecutorState::Void));
+pub const UNBINDING_EXECUTOR: Option<ExecutorFilter> =
+    Some(ExecutorFilter::by_state(ExecutorState::Unbinding));
+pub const BOUND_EXECUTOR: Option<ExecutorFilter> =
+    Some(ExecutorFilter::by_state(ExecutorState::Bound));
+pub const BINDING_EXECUTOR: Option<ExecutorFilter> =
+    Some(ExecutorFilter::by_state(ExecutorState::Binding));
 
 pub const ALL_EXECUTOR: Option<ExecutorFilter> = None;
 
+/// Filter for listing applications.
+/// All fields are Option:
+/// - `None` = ignore this filter (match all)
+/// - `Some(value)` = match exactly (empty vec matches nothing)
 pub struct AppFilter {
-    pub names: Vec<String>,
+    /// Filter by application names
+    pub names: Option<Vec<String>>,
+}
+
+impl AppFilter {
+    /// Creates a new empty filter (matches all applications).
+    pub const fn new() -> Self {
+        Self { names: None }
+    }
+
+    /// Creates a filter for specific application names.
+    pub fn by_names(names: Vec<String>) -> Self {
+        Self { names: Some(names) }
+    }
+}
+
+impl Default for AppFilter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub const ALL_APPLICATION: Option<AppFilter> = None;
@@ -301,21 +439,33 @@ impl SnapShot {
         &self,
         filter: NodeFilter,
     ) -> Result<HashMap<String, NodeInfoPtr>, FlameError> {
-        let mut nodes = HashMap::new();
+        let nodes_list = lock_ptr!(self.nodes)?;
 
-        {
-            let nodes_list = lock_ptr!(self.nodes)?;
+        // Start with all nodes
+        let candidates: Vec<NodeInfoPtr> = nodes_list.values().cloned().collect();
 
-            for name in filter.names {
-                if let Some(node) = nodes_list.get(&name) {
-                    nodes.insert(name, node.clone());
-                } else {
-                    tracing::warn!("Node <{name}> not found.");
-                }
-            }
-        }
+        // Apply state filter if specified
+        let filtered: Vec<NodeInfoPtr> = match filter.state {
+            None => candidates,
+            Some(state) => candidates
+                .into_iter()
+                .filter(|node| node.state == state)
+                .collect(),
+        };
 
-        Ok(nodes)
+        // Apply names filter if specified
+        let filtered: Vec<NodeInfoPtr> = match filter.names {
+            None => filtered,
+            Some(ref names) => filtered
+                .into_iter()
+                .filter(|node| names.contains(&node.name))
+                .collect(),
+        };
+
+        Ok(filtered
+            .into_iter()
+            .map(|node| (node.name.clone(), node))
+            .collect())
     }
 
     fn find_all_nodes(&self) -> Result<HashMap<String, NodeInfoPtr>, FlameError> {
@@ -346,19 +496,22 @@ impl SnapShot {
         &self,
         filter: AppFilter,
     ) -> Result<HashMap<String, AppInfoPtr>, FlameError> {
-        let mut appinfos = HashMap::new();
+        let apps = lock_ptr!(self.applications)?;
 
-        {
-            let apps = lock_ptr!(self.applications)?;
+        // Apply names filter if specified
+        let filtered: Vec<AppInfoPtr> = match filter.names {
+            None => apps.values().cloned().collect(),
+            Some(ref names) => apps
+                .values()
+                .filter(|app| names.contains(&app.name))
+                .cloned()
+                .collect(),
+        };
 
-            for name in filter.names {
-                if let Some(app) = apps.get(&name) {
-                    appinfos.insert(name, app.clone());
-                }
-            }
-        }
-
-        Ok(appinfos)
+        Ok(filtered
+            .into_iter()
+            .map(|app| (app.name.clone(), app))
+            .collect())
     }
 
     fn find_all_applications(&self) -> Result<HashMap<String, AppInfoPtr>, FlameError> {
@@ -389,30 +542,31 @@ impl SnapShot {
         &self,
         filter: SessionFilter,
     ) -> Result<HashMap<SessionID, SessionInfoPtr>, FlameError> {
-        let mut ssns = HashMap::new();
+        let sessions = lock_ptr!(self.sessions)?;
+        let ssn_index = lock_ptr!(self.ssn_index)?;
 
-        {
-            let sessions = lock_ptr!(self.sessions)?;
+        // Start with all sessions or sessions matching state filter
+        let candidates: Vec<SessionInfoPtr> = match filter.state {
+            None => sessions.values().cloned().collect(),
+            Some(state) => ssn_index
+                .get(&state)
+                .map(|m| m.values().cloned().collect())
+                .unwrap_or_default(),
+        };
 
-            for id in filter.ids {
-                if let Some(ssn) = sessions.get(&id) {
-                    ssns.insert(id, ssn.clone());
-                }
-            }
-        }
+        // Apply ids filter if specified
+        let filtered: Vec<SessionInfoPtr> = match filter.ids {
+            None => candidates,
+            Some(ref ids) => candidates
+                .into_iter()
+                .filter(|ssn| ids.contains(&ssn.id))
+                .collect(),
+        };
 
-        {
-            let ssn_index = lock_ptr!(self.ssn_index)?;
-            if let Some(state) = filter.state {
-                if let Some(ssn_list) = ssn_index.get(&state) {
-                    for ssn in ssn_list.values() {
-                        ssns.insert(ssn.id.clone(), ssn.clone());
-                    }
-                }
-            }
-        }
-
-        Ok(ssns)
+        Ok(filtered
+            .into_iter()
+            .map(|ssn| (ssn.id.clone(), ssn))
+            .collect())
     }
 
     fn find_all_sessions(&self) -> Result<HashMap<SessionID, SessionInfoPtr>, FlameError> {
@@ -510,30 +664,40 @@ impl SnapShot {
         &self,
         filter: ExecutorFilter,
     ) -> Result<HashMap<ExecutorID, ExecutorInfoPtr>, FlameError> {
-        let mut execs = HashMap::new();
+        let executors = lock_ptr!(self.executors)?;
+        let exec_index = lock_ptr!(self.exec_index)?;
 
-        {
-            let executors = lock_ptr!(self.executors)?;
+        // Start with all executors or executors matching state filter
+        let candidates: Vec<ExecutorInfoPtr> = match filter.state {
+            None => executors.values().cloned().collect(),
+            Some(state) => exec_index
+                .get(&state)
+                .map(|m| m.values().cloned().collect())
+                .unwrap_or_default(),
+        };
 
-            for id in filter.ids {
-                if let Some(e) = executors.get(&id) {
-                    execs.insert(id.clone(), e.clone());
-                }
-            }
-        }
+        // Apply ids filter if specified
+        let filtered: Vec<ExecutorInfoPtr> = match filter.ids {
+            None => candidates,
+            Some(ref ids) => candidates
+                .into_iter()
+                .filter(|exec| ids.contains(&exec.id))
+                .collect(),
+        };
 
-        {
-            let exec_index = lock_ptr!(self.exec_index)?;
-            if let Some(state) = filter.state {
-                if let Some(exec_list) = exec_index.get(&state) {
-                    for e in exec_list.values() {
-                        execs.insert(e.id.clone(), e.clone());
-                    }
-                }
-            }
-        }
+        // Apply node filter if specified
+        let filtered: Vec<ExecutorInfoPtr> = match filter.node {
+            None => filtered,
+            Some(ref node_name) => filtered
+                .into_iter()
+                .filter(|exec| &exec.node == node_name)
+                .collect(),
+        };
 
-        Ok(execs)
+        Ok(filtered
+            .into_iter()
+            .map(|exec| (exec.id.clone(), exec))
+            .collect())
     }
 
     fn find_all_executors(&self) -> Result<HashMap<ExecutorID, ExecutorInfoPtr>, FlameError> {
@@ -921,7 +1085,8 @@ mod tests {
         let releasing_execs = ss
             .find_executors(Some(ExecutorFilter {
                 state: Some(ExecutorState::Releasing),
-                ids: vec![],
+                ids: None,
+                node: None,
             }))
             .unwrap();
         assert_eq!(releasing_execs.len(), 0);
@@ -930,7 +1095,8 @@ mod tests {
         let nonexistent = ss
             .find_executors(Some(ExecutorFilter {
                 state: None,
-                ids: vec!["nonexistent".to_string()],
+                ids: Some(vec!["nonexistent".to_string()]),
+                node: None,
             }))
             .unwrap();
         assert_eq!(nonexistent.len(), 0);

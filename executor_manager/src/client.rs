@@ -70,9 +70,14 @@ impl BackendClient {
         Ok(Self { client })
     }
 
-    pub async fn register_node(&mut self, node: &Node) -> Result<(), FlameError> {
+    pub async fn register_node(
+        &mut self,
+        node: &Node,
+        executors: &[Executor],
+    ) -> Result<(), FlameError> {
         let req = RegisterNodeRequest {
             node: Some(node.clone().into()),
+            executors: executors.iter().map(rpc::Executor::from).collect(),
         };
 
         self.client
@@ -83,6 +88,10 @@ impl BackendClient {
         Ok(())
     }
 
+    /// # Deprecated
+    /// Use `watch_node` streaming RPC instead for better efficiency.
+    /// `sync_node` uses polling which is less efficient than server-push.
+    #[deprecated(since = "0.6.0", note = "Use watch_node streaming RPC instead")]
     pub async fn sync_node(
         &mut self,
         node: &Node,

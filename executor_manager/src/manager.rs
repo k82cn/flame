@@ -16,17 +16,23 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
 
-use common::apis::{ExecutorState, Node};
+use common::apis::ExecutorState;
 use common::{ctx::FlameClusterContext, FlameError};
-use stdng::lock_ptr;
+use stdng::{lock_ptr, MutexPtr};
 
 use crate::client::BackendClient;
 use crate::executor::{self, Executor, ExecutorPtr};
 use crate::stream_handler::StreamHandler;
 
+/// Messages sent from StreamHandler to ExecutorManager
+pub enum ExecutorMessage {
+    /// Single executor update (handles both initial sync and ongoing updates)
+    Update(Executor),
+}
+
 pub struct ExecutorManager {
     ctx: FlameClusterContext,
-    executors: HashMap<String, ExecutorPtr>,
+    executors: MutexPtr<HashMap<String, ExecutorPtr>>,
     client: BackendClient,
 }
 
@@ -40,40 +46,46 @@ impl ExecutorManager {
 
         Ok(Self {
             ctx: ctx.clone(),
-            executors: HashMap::new(),
+            executors: Arc::new(Mutex::new(HashMap::new())),
             client,
         })
     }
 
     /// Runs the executor manager in streaming mode using WatchNode.
     ///
-    /// This mode establishes a bidirectional gRPC stream with the session manager,
-    /// receiving executor updates in real-time and deriving appropriate actions.
+    /// Flow:
+    /// 1. StreamHandler calls RegisterNode on each connection (handles failover)
+    /// 2. StreamHandler starts WatchNode stream to receive executor updates
+    /// 3. Process executor messages and maintain local state
     pub async fn run(&mut self) -> Result<(), FlameError> {
-        let node = Node::new();
-
-        // Create channel for executor updates
-        let (executor_tx, mut executor_rx) = mpsc::channel::<Executor>(32);
+        // Create channel for executor messages
+        let (executor_tx, mut executor_rx) = mpsc::channel::<ExecutorMessage>(32);
 
         // Clone what we need for the stream handler
         let client = self.client.clone();
-        let node_clone = node.clone();
+
+        // Share executors reference with StreamHandler for re-registration
+        let executors_for_handler = self.executors.clone();
 
         // Spawn the stream handler (long-running, self-recovering task)
+        // StreamHandler handles register_node + watch_node on each connection
         let stream_handle = tokio::spawn(async move {
-            let mut handler = StreamHandler::new(client, node_clone);
+            let mut handler = StreamHandler::new(client, executors_for_handler);
             handler.run(executor_tx).await;
         });
 
         tracing::info!(
-            "Starting executor manager in streaming mode for node <{}> with shim <{:?}>",
-            node.name,
+            "Starting executor manager in streaming mode with shim <{:?}>",
             self.ctx.executors.shim
         );
 
-        // Process executor updates from the stream
-        while let Some(executor) = executor_rx.recv().await {
-            self.handle_executor_update(executor)?;
+        // Process executor messages from the stream
+        while let Some(msg) = executor_rx.recv().await {
+            match msg {
+                ExecutorMessage::Update(executor) => {
+                    self.handle_executor_update(executor)?;
+                }
+            }
         }
 
         // Wait for stream handler to finish
@@ -92,6 +104,8 @@ impl ExecutorManager {
         let executor_id = executor.id.clone();
         let state = executor.state;
 
+        let mut executors = lock_ptr!(self.executors)?;
+
         // 1. If state is Released, remove from map
         if state == ExecutorState::Released {
             tracing::info!(
@@ -99,12 +113,12 @@ impl ExecutorManager {
                 executor_id,
                 state
             );
-            self.executors.remove(&executor_id);
+            executors.remove(&executor_id);
             return Ok(());
         }
 
         // 2. If ID is new (not in map), create and start executor
-        if !self.executors.contains_key(&executor_id) {
+        if !executors.contains_key(&executor_id) {
             tracing::info!(
                 "Creating executor <{}> (state={:?}, shim={:?})",
                 executor_id,
@@ -116,14 +130,13 @@ impl ExecutorManager {
             executor.shim = self.ctx.executors.shim;
 
             let executor_ptr = Arc::new(Mutex::new(executor));
-            self.executors
-                .insert(executor_id.clone(), executor_ptr.clone());
+            executors.insert(executor_id.clone(), executor_ptr.clone());
             executor::start(self.client.clone(), executor_ptr);
             return Ok(());
         }
 
         // 3. Otherwise (existing ID, not Released), just log debug message
-        if let Some(existing) = self.executors.get(&executor_id) {
+        if let Some(existing) = executors.get(&executor_id) {
             let existing = lock_ptr!(existing)?;
             tracing::debug!(
                 "Executor <{}> already exists (current_state={:?}, received_state={:?})",

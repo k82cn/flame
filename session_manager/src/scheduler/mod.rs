@@ -135,7 +135,7 @@ mod tests {
                 .with_ansi(false)
                 .init();
 
-            let url = format!("/tmp/flame_test_env_{}.db", Utc::now().timestamp());
+            let url = common::temp_db_path("flame_test_env");
             let config = FlameClusterContext {
                 cluster: FlameCluster {
                     storage: format!("sqlite:///{url}"),
@@ -153,7 +153,8 @@ mod tests {
 
     impl Drop for TestEnv {
         fn drop(&mut self) {
-            std::fs::remove_file(&self.url).unwrap();
+            // Best-effort cleanup - ignore errors (e.g., file in use on Windows)
+            let _ = std::fs::remove_file(&self.url);
         }
     }
 
@@ -169,7 +170,12 @@ mod tests {
         tokio_test::block_on(
             controller.register_application("flmtest".to_string(), new_test_application()),
         )?;
-        tokio_test::block_on(controller.register_node(&new_test_node("node_1".to_string())))?;
+        // Just register node in storage (no stream connection needed for scheduler test)
+        tokio_test::block_on(
+            controller
+                .storage()
+                .register_node(&new_test_node("node_1".to_string())),
+        )?;
         let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
         let ssn_1 =
             tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
@@ -210,7 +216,7 @@ mod tests {
             assert_eq!(node_list.len(), 1);
             assert_eq!(node_list.values().next().unwrap().name, "node_1");
 
-            let exec_list = tokio_test::block_on(controller.list_executor())?;
+            let exec_list = controller.list_executor()?;
             assert_eq!(exec_list.len(), 1);
         }
 

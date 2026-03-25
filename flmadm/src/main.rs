@@ -1,12 +1,23 @@
+// flmadm is a Unix-only administration tool for installing and managing Flame
+// on Linux servers. It manages systemd services, Unix permissions, and other
+// Unix-specific functionality.
+
+#[cfg(unix)]
 mod commands;
+#[cfg(unix)]
 mod managers;
+#[cfg(unix)]
 mod types;
 
+#[cfg(unix)]
 use clap::{Parser, Subcommand};
+#[cfg(unix)]
 use std::path::PathBuf;
 
+#[cfg(unix)]
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[cfg(unix)]
 #[derive(Parser)]
 #[command(name = "flmadm")]
 #[command(version = VERSION)]
@@ -16,6 +27,7 @@ struct Cli {
     command: Commands,
 }
 
+#[cfg(unix)]
 #[derive(Subcommand)]
 enum Commands {
     /// Install Flame on this machine
@@ -101,6 +113,7 @@ enum Commands {
     },
 }
 
+#[cfg(unix)]
 fn main() {
     let _log_guard = match common::init_logger(None) {
         Ok(guard) => guard,
@@ -214,4 +227,13 @@ fn main() {
             std::process::exit(types::exit_codes::INSTALL_FAILURE);
         }
     }
+}
+
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("flmadm is only supported on Unix-like systems (Linux, macOS).");
+    eprintln!(
+        "It manages systemd services, Unix permissions, and other Unix-specific functionality."
+    );
+    std::process::exit(1);
 }

@@ -11,6 +11,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//! Integration tests for Flame SDK.
+//!
+//! These tests require a running Flame server.
+
 use std::collections::HashMap;
 
 use futures::future::try_join_all;
