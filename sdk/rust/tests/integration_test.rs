@@ -14,7 +14,6 @@ limitations under the License.
 //! Integration tests for Flame SDK.
 //!
 //! These tests require a running Flame server.
-//! Run with: cargo test --test integration_test -- --ignored
 
 use std::collections::HashMap;
 
@@ -56,7 +55,6 @@ impl TaskInformer for DefaultTaskInformer {
 }
 
 #[tokio::test]
-#[ignore] // Requires a running Flame server
 async fn test_create_session() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
@@ -78,7 +76,6 @@ async fn test_create_session() -> Result<(), FlameError> {
 }
 
 #[tokio::test]
-#[ignore] // Requires a running Flame server
 async fn test_create_multiple_sessions() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
@@ -104,7 +101,6 @@ async fn test_create_multiple_sessions() -> Result<(), FlameError> {
 }
 
 #[tokio::test]
-#[ignore] // Requires a running Flame server
 async fn test_create_session_with_tasks() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
@@ -165,7 +161,6 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
 }
 
 #[tokio::test]
-#[ignore] // Requires a running Flame server
 async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
@@ -224,7 +219,6 @@ async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
 }
 
 #[tokio::test]
-#[ignore] // Requires a running Flame server
 async fn test_application_lifecycle() -> Result<(), FlameError> {
     let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
 
