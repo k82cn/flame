@@ -11,10 +11,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::thread;
-use std::{future::Future, pin::Pin, task::Context, task::Poll, thread::JoinHandle};
-
 use clap::Parser;
+use futures::future::select_all;
 use tokio::runtime::{Builder, Runtime};
 
 use common::ctx::FlameClusterContext;
@@ -39,6 +37,15 @@ struct Cli {
     slots: Option<i32>,
 }
 
+fn build_runtime(name: &str, threads: usize) -> Result<Runtime, FlameError> {
+    Builder::new_multi_thread()
+        .worker_threads(threads)
+        .thread_name(name)
+        .enable_all()
+        .build()
+        .map_err(|e| FlameError::Internal(format!("failed to build runtime <{name}>: {e}")))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), FlameError> {
     let _log_guard = common::init_logger(Some("fem"))?;
@@ -46,86 +53,73 @@ async fn main() -> Result<(), FlameError> {
     let cli = Cli::parse();
     let ctx = FlameClusterContext::from_file(cli.config)?;
 
-    let mut handlers = vec![];
-    let build_runtime = |name: &str, threads: usize| -> Result<Runtime, FlameError> {
-        Builder::new_multi_thread()
-            .worker_threads(threads)
-            .thread_name(name)
-            .enable_all()
-            .build()
-            .map_err(|e| FlameError::Internal(format!("failed to build runtime <{name}>: {e}")))
-    };
+    tracing::info!("flame-executor-manager is starting ...");
 
-    // Start the object cache thread if cache configuration is present.
-    if let Some(ref cache_config) = ctx.cache {
-        let cache_rt = build_runtime("cache", 2)?;
+    let mut handlers = vec![];
+
+    let num_cpus = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4);
+    let cache_threads = if ctx.cache.is_some() {
+        if num_cpus > 1 {
+            2
+        } else {
+            1
+        }
+    } else {
+        0
+    };
+    let manager_threads = ctx.executors.limits.max_executors as usize + 1;
+
+    tracing::info!(
+        "CPU allocation: total={}, cache={}, manager={}, max_executors={}",
+        num_cpus,
+        cache_threads,
+        manager_threads,
+        ctx.executors.limits.max_executors
+    );
+
+    // Keep dedicated runtimes alive for the lifetime of their join handles.
+    let cache_rt = if let Some(ref cache_config) = ctx.cache {
+        let cache_rt = build_runtime("cache", cache_threads)?;
         let cache_config = cache_config.clone();
-        let handler = thread::spawn(move || {
-            let _ = cache_rt.block_on(async move {
-                match flame_cache::run(&cache_config).await {
-                    Ok(_) => {
-                        tracing::info!("Object cache exited successfully.");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!("Object cache exited with error: {e}");
-                        Err(e)
-                    }
-                }
-            });
+        let handler = cache_rt.spawn(async move {
+            let result = flame_cache::run(&cache_config).await;
+            if let Err(e) = &result {
+                tracing::error!("Object cache exited with error: {e}");
+            } else {
+                tracing::info!("Object cache exited successfully.");
+            }
+            result
         });
         handlers.push(handler);
         tracing::info!("Object cache thread started.");
+        Some(cache_rt)
     } else {
         tracing::info!("No cache configuration found, object cache will not be started.");
-    }
+        None
+    };
 
     // The manager thread will start one thread for each executor.
-    let max_executors = ctx.executors.limits.max_executors as usize;
-    let manager_rt = build_runtime("manager", max_executors + 1)?;
-
-    // Start the executor manager thread.
+    let manager_rt = build_runtime("manager", manager_threads)?;
     {
         let ctx = ctx.clone();
-        let handler = thread::spawn(move || {
-            let _ = manager_rt.block_on(async move {
-                match manager::run(&ctx).await {
-                    Ok(_) => {
-                        tracing::info!("Executor manager exited successfully.");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!("Executor manager exited with error: {e}");
-                        Err(e)
-                    }
-                }
-            });
+        let handler = manager_rt.spawn(async move {
+            let result = manager::run(&ctx).await;
+            if let Err(e) = &result {
+                tracing::error!("Executor manager exited with error: {e}");
+            } else {
+                tracing::info!("Executor manager exited successfully.");
+            }
+            result
         });
         handlers.push(handler);
     }
 
-    // Waiting for any thread to exit.
-    JoinAny { handlers }.await?;
+    tracing::info!("flame-executor-manager started.");
+
+    let (res, idx, _) = select_all(handlers).await;
+    tracing::info!("Thread <{idx}> exited with result: {res:?}");
 
     Ok(())
-}
-
-struct JoinAny {
-    handlers: Vec<JoinHandle<()>>,
-}
-
-impl Future for JoinAny {
-    type Output = Result<(), FlameError>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        for handler in &self.handlers {
-            if handler.is_finished() {
-                tracing::info!("Thread <{}> exited.", handler.thread().name().unwrap());
-                return Poll::Ready(Ok(()));
-            }
-        }
-
-        cx.waker().wake_by_ref();
-        Poll::Pending
-    }
 }
