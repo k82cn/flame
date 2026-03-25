@@ -14,13 +14,16 @@ limitations under the License.
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, create_dir_all, OpenOptions};
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+#[cfg(unix)]
 use nix::sys::signal::{killpg, Signal};
+#[cfg(unix)]
 use nix::unistd::Pid;
 use stdng::{logs::TraceFn, trace_fn};
 use tokio::sync::Mutex;
@@ -44,15 +47,22 @@ impl HostInstance {
     }
 
     /// Kill the child process
+    #[cfg(unix)]
     fn kill_process(&mut self) {
         if let Some(id) = self.child.id() {
             let ig = Pid::from_raw(id as i32);
-            killpg(ig, Signal::SIGTERM);
+            let _ = killpg(ig, Signal::SIGTERM);
             tracing::debug!("Killed process group <{}>", id);
         } else {
             drop(self.child.kill());
             tracing::debug!("Killed child process");
         }
+    }
+
+    #[cfg(not(unix))]
+    fn kill_process(&mut self) {
+        drop(self.child.kill());
+        tracing::debug!("Killed child process");
     }
 }
 
@@ -262,6 +272,7 @@ impl HostShim {
             .open(process_work_dir.join(format!("{}.err", executor.id)))
             .map_err(|e| FlameError::Internal(format!("failed to open stderr log file: {e}")))?;
 
+        #[cfg(unix)]
         let child = cmd
             .envs(envs)
             .args(args)
@@ -269,6 +280,20 @@ impl HostShim {
             .stdout(Stdio::from(log_out))
             .stderr(Stdio::from(log_err))
             .process_group(0)
+            .spawn()
+            .map_err(|e| {
+                FlameError::InvalidConfig(format!(
+                    "failed to start service by command <{command}>: {e}"
+                ))
+            })?;
+
+        #[cfg(not(unix))]
+        let child = cmd
+            .envs(envs)
+            .args(args)
+            .current_dir(process_work_dir)
+            .stdout(Stdio::from(log_out))
+            .stderr(Stdio::from(log_err))
             .spawn()
             .map_err(|e| {
                 FlameError::InvalidConfig(format!(

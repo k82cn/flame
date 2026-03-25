@@ -16,7 +16,7 @@ limitations under the License.
 //! This module provides the client-side implementation of the WatchNode
 //! streaming protocol, including reconnection logic and heartbeat management.
 
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -27,9 +27,11 @@ use tonic::Streaming;
 use common::apis::Node;
 use common::FlameError;
 use rpc::flame as proto;
+use stdng::{lock_ptr, MutexPtr};
 
 use crate::client::BackendClient;
-use crate::executor::Executor;
+use crate::executor::{Executor, ExecutorPtr};
+use crate::manager::ExecutorMessage;
 
 /// Default interval between heartbeats in seconds.
 const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 5;
@@ -47,13 +49,16 @@ const RESPONSE_TIMEOUT_SECS: u64 = 10;
 ///
 /// The StreamHandler is responsible for:
 /// - Establishing and maintaining the stream connection
+/// - Re-registering the node on each reconnection (handles failover)
 /// - Sending periodic heartbeats with current node status
 /// - Handling reconnection with exponential backoff
 /// - Processing executor state notifications from the server
 /// - Forwarding executor updates to the manager for action derivation
 pub struct StreamHandler {
     client: BackendClient,
-    node: Arc<Mutex<Node>>,
+    node: MutexPtr<Node>,
+    /// Reference to current executors (shared with manager) for re-registration
+    executors: MutexPtr<HashMap<String, ExecutorPtr>>,
     reconnect_interval: Duration,
     heartbeat_interval: Duration,
 }
@@ -64,11 +69,12 @@ impl StreamHandler {
     /// # Arguments
     ///
     /// * `client` - The backend client for gRPC communication
-    /// * `node` - The node information to register
-    pub fn new(client: BackendClient, node: Node) -> Self {
+    /// * `executors` - Shared reference to current executors for re-registration on reconnect
+    pub fn new(client: BackendClient, executors: MutexPtr<HashMap<String, ExecutorPtr>>) -> Self {
         StreamHandler {
             client,
-            node: Arc::new(Mutex::new(node)),
+            node: stdng::new_ptr(Node::new()),
+            executors,
             reconnect_interval: Duration::from_secs(DEFAULT_RECONNECT_INTERVAL_SECS),
             heartbeat_interval: Duration::from_secs(DEFAULT_HEARTBEAT_INTERVAL_SECS),
         }
@@ -82,7 +88,7 @@ impl StreamHandler {
     ///
     /// This is a long-running, self-recovering task that handles errors
     /// internally and never returns under normal operation.
-    pub async fn run(&mut self, executor_tx: mpsc::Sender<Executor>) {
+    pub async fn run(&mut self, executor_tx: mpsc::Sender<ExecutorMessage>) {
         let mut current_reconnect_interval = self.reconnect_interval;
 
         loop {
@@ -90,9 +96,7 @@ impl StreamHandler {
                 Ok(()) => {
                     // Stream closed gracefully, reset reconnect interval
                     current_reconnect_interval = self.reconnect_interval;
-                    let node_name = self
-                        .node
-                        .lock()
+                    let node_name = lock_ptr!(self.node)
                         .map(|n| n.name.clone())
                         .unwrap_or_else(|_| "unknown".to_string());
                     tracing::info!(
@@ -101,9 +105,7 @@ impl StreamHandler {
                     );
                 }
                 Err(e) => {
-                    let node_name = self
-                        .node
-                        .lock()
+                    let node_name = lock_ptr!(self.node)
                         .map(|n| n.name.clone())
                         .unwrap_or_else(|_| "unknown".to_string());
                     tracing::warn!(
@@ -127,7 +129,34 @@ impl StreamHandler {
     }
 
     /// Runs a single stream session.
-    async fn run_stream(&mut self, executor_tx: &mpsc::Sender<Executor>) -> Result<(), FlameError> {
+    ///
+    /// Flow:
+    /// 1. Register the node with current executor state (handles reconnection/failover)
+    /// 2. Start WatchNode stream and immediately send first heartbeat to identify the node
+    /// 3. Server sends all executors on first heartbeat (initial sync)
+    /// 4. Continue sending periodic heartbeats
+    async fn run_stream(
+        &mut self,
+        executor_tx: &mpsc::Sender<ExecutorMessage>,
+    ) -> Result<(), FlameError> {
+        // Get current node state
+        let node = lock_ptr!(self.node)?.clone();
+
+        // Get current executors for state alignment during registration
+        let current_executors: Vec<Executor> = lock_ptr!(self.executors)?
+            .values()
+            .filter_map(|ptr| lock_ptr!(ptr).ok().map(|e| (*e).clone()))
+            .collect();
+
+        // Register node with current executor list for state alignment
+        // This is called on every reconnection to handle failover scenarios
+        tracing::info!(
+            "Registering node <{}> with {} executors for state alignment",
+            node.name,
+            current_executors.len()
+        );
+        self.client.register_node(&node, &current_executors).await?;
+
         // Create channels for the bidirectional stream
         let (request_tx, request_rx) = mpsc::channel::<proto::WatchNodeRequest>(32);
 
@@ -137,27 +166,28 @@ impl StreamHandler {
             .watch_node(ReceiverStream::new(request_rx))
             .await?;
 
-        // Get current node state for registration
-        let node_for_registration = self
-            .node
-            .lock()
-            .map_err(|e| FlameError::Internal(format!("Failed to lock node: {}", e)))?
-            .clone();
+        tracing::info!("WatchNode: Starting stream for node <{}>", node.name,);
 
-        // Send initial registration
-        let registration = proto::WatchNodeRequest {
-            request: Some(proto::watch_node_request::Request::Registration(
-                proto::NodeRegistration {
-                    node: Some(node_for_registration.into()),
-                },
-            )),
+        // Send initial heartbeat immediately to identify the node
+        let initial_heartbeat = proto::WatchNodeRequest {
+            heartbeat: Some(proto::NodeHeartbeat {
+                node_name: node.name.clone(),
+                status: Some(proto::NodeStatus {
+                    state: proto::NodeState::from(node.state) as i32,
+                    capacity: Some(node.capacity.clone().into()),
+                    allocatable: Some(node.allocatable.clone().into()),
+                    info: Some(node.info.clone().into()),
+                    addresses: vec![],
+                    last_heartbeat_time: 0,
+                }),
+            }),
         };
         request_tx
-            .send(registration)
+            .send(initial_heartbeat)
             .await
-            .map_err(|e| FlameError::Network(format!("Failed to send registration: {}", e)))?;
+            .map_err(|e| FlameError::Network(format!("Failed to send initial heartbeat: {}", e)))?;
 
-        // Spawn heartbeat task
+        // Spawn heartbeat task for periodic heartbeats
         let heartbeat_tx = request_tx.clone();
         let node_ptr = self.node.clone();
         let heartbeat_interval = self.heartbeat_interval;
@@ -188,9 +218,7 @@ impl StreamHandler {
                 };
 
                 let heartbeat = proto::WatchNodeRequest {
-                    request: Some(proto::watch_node_request::Request::Heartbeat(
-                        proto::NodeHeartbeat { node_name, status },
-                    )),
+                    heartbeat: Some(proto::NodeHeartbeat { node_name, status }),
                 };
                 if heartbeat_tx.send(heartbeat).await.is_err() {
                     break;
@@ -211,7 +239,7 @@ impl StreamHandler {
     async fn process_responses(
         &self,
         mut stream: Streaming<proto::WatchNodeResponse>,
-        executor_tx: &mpsc::Sender<Executor>,
+        executor_tx: &mpsc::Sender<ExecutorMessage>,
     ) -> Result<(), FlameError> {
         loop {
             match timeout(
@@ -221,7 +249,11 @@ impl StreamHandler {
             .await
             {
                 Ok(Ok(Some(response))) => {
-                    self.handle_response(response, executor_tx).await?;
+                    if let Some(msg) = self.handle_response(response)? {
+                        executor_tx.send(msg).await.map_err(|e| {
+                            FlameError::Internal(format!("Failed to send executor: {}", e))
+                        })?;
+                    }
                 }
                 Ok(Ok(None)) => {
                     // Stream closed by server
@@ -239,13 +271,12 @@ impl StreamHandler {
 
     /// Handles a single response from the server.
     ///
-    /// Executor updates are forwarded directly to the manager, which is
-    /// responsible for deriving the appropriate action (create/update/delete).
-    async fn handle_response(
+    /// Returns an ExecutorMessage if the response contains an executor update,
+    /// which the caller is responsible for forwarding to the manager.
+    fn handle_response(
         &self,
         response: proto::WatchNodeResponse,
-        executor_tx: &mpsc::Sender<Executor>,
-    ) -> Result<(), FlameError> {
+    ) -> Result<Option<ExecutorMessage>, FlameError> {
         match response.response {
             Some(proto::watch_node_response::Response::Executor(proto_executor)) => {
                 let executor: Executor = proto_executor.into();
@@ -256,22 +287,20 @@ impl StreamHandler {
                     executor.state
                 );
 
-                executor_tx
-                    .send(executor)
-                    .await
-                    .map_err(|e| FlameError::Internal(format!("Failed to send executor: {}", e)))?;
+                Ok(Some(ExecutorMessage::Update(executor)))
             }
             Some(proto::watch_node_response::Response::Ack(ack)) => {
                 tracing::trace!(
                     "WatchNode: Received acknowledgement with timestamp {}",
                     ack.timestamp
                 );
+                Ok(None)
             }
             None => {
                 tracing::warn!("WatchNode: Received empty response");
+                Ok(None)
             }
         }
-        Ok(())
     }
 }
 

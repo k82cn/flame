@@ -13,7 +13,7 @@ limitations under the License.
 
 use std::sync::Arc;
 
-use crate::controller::states::{
+use crate::controller::executors::{
     binding::BindingState, bound::BoundState, idle::IdleState, releasing::ReleasingState,
     unbinding::UnbindingState, void::VoidState,
 };

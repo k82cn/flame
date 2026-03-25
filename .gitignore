@@ -20,6 +20,7 @@
 .idea/
 .vscode/
 target/
+logs/
 ci/logs/
 ci/supervisord.log
 supervisord.pid

@@ -29,8 +29,8 @@ use common::ctx::FlameClusterContext;
 use common::FlameError;
 
 use crate::model::{
-    AppInfo, Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo,
-    SessionInfoPtr, SnapShot, SnapShotPtr,
+    AppInfo, Executor, ExecutorFilter, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr,
+    SessionInfo, SessionInfoPtr, SnapShot, SnapShotPtr,
 };
 
 use crate::events::{EventManager, EventManagerPtr};
@@ -186,6 +186,51 @@ impl Storage {
         }
     }
 
+    /// Gets a node pointer by name. Returns error if the node doesn't exist.
+    pub fn get_node_ptr(&self, name: &str) -> Result<NodePtr, FlameError> {
+        let node_map = lock_ptr!(self.nodes)?;
+        node_map
+            .get(name)
+            .cloned()
+            .ok_or_else(|| FlameError::NotFound(format!("node <{}> not found", name)))
+    }
+
+    /// Updates the state of a node in storage first, then in memory.
+    pub async fn update_node_state(
+        &self,
+        name: &str,
+        state: common::apis::NodeState,
+    ) -> Result<(), FlameError> {
+        trace_fn!("Storage::update_node_state");
+
+        // Get node clone with new state for persistence
+        let node_clone = {
+            let node_map = lock_ptr!(self.nodes)?;
+            if let Some(node_ptr) = node_map.get(name) {
+                let node = lock_ptr!(node_ptr)?;
+                let mut updated = node.clone();
+                updated.state = state;
+                Some(updated)
+            } else {
+                None
+            }
+        };
+
+        // Persist to storage first
+        if let Some(node) = node_clone {
+            self.engine.update_node(&node).await?;
+
+            // Only update in-memory state after successful persistence
+            let node_map = lock_ptr!(self.nodes)?;
+            if let Some(node_ptr) = node_map.get(name) {
+                let mut node = lock_ptr!(node_ptr)?;
+                node.state = state;
+            }
+            tracing::info!("Updated node {} state to {:?}", name, state);
+        }
+        Ok(())
+    }
+
     /// Lists all registered nodes.
     pub fn list_node(&self) -> Result<Vec<Node>, FlameError> {
         let mut node_list = vec![];
@@ -199,6 +244,9 @@ impl Storage {
         Ok(node_list)
     }
 
+    /// # Deprecated
+    /// Use `WatchNode` streaming RPC instead for better efficiency.
+    #[deprecated(since = "0.6.0", note = "Use WatchNode streaming RPC instead")]
     pub async fn sync_node(
         &self,
         node: &Node,
@@ -250,6 +298,62 @@ impl Storage {
         let mut node_map = lock_ptr!(self.nodes)?;
         node_map.remove(node_name);
         Ok(())
+    }
+
+    /// Deletes multiple executors and retries their running tasks.
+    /// Returns the list of executor IDs that were successfully deleted.
+    pub async fn delete_executors(
+        &self,
+        executors: &[Executor],
+    ) -> Result<Vec<ExecutorID>, FlameError> {
+        trace_fn!("Storage::delete_executors");
+
+        let mut deleted_executor_ids = Vec::new();
+
+        for executor in executors {
+            // If executor has a running task, retry it
+            if let (Some(task_id), Some(ref ssn_id)) = (executor.task_id, &executor.ssn_id) {
+                let gid = TaskGID {
+                    ssn_id: ssn_id.clone(),
+                    task_id,
+                };
+                match self.engine.retry_task(gid.clone()).await {
+                    Ok(task) => {
+                        // Update the in-memory session with the retried task
+                        if let Ok(ssn_ptr) = self.get_session_ptr(ssn_id.clone()) {
+                            if let Ok(mut ssn) = lock_ptr!(ssn_ptr) {
+                                let _ = ssn.update_task(&task);
+                            }
+                        }
+                        tracing::info!(
+                            "Retried task {} for session {} due to executor {} cleanup",
+                            task_id,
+                            ssn_id,
+                            executor.id
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to retry task {} for session {}: {}",
+                            task_id,
+                            ssn_id,
+                            e
+                        );
+                    }
+                }
+            }
+
+            // Delete the executor
+            if let Err(e) = self.delete_executor(executor.id.clone()).await {
+                tracing::warn!("Failed to delete executor {}: {}", executor.id, e);
+            } else {
+                deleted_executor_ids.push(executor.id.clone());
+            }
+        }
+
+        tracing::info!("Deleted {} executors", deleted_executor_ids.len());
+
+        Ok(deleted_executor_ids)
     }
 
     pub async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
@@ -384,14 +488,60 @@ impl Storage {
         Ok(ssn_list)
     }
 
-    pub fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
-        let mut exe_list = vec![];
+    /// Lists executors with optional filtering.
+    ///
+    /// # Arguments
+    /// * `filter` - Filter criteria (state, node, and/or executor IDs).
+    ///   - `None` filter means return all executors
+    ///   - For each field in filter:
+    ///     - `None` = ignore this field (match all)
+    ///     - `Some(value)` = match exactly (empty vec/string matches nothing)
+    ///   - All specified filters use AND logic.
+    pub fn list_executor(
+        &self,
+        filter: Option<&ExecutorFilter>,
+    ) -> Result<Vec<Executor>, FlameError> {
         let exe_map = lock_ptr!(self.executors)?;
 
-        for exe in exe_map.deref().values() {
-            let exe = lock_ptr!(exe)?;
-            exe_list.push(exe.clone());
-        }
+        // None filter means return all
+        let Some(filter) = filter else {
+            return Ok(exe_map
+                .values()
+                .filter_map(|exe_ptr| exe_ptr.lock().ok().map(|e| e.clone()))
+                .collect());
+        };
+
+        let exe_list: Vec<Executor> = exe_map
+            .values()
+            .filter_map(|exe_ptr| {
+                let exe = exe_ptr.lock().ok()?;
+
+                // Filter by state if specified
+                if let Some(state) = filter.state {
+                    if exe.state != state {
+                        return None;
+                    }
+                }
+
+                // Filter by node if specified
+                // Some("") matches nothing, Some("x") matches node "x", None matches all
+                if let Some(ref node_name) = filter.node {
+                    if &exe.node != node_name {
+                        return None;
+                    }
+                }
+
+                // Filter by ids if specified
+                // Some([]) matches nothing, Some([a,b]) matches a or b, None matches all
+                if let Some(ref ids) = filter.ids {
+                    if !ids.contains(&exe.id) {
+                        return None;
+                    }
+                }
+
+                Some(exe.clone())
+            })
+            .collect();
 
         Ok(exe_list)
     }

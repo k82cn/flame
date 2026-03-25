@@ -24,7 +24,7 @@ use common::apis::{
 };
 use common::FlameError;
 
-use crate::controller::states::States;
+use crate::controller::executors::States;
 use crate::storage::StoragePtr;
 
 pub struct BoundState {

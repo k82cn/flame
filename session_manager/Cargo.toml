@@ -11,6 +11,7 @@ common = { path = "../common" }
 stdng = { path = "../stdng" }
 
 tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

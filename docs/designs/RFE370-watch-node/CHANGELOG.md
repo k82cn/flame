@@ -6,12 +6,18 @@ All notable changes to this feature will be documented in this file.
 
 ### Added
 - Initial HLD document (`FS.md`) for WatchNode streaming service
+- **NodeConnection State Machine** (`CONNECTION_STATE_MACHINE.md`): Detailed design for connection lifecycle management
+  - State Pattern implementation with Connected, Draining, and Closed states
+  - ConnectionManager for managing all node connections
+  - ConnectionCallbacks for integrating with node state machine
+  - Drain timer for graceful disconnection handling
 
 ### Changed
 - Removed separate `backend.proto.proposed` file; proto definitions merged into `FS.md`
 - Updated `FS.md` to follow standard design template
 - **Removed polling mode and configuration**: Streaming is now mandatory for all clients.
 - **Clarified state-based design**: HLD now explicitly states that raw `Executor` objects are returned (no `ExecutorAction` enum). Client derives actions from executor state.
+- **Refactored connection management**: Moved from `model/connection/` to `controller/connections/` to follow the same pattern as `controller/nodes/` and `controller/executors/`
 
 ### Design Decisions
 - **Bidirectional streaming**: Chose bidirectional over server-streaming to allow client heartbeats
@@ -19,6 +25,9 @@ All notable changes to this feature will be documented in this file.
 - **Mandatory streaming**: Removed polling fallback to simplify architecture and enforce low latency
 - **Reconnection strategy**: Exponential backoff for stream recovery
 - **State-based notifications**: Server sends raw `Executor` objects instead of action-wrapped messages. This is simpler and more flexible - the client derives actions (create/update/delete) by comparing received state with local cache.
+- **State Pattern for connections**: Each connection state (Connected, Draining, Closed) is a separate struct implementing `ConnectionStates` trait, matching the pattern used for nodes and executors
+- **One connection per node**: Each node has exactly one `NodeConnection` instance managed by `ConnectionManager`
+- **Permanent close**: Once a connection is Closed (after drain timeout), it cannot be reconnected - a new connection must be created
 
 ## [0.1.0] - 2026-03-10
 

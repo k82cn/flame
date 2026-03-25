@@ -14,11 +14,15 @@ limitations under the License.
 use std::collections::HashMap;
 
 use chrono::Utc;
+#[cfg(unix)]
 use hyper_util::rt::TokioIo;
 use stdng::trace_fn;
+#[cfg(unix)]
 use tokio::net::UnixStream;
 use tonic::transport::Channel;
+#[cfg(unix)]
 use tonic::transport::{Endpoint, Uri};
+#[cfg(unix)]
 use tower::service_fn;
 use tracing::info;
 
@@ -42,6 +46,7 @@ pub struct PodManager {
 }
 
 impl PodManager {
+    #[cfg(unix)]
     async fn new_channel(endpoint: &str) -> Result<Channel, FlameError> {
         let endpoint = endpoint.to_string();
         let channel = Endpoint::try_from("http://[::]:50051")
@@ -65,6 +70,14 @@ impl PodManager {
             })?;
 
         Ok(channel)
+    }
+
+    #[cfg(not(unix))]
+    async fn new_channel(endpoint: &str) -> Result<Channel, FlameError> {
+        Err(FlameError::Network(format!(
+            "Unix domain sockets are not supported on this platform, cannot connect to: {}",
+            endpoint
+        )))
     }
 
     pub async fn new(endpoint: &str, runtime: &PodRuntime) -> Result<Self, FlameError> {

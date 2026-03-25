@@ -30,11 +30,8 @@ use ::rpc::flame as rpc;
 
 use crate::apiserver::Flame;
 use crate::controller::ControllerPtr;
-use crate::model::{
-    Executor, ExecutorInfo, ExecutorPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr,
-    SnapShot, SnapShotPtr, WatchRegistry,
-};
-use common::apis::{Application, ExecutorState, Node, Session, Shim, TaskResult};
+use crate::model::Executor;
+use common::apis::{ExecutorState, Node, Shim, TaskResult};
 use common::FlameError;
 
 /// Timeout for heartbeat in seconds. If no heartbeat is received within this
@@ -57,60 +54,6 @@ async fn send_ack(tx: &mpsc::Sender<Result<WatchNodeResponse, Status>>) -> bool 
     tx.send(Ok(ack)).await.is_ok()
 }
 
-/// Sends executor state to the client stream.
-async fn send_executor(
-    tx: &mpsc::Sender<Result<WatchNodeResponse, Status>>,
-    executor: &Executor,
-) -> bool {
-    let response = WatchNodeResponse {
-        response: Some(rpc::watch_node_response::Response::Executor(
-            rpc::Executor::from(executor),
-        )),
-    };
-    tx.send(Ok(response)).await.is_ok()
-}
-
-/// Handles the initial node registration request.
-/// Returns the node name on success, or None if registration failed.
-async fn handle_registration(
-    controller: &ControllerPtr,
-    watch_registry: &WatchRegistry,
-    tx: &mpsc::Sender<Result<WatchNodeResponse, Status>>,
-    notify_tx: mpsc::Sender<WatchNodeResponse>,
-    reg: rpc::NodeRegistration,
-) -> Option<String> {
-    let node = reg.node?;
-    let n = Node::from(node);
-    let node_name = n.name.clone();
-
-    tracing::info!("WatchNode: Node <{}> registered for streaming", node_name);
-
-    // Register the node with the controller
-    if let Err(e) = controller.register_node(&n).await {
-        tracing::error!("WatchNode: Failed to register node <{}>: {}", node_name, e);
-    }
-
-    // Register the stream in the watch registry
-    watch_registry.register(node_name.clone(), notify_tx).await;
-
-    // Send acknowledgement
-    if !send_ack(tx).await {
-        tracing::warn!("WatchNode: Client disconnected during registration");
-        return None;
-    }
-
-    // Sync initial executor state
-    if let Ok(executors) = controller.sync_node(&n, &vec![]).await {
-        for executor in executors {
-            if !send_executor(tx, &executor).await {
-                return None;
-            }
-        }
-    }
-
-    Some(node_name)
-}
-
 /// Handles a heartbeat request from the client.
 /// Updates node status and sends acknowledgement.
 async fn handle_heartbeat(
@@ -119,12 +62,14 @@ async fn handle_heartbeat(
     node_name: &str,
     hb: rpc::NodeHeartbeat,
 ) -> bool {
-    tracing::debug!("WatchNode: Received heartbeat from node <{}>", hb.node_name);
+    tracing::debug!("Received heartbeat from node <{}>", hb.node_name);
 
     // Update node status if provided
     if let Some(status) = hb.status {
         let node = build_node_from_heartbeat(controller, node_name, status);
-        let _ = controller.register_node(&node).await;
+        if let Err(e) = controller.update_node(&node).await {
+            tracing::warn!("Failed to update node status for <{}>: {}", node_name, e);
+        }
     }
 
     // Send acknowledgement
@@ -190,10 +135,28 @@ impl Backend for Flame {
             req.node
                 .ok_or(FlameError::InvalidConfig("node is required".to_string()))?,
         );
-        self.controller.register_node(&node).await?;
+
+        // Convert reported executors from proto
+        let reported_executors: Vec<Executor> =
+            req.executors.into_iter().map(Executor::from).collect();
+
+        tracing::info!(
+            "Registering node <{}> with {} executors",
+            node.name,
+            reported_executors.len()
+        );
+
+        // Delegate all registration logic to controller
+        self.controller
+            .register_node(&node, &reported_executors)
+            .await?;
+
         Ok(Response::new(rpc::Result::default()))
     }
 
+    /// Deprecated: Use `watch_node` streaming RPC instead for better efficiency.
+    /// This polling-based API is kept for backward compatibility only.
+    #[allow(deprecated)]
     async fn sync_node(
         &self,
         req: Request<SyncNodeRequest>,
@@ -216,6 +179,14 @@ impl Backend for Flame {
 
     type WatchNodeStream = ReceiverStream<Result<WatchNodeResponse, Status>>;
 
+    /// WatchNode streaming RPC for node-executor synchronization.
+    ///
+    /// Flow:
+    /// 1. Client must call RegisterNode first to register the node and push initial executors to queue
+    /// 2. Client starts WatchNode stream, sends first heartbeat to identify the node
+    /// 3. Server gets the queue (already populated by RegisterNode) and starts streaming
+    /// 4. Server sends executor updates from the queue as they arrive
+    /// 5. Client sends periodic heartbeats with node status
     async fn watch_node(
         &self,
         req: Request<Streaming<WatchNodeRequest>>,
@@ -224,13 +195,11 @@ impl Backend for Flame {
 
         let mut in_stream = req.into_inner();
         let (tx, rx) = mpsc::channel(32);
-        let (notify_tx, mut notify_rx) = mpsc::channel::<WatchNodeResponse>(32);
 
         let controller = self.controller.clone();
-        let watch_registry = self.watch_registry.clone();
 
-        // Clone tx for the notification forwarder before moving into the stream handler
-        let tx_for_notify = tx.clone();
+        // Clone tx for the queue consumer task
+        let tx_for_queue = tx.clone();
 
         // Spawn a task to handle the incoming stream
         tokio::spawn(async move {
@@ -246,60 +215,86 @@ impl Backend for Flame {
                     Ok(Ok(Some(req))) => req,
                     Ok(Ok(None)) => break, // Stream closed
                     Ok(Err(e)) => {
-                        tracing::error!("WatchNode: Stream error: {}", e);
+                        tracing::error!("Stream error: {}", e);
                         break;
                     }
                     Err(_) => {
                         tracing::warn!(
-                            "WatchNode: Heartbeat timeout for node <{:?}>. Closing stream.",
+                            "Heartbeat timeout for node <{:?}>. Closing stream.",
                             node_name
                         );
                         break;
                     }
                 };
 
-                match request.request {
-                    Some(rpc::watch_node_request::Request::Registration(reg)) => {
-                        // Handle initial registration using helper function
-                        node_name = handle_registration(
-                            &controller,
-                            &watch_registry,
-                            &tx,
-                            notify_tx.clone(),
-                            reg,
-                        )
-                        .await;
-                        if node_name.is_none() {
+                // WatchNodeRequest now only contains heartbeat (no registration)
+                let Some(hb) = request.heartbeat else {
+                    tracing::warn!("Received empty heartbeat request");
+                    continue;
+                };
+
+                let name = hb.node_name.clone();
+
+                // First heartbeat: identify the node and set up receiver
+                if node_name.is_none() {
+                    tracing::info!("Node <{}> starting watch stream", name);
+
+                    // Get the channel (already created by register_node)
+                    match controller.get_node_channel(&name) {
+                        Ok(Some((_sender, receiver))) => {
+                            node_name = Some(name.clone());
+
+                            // Spawn a task to receive from connection and send to client
+                            let tx_clone = tx_for_queue.clone();
+                            let name_clone = name.clone();
+                            tokio::spawn(async move {
+                                while let Some(executor) = receiver.recv().await {
+                                    let response = WatchNodeResponse {
+                                        response: Some(
+                                            rpc::watch_node_response::Response::Executor(
+                                                rpc::Executor::from(&executor),
+                                            ),
+                                        ),
+                                    };
+                                    if tx_clone.send(Ok(response)).await.is_err() {
+                                        tracing::debug!(
+                                            "Client <{}> disconnected, stopping receiver",
+                                            name_clone
+                                        );
+                                        break;
+                                    }
+                                }
+                            });
+                        }
+                        Ok(None) => {
+                            tracing::error!(
+                                "No connection for node <{}>. Call RegisterNode first.",
+                                name
+                            );
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to get channel for node <{}>: {}", name, e);
                             break;
                         }
                     }
-                    Some(rpc::watch_node_request::Request::Heartbeat(hb)) => {
-                        // Handle heartbeat using helper function
-                        if let Some(ref name) = node_name {
-                            if !handle_heartbeat(&controller, &tx, name, hb).await {
-                                tracing::warn!("WatchNode: Client disconnected during heartbeat");
-                                break;
-                            }
-                        }
-                    }
-                    None => {
-                        tracing::warn!("WatchNode: Received empty request");
+                }
+
+                // Handle heartbeat - update node status
+                if let Some(ref name) = node_name {
+                    if !handle_heartbeat(&controller, &tx, name, hb).await {
+                        tracing::warn!("Client disconnected during heartbeat");
+                        break;
                     }
                 }
             }
 
-            // Cleanup: unregister the stream when done
+            // Cleanup: drain node (state transition + start cleanup timer)
             if let Some(name) = node_name {
-                tracing::info!("WatchNode: Node <{}> stream closed", name);
-                watch_registry.unregister(&name).await;
-            }
-        });
+                tracing::info!("Node <{}> stream closed, draining", name);
 
-        // Spawn a task to forward notifications to the client
-        tokio::spawn(async move {
-            while let Some(response) = notify_rx.recv().await {
-                if tx_for_notify.send(Ok(response)).await.is_err() {
-                    break;
+                if let Err(e) = controller.drain_node(&name).await {
+                    tracing::warn!("Failed to drain node <{}>: {}", name, e);
                 }
             }
         });

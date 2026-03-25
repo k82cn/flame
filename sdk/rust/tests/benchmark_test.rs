@@ -15,6 +15,9 @@ limitations under the License.
 //!
 //! This test creates 10 concurrent sessions, each running 1000 tasks,
 //! for a total of 10,000 tasks. The benchmark must complete within 10 minutes.
+//!
+//! This test is ignored by default as it requires a running Flame server.
+//! Run with: cargo test --test benchmark_test -- --ignored
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -116,6 +119,7 @@ async fn run_session(
 }
 
 #[tokio::test]
+#[ignore] // Requires a running Flame server
 async fn benchmark_multi_session_throughput() -> Result<(), FlameError> {
     tracing_subscriber::fmt::try_init().ok();
 
