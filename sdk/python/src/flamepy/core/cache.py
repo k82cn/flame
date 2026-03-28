@@ -23,7 +23,7 @@ import cloudpickle
 import pyarrow as pa
 import pyarrow.flight as flight
 
-from flamepy.core.types import FlameContext
+from flamepy.core.types import FlameClientCache, FlameContext
 
 Deserializer = Callable[[Any, List[Any]], Any]
 
@@ -177,8 +177,12 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
         # Legacy format - just endpoint string
         cache_endpoint = cache_config
         cache_storage = None
+    elif isinstance(cache_config, FlameClientCache):
+        # New format - FlameClientCache dataclass
+        cache_endpoint = cache_config.endpoint
+        cache_storage = cache_config.storage
     else:
-        # New format - dict with endpoint and optional storage
+        # Dict format (for backward compatibility)
         cache_endpoint = cache_config.get("endpoint")
         cache_storage = cache_config.get("storage")
 
