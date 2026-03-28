@@ -24,13 +24,14 @@ use futures::future::try_join_all;
 use stdng::new_ptr;
 
 use flame::{
-    apis::{FlameError, SessionState, TaskState},
+    apis::{FlameClientTls, FlameError, SessionState, TaskState},
     client::{SessionAttributes, Task, TaskInformer},
 };
 use flame_rs as flame;
 
-const FLAME_ADDR: &str = "http://127.0.0.1:8080";
+const FLAME_ADDR: &str = "https://127.0.0.1:8080";
 const FLAME_APP: &str = "flmping";
+const CA_CERT_PATH: &str = "ci/certs/ca.crt";
 
 const NUM_SESSIONS: usize = 10;
 const TASKS_PER_SESSION: usize = 1000;
@@ -127,7 +128,10 @@ async fn benchmark_multi_session_throughput() -> Result<(), FlameError> {
     println!("============================================================\n");
 
     let metrics = Arc::new(BenchmarkMetrics::new());
-    let conn = flame::client::connect(FLAME_ADDR).await?;
+    let tls_config = FlameClientTls {
+        ca_file: Some(CA_CERT_PATH.to_string()),
+    };
+    let conn = flame::client::connect_with_tls(FLAME_ADDR, Some(&tls_config)).await?;
 
     let start = Instant::now();
 

@@ -24,13 +24,22 @@ use stdng::{lock_ptr, new_ptr};
 use flame_rs as flame;
 
 use flame::{
-    apis::{FlameError, SessionState, TaskState},
+    apis::{FlameClientTls, FlameError, SessionState, TaskState},
     client::{ApplicationAttributes, ApplicationSchema, SessionAttributes, Task, TaskInformer},
 };
 
-const FLAME_DEFAULT_ADDR: &str = "http://127.0.0.1:8080";
+const FLAME_DEFAULT_ADDR: &str = "https://127.0.0.1:8080";
+const CA_CERT_PATH: &str = "ci/certs/ca.crt";
 
 const FLAME_DEFAULT_APP: &str = "flmping";
+
+/// Helper function to get a TLS-enabled connection
+async fn get_connection() -> Result<flame::client::Connection, FlameError> {
+    let tls_config = FlameClientTls {
+        ca_file: Some(CA_CERT_PATH.to_string()),
+    };
+    flame::client::connect_with_tls(FLAME_DEFAULT_ADDR, Some(&tls_config)).await
+}
 
 pub struct DefaultTaskInformer {
     pub succeed: i32,
@@ -56,7 +65,7 @@ impl TaskInformer for DefaultTaskInformer {
 
 #[tokio::test]
 async fn test_create_session() -> Result<(), FlameError> {
-    let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
+    let conn = get_connection().await?;
 
     let ssn_attr = SessionAttributes {
         id: String::from("ssn-1-test-create-session"),
@@ -77,7 +86,7 @@ async fn test_create_session() -> Result<(), FlameError> {
 
 #[tokio::test]
 async fn test_create_multiple_sessions() -> Result<(), FlameError> {
-    let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
+    let conn = get_connection().await?;
 
     let ssn_num = 10;
 
@@ -102,7 +111,7 @@ async fn test_create_multiple_sessions() -> Result<(), FlameError> {
 
 #[tokio::test]
 async fn test_create_session_with_tasks() -> Result<(), FlameError> {
-    let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
+    let conn = get_connection().await?;
 
     let ssn_attr = SessionAttributes {
         id: String::from("ssn-1-test-create-session-with-tasks"),
@@ -162,7 +171,7 @@ async fn test_create_session_with_tasks() -> Result<(), FlameError> {
 
 #[tokio::test]
 async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
-    let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
+    let conn = get_connection().await?;
 
     let ssn_1_attr = SessionAttributes {
         id: String::from("ssn-1-test-create-multiple-sessions-with-tasks"),
@@ -220,7 +229,7 @@ async fn test_create_multiple_sessions_with_tasks() -> Result<(), FlameError> {
 
 #[tokio::test]
 async fn test_application_lifecycle() -> Result<(), FlameError> {
-    let conn = flame::client::connect(FLAME_DEFAULT_ADDR).await?;
+    let conn = get_connection().await?;
 
     let string_schema = json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
