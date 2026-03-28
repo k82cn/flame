@@ -426,27 +426,8 @@ impl TryFrom<FlameTlsYaml> for FlameTls {
             .key_file
             .ok_or_else(|| FlameError::InvalidConfig("tls.key_file is required".to_string()))?;
 
-        // Validate files exist at startup
-        if !Path::new(&cert_file).is_file() {
-            return Err(FlameError::InvalidConfig(format!(
-                "tls.cert_file <{}> does not exist",
-                cert_file
-            )));
-        }
-        if !Path::new(&key_file).is_file() {
-            return Err(FlameError::InvalidConfig(format!(
-                "tls.key_file <{}> does not exist",
-                key_file
-            )));
-        }
-        if let Some(ref ca) = yaml.ca_file {
-            if !Path::new(ca).is_file() {
-                return Err(FlameError::InvalidConfig(format!(
-                    "tls.ca_file <{}> does not exist",
-                    ca
-                )));
-            }
-        }
+        // Note: File existence is validated when loading certificates in server_tls_config()
+        // and client_tls_config() methods, which provide more descriptive error messages.
 
         Ok(FlameTls {
             cert_file,

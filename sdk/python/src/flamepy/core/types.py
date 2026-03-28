@@ -240,11 +240,15 @@ class FlameClientTls:
 
     Attributes:
         ca_file: Path to CA certificate for server verification.
-        insecure_skip_verify: Skip server certificate verification (development only!).
+                 For self-signed certificates, this must point to the CA
+                 certificate that signed the server certificate.
+
+    Note:
+        To disable TLS for development, use http:// instead of https://
+        in the endpoint URL.
     """
 
     ca_file: Optional[str] = None
-    insecure_skip_verify: bool = False
 
 
 @dataclass
@@ -330,7 +334,6 @@ class FlameContext:
                         if cluster_tls is not None:
                             self._cluster_tls = FlameClientTls(
                                 ca_file=cluster_tls.get("ca_file"),
-                                insecure_skip_verify=cluster_tls.get("insecure_skip_verify", False),
                             )
 
                         # Parse cache configuration
@@ -340,7 +343,6 @@ class FlameContext:
                             if cache_tls is not None:
                                 self._cache_tls = FlameClientTls(
                                     ca_file=cache_tls.get("ca_file"),
-                                    insecure_skip_verify=cache_tls.get("insecure_skip_verify", False),
                                 )
                             self._cache = FlameClientCache(
                                 endpoint=cache_config.get("endpoint"),
@@ -371,14 +373,6 @@ class FlameContext:
         endpoint = os.getenv("FLAME_ENDPOINT")
         if endpoint is not None:
             self._endpoint = endpoint
-
-        # Environment variable for insecure mode
-        tls_insecure = os.getenv("FLAME_TLS_INSECURE")
-        if tls_insecure is not None and tls_insecure.lower() == "true":
-            if self._cluster_tls is None:
-                self._cluster_tls = FlameClientTls(insecure_skip_verify=True)
-            else:
-                self._cluster_tls.insecure_skip_verify = True
 
         cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
         if cache_endpoint is not None:

@@ -74,7 +74,7 @@ cache:
   storage: "/var/lib/flame/cache"
   
   # TLS Configuration for Object Cache (optional - independent from Session Manager)
-  # If omitted but endpoint uses grpcs://, inherits from cluster.tls config
+  # Required if endpoint uses grpcs://
   tls:
     cert_file: "/etc/flame/certs/object-cache.crt"
     key_file: "/etc/flame/certs/object-cache.key"
@@ -134,7 +134,7 @@ cache:
 
 **Client Configuration:**
 
-Clients (SDK, CLI tools) configure TLS via their connection settings. Client-side config uses a context-based structure with an additional `insecure_skip_verify` option for development:
+Clients (SDK, CLI tools) configure TLS via their connection settings. Client-side config uses a context-based structure:
 
 ```yaml
 # Client configuration (~/.flame/flame.yaml)
@@ -147,15 +147,14 @@ contexts:
         # CA certificate for server verification (optional)
         # If not specified, system CA bundle is used
         ca_file: "/etc/flame/certs/ca.crt"
-        
-        # Skip server certificate verification (NOT recommended for production)
-        insecure_skip_verify: false
     cache:
       endpoint: "grpcs://flame-object-cache:9090"
       tls:
         # Separate CA for cache if using different certificate chain
         ca_file: "/etc/flame/certs/cache-ca.crt"
 ```
+
+> **Note:** To disable TLS for development, use `http://` instead of `https://` in the endpoint URL.
 
 ```rust
 // sdk/rust/src/apis/ctx.rs
@@ -166,9 +165,6 @@ pub struct FlameClientTls {
     /// Path to CA certificate for server verification
     #[serde(default)]
     pub ca_file: Option<String>,
-    /// Skip server certificate verification (development only!)
-    #[serde(default)]
-    pub insecure_skip_verify: bool,
 }
 
 impl FlameClientTls {
@@ -213,7 +209,6 @@ flmctl --config ~/.flame/flame.yaml list session
 | `FLAME_TLS_CERT_FILE` | Override `tls.cert_file`                                 | Not implemented |
 | `FLAME_TLS_KEY_FILE`  | Override `tls.key_file`                                  | Not implemented |
 | `FLAME_TLS_CA_FILE`   | Override `tls.ca_file`                                   | Not implemented |
-| `FLAME_TLS_INSECURE`  | Set to `true` to skip server verification (clients only) | Not implemented |
 
 **Certificate Trust Model:**
 
@@ -606,24 +601,8 @@ impl TryFrom<FlameTlsYaml> for FlameTls {
             FlameError::InvalidConfig("tls.key_file is required".to_string())
         )?;
         
-        // Validate files exist at startup
-        if !Path::new(&cert_file).is_file() {
-            return Err(FlameError::InvalidConfig(
-                format!("tls.cert_file <{}> does not exist", cert_file)
-            ));
-        }
-        if !Path::new(&key_file).is_file() {
-            return Err(FlameError::InvalidConfig(
-                format!("tls.key_file <{}> does not exist", key_file)
-            ));
-        }
-        if let Some(ref ca) = yaml.ca_file {
-            if !Path::new(ca).is_file() {
-                return Err(FlameError::InvalidConfig(
-                    format!("tls.ca_file <{}> does not exist", ca)
-                ));
-            }
-        }
+        // Note: File existence is validated when loading certificates in server_tls_config()
+        // and client_tls_config() methods, which provide more descriptive error messages.
         
         Ok(FlameTls {
             cert_file,

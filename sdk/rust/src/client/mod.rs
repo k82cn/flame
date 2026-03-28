@@ -76,17 +76,7 @@ pub async fn connect_with_tls(
             .ok_or_else(|| FlameError::InvalidConfig(format!("no host in URL <{}>", addr)))?;
 
         let client_tls_config = if let Some(tls) = tls_config {
-            // Check for insecure_skip_verify - if true, we skip TLS entirely (for dev only)
-            if tls.insecure_skip_verify {
-                tracing::warn!(
-                    "TLS certificate verification disabled for {} - NOT RECOMMENDED FOR PRODUCTION",
-                    addr
-                );
-                // Use default TLS config without custom CA (accepts any cert)
-                tonic::transport::ClientTlsConfig::new().domain_name(domain)
-            } else {
-                tls.client_tls_config(domain)?
-            }
+            tls.client_tls_config(domain)?
         } else {
             // Use default TLS config (system CA bundle)
             tonic::transport::ClientTlsConfig::new().domain_name(domain)

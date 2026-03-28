@@ -47,23 +47,23 @@ done
 
 # Generate CA private key
 echo "→ Generating CA private key..."
-openssl genrsa -out "$OUTPUT_DIR/ca.key" 4096 2>/dev/null
+openssl genrsa -out "$OUTPUT_DIR/ca.key" 4096
 
 # Generate CA certificate
 echo "→ Generating CA certificate..."
 openssl req -new -x509 -days $VALID_DAYS -key "$OUTPUT_DIR/ca.key" \
     -out "$OUTPUT_DIR/ca.crt" \
-    -subj "/CN=Flame CA/O=Flame" 2>/dev/null
+    -subj "/CN=Flame CA/O=Flame"
 
 # Generate server private key
 echo "→ Generating server private key..."
-openssl genrsa -out "$OUTPUT_DIR/server.key" 4096 2>/dev/null
+openssl genrsa -out "$OUTPUT_DIR/server.key" 4096
 
 # Generate server CSR
 echo "→ Generating server CSR..."
 openssl req -new -key "$OUTPUT_DIR/server.key" \
     -out "$OUTPUT_DIR/server.csr" \
-    -subj "/CN=flame-server/O=Flame" 2>/dev/null
+    -subj "/CN=flame-server/O=Flame"
 
 # Create extensions file for SAN
 cat > "$OUTPUT_DIR/server.ext" << EOF
@@ -79,7 +79,7 @@ echo "→ Signing server certificate with CA..."
 openssl x509 -req -in "$OUTPUT_DIR/server.csr" \
     -CA "$OUTPUT_DIR/ca.crt" -CAkey "$OUTPUT_DIR/ca.key" \
     -CAcreateserial -out "$OUTPUT_DIR/server.crt" \
-    -days $VALID_DAYS -extfile "$OUTPUT_DIR/server.ext" 2>/dev/null
+    -days $VALID_DAYS -extfile "$OUTPUT_DIR/server.ext"
 
 # Clean up temporary files
 rm -f "$OUTPUT_DIR/server.csr" "$OUTPUT_DIR/server.ext" "$OUTPUT_DIR/ca.srl"
@@ -95,4 +95,4 @@ echo "  - server.crt  (Server certificate)"
 echo "  - server.key  (Server private key)"
 echo ""
 echo "Server certificate SANs:"
-openssl x509 -in "$OUTPUT_DIR/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -v "X509v3" || echo "  $SAN_LIST"
+openssl x509 -in "$OUTPUT_DIR/server.crt" -noout -ext subjectAltName | grep -v "X509v3" || echo "  $SAN_LIST"

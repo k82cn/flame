@@ -197,15 +197,7 @@ class Connection:
 
             if use_tls:
                 # Create secure channel with TLS
-                if tls_config is not None and tls_config.insecure_skip_verify:
-                    # Skip certificate verification (development only!)
-                    logger.warning(
-                        "TLS certificate verification disabled for %s - NOT RECOMMENDED FOR PRODUCTION",
-                        addr,
-                    )
-                    # Use default credentials without verification
-                    credentials = grpc.ssl_channel_credentials()
-                elif tls_config is not None and tls_config.ca_file:
+                if tls_config is not None and tls_config.ca_file:
                     # Use custom CA certificate
                     with open(tls_config.ca_file, "rb") as f:
                         root_certs = f.read()

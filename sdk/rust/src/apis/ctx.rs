@@ -22,14 +22,14 @@ use crate::apis::FlameError;
 const DEFAULT_FLAME_CONF: &str = "flame.yaml";
 
 /// Client TLS configuration for connecting to Flame services.
+///
+/// Note: To disable TLS for development, use http:// instead of https://
+/// in the endpoint URL.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FlameClientTls {
     /// Path to CA certificate for server verification
     #[serde(default)]
     pub ca_file: Option<String>,
-    /// Skip server certificate verification (development only!)
-    #[serde(default)]
-    pub insecure_skip_verify: bool,
 }
 
 impl FlameClientTls {
