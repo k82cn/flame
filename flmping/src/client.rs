@@ -73,9 +73,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => None,
     };
 
-    let current_cluster = ctx.get_current_cluster()?;
+    let current_ctx = ctx.get_current_context()?;
 
-    let conn = flame::client::connect(&current_cluster.endpoint).await?;
+    let conn = flame::client::connect_with_tls(
+        &current_ctx.cluster.endpoint,
+        current_ctx.cluster.tls.as_ref(),
+    )
+    .await?;
 
     let ssn_creation_start_time = Instant::now();
     let ssn_attr = SessionAttributes {

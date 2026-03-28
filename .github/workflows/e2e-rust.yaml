@@ -18,6 +18,10 @@ jobs:
         uses: docker/setup-compose-action@v1
         with:
           version: latest
+      - name: Generate TLS certificates
+        run: |
+          chmod +x ci/generate-certs.sh
+          ci/generate-certs.sh ci/certs "flame-session-manager,flame-executor-manager,localhost,127.0.0.1"
       - name: Start Flame
         run: |
           docker compose up --build --force-recreate -d

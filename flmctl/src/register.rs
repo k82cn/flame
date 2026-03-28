@@ -29,8 +29,12 @@ pub async fn run(ctx: &FlameContext, path: &String) -> Result<(), FlameError> {
     let contents =
         fs::read_to_string(path.clone()).map_err(|e| FlameError::Internal(e.to_string()))?;
 
-    let current_cluster = ctx.get_current_cluster()?;
-    let conn = flame::client::connect(&current_cluster.endpoint).await?;
+    let current_ctx = ctx.get_current_context()?;
+    let conn = flame::client::connect_with_tls(
+        &current_ctx.cluster.endpoint,
+        current_ctx.cluster.tls.as_ref(),
+    )
+    .await?;
 
     let documents: Vec<&str> = contents
         .split("\n---\n")

@@ -23,6 +23,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 use tonic::Request;
+use url::Url;
 
 use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
@@ -33,6 +34,7 @@ use self::rpc::{
     UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame as rpc;
+use crate::apis::FlameClientTls;
 use crate::apis::{
     ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,
     SessionState, Shim, TaskID, TaskInput, TaskOutput, TaskState,
@@ -40,14 +42,65 @@ use crate::apis::{
 
 type FlameClient = FlameFrontendClient<Channel>;
 
+/// Connect to a Flame service without TLS (plaintext).
+///
+/// Use `connect_with_tls` for TLS-enabled connections.
 pub async fn connect(addr: &str) -> Result<Connection, FlameError> {
-    let endpoint = Endpoint::from_shared(addr.to_string())
+    connect_with_tls(addr, None).await
+}
+
+/// Connect to a Flame service with optional TLS configuration.
+///
+/// # Arguments
+/// * `addr` - The endpoint URL (use https:// for TLS, http:// for plaintext)
+/// * `tls_config` - Optional TLS configuration for secure connections
+///
+/// # TLS Behavior
+/// - If `addr` starts with `https://` and `tls_config` is `Some`, use provided TLS config
+/// - If `addr` starts with `https://` and `tls_config` is `None`, use default TLS config (system CA)
+/// - If `addr` starts with `http://`, TLS is not used regardless of `tls_config`
+pub async fn connect_with_tls(
+    addr: &str,
+    tls_config: Option<&FlameClientTls>,
+) -> Result<Connection, FlameError> {
+    let mut channel_builder = Endpoint::from_shared(addr.to_string())
         .map_err(|_| FlameError::InvalidConfig(format!("invalid address <{addr}>")))?;
 
-    let channel = endpoint
-        .connect()
-        .await
-        .map_err(|_| FlameError::InvalidConfig(format!("failed to connect to <{addr}>")))?;
+    // Apply TLS if endpoint uses https://
+    if addr.starts_with("https://") {
+        // Extract domain name from URL for TLS verification
+        let url = Url::parse(addr)
+            .map_err(|e| FlameError::InvalidConfig(format!("invalid URL <{}>: {}", addr, e)))?;
+        let domain = url
+            .host_str()
+            .ok_or_else(|| FlameError::InvalidConfig(format!("no host in URL <{}>", addr)))?;
+
+        let client_tls_config = if let Some(tls) = tls_config {
+            // Check for insecure_skip_verify - if true, we skip TLS entirely (for dev only)
+            if tls.insecure_skip_verify {
+                tracing::warn!(
+                    "TLS certificate verification disabled for {} - NOT RECOMMENDED FOR PRODUCTION",
+                    addr
+                );
+                // Use default TLS config without custom CA (accepts any cert)
+                tonic::transport::ClientTlsConfig::new().domain_name(domain)
+            } else {
+                tls.client_tls_config(domain)?
+            }
+        } else {
+            // Use default TLS config (system CA bundle)
+            tonic::transport::ClientTlsConfig::new().domain_name(domain)
+        };
+
+        channel_builder = channel_builder.tls_config(client_tls_config).map_err(|e| {
+            FlameError::InvalidConfig(format!("TLS config error for <{}>: {}", addr, e))
+        })?;
+        tracing::debug!("TLS enabled for connection to {}", addr);
+    }
+
+    let channel = channel_builder.connect().await.map_err(|e| {
+        FlameError::InvalidConfig(format!("failed to connect to <{}>: {}", addr, e))
+    })?;
 
     Ok(Connection { channel })
 }

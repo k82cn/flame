@@ -76,7 +76,7 @@ impl ExecutorManager {
 
         tracing::info!(
             "Starting executor manager in streaming mode with shim <{:?}>",
-            self.ctx.executors.shim
+            self.ctx.cluster.executors.shim
         );
 
         // Process executor messages from the stream
@@ -123,11 +123,11 @@ impl ExecutorManager {
                 "Creating executor <{}> (state={:?}, shim={:?})",
                 executor_id,
                 state,
-                self.ctx.executors.shim
+                self.ctx.cluster.executors.shim
             );
             executor.context = Some(self.ctx.clone());
             // Set the shim from the executor-manager's configuration
-            executor.shim = self.ctx.executors.shim;
+            executor.shim = self.ctx.cluster.executors.shim;
 
             let executor_ptr = Arc::new(Mutex::new(executor));
             executors.insert(executor_id.clone(), executor_ptr.clone());

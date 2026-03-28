@@ -176,7 +176,7 @@ pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<ShimPt
     let shim_type = executor
         .context
         .as_ref()
-        .map(|ctx| ctx.executors.shim)
+        .map(|ctx| ctx.cluster.executors.shim)
         .unwrap_or(ShimType::Host);
 
     tracing::info!(

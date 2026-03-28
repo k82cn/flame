@@ -1386,6 +1386,10 @@ impl FlightService for FlightCacheServer {
     }
 }
 
+/// Run the object cache server.
+///
+/// # Arguments
+/// * `cache_config` - Cache configuration (includes optional TLS config)
 pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
     let endpoint = CacheEndpoint::try_from(cache_config)?;
     let address_str = format!("{}:{}", endpoint.host, endpoint.port);
@@ -1433,7 +1437,25 @@ pub async fn run(cache_config: &FlameCache) -> Result<(), FlameError> {
         .parse()
         .map_err(|e| FlameError::InvalidConfig(format!("Invalid address: {}", e)))?;
 
-    tonic::transport::Server::builder()
+    let mut builder = tonic::transport::Server::builder();
+
+    // Apply TLS if cache endpoint requires it (grpcs:// scheme) and TLS is configured
+    if cache_config.requires_tls() {
+        let tls_config = cache_config.tls.as_ref().ok_or_else(|| {
+            FlameError::InvalidConfig(
+                "cache endpoint uses grpcs:// but cache.tls is not configured".to_string(),
+            )
+        })?;
+
+        let tls = tls_config.server_tls_config()?;
+        builder = builder
+            .tls_config(tls)
+            .map_err(|e| FlameError::InvalidConfig(format!("TLS config error: {}", e)))?;
+
+        tracing::info!("TLS enabled for object cache");
+    }
+
+    builder
         .add_service(FlightServiceServer::new(server))
         .serve(addr)
         .await

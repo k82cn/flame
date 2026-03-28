@@ -11,6 +11,7 @@ services:
       - RUST_LOG=info
     volumes:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
+      - ./ci/certs:/etc/flame/certs:ro
       - ./logs:/usr/local/flame/logs
     ports:
       - 8080:8080
@@ -35,6 +36,7 @@ services:
         window: 120s
     volumes:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
+      - ./ci/certs:/etc/flame/certs:ro
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
       - flame-work:/usr/local/flame/work
@@ -55,6 +57,7 @@ services:
       - RUST_LOG=info
     volumes:
       - ./ci/flame.yaml:/root/.flame/flame.yaml
+      - ./ci/certs:/etc/flame/certs:ro
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
     depends_on:

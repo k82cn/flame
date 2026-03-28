@@ -124,10 +124,11 @@ mod tests {
                 slot: ResourceRequirement::default(),
                 policy: "fifo".to_string(),
                 schedule_interval: 1000,
-            },
-            executors: FlameExecutors {
-                shim: Shim::default(),
-                limits: FlameExecutorLimits { max_executors: 10 },
+                executors: FlameExecutors {
+                    shim: Shim::default(),
+                    limits: FlameExecutorLimits { max_executors: 10 },
+                },
+                tls: None,
             },
             cache: None,
         };

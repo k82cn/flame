@@ -1,20 +1,28 @@
 ---
 cluster:
   name: flame
-  endpoint: "http://flame-session-manager:8080"
+  endpoint: "https://flame-session-manager:8080"
   slot: "cpu=1,mem=1g"
   policy: priority
   storage: fs://data/
   schedule_interval: 500           # Scheduler loop interval in milliseconds (default: 500)
-executors:
-  shim: host
-  limits:
-    max_executors: 10
+  executors:
+    shim: host
+    limits:
+      max_executors: 10
+  # TLS Configuration for Session Manager
+  tls:
+    cert_file: "/etc/flame/certs/server.crt"
+    key_file: "/etc/flame/certs/server.key"
 cache:
-  endpoint: "grpc://flame-executor-manager:9090"
+  endpoint: "grpcs://flame-executor-manager:9090"
   network_interface: "eth0"
   storage: "/var/lib/flame/cache"
   eviction:
     policy: "lru"
     max_memory: "512M"
     max_objects: 10000
+  # TLS Configuration for Object Cache
+  tls:
+    cert_file: "/etc/flame/certs/server.crt"
+    key_file: "/etc/flame/certs/server.key"
