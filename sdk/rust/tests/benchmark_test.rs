@@ -31,7 +31,7 @@ use flame_rs as flame;
 
 const FLAME_ADDR: &str = "https://127.0.0.1:8080";
 const FLAME_APP: &str = "flmping";
-const CA_CERT_PATH: &str = "ci/certs/ca.crt";
+const CA_CERT_PATH: &str = "../../ci/certs/ca.crt";
 
 const NUM_SESSIONS: usize = 10;
 const TASKS_PER_SESSION: usize = 1000;

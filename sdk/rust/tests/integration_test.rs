@@ -29,7 +29,7 @@ use flame::{
 };
 
 const FLAME_DEFAULT_ADDR: &str = "https://127.0.0.1:8080";
-const CA_CERT_PATH: &str = "ci/certs/ca.crt";
+const CA_CERT_PATH: &str = "../../ci/certs/ca.crt";
 
 const FLAME_DEFAULT_APP: &str = "flmping";
 
