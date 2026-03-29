@@ -96,17 +96,24 @@ def _get_flight_client(endpoint: str, tls_config: Optional[FlameClientTls] = Non
     """Create a Flight client from endpoint URL.
 
     Args:
-        endpoint: Cache endpoint (e.g., "grpc://127.0.0.1:9090" or "grpcs://127.0.0.1:9090")
+        endpoint: Cache endpoint. Supported schemes:
+            - grpc:// - plaintext connection
+            - grpcs:// - TLS connection (converted to grpc+tls://)
+            - grpc+tls:// - TLS connection (native PyArrow Flight format)
         tls_config: Optional TLS configuration with CA certificate path
 
     Returns:
         FlightClient instance
     """
-    # Check if TLS is required (grpcs:// scheme)
+    # Normalize endpoint scheme for PyArrow Flight
+    # grpcs:// is our config format, grpc+tls:// is PyArrow's format
     if endpoint.startswith("grpcs://"):
-        # Convert grpcs:// to grpc+tls:// for PyArrow Flight
         location = endpoint.replace("grpcs://", "grpc+tls://")
+    else:
+        location = endpoint
 
+    # Check if TLS is required
+    if location.startswith("grpc+tls://"):
         # Load TLS certificates if provided
         if tls_config and tls_config.ca_file:
             with open(tls_config.ca_file, "rb") as f:
@@ -117,7 +124,7 @@ def _get_flight_client(endpoint: str, tls_config: Optional[FlameClientTls] = Non
             return flight.FlightClient(location)
     else:
         # Non-TLS connection
-        return flight.FlightClient(endpoint)
+        return flight.FlightClient(location)
 
 
 def _do_put_remote(client: flight.FlightClient, descriptor: flight.FlightDescriptor, batch: pa.RecordBatch) -> "ObjectRef":
@@ -168,6 +175,10 @@ def _do_put_remote(client: flight.FlightClient, descriptor: flight.FlightDescrip
 
 def _get_cache_tls_config() -> Optional[FlameClientTls]:
     """Get TLS configuration for cache from FlameContext.
+
+    FlameContext automatically handles:
+    1. Loading from ~/.flame/flame.yaml if it exists
+    2. Building from environment variables (FLAME_CA_FILE, etc.) if no config file
 
     Returns:
         FlameClientTls if configured, None otherwise

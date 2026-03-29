@@ -370,25 +370,24 @@ class FlameContext:
                 else:
                     raise FlameError(FlameErrorCode.INVALID_CONFIG, f"context <{current_context}> not found")
 
-        endpoint = os.getenv("FLAME_ENDPOINT")
-        if endpoint is not None:
-            self._endpoint = endpoint
+        # Apply environment variable overrides (these take precedence over config file)
+        # This also allows building context entirely from env vars when no config file exists
+        self._apply_env_overrides()
 
-        cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
-        if cache_endpoint is not None:
-            if self._cache is None:
-                self._cache = FlameClientCache(endpoint=cache_endpoint)
-            else:
-                self._cache.endpoint = cache_endpoint
+    def _apply_env_overrides(self):
+        """Apply environment variable overrides to the context.
 
-        cache_storage = os.getenv("FLAME_CACHE_STORAGE")
-        if cache_storage is not None:
-            if self._cache is None:
-                self._cache = FlameClientCache(storage=cache_storage)
-            else:
-                self._cache.storage = cache_storage
+        This method handles:
+        1. Overriding config file values with env vars
+        2. Building context entirely from env vars when no config file exists
 
-        # Handle FLAME_CA_FILE environment variable for TLS
+        Environment variables:
+        - FLAME_ENDPOINT: Cluster endpoint URL
+        - FLAME_CACHE_ENDPOINT: Cache endpoint URL
+        - FLAME_CACHE_STORAGE: Cache storage path
+        - FLAME_CA_FILE: CA certificate file for TLS (applies to both cluster and cache)
+        """
+        # Handle FLAME_CA_FILE first so TLS config is ready for cache
         ca_file = os.getenv("FLAME_CA_FILE")
         if ca_file is not None:
             # Set CA file for cluster TLS
@@ -401,9 +400,34 @@ class FlameContext:
                 self._cache_tls = FlameClientTls(ca_file=ca_file)
             elif self._cache_tls.ca_file is None:
                 self._cache_tls.ca_file = ca_file
-            # Update cache config with TLS
-            if self._cache is not None and self._cache.tls is None:
-                self._cache.tls = self._cache_tls
+
+        # Override/set endpoint
+        endpoint = os.getenv("FLAME_ENDPOINT")
+        if endpoint is not None:
+            self._endpoint = endpoint
+
+        # Override/set cache endpoint
+        cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
+        if cache_endpoint is not None:
+            if self._cache is None:
+                self._cache = FlameClientCache(endpoint=cache_endpoint, tls=self._cache_tls)
+            else:
+                self._cache.endpoint = cache_endpoint
+                # Ensure TLS is set if we have it
+                if self._cache.tls is None and self._cache_tls is not None:
+                    self._cache.tls = self._cache_tls
+
+        # Override/set cache storage
+        cache_storage = os.getenv("FLAME_CACHE_STORAGE")
+        if cache_storage is not None:
+            if self._cache is None:
+                self._cache = FlameClientCache(storage=cache_storage, tls=self._cache_tls)
+            else:
+                self._cache.storage = cache_storage
+
+        # Ensure cache has TLS config if we have one and cache exists
+        if self._cache is not None and self._cache.tls is None and self._cache_tls is not None:
+            self._cache.tls = self._cache_tls
 
     @property
     def endpoint(self) -> str:

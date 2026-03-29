@@ -139,8 +139,15 @@ pub struct CacheEndpoint {
 }
 
 impl CacheEndpoint {
+    /// Convert to URI string for clients.
+    /// Converts internal scheme names to client-compatible formats:
+    /// - grpcs -> grpc+tls (for PyArrow Flight compatibility)
     fn to_uri(&self) -> String {
-        format!("{}://{}:{}", self.scheme, self.host, self.port)
+        let client_scheme = match self.scheme.as_str() {
+            "grpcs" => "grpc+tls",
+            other => other,
+        };
+        format!("{}://{}:{}", client_scheme, self.host, self.port)
     }
 
     fn get_host(cache_config: &FlameCache) -> Result<String, FlameError> {

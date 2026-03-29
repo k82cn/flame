@@ -33,7 +33,7 @@ use crate::shims::grpc_shim::GrpcShim;
 use crate::shims::{ExecutorWorkDir, Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
 use common::{
-    FlameError, FLAME_CA_FILE, FLAME_CACHE_ENDPOINT, FLAME_ENDPOINT, FLAME_HOME,
+    FlameError, FLAME_CACHE_ENDPOINT, FLAME_CA_FILE, FLAME_ENDPOINT, FLAME_HOME,
     FLAME_INSTANCE_ENDPOINT, FLAME_LOG, FLAME_WORKING_DIRECTORY,
 };
 
