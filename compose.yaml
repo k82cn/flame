@@ -15,6 +15,8 @@ services:
       - ./logs:/usr/local/flame/logs
     ports:
       - 8080:8080
+    networks:
+      - flame-net
 
   flame-executor-manager:
     image: xflops/flame-executor-manager:latest
@@ -44,6 +46,8 @@ services:
       - ./logs:/usr/local/flame/logs
     expose:
       - "9090"
+    networks:
+      - flame-net
 
   flame-console:
     image: xflops/flame-console:latest
@@ -62,6 +66,8 @@ services:
       - ./e2e:/opt/e2e
     depends_on:
       - flame-package-storage
+    networks:
+      - flame-net
 
   flame-package-storage:
     image: sigoden/dufs:v0.43.0
@@ -73,6 +79,15 @@ services:
       - flame-packages:/data
     ports:
       - 5050:5000
+    networks:
+      - flame-net
+
+networks:
+  flame-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
 
 volumes:
   flame-packages:
