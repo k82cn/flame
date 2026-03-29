@@ -388,6 +388,23 @@ class FlameContext:
             else:
                 self._cache.storage = cache_storage
 
+        # Handle FLAME_CA_FILE environment variable for TLS
+        ca_file = os.getenv("FLAME_CA_FILE")
+        if ca_file is not None:
+            # Set CA file for cluster TLS
+            if self._cluster_tls is None:
+                self._cluster_tls = FlameClientTls(ca_file=ca_file)
+            elif self._cluster_tls.ca_file is None:
+                self._cluster_tls.ca_file = ca_file
+            # Set CA file for cache TLS
+            if self._cache_tls is None:
+                self._cache_tls = FlameClientTls(ca_file=ca_file)
+            elif self._cache_tls.ca_file is None:
+                self._cache_tls.ca_file = ca_file
+            # Update cache config with TLS
+            if self._cache is not None and self._cache.tls is None:
+                self._cache.tls = self._cache_tls
+
     @property
     def endpoint(self) -> str:
         """Get the Flame cluster endpoint."""

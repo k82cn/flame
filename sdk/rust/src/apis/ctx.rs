@@ -12,6 +12,7 @@ limitations under the License.
 */
 
 use serde_derive::{Deserialize, Serialize};
+use std::env;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
@@ -20,6 +21,9 @@ use tonic::transport::{Certificate, ClientTlsConfig};
 use crate::apis::FlameError;
 
 const DEFAULT_FLAME_CONF: &str = "flame.yaml";
+const FLAME_ENDPOINT: &str = "FLAME_ENDPOINT";
+const FLAME_CACHE_ENDPOINT: &str = "FLAME_CACHE_ENDPOINT";
+const FLAME_CA_FILE: &str = "FLAME_CA_FILE";
 
 /// Client TLS configuration for connecting to Flame services.
 ///
@@ -151,6 +155,118 @@ impl FlameContext {
             .ok_or(FlameError::InvalidConfig(format!(
                 "Context <{}> not found",
                 self.current_context
+            )))
+    }
+
+    /// Create a FlameContext from environment variables.
+    ///
+    /// This is useful for instances running inside executors where the
+    /// executor manager passes configuration via environment variables.
+    ///
+    /// Supported environment variables:
+    /// - FLAME_ENDPOINT: Cluster endpoint URL
+    /// - FLAME_CACHE_ENDPOINT: Cache endpoint URL  
+    /// - FLAME_CA_FILE: CA certificate file path for TLS
+    pub fn from_env() -> Result<Self, FlameError> {
+        let endpoint = env::var(FLAME_ENDPOINT).map_err(|_| {
+            FlameError::InvalidConfig(format!("{} environment variable not set", FLAME_ENDPOINT))
+        })?;
+
+        let ca_file = env::var(FLAME_CA_FILE).ok();
+        let tls = ca_file.map(|f| FlameClientTls { ca_file: Some(f) });
+
+        let cache_endpoint = env::var(FLAME_CACHE_ENDPOINT).ok();
+        let cache = cache_endpoint.map(|ep| FlameClientCache {
+            endpoint: Some(ep),
+            tls: tls.clone(),
+            storage: None,
+        });
+
+        let ctx = FlameContextEntry {
+            name: "env".to_string(),
+            cluster: FlameClusterConfig { endpoint, tls },
+            cache,
+            package: None,
+            runner: None,
+        };
+
+        Ok(FlameContext {
+            current_context: "env".to_string(),
+            contexts: vec![ctx],
+        })
+    }
+
+    /// Load FlameContext from file, then apply environment variable overrides.
+    ///
+    /// Environment variables take precedence over file configuration:
+    /// - FLAME_ENDPOINT: Overrides cluster endpoint
+    /// - FLAME_CACHE_ENDPOINT: Overrides cache endpoint
+    /// - FLAME_CA_FILE: Sets CA file if not already configured
+    pub fn from_file_with_env(fp: Option<String>) -> Result<Self, FlameError> {
+        let mut ctx = Self::from_file(fp)?;
+        ctx.apply_env_overrides();
+        Ok(ctx)
+    }
+
+    /// Apply environment variable overrides to the current context.
+    fn apply_env_overrides(&mut self) {
+        if let Ok(current) = self.get_current_context_mut() {
+            // Override endpoint if FLAME_ENDPOINT is set
+            if let Ok(endpoint) = env::var(FLAME_ENDPOINT) {
+                current.cluster.endpoint = endpoint;
+            }
+
+            // Override/set CA file if FLAME_CA_FILE is set
+            if let Ok(ca_file) = env::var(FLAME_CA_FILE) {
+                // Set for cluster TLS
+                if current.cluster.tls.is_none() {
+                    current.cluster.tls = Some(FlameClientTls {
+                        ca_file: Some(ca_file.clone()),
+                    });
+                } else if let Some(ref mut tls) = current.cluster.tls {
+                    if tls.ca_file.is_none() {
+                        tls.ca_file = Some(ca_file.clone());
+                    }
+                }
+
+                // Set for cache TLS
+                if let Some(ref mut cache) = current.cache {
+                    if cache.tls.is_none() {
+                        cache.tls = Some(FlameClientTls {
+                            ca_file: Some(ca_file.clone()),
+                        });
+                    } else if let Some(ref mut tls) = cache.tls {
+                        if tls.ca_file.is_none() {
+                            tls.ca_file = Some(ca_file);
+                        }
+                    }
+                }
+            }
+
+            // Override cache endpoint if FLAME_CACHE_ENDPOINT is set
+            if let Ok(cache_endpoint) = env::var(FLAME_CACHE_ENDPOINT) {
+                if let Some(ref mut cache) = current.cache {
+                    cache.endpoint = Some(cache_endpoint);
+                } else {
+                    current.cache = Some(FlameClientCache {
+                        endpoint: Some(cache_endpoint),
+                        tls: current.cluster.tls.clone(),
+                        storage: None,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Get mutable reference to the current context entry.
+    fn get_current_context_mut(&mut self) -> Result<&mut FlameContextEntry, FlameError> {
+        let current = self.current_context.clone();
+        self.contexts
+            .iter_mut()
+            .find(|c| c.name == current)
+            .ok_or(FlameError::InvalidConfig(format!(
+                "Context <{}> not found",
+                current
             )))
     }
 
