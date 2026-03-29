@@ -29,14 +29,22 @@ use flame::{
 };
 
 const FLAME_DEFAULT_ADDR: &str = "https://127.0.0.1:8080";
-const CA_CERT_PATH: &str = "../../ci/certs/ca.crt";
 
 const FLAME_DEFAULT_APP: &str = "flmping";
+
+fn get_ca_cert_path() -> String {
+    let root = std::env::var("FLAME_ROOT").unwrap_or_else(|_| {
+        // Fallback: use CARGO_MANIFEST_DIR and navigate up
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        format!("{}/../..", manifest_dir)
+    });
+    format!("{}/ci/certs/ca.crt", root)
+}
 
 /// Helper function to get a TLS-enabled connection
 async fn get_connection() -> Result<flame::client::Connection, FlameError> {
     let tls_config = FlameClientTls {
-        ca_file: Some(CA_CERT_PATH.to_string()),
+        ca_file: Some(get_ca_cert_path()),
     };
     flame::client::connect_with_tls(FLAME_DEFAULT_ADDR, Some(&tls_config)).await
 }

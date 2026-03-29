@@ -31,7 +31,15 @@ use flame_rs as flame;
 
 const FLAME_ADDR: &str = "https://127.0.0.1:8080";
 const FLAME_APP: &str = "flmping";
-const CA_CERT_PATH: &str = "../../ci/certs/ca.crt";
+
+fn get_ca_cert_path() -> String {
+    let root = std::env::var("FLAME_ROOT").unwrap_or_else(|_| {
+        // Fallback: use CARGO_MANIFEST_DIR and navigate up
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        format!("{}/../..", manifest_dir)
+    });
+    format!("{}/ci/certs/ca.crt", root)
+}
 
 const NUM_SESSIONS: usize = 10;
 const TASKS_PER_SESSION: usize = 1000;
@@ -129,7 +137,7 @@ async fn benchmark_multi_session_throughput() -> Result<(), FlameError> {
 
     let metrics = Arc::new(BenchmarkMetrics::new());
     let tls_config = FlameClientTls {
-        ca_file: Some(CA_CERT_PATH.to_string()),
+        ca_file: Some(get_ca_cert_path()),
     };
     let conn = flame::client::connect_with_tls(FLAME_ADDR, Some(&tls_config)).await?;
 

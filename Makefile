@@ -25,6 +25,7 @@ CONSOLE_DOCKERFILE = docker/Dockerfile.console
 # Installation configuration
 INSTALL_PREFIX ?= /tmp/flame-dev
 FLAME_ENDPOINT ?= http://127.0.0.1:8080
+FLAME_ROOT := $(CURDIR)
 
 # Default target
 .PHONY: help build build-release docker-build docker-push docker-release docker-clean update_protos init sdk-go-build sdk-go-test sdk-go-clean e2e e2e-py e2e-py-docker e2e-py-local e2e-local e2e-rs format format-rust format-python install install-dev uninstall uninstall-dev start-services stop-services
@@ -112,7 +113,7 @@ e2e-py-local: ## Run Python E2E tests against local cluster (requires flamepy in
 	cd e2e && PYTHONPATH="$(CURDIR)/e2e/src:$$PYTHONPATH" FLAME_ENDPOINT=$(FLAME_ENDPOINT) pytest -vv --durations=0 .
 
 e2e-rs: ## Run Rust E2E tests
-	cargo test --workspace --exclude cri-rs -- --nocapture
+	FLAME_ROOT=$(FLAME_ROOT) cargo test --workspace --exclude cri-rs -- --nocapture
 
 e2e: e2e-py-docker e2e-rs ## Run all E2E tests (Python and Rust) with docker compose
 
