@@ -33,8 +33,8 @@ use crate::shims::grpc_shim::GrpcShim;
 use crate::shims::{ExecutorWorkDir, Shim, ShimPtr};
 use common::apis::{ApplicationContext, SessionContext, TaskContext, TaskOutput, TaskResult};
 use common::{
-    FlameError, FLAME_CACHE_ENDPOINT, FLAME_ENDPOINT, FLAME_HOME, FLAME_INSTANCE_ENDPOINT,
-    FLAME_LOG, FLAME_WORKING_DIRECTORY,
+    FlameError, FLAME_CACHE_ENDPOINT, FLAME_CA_FILE, FLAME_ENDPOINT, FLAME_HOME,
+    FLAME_INSTANCE_ENDPOINT, FLAME_LOG, FLAME_WORKING_DIRECTORY,
 };
 
 struct HostInstance {
@@ -218,6 +218,12 @@ impl HostShim {
         if let Some(context) = &executor.context {
             // Pass session manager endpoint for recursive runner calls
             envs.insert(FLAME_ENDPOINT.to_string(), context.cluster.endpoint.clone());
+            // Pass CA file for TLS certificate verification
+            if let Some(ref tls) = context.cluster.tls {
+                if let Some(ref ca_file) = tls.ca_file {
+                    envs.insert(FLAME_CA_FILE.to_string(), ca_file.clone());
+                }
+            }
             if let Some(cache) = &context.cache {
                 envs.insert(FLAME_CACHE_ENDPOINT.to_string(), cache.endpoint.clone());
             }

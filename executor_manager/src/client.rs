@@ -56,11 +56,25 @@ impl BackendClient {
         );
 
         tracing::info!("Connecting to flame backend at {}", endpoint);
-        let channel = Channel::from_shared(endpoint.clone()).map_err(|e| {
+        let mut channel_builder = Channel::from_shared(endpoint.clone()).map_err(|e| {
             FlameError::Network(format!("Failed to create channel for <{endpoint}>: {e}"))
         })?;
 
-        let channel = channel
+        // Apply TLS if endpoint uses https://
+        if endpoint.starts_with("https://") {
+            let tls_config = if let Some(ref tls) = ctx.cluster.tls {
+                tls.client_tls_config()?
+            } else {
+                // Use default TLS config (system CA bundle)
+                tonic::transport::ClientTlsConfig::new()
+            };
+            channel_builder = channel_builder
+                .tls_config(tls_config)
+                .map_err(|e| FlameError::InvalidConfig(format!("TLS config error: {}", e)))?;
+            tracing::info!("TLS enabled for backend client");
+        }
+
+        let channel = channel_builder
             .connect()
             .await
             .map_err(|e| FlameError::Network(format!("Failed to connect to <{endpoint}>: {e}")))?;

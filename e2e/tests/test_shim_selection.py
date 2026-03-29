@@ -21,33 +21,13 @@ Test scenarios:
 1. Positive case: App with default shim (Host) matches executor with shim "Host"
 2. Negative case: App with shim "Wasm" fails to match executor with shim "Host"
 3. Default behavior: App without explicit shim defaults to "Host"
-
-Note: The Python SDK does not expose the shim field in ApplicationAttributes.
-The shim is configured at the backend level:
-- Applications default to Host shim when not specified
-- Executors get their shim from executor-manager configuration (flame-cluster.yaml)
-- The scheduler filters executors by shim compatibility
-
-To test the negative case (Wasm app on Host executor), we use gRPC directly
-to register an application with shim=Wasm.
 """
 
 import time
 import pytest
-import grpc
 import flamepy
 from e2e.api import TestRequest
 from e2e.helpers import invoke_task
-from flamepy.proto.frontend_pb2 import (
-    RegisterApplicationRequest,
-    UnregisterApplicationRequest,
-    CreateSessionRequest,
-    CloseSessionRequest,
-    GetSessionRequest,
-)
-from flamepy.proto.frontend_pb2_grpc import FrontendStub
-from flamepy.proto.types_pb2 import ApplicationSpec, SessionSpec, Shim
-from flamepy.core.types import FlameContext
 
 
 FLM_SHIM_TEST_APP = "flme2e-shim-test"
@@ -76,25 +56,6 @@ def setup_shim_test_app():
             flamepy.close_session(sess.id)
 
     flamepy.unregister_application(FLM_SHIM_TEST_APP)
-
-
-def get_grpc_stub():
-    """Get a gRPC stub for direct API access."""
-    ctx = FlameContext()
-    endpoint = ctx.endpoint
-    if endpoint.startswith("http://"):
-        endpoint = endpoint[7:]
-    elif endpoint.startswith("https://"):
-        endpoint = endpoint[8:]
-
-    if "/" in endpoint:
-        endpoint = endpoint.split("/")[0]
-
-    if ":" not in endpoint:
-        endpoint = f"{endpoint}:8080"
-
-    channel = grpc.insecure_channel(endpoint)
-    return FrontendStub(channel), channel
 
 
 class TestShimSelectionPositive:
@@ -131,51 +92,46 @@ class TestShimSelectionNegative:
 
         The session should remain in pending state because no compatible
         executor is available (the e2e environment only has Host executors).
-
-        This test uses gRPC directly to register an app with shim=Wasm
-        since the Python SDK doesn't expose the shim field.
         """
         app_name = "flmtest-shim-wasm"
-        stub, channel = get_grpc_stub()
 
         try:
-            app_spec = ApplicationSpec(
-                shim=Shim.Wasm,
-                command="/bin/echo",
-                arguments=["hello", "from", "wasm", "shim"],
-                description="Test app for Wasm shim selection",
+            # Register app with Wasm shim using flamepy SDK
+            flamepy.register_application(
+                app_name,
+                flamepy.ApplicationAttributes(
+                    shim=flamepy.Shim.WASM,
+                    command="/bin/echo",
+                    arguments=["hello", "from", "wasm", "shim"],
+                    description="Test app for Wasm shim selection",
+                ),
             )
 
-            request = RegisterApplicationRequest(name=app_name, application=app_spec)
-            stub.RegisterApplication(request)
+            # Create session for the Wasm app
+            session = flamepy.create_session(application=app_name)
 
-            session_id = f"test-wasm-session-{int(time.time())}"
-            session_spec = SessionSpec(
-                application=app_name,
-                slots=1,
-            )
-            create_request = CreateSessionRequest(session_id=session_id, session=session_spec)
-            response = stub.CreateSession(create_request)
+            try:
+                assert session is not None
+                assert session.id is not None
 
-            assert response.metadata.id == session_id
+                # Wait a bit for scheduler to attempt allocation
+                time.sleep(3)
 
-            time.sleep(3)
+                # Get session status - should still be OPEN (not allocated)
+                sessions = flamepy.list_sessions()
+                session_status = next((s for s in sessions if s.id == session.id), None)
 
-            get_request = GetSessionRequest(session_id=session_id)
-            session_status = stub.GetSession(get_request)
+                assert session_status is not None
+                assert session_status.state == flamepy.SessionState.OPEN
 
-            assert session_status.status.state == 0  # Open state
-
-            close_request = CloseSessionRequest(session_id=session_id)
-            stub.CloseSession(close_request)
+            finally:
+                session.close()
 
         finally:
             try:
-                unregister_request = UnregisterApplicationRequest(name=app_name)
-                stub.UnregisterApplication(unregister_request)
+                flamepy.unregister_application(app_name)
             except:
                 pass
-            channel.close()
 
     def test_wasm_app_task_stays_pending(self):
         """
@@ -185,39 +141,39 @@ class TestShimSelectionNegative:
         This verifies the scheduler correctly filters out incompatible executors.
         """
         app_name = "flmtest-shim-wasm-task"
-        stub, channel = get_grpc_stub()
 
         try:
-            app_spec = ApplicationSpec(
-                shim=Shim.Wasm,
-                command="/bin/echo",
-                arguments=["hello"],
-                description="Test app for Wasm shim task pending",
+            # Register app with Wasm shim using flamepy SDK
+            flamepy.register_application(
+                app_name,
+                flamepy.ApplicationAttributes(
+                    shim=flamepy.Shim.WASM,
+                    command="/bin/echo",
+                    arguments=["hello"],
+                    description="Test app for Wasm shim task pending",
+                ),
             )
-
-            request = RegisterApplicationRequest(name=app_name, application=app_spec)
-            stub.RegisterApplication(request)
 
             session = flamepy.create_session(application=app_name)
 
-            input_data = b"test input for wasm"
-            task = session.create_task(input_data)
+            try:
+                input_data = b"test input for wasm"
+                task = session.create_task(input_data)
 
-            time.sleep(3)
+                time.sleep(3)
 
-            task_status = session.get_task(task.id)
+                task_status = session.get_task(task.id)
 
-            assert task_status.state == flamepy.TaskState.PENDING, f"Task should remain PENDING when no compatible executor available, got {task_status.state}"
+                assert task_status.state == flamepy.TaskState.PENDING, f"Task should remain PENDING when no compatible executor available, got {task_status.state}"
 
-            session.close()
+            finally:
+                session.close()
 
         finally:
             try:
-                unregister_request = UnregisterApplicationRequest(name=app_name)
-                stub.UnregisterApplication(unregister_request)
+                flamepy.unregister_application(app_name)
             except:
                 pass
-            channel.close()
 
 
 class TestShimSelectionDefault:

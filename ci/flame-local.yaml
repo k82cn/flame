@@ -1,8 +1,9 @@
 ---
-current-cluster: flame
-clusters:
+current-context: flame
+contexts:
   - name: flame
-    endpoint: "http://127.0.0.1:8080"
+    cluster:
+      endpoint: "http://127.0.0.1:8080"
     cache:
       endpoint: "grpc://127.0.0.1:9090"
     package:

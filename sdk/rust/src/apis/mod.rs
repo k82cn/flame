@@ -27,8 +27,13 @@ use tracing_subscriber::filter::{FromEnvError, ParseError};
 use tracing_subscriber::fmt::time::LocalTime;
 
 mod ctx;
-pub use ctx::FlameCluster;
+pub use ctx::FlameClientCache;
+pub use ctx::FlameClientTls;
+pub use ctx::FlameClusterConfig;
 pub use ctx::FlameContext;
+pub use ctx::FlameContextEntry;
+pub use ctx::FlamePackage;
+pub use ctx::FlameRunner;
 
 pub type TaskID = String;
 pub type SessionID = String;

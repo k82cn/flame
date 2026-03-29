@@ -15,6 +15,11 @@ jobs:
         with:
           version: latest
 
+      - name: Generate TLS certificates
+        run: |
+          chmod +x ci/generate-certs.sh
+          ci/generate-certs.sh -o ci/certs -s "flame-session-manager,flame-executor-manager,localhost,127.0.0.1" -i "172.20.0.0/24"
+
       - name: Start Flame
         run: |
           docker compose up --build --force-recreate -d
@@ -31,6 +36,8 @@ jobs:
           override: true
 
       - name: Run Benchmark
+        env:
+          FLAME_ROOT: ${{ github.workspace }}
         run: |
           cargo test --package flame-rs --test benchmark_test -- --nocapture
 

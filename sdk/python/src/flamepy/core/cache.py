@@ -23,7 +23,7 @@ import cloudpickle
 import pyarrow as pa
 import pyarrow.flight as flight
 
-from flamepy.core.types import FlameContext
+from flamepy.core.types import FlameClientCache, FlameClientTls, FlameContext
 
 Deserializer = Callable[[Any, List[Any]], Any]
 
@@ -92,19 +92,39 @@ def _deserialize_object(batch: pa.RecordBatch) -> Any:
     return cloudpickle.loads(data_bytes)
 
 
-def _get_flight_client(endpoint: str) -> flight.FlightClient:
+def _get_flight_client(endpoint: str, tls_config: Optional[FlameClientTls] = None) -> flight.FlightClient:
     """Create a Flight client from endpoint URL.
 
     Args:
-        endpoint: Cache endpoint (e.g., "grpc://127.0.0.1:9090")
+        endpoint: Cache endpoint. Supported schemes:
+            - grpc:// - plaintext connection
+            - grpcs:// - TLS connection (converted to grpc+tls://)
+            - grpc+tls:// - TLS connection (native PyArrow Flight format)
+        tls_config: Optional TLS configuration with CA certificate path
 
     Returns:
         FlightClient instance
     """
-    # Parse endpoint to get location
-    # Format: grpc://host:port or grpc+tls://host:port
-    location = endpoint.replace("grpc://", "grpc://")
-    return flight.FlightClient(location)
+    # Normalize endpoint scheme for PyArrow Flight
+    # grpcs:// is our config format, grpc+tls:// is PyArrow's format
+    if endpoint.startswith("grpcs://"):
+        location = endpoint.replace("grpcs://", "grpc+tls://")
+    else:
+        location = endpoint
+
+    # Check if TLS is required
+    if location.startswith("grpc+tls://"):
+        # Load TLS certificates if provided
+        if tls_config and tls_config.ca_file:
+            with open(tls_config.ca_file, "rb") as f:
+                root_certs = f.read()
+            return flight.FlightClient(location, tls_root_certs=root_certs)
+        else:
+            # Use system CA bundle
+            return flight.FlightClient(location)
+    else:
+        # Non-TLS connection
+        return flight.FlightClient(location)
 
 
 def _do_put_remote(client: flight.FlightClient, descriptor: flight.FlightDescriptor, batch: pa.RecordBatch) -> "ObjectRef":
@@ -153,6 +173,26 @@ def _do_put_remote(client: flight.FlightClient, descriptor: flight.FlightDescrip
     raise ValueError("No result metadata received from cache server")
 
 
+def _get_cache_tls_config() -> Optional[FlameClientTls]:
+    """Get TLS configuration for cache from FlameContext.
+
+    FlameContext automatically handles:
+    1. Loading from ~/.flame/flame.yaml if it exists
+    2. Building from environment variables (FLAME_CA_FILE, etc.) if no config file
+
+    Returns:
+        FlameClientTls if configured, None otherwise
+    """
+    try:
+        context = FlameContext()
+        cache_config = context.cache
+        if isinstance(cache_config, FlameClientCache) and cache_config.tls:
+            return cache_config.tls
+    except Exception:
+        pass
+    return None
+
+
 def put_object(session_id: str, obj: Any) -> "ObjectRef":
     """Put an object into the cache.
 
@@ -172,15 +212,22 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
     if cache_config is None:
         raise ValueError("Cache configuration not found")
 
-    # Get endpoint and storage from config
+    # Get endpoint, storage, and TLS config from cache config
     if isinstance(cache_config, str):
         # Legacy format - just endpoint string
         cache_endpoint = cache_config
         cache_storage = None
+        cache_tls = None
+    elif isinstance(cache_config, FlameClientCache):
+        # New format - FlameClientCache dataclass
+        cache_endpoint = cache_config.endpoint
+        cache_storage = cache_config.storage
+        cache_tls = cache_config.tls
     else:
-        # New format - dict with endpoint and optional storage
+        # Dict format (for backward compatibility)
         cache_endpoint = cache_config.get("endpoint")
         cache_storage = cache_config.get("storage")
+        cache_tls = None
 
     if not cache_endpoint:
         raise ValueError("Cache endpoint not configured")
@@ -217,7 +264,7 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
         writer.close()
 
         # Get flight info to construct ObjectRef with cache server's endpoint
-        client = _get_flight_client(cache_endpoint)
+        client = _get_flight_client(cache_endpoint, cache_tls)
         descriptor = flight.FlightDescriptor.for_path(key)
         flight_info = client.get_flight_info(descriptor)
 
@@ -232,7 +279,7 @@ def put_object(session_id: str, obj: Any) -> "ObjectRef":
         return ObjectRef(endpoint=endpoint_str, key=key, version=0)
     else:
         # Use remote cache via Arrow Flight
-        client = _get_flight_client(cache_endpoint)
+        client = _get_flight_client(cache_endpoint, cache_tls)
 
         # Encode session_id in FlightDescriptor path
         upload_descriptor = flight.FlightDescriptor.for_path(session_id)
@@ -255,7 +302,8 @@ def get_object(ref: ObjectRef, deserializer: Optional[Deserializer] = None) -> A
     Raises:
         Exception: If request fails
     """
-    client = _get_flight_client(ref.endpoint)
+    tls_config = _get_cache_tls_config()
+    client = _get_flight_client(ref.endpoint, tls_config)
     ticket = flight.Ticket(ref.key.encode())
     reader = client.do_get(ticket)
 
@@ -295,7 +343,8 @@ def update_object(ref: ObjectRef, new_obj: Any) -> "ObjectRef":
     batch = _serialize_object(new_obj)
 
     # Connect to cache server
-    client = _get_flight_client(ref.endpoint)
+    tls_config = _get_cache_tls_config()
+    client = _get_flight_client(ref.endpoint, tls_config)
 
     # Parse key to validate format
     parts = ref.key.split("/")
@@ -328,7 +377,8 @@ def patch_object(ref: ObjectRef, delta: Any) -> "ObjectRef":
     delta_bytes = cloudpickle.dumps(delta, protocol=cloudpickle.DEFAULT_PROTOCOL)
 
     # Connect to cache server
-    client = _get_flight_client(ref.endpoint)
+    tls_config = _get_cache_tls_config()
+    client = _get_flight_client(ref.endpoint, tls_config)
 
     # Encode action body: {key}:{base64(delta_bytes)}
     delta_b64 = base64.b64encode(delta_bytes).decode("utf-8")

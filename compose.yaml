@@ -11,9 +11,12 @@ services:
       - RUST_LOG=info
     volumes:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
+      - ./ci/certs:/etc/flame/certs:ro
       - ./logs:/usr/local/flame/logs
     ports:
       - 8080:8080
+    networks:
+      - flame-net
 
   flame-executor-manager:
     image: xflops/flame-executor-manager:latest
@@ -35,6 +38,7 @@ services:
         window: 120s
     volumes:
       - ./ci/flame-cluster.yaml:/root/.flame/flame-cluster.yaml
+      - ./ci/certs:/etc/flame/certs:ro
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
       - flame-work:/usr/local/flame/work
@@ -42,6 +46,8 @@ services:
       - ./logs:/usr/local/flame/logs
     expose:
       - "9090"
+    networks:
+      - flame-net
 
   flame-console:
     image: xflops/flame-console:latest
@@ -55,10 +61,13 @@ services:
       - RUST_LOG=info
     volumes:
       - ./ci/flame.yaml:/root/.flame/flame.yaml
+      - ./ci/certs:/etc/flame/certs:ro
       - ./examples:/opt/examples
       - ./e2e:/opt/e2e
     depends_on:
       - flame-package-storage
+    networks:
+      - flame-net
 
   flame-package-storage:
     image: sigoden/dufs:v0.43.0
@@ -70,6 +79,15 @@ services:
       - flame-packages:/data
     ports:
       - 5050:5000
+    networks:
+      - flame-net
+
+networks:
+  flame-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
 
 volumes:
   flame-packages:

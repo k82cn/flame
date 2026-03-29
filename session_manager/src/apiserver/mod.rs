@@ -64,8 +64,18 @@ impl FlameThread for FrontendRunner {
             controller: self.controller.clone(),
         };
 
-        Server::builder()
-            .tcp_keepalive(Some(Duration::from_secs(1)))
+        let mut builder = Server::builder().tcp_keepalive(Some(Duration::from_secs(1)));
+
+        // Apply TLS if configured
+        if let Some(ref tls_config) = ctx.cluster.tls {
+            let tls = tls_config.server_tls_config()?;
+            builder = builder
+                .tls_config(tls)
+                .map_err(|e| FlameError::InvalidConfig(format!("TLS config error: {}", e)))?;
+            tracing::info!("TLS enabled for frontend apiserver");
+        }
+
+        builder
             .add_service(FrontendServer::new(frontend_service))
             .serve(address)
             .await
@@ -98,8 +108,18 @@ impl FlameThread for BackendRunner {
             controller: self.controller.clone(),
         };
 
-        Server::builder()
-            .tcp_keepalive(Some(Duration::from_secs(1)))
+        let mut builder = Server::builder().tcp_keepalive(Some(Duration::from_secs(1)));
+
+        // Apply TLS if configured
+        if let Some(ref tls_config) = ctx.cluster.tls {
+            let tls = tls_config.server_tls_config()?;
+            builder = builder
+                .tls_config(tls)
+                .map_err(|e| FlameError::InvalidConfig(format!("TLS config error: {}", e)))?;
+            tracing::info!("TLS enabled for backend apiserver");
+        }
+
+        builder
             .add_service(BackendServer::new(backend_service))
             .serve(address)
             .await

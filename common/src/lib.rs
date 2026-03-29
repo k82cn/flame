@@ -133,6 +133,7 @@ pub const FLAME_WORKING_DIRECTORY: &str = "/tmp/flame";
 pub const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 pub const FLAME_CACHE_ENDPOINT: &str = "FLAME_CACHE_ENDPOINT";
 pub const FLAME_ENDPOINT: &str = "FLAME_ENDPOINT";
+pub const FLAME_CA_FILE: &str = "FLAME_CA_FILE";
 
 /// Returns the system temporary directory path.
 /// This is cross-platform: /tmp on Unix, %TEMP% on Windows.

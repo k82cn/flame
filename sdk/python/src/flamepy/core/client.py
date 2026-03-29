@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import logging
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -26,6 +27,7 @@ from flamepy.core.types import (
     ApplicationSchema,
     ApplicationState,
     Event,
+    FlameClientTls,
     FlameContext,
     FlameError,
     FlameErrorCode,
@@ -58,10 +60,17 @@ from flamepy.proto.frontend_pb2_grpc import FrontendStub
 from flamepy.proto.types_pb2 import ApplicationSchema as ApplicationSchemaProto
 from flamepy.proto.types_pb2 import ApplicationSpec, Environment, SessionSpec, TaskSpec
 
+logger = logging.getLogger(__name__)
 
-def connect(addr: str) -> "Connection":
-    """Connect to the Flame service."""
-    return Connection.connect(addr)
+
+def connect(addr: str, tls_config: Optional[FlameClientTls] = None) -> "Connection":
+    """Connect to the Flame service.
+
+    Args:
+        addr: The endpoint URL (use https:// for TLS, http:// for plaintext)
+        tls_config: Optional TLS configuration for secure connections
+    """
+    return Connection.connect(addr, tls_config)
 
 
 def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1, min_instances: int = 0, max_instances: Optional[int] = None) -> "Session":
@@ -148,7 +157,7 @@ class ConnectionInstance:
         with cls._lock:
             if cls._connection is None:
                 cls._context = FlameContext()
-                cls._connection = connect(cls._context._endpoint)
+                cls._connection = connect(cls._context._endpoint, cls._context.tls)
             return cls._connection
 
 
@@ -162,18 +171,47 @@ class Connection:
         self._executor = ThreadPoolExecutor(max_workers=10)
 
     @classmethod
-    def connect(cls, addr: str) -> "Connection":
-        """Establish a connection to the Flame service."""
+    def connect(cls, addr: str, tls_config: Optional[FlameClientTls] = None) -> "Connection":
+        """Establish a connection to the Flame service.
+
+        Args:
+            addr: The endpoint URL (use https:// for TLS, http:// for plaintext)
+            tls_config: Optional TLS configuration for secure connections
+
+        TLS Behavior:
+            - If addr starts with https:// and tls_config is provided, use provided TLS config
+            - If addr starts with https:// and tls_config is None, use default TLS config (system CA)
+            - If addr starts with http://, TLS is not used regardless of tls_config
+        """
         if not addr:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "address cannot be empty")
 
         try:
             parsed_addr = urlparse(addr)
+            scheme = parsed_addr.scheme or "http"
             host = parsed_addr.hostname or parsed_addr.path
             port = parsed_addr.port or 8080
 
-            # Create insecure channel
-            channel = grpc.insecure_channel(f"{host}:{port}")
+            # Determine if TLS should be used
+            use_tls = scheme == "https"
+
+            if use_tls:
+                # Create secure channel with TLS
+                if tls_config is not None and tls_config.ca_file:
+                    # Use custom CA certificate
+                    with open(tls_config.ca_file, "rb") as f:
+                        root_certs = f.read()
+                    credentials = grpc.ssl_channel_credentials(root_certificates=root_certs)
+                    logger.debug("TLS enabled with custom CA certificate: %s", tls_config.ca_file)
+                else:
+                    # Use system CA bundle (default)
+                    credentials = grpc.ssl_channel_credentials()
+                    logger.debug("TLS enabled with system CA bundle")
+
+                channel = grpc.secure_channel(f"{host}:{port}", credentials)
+            else:
+                # Create insecure channel
+                channel = grpc.insecure_channel(f"{host}:{port}")
 
             # Wait for channel to be ready (with timeout)
             try:
@@ -186,6 +224,8 @@ class Connection:
 
             return cls(addr, channel, frontend)
 
+        except FlameError:
+            raise
         except Exception as e:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, f"failed to connect to {addr}: {str(e)}")
 

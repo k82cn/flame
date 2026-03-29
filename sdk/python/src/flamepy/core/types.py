@@ -234,11 +234,79 @@ class FlameContextRunner:
     template: Optional[str] = None
 
 
+@dataclass
+class FlameClientTls:
+    """Client TLS configuration for connecting to Flame services.
+
+    Attributes:
+        ca_file: Path to CA certificate for server verification.
+                 For self-signed certificates, this must point to the CA
+                 certificate that signed the server certificate.
+
+    Note:
+        To disable TLS for development, use http:// instead of https://
+        in the endpoint URL.
+    """
+
+    ca_file: Optional[str] = None
+
+
+@dataclass
+class FlameClientCache:
+    """Cache configuration for the client.
+
+    Attributes:
+        endpoint: Cache endpoint URL (e.g., "grpcs://flame-object-cache:9090").
+        tls: TLS configuration for cache (optional, separate from cluster TLS).
+        storage: Local storage path for cache (optional).
+    """
+
+    endpoint: Optional[str] = None
+    tls: Optional[FlameClientTls] = None
+    storage: Optional[str] = None
+
+
+@dataclass
+class FlameClusterConfig:
+    """Cluster configuration within a context.
+
+    Attributes:
+        endpoint: Cluster endpoint URL (e.g., "https://flame-session-manager:8080").
+        tls: TLS configuration for cluster connection (optional).
+    """
+
+    endpoint: str = ""
+    tls: Optional[FlameClientTls] = None
+
+
 class FlameContext:
-    """Flame configuration."""
+    """Flame configuration.
+
+    Reads configuration from ~/.flame/flame.yaml with the following structure:
+
+    ```yaml
+    current-context: flame
+    contexts:
+      - name: flame
+        cluster:
+          endpoint: "https://flame-session-manager:8080"
+          tls:
+            ca_file: "/etc/flame/certs/ca.crt"
+        cache:
+          endpoint: "grpcs://flame-object-cache:9090"
+          tls:
+            ca_file: "/etc/flame/certs/cache-ca.crt"
+        package:
+          storage: "file:///var/lib/flame/packages"
+        runner:
+          template: "flmrun"
+    ```
+    """
 
     _endpoint = None
+    _cluster_tls = None
     _cache = None
+    _cache_tls = None
     _package = None
     _runner = None
 
@@ -251,16 +319,39 @@ class FlameContext:
         if config_file.exists():
             with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
-                cc = config.get("current-cluster")
-                if cc is None:
-                    raise FlameError(FlameErrorCode.INVALID_CONFIG, "current-cluster is not set")
-                for cluster in config.get("clusters", []):
-                    if cc == cluster["name"]:
-                        self._endpoint = cluster.get("endpoint")
-                        self._cache = cluster.get("cache")
+                current_context = config.get("current-context")
+                if current_context is None:
+                    raise FlameError(FlameErrorCode.INVALID_CONFIG, "current-context is not set")
+
+                for ctx in config.get("contexts", []):
+                    if current_context == ctx["name"]:
+                        # Parse cluster configuration
+                        cluster_config = ctx.get("cluster", {})
+                        self._endpoint = cluster_config.get("endpoint")
+
+                        # Parse cluster TLS configuration
+                        cluster_tls = cluster_config.get("tls")
+                        if cluster_tls is not None:
+                            self._cluster_tls = FlameClientTls(
+                                ca_file=cluster_tls.get("ca_file"),
+                            )
+
+                        # Parse cache configuration
+                        cache_config = ctx.get("cache")
+                        if cache_config is not None:
+                            cache_tls = cache_config.get("tls")
+                            if cache_tls is not None:
+                                self._cache_tls = FlameClientTls(
+                                    ca_file=cache_tls.get("ca_file"),
+                                )
+                            self._cache = FlameClientCache(
+                                endpoint=cache_config.get("endpoint"),
+                                tls=self._cache_tls,
+                                storage=cache_config.get("storage"),
+                            )
 
                         # Parse package configuration if present
-                        package_config = cluster.get("package")
+                        package_config = ctx.get("package")
                         if package_config is not None:
                             storage = package_config.get("storage")
                             if storage is not None:
@@ -271,35 +362,72 @@ class FlameContext:
                                 self._package = FlamePackage(storage=storage, excludes=all_excludes)
 
                         # Parse runner configuration if present
-                        runner_config = cluster.get("runner")
+                        runner_config = ctx.get("runner")
                         if runner_config is not None:
                             template = runner_config.get("template")
                             self._runner = FlameContextRunner(template=DEFAULT_FLAME_RUNNER_TEMPLATE if template is None else template)
                         break
                 else:
-                    raise FlameError(FlameErrorCode.INVALID_CONFIG, f"cluster <{cc}> not found")
+                    raise FlameError(FlameErrorCode.INVALID_CONFIG, f"context <{current_context}> not found")
 
+        # Apply environment variable overrides (these take precedence over config file)
+        # This also allows building context entirely from env vars when no config file exists
+        self._apply_env_overrides()
+
+    def _apply_env_overrides(self):
+        """Apply environment variable overrides to the context.
+
+        This method handles:
+        1. Overriding config file values with env vars
+        2. Building context entirely from env vars when no config file exists
+
+        Environment variables:
+        - FLAME_ENDPOINT: Cluster endpoint URL
+        - FLAME_CACHE_ENDPOINT: Cache endpoint URL
+        - FLAME_CACHE_STORAGE: Cache storage path
+        - FLAME_CA_FILE: CA certificate file for TLS (applies to both cluster and cache)
+        """
+        # Handle FLAME_CA_FILE first so TLS config is ready for cache
+        ca_file = os.getenv("FLAME_CA_FILE")
+        if ca_file is not None:
+            # Set CA file for cluster TLS
+            if self._cluster_tls is None:
+                self._cluster_tls = FlameClientTls(ca_file=ca_file)
+            elif self._cluster_tls.ca_file is None:
+                self._cluster_tls.ca_file = ca_file
+            # Set CA file for cache TLS
+            if self._cache_tls is None:
+                self._cache_tls = FlameClientTls(ca_file=ca_file)
+            elif self._cache_tls.ca_file is None:
+                self._cache_tls.ca_file = ca_file
+
+        # Override/set endpoint
         endpoint = os.getenv("FLAME_ENDPOINT")
         if endpoint is not None:
             self._endpoint = endpoint
 
+        # Override/set cache endpoint
         cache_endpoint = os.getenv("FLAME_CACHE_ENDPOINT")
         if cache_endpoint is not None:
-            # Environment variable overrides config
-            if isinstance(self._cache, dict):
-                self._cache["endpoint"] = cache_endpoint
+            if self._cache is None:
+                self._cache = FlameClientCache(endpoint=cache_endpoint, tls=self._cache_tls)
             else:
-                self._cache = {"endpoint": cache_endpoint}
+                self._cache.endpoint = cache_endpoint
+                # Ensure TLS is set if we have it
+                if self._cache.tls is None and self._cache_tls is not None:
+                    self._cache.tls = self._cache_tls
 
+        # Override/set cache storage
         cache_storage = os.getenv("FLAME_CACHE_STORAGE")
         if cache_storage is not None:
-            # Environment variable overrides config
-            if isinstance(self._cache, dict):
-                self._cache["storage"] = cache_storage
-            elif self._cache is not None:
-                self._cache = {"endpoint": self._cache, "storage": cache_storage}
+            if self._cache is None:
+                self._cache = FlameClientCache(storage=cache_storage, tls=self._cache_tls)
             else:
-                self._cache = {"storage": cache_storage}
+                self._cache.storage = cache_storage
+
+        # Ensure cache has TLS config if we have one and cache exists
+        if self._cache is not None and self._cache.tls is None and self._cache_tls is not None:
+            self._cache.tls = self._cache_tls
 
     @property
     def endpoint(self) -> str:
@@ -307,23 +435,33 @@ class FlameContext:
         return self._endpoint if self._endpoint is not None else DEFAULT_FLAME_ENDPOINT
 
     @property
+    def tls(self) -> Optional[FlameClientTls]:
+        """Get the cluster TLS configuration."""
+        return self._cluster_tls
+
+    @property
     def package(self) -> Optional[FlamePackage]:
         """Get the package configuration."""
         return self._package
 
     @property
-    def cache(self) -> Optional[Any]:
-        """Get the cache configuration (dict with endpoint and optional storage, or string for legacy)."""
-        return self._cache if self._cache is not None else {"endpoint": DEFAULT_FLAME_CACHE_ENDPOINT}
+    def cache(self) -> Optional[FlameClientCache]:
+        """Get the cache configuration."""
+        if self._cache is not None:
+            return self._cache
+        return FlameClientCache(endpoint=DEFAULT_FLAME_CACHE_ENDPOINT)
 
     @property
     def cache_endpoint(self) -> str:
         """Get the cache endpoint (legacy property for backward compatibility)."""
-        if isinstance(self._cache, dict):
-            return self._cache.get("endpoint", DEFAULT_FLAME_CACHE_ENDPOINT)
-        elif self._cache is not None:
-            return self._cache
+        if self._cache is not None and self._cache.endpoint is not None:
+            return self._cache.endpoint
         return DEFAULT_FLAME_CACHE_ENDPOINT
+
+    @property
+    def cache_tls(self) -> Optional[FlameClientTls]:
+        """Get the cache TLS configuration."""
+        return self._cache_tls
 
     @property
     def runner(self) -> FlameContextRunner:

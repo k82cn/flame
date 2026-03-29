@@ -30,8 +30,12 @@ pub async fn run(
     task: &Option<String>,
     node: &Option<String>,
 ) -> Result<(), Box<dyn Error>> {
-    let current_cluster = ctx.get_current_cluster()?;
-    let conn = client::connect(&current_cluster.endpoint).await?;
+    let current_ctx = ctx.get_current_context()?;
+    let conn = client::connect_with_tls(
+        &current_ctx.cluster.endpoint,
+        current_ctx.cluster.tls.as_ref(),
+    )
+    .await?;
     match (application, session, task, node) {
         (Some(application), None, None, None) => view_application(conn, application).await,
         (None, Some(session), None, None) => view_session(conn, output_format, session).await,
