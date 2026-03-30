@@ -104,8 +104,7 @@ Flame uses two types of tokens:
   "exp": 1711756800,                    // Expiration timestamp (matches session TTL)
   "iat": 1711670400,                    // Issued at timestamp
   "scope": "session",                   // Scope: always "session"
-  "workspace": "team-ml",               // Workspace this session belongs to
-  "session_id": "session-abc123"        // Session identifier
+  "workspace": "team-ml"                // Workspace this session belongs to
 }
 ```
 
@@ -174,7 +173,7 @@ Client                              Session Manager
 
 **SetCommonData API:**
 
-After session creation, clients can update the session's common data:
+After session creation, clients can update the session's common data via `session.set_common_data()`. This is typically used to store an ObjectRef (which includes the session token) after putting data in the cache:
 
 ```protobuf
 // In flame.proto
@@ -191,6 +190,34 @@ service FlameService {
   // ... existing RPCs ...
   rpc SetCommonData(SetCommonDataRequest) returns (SetCommonDataResponse);
 }
+```
+
+**SDK Methods:**
+
+```python
+# Python
+session.set_common_data(data: bytes) -> None
+```
+
+```rust
+// Rust
+session.set_common_data(data: Vec<u8>) -> Result<(), FlameError>
+```
+
+**Typical Usage Pattern:**
+
+```
+1. CreateSession(app, workspace, ...)
+   └─► Returns session with status.token (session token)
+
+2. put_object(session_id, data, token=session.status.token)
+   └─► Returns ObjectRef { endpoint, key, token }
+
+3. session.set_common_data(object_ref.encode())
+   └─► Stores ObjectRef (with embedded token) as common_data
+
+4. Executor receives common_data, decodes ObjectRef
+   └─► Uses object_ref.token to retrieve data from cache
 ```
 
 **Authorization Matrix (Cache Server):**
@@ -416,7 +443,10 @@ client = flame.connect(endpoint="flame.example.com:8080")
 
 # Create session (workspace determined from token)
 session = client.create_session(app="my-app", slots=4)
-# Session created in workspace from token's "workspace" claim
+# Session token available via session.status.token
+
+# Set common data on session
+session.set_common_data(common_data_bytes)
 ```
 
 #### Rust SDK
@@ -430,7 +460,157 @@ let config = FlameConfig::builder()
     .build()?;
 
 let client = FlameClient::connect(config).await?;
-// Workspace determined from token's "workspace" claim
+
+// Create session (workspace determined from token)
+let session = client.create_session("my-app", 4).await?;
+// Session token available via session.status.token
+
+// Set common data on session
+session.set_common_data(common_data_bytes).await?;
+```
+
+#### Python SDK Cache Module (`flamepy.core.cache`)
+
+The cache module requires updates to support session tokens:
+
+**ObjectRef with Token:**
+
+```python
+@dataclass
+class ObjectRef:
+    """Object reference for remote cached objects."""
+    endpoint: str   # Cache server endpoint
+    key: str        # Object key: {workspace}/{session_id}/{object_id}
+    token: str      # Session token for cache authentication
+    version: int = 0
+
+    def encode(self) -> bytes:
+        data = asdict(self)
+        return bson.encode(data)
+
+    @classmethod
+    def decode(cls, json_data: bytes) -> "ObjectRef":
+        data = bson.decode(json_data)
+        return cls(**data)
+```
+
+**Cache Functions with Token:**
+
+```python
+def put_object(session_id: str, obj: Any, token: str) -> ObjectRef:
+    """Put an object into the cache.
+    
+    Args:
+        session_id: The session ID for the object
+        obj: The object to cache (will be pickled)
+        token: Session token for authentication
+    
+    Returns:
+        ObjectRef with embedded token for later retrieval
+    """
+    # ... serialize and upload ...
+    return ObjectRef(endpoint=endpoint, key=key, token=token, version=0)
+
+
+def get_object(ref: ObjectRef, deserializer: Optional[Deserializer] = None) -> Any:
+    """Get an object from the cache.
+    
+    Uses ref.token for authentication automatically.
+    
+    Args:
+        ref: ObjectRef pointing to the cached object (includes token)
+        deserializer: Optional function to combine base and deltas
+    
+    Returns:
+        The deserialized object
+    """
+    client = _get_flight_client(ref.endpoint, tls_config)
+    # Add token to request metadata
+    options = flight.FlightCallOptions(headers=[(b"authorization", f"Bearer {ref.token}".encode())])
+    ticket = flight.Ticket(ref.key.encode())
+    reader = client.do_get(ticket, options)
+    # ... deserialize and return ...
+```
+
+#### Python SDK Runner Module (`flamepy.runner`)
+
+The runner module requires updates to propagate session tokens:
+
+**RunnerService Changes:**
+
+```python
+class RunnerService:
+    def __init__(self, app: str, execution_object: Any, stateful: bool = False, autoscale: bool = True):
+        # ... existing setup code ...
+        
+        # Step 1: Create session first (to get session token)
+        session_spec = SessionAttributes(
+            id=session_id,
+            application=app,
+            slots=1,
+            min_instances=runner_context.min_instances,
+            max_instances=runner_context.max_instances,
+            # Note: common_data not set yet
+        )
+        self._session = open_session(session_id=session_id, spec=session_spec)
+        
+        # Step 2: Get session token from session status
+        self._session_token = self._session.status.token
+        
+        # Step 3: Put RunnerContext in cache WITH session token
+        runner_context = RunnerContext(execution_object=execution_object, stateful=stateful, autoscale=autoscale)
+        serialized_ctx = cloudpickle.dumps(runner_context, protocol=cloudpickle.DEFAULT_PROTOCOL)
+        object_ref = put_object(session_id, serialized_ctx, token=self._session_token)
+        
+        # Step 4: Update session with common_data via session method
+        self._session.set_common_data(object_ref.encode())
+        
+        # ... rest of init ...
+```
+
+**ObjectFuture Changes:**
+
+```python
+class ObjectFuture:
+    def get(self) -> Any:
+        """Retrieve the concrete object."""
+        result = self._future.result()
+        if isinstance(result, bytes):
+            object_ref = ObjectRef.decode(result)
+        elif isinstance(result, ObjectRef):
+            object_ref = result
+        else:
+            object_ref = ObjectRef.decode(result)
+        
+        # Token is embedded in ObjectRef, get_object uses it automatically
+        return get_object(object_ref)
+```
+
+**Executor-Side (FlameRunpyService):**
+
+```python
+class FlameRunpyService(FlameService):
+    def on_session_enter(self, ctx: SessionContext) -> None:
+        # Decode ObjectRef from common_data (includes token)
+        object_ref = ObjectRef.decode(ctx.common_data)
+        
+        # get_object uses object_ref.token automatically
+        runner_context = get_object(object_ref)
+        
+        # Store token for later cache operations
+        self._session_token = object_ref.token
+        
+        # ... initialize execution object ...
+    
+    def on_task(self, ctx: TaskContext) -> bytes:
+        # Execute task, get result
+        result = self._execute_task(ctx)
+        
+        # Put result in cache with session token
+        result_ref = put_object(ctx.session_id, result, token=self._session_token)
+        
+        # Return ObjectRef (includes token for client retrieval)
+        return result_ref.encode()
 ```
 
 ### Scope
@@ -473,16 +653,17 @@ let client = FlameClient::connect(config).await?;
 
 **Updates Required:**
 
-| Component          | Change                                                |
-| ------------------ | ----------------------------------------------------- |
-| `session_manager`  | Add auth interceptor, workspace-based authorization   |
-| `executor_manager` | Add auth interceptor, include system token in requests|
-| `object_cache`     | Add auth interceptor, workspace-based path validation |
-| `flmadm`           | Add `token` subcommand with workspace support         |
-| `flmctl`           | Add token configuration option                        |
-| `sdk/rust`         | Add token to client config                            |
-| `sdk/python`       | Add token to connect()                                |
-| `common`           | Add auth module with JWT validation (shared by all)   |
+| Component              | Change                                                          |
+| ---------------------- | --------------------------------------------------------------- |
+| `session_manager`      | Add auth interceptor, workspace-based authorization, sign session tokens |
+| `executor_manager`     | Add auth interceptor, include system token in requests          |
+| `object_cache`         | Add auth interceptor, session token validation                  |
+| `flmadm`               | Add `token` subcommand with workspace support                   |
+| `flmctl`               | Add token configuration option                                  |
+| `sdk/rust`             | Add token to client config                                      |
+| `sdk/python/core`      | Add token to connect(), ObjectRef.token, cache functions        |
+| `sdk/python/runner`    | Propagate session token to cache operations                     |
+| `common`               | Add auth module with JWT validation (shared by all)             |
 
 **Integration Points:**
 
@@ -633,8 +814,13 @@ pub struct SessionClaims {
     pub scope: Scope,  // Always Scope::Session
     /// Workspace this session belongs to
     pub workspace: String,
-    /// Session identifier
-    pub session_id: String,
+}
+
+impl SessionClaims {
+    /// Get session ID (from sub claim)
+    pub fn session_id(&self) -> &str {
+        &self.sub
+    }
 }
 ```
 
@@ -651,14 +837,22 @@ pub enum AuthContext {
         scope: Scope,
         workspaces: Vec<String>,
     },
-    /// Session context (from session tokens)
+    /// Session context (from session tokens, session_id = sub claim)
     Session {
-        session_id: String,
+        session_id: String,  // From claims.sub
         workspace: String,
     },
 }
 
 impl AuthContext {
+    /// Create session context from session claims
+    pub fn from_session_claims(claims: &SessionClaims) -> Self {
+        AuthContext::Session {
+            session_id: claims.sub.clone(),  // sub is the session ID
+            workspace: claims.workspace.clone(),
+        }
+    }
+
     /// Check if this context can access the given workspace
     pub fn can_access_workspace(&self, target_workspace: &str) -> bool {
         match self {
@@ -879,7 +1073,7 @@ pub struct FlameClusterConfig {
 │                                                                   │
 │  5. Validate scope-specific requirements:                        │
 │     - Scope::Workspace → workspaces field must be non-empty      │
-│     - Scope::Session → session_id and workspace must be present  │
+│     - Scope::Session → sub (session_id) and workspace must exist │
 │     - Scope::Cluster/System → no additional requirements         │
 │     └─► Invalid? → Return INVALID_ARGUMENT                       │
 │                                                                   │
@@ -911,24 +1105,26 @@ fn create_session(
     // 2. Create the session
     let session_id = generate_session_id();
     let session = Session::new(session_id.clone(), workspace.clone(), ...);
-    store_session(&session)?;
     
-    // 3. Sign a session token
+    // 3. Sign a session token (sub = session_id)
     let session_claims = SessionClaims {
-        sub: session_id.clone(),
+        sub: session_id.clone(),  // Session ID as subject
         iss: "flame".to_string(),
         exp: calculate_expiry(session.ttl),
         iat: now(),
         scope: Scope::Session,
         workspace: workspace.clone(),
-        session_id: session_id.clone(),
     };
     let session_token = sign_jwt(&session_claims, &jwt_config.private_key)?;
     
-    // 4. Return response with session token
+    // 4. Store session with token in status
+    session.status.token = session_token.clone();
+    store_session(&session)?;
+    
+    // 5. Return response (token available via session.status.token)
     Ok(CreateSessionResponse {
         session_id,
-        session_token,
+        status: session.status,
         ...
     })
 }
