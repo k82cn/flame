@@ -104,10 +104,31 @@ pub fn handle_create(cmd: &CreateCmd) -> Result<()> {
             cmd.display_name.as_deref().unwrap_or(""),
             cmd.cert_dir.as_ref(),
         )?;
-        println!("Created user: {}", user);
         return Ok(());
     }
-    if cmd.role.is_some() || cmd.workspace.is_some() {
+    if let Some(role) = &cmd.role {
+        admin_mgr::AdminClient::new("http://localhost:50051").create_role(
+            role,
+            cmd.description.as_deref().unwrap_or(""),
+            &cmd.permission,
+            &[],
+        )?;
+        return Ok(());
+    }
+    if let Some(workspace) = &cmd.workspace {
+        let labels: Vec<(String, String)> = cmd
+            .label
+            .iter()
+            .filter_map(|l| {
+                l.split_once('=')
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+            })
+            .collect();
+        admin_mgr::AdminClient::new("http://localhost:50051").create_workspace(
+            workspace,
+            cmd.description.as_deref().unwrap_or(""),
+            &labels,
+        )?;
         return Ok(());
     }
     Err(anyhow!("No resource specified for create"))

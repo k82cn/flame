@@ -26,7 +26,6 @@ const FLAME_CACHE_ENDPOINT: &str = "FLAME_CACHE_ENDPOINT";
 const FLAME_CA_FILE: &str = "FLAME_CA_FILE";
 const FLAME_CERT_FILE: &str = "FLAME_CERT_FILE";
 const FLAME_KEY_FILE: &str = "FLAME_KEY_FILE";
-const FLAME_WORKSPACE: &str = "FLAME_WORKSPACE";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FlameClientTls {

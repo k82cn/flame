@@ -28,18 +28,6 @@ impl AdminClient {
         }
     }
 
-    pub fn with_tls(
-        mut self,
-        ca_file: Option<PathBuf>,
-        cert_file: Option<PathBuf>,
-        key_file: Option<PathBuf>,
-    ) -> Self {
-        self.ca_file = ca_file;
-        self.cert_file = cert_file;
-        self.key_file = key_file;
-        self
-    }
-
     async fn connect(&self) -> Result<GrpcAdminClient<Channel>> {
         let endpoint = if self.addr.starts_with("http://") || self.addr.starts_with("https://") {
             self.addr.clone()
@@ -175,8 +163,8 @@ impl AdminClient {
                 println!("No users found");
             } else {
                 println!(
-                    "{:<20} {:<30} {:<10} {}",
-                    "NAME", "DISPLAY NAME", "ENABLED", "ROLES"
+                    "{:<20} {:<30} {:<10} ROLES",
+                    "NAME", "DISPLAY NAME", "ENABLED"
                 );
                 for user in users {
                     let name = user
@@ -235,12 +223,7 @@ impl AdminClient {
         })
     }
 
-    pub fn update_user(
-        &self,
-        username: &str,
-        assign: &Vec<String>,
-        revoke: &Vec<String>,
-    ) -> Result<()> {
+    pub fn update_user(&self, username: &str, assign: &[String], revoke: &[String]) -> Result<()> {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
             let mut client = self.connect().await?;
@@ -248,8 +231,8 @@ impl AdminClient {
             let request = tonic::Request::new(UpdateUserRequest {
                 name: username.to_string(),
                 spec: None,
-                assign_roles: assign.clone(),
-                revoke_roles: revoke.clone(),
+                assign_roles: assign.to_vec(),
+                revoke_roles: revoke.to_vec(),
             });
 
             let response = client
@@ -403,7 +386,7 @@ impl AdminClient {
             if roles.is_empty() {
                 println!("No roles found");
             } else {
-                println!("{:<20} {:<40} {}", "NAME", "PERMISSIONS", "WORKSPACES");
+                println!("{:<20} {:<40} WORKSPACES", "NAME", "PERMISSIONS");
                 for role in roles {
                     let name = role
                         .metadata
@@ -460,10 +443,10 @@ impl AdminClient {
     pub fn update_role(
         &self,
         role: &str,
-        add_perm: &Vec<String>,
-        remove_perm: &Vec<String>,
-        add_ws: &Vec<String>,
-        remove_ws: &Vec<String>,
+        add_perm: &[String],
+        remove_perm: &[String],
+        add_ws: &[String],
+        remove_ws: &[String],
     ) -> Result<()> {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
@@ -603,7 +586,7 @@ impl AdminClient {
             if workspaces.is_empty() {
                 println!("No workspaces found");
             } else {
-                println!("{:<20} {}", "NAME", "DESCRIPTION");
+                println!("{:<20} DESCRIPTION", "NAME");
                 for ws in workspaces {
                     let name = ws.metadata.as_ref().map(|m| m.name.as_str()).unwrap_or("");
                     let desc = ws

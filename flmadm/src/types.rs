@@ -97,13 +97,10 @@ pub struct InstallationPaths {
     pub prefix: PathBuf,
     pub bin: PathBuf,
     pub sdk_python: PathBuf,
-    pub wheels: PathBuf,
     pub work: PathBuf,
     pub logs: PathBuf,
     pub conf: PathBuf,
     pub data: PathBuf,
-    pub cache: PathBuf,
-    pub migrations: PathBuf,
 }
 
 impl InstallationPaths {
@@ -111,13 +108,10 @@ impl InstallationPaths {
         Self {
             bin: prefix.join("bin"),
             sdk_python: prefix.join("sdk/python"),
-            wheels: prefix.join("wheels"),
             work: prefix.join("work"),
             logs: prefix.join("logs"),
             conf: prefix.join("conf"),
             data: prefix.join("data"),
-            cache: prefix.join("data/cache"),
-            migrations: prefix.join("migrations"),
             prefix,
         }
     }
@@ -126,83 +120,6 @@ impl InstallationPaths {
     pub fn is_valid_installation(&self) -> bool {
         self.prefix.exists() && (self.bin.exists() || self.conf.exists() || self.data.exists())
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct UserCreateConfig {
-    pub user: String,
-    pub display_name: String,
-    pub cert_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserUpdateConfig {
-    pub user: String,
-    pub assign_roles: Vec<String>,
-    pub revoke_roles: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserGetConfig {
-    pub user: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserDeleteConfig {
-    pub user: String,
-    pub force: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserEnableConfig {
-    pub user: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserDisableConfig {
-    pub user: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct RoleCreateConfig {
-    pub role: String,
-    pub description: String,
-    pub permissions: Vec<String>,
-    pub workspaces: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RoleUpdateConfig {
-    pub role: String,
-    pub add_permissions: Vec<String>,
-    pub remove_permissions: Vec<String>,
-    pub add_workspaces: Vec<String>,
-    pub remove_workspaces: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RoleDeleteConfig {
-    pub role: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct WorkspaceCreateConfig {
-    pub workspace: String,
-    pub description: String,
-    pub labels: Vec<(String, String)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WorkspaceUpdateConfig {
-    pub workspace: String,
-    pub description: Option<String>,
-    pub labels: Vec<(String, String)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WorkspaceDeleteConfig {
-    pub workspace: String,
-    pub force: bool,
 }
 
 /// Paths to built Flame binaries

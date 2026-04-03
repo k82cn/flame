@@ -1,13 +1,11 @@
 use anyhow::Result;
 use std::path::Path;
 
-pub struct BuildManager {
-    verbose: bool,
-}
+pub struct BuildManager;
 
 impl BuildManager {
-    pub fn new(verbose: bool) -> Self {
-        Self { verbose }
+    pub fn new(_verbose: bool) -> Self {
+        Self
     }
 
     pub fn check_prerequisites(&self) -> Result<()> {
