@@ -34,7 +34,6 @@ const FLAME_APP: &str = "flmping";
 
 fn get_ca_cert_path() -> String {
     let root = std::env::var("FLAME_ROOT").unwrap_or_else(|_| {
-        // Fallback: use CARGO_MANIFEST_DIR and navigate up
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         format!("{}/../..", manifest_dir)
     });

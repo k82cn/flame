@@ -60,6 +60,8 @@ struct FlameClusterYaml {
     pub executors: Option<FlameExecutorsYaml>,
     /// TLS configuration for Session Manager
     pub tls: Option<FlameTlsYaml>,
+    /// Resource limits configuration
+    pub limits: Option<FlameLimitsYaml>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +73,11 @@ struct FlameExecutorsYaml {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FlameExecutorLimitsYaml {
     pub max_executors: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FlameLimitsYaml {
+    pub sessions: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +133,8 @@ pub struct FlameCluster {
     pub executors: FlameExecutors,
     /// TLS configuration for Session Manager
     pub tls: Option<FlameTls>,
+    /// Resource limits configuration
+    pub limits: FlameLimits,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -137,6 +146,11 @@ pub struct FlameExecutors {
 #[derive(Debug, Clone)]
 pub struct FlameExecutorLimits {
     pub max_executors: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FlameLimits {
+    pub sessions: Option<usize>,
 }
 
 /// TLS configuration for Flame services.
@@ -354,6 +368,8 @@ impl TryFrom<FlameClusterYaml> for FlameCluster {
 
         let tls = cluster.tls.map(FlameTls::try_from).transpose()?;
 
+        let limits = cluster.limits.map(FlameLimits::from).unwrap_or_default();
+
         Ok(FlameCluster {
             name: cluster.name,
             endpoint: cluster.endpoint,
@@ -365,6 +381,7 @@ impl TryFrom<FlameClusterYaml> for FlameCluster {
                 .unwrap_or(DEFAULT_SCHEDULE_INTERVAL),
             executors,
             tls,
+            limits,
         })
     }
 }
@@ -401,6 +418,14 @@ impl Default for FlameExecutorLimits {
     }
 }
 
+impl From<FlameLimitsYaml> for FlameLimits {
+    fn from(yaml: FlameLimitsYaml) -> Self {
+        FlameLimits {
+            sessions: yaml.sessions,
+        }
+    }
+}
+
 impl Default for FlameCluster {
     fn default() -> Self {
         FlameCluster {
@@ -412,6 +437,7 @@ impl Default for FlameCluster {
             schedule_interval: DEFAULT_SCHEDULE_INTERVAL,
             executors: FlameExecutors::default(),
             tls: None,
+            limits: FlameLimits::default(),
         }
     }
 }

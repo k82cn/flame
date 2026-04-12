@@ -49,6 +49,7 @@ pub struct Storage {
     nodes: MutexPtr<HashMap<String, NodePtr>>,
     applications: MutexPtr<HashMap<String, ApplicationPtr>>,
     event_manager: EventManagerPtr,
+    max_sessions: Option<usize>,
 }
 
 pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameError> {
@@ -60,6 +61,7 @@ pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameEr
         nodes: stdng::new_ptr(HashMap::new()),
         applications: stdng::new_ptr(HashMap::new()),
         event_manager: Arc::new(EventManager::new(None)?),
+        max_sessions: config.cluster.limits.sessions,
     }))
 }
 
@@ -150,6 +152,58 @@ impl Storage {
         for executor in executor_list {
             let mut exe_map = lock_ptr!(self.executors)?;
             exe_map.insert(executor.id.clone(), ExecutorPtr::new(executor.into()));
+        }
+
+        Ok(())
+    }
+
+    fn evict_sessions(&self) -> Result<(), FlameError> {
+        let Some(max) = self.max_sessions else {
+            return Ok(());
+        };
+
+        let mut ssn_map = lock_ptr!(self.sessions)?;
+
+        // Loop until we're within the limit
+        while ssn_map.len() >= max {
+            // Collect all closed sessions with their completion times
+            let mut closed_sessions: Vec<(SessionID, chrono::DateTime<Utc>)> = ssn_map
+                .iter()
+                .filter_map(|(id, ssn_ptr)| {
+                    let ssn = lock_ptr!(ssn_ptr).ok()?;
+                    if ssn.status.state == SessionState::Closed {
+                        // Use completion_time if available, otherwise use creation_time
+                        let time = ssn.completion_time.unwrap_or(ssn.creation_time);
+                        Some((id.clone(), time))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if closed_sessions.is_empty() {
+                // No closed sessions to evict, cannot reduce further
+                tracing::warn!(
+                    "Session limit ({}) reached but no closed sessions to evict. Current: {}",
+                    max,
+                    ssn_map.len()
+                );
+                break;
+            }
+
+            // Sort by completion time (oldest first)
+            closed_sessions.sort_by(|a, b| a.1.cmp(&b.1));
+
+            // Evict the oldest closed session
+            if let Some((ssn_id, _)) = closed_sessions.first() {
+                ssn_map.remove(ssn_id);
+                tracing::debug!(
+                    "Evicted closed session <{}> from cache (limit: {}, current: {})",
+                    ssn_id,
+                    max,
+                    ssn_map.len()
+                );
+            }
         }
 
         Ok(())
@@ -360,40 +414,44 @@ impl Storage {
         trace_fn!("Storage::create_session");
         let ssn = self.engine.create_session(attr).await?;
 
-        let mut ssn_map = lock_ptr!(self.sessions)?;
-        ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+        {
+            let mut ssn_map = lock_ptr!(self.sessions)?;
+            ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+        }
+
+        self.evict_sessions()?;
 
         Ok(ssn)
     }
 
     pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
         trace_fn!("Storage::close_session");
-        let mut ssn = self.engine.close_session(id).await?;
 
-        let mut ssn_list = lock_ptr!(self.sessions)?;
-        let ssn_ptr = ssn_list
-            .get(&ssn.id)
-            .ok_or(FlameError::NotFound(format!(
-                "session <{id}> not found",
-                id = ssn.id
-            )))?
-            .clone();
+        let ssn_ptr = {
+            let ssn_map = lock_ptr!(self.sessions)?;
+            ssn_map
+                .get(&id)
+                .cloned()
+                .ok_or(FlameError::NotFound(format!("session <{}>", id)))?
+        };
 
-        let mut old_ssn = lock_ptr!(ssn_ptr)?;
+        let result_ssn = {
+            let mut ssn = lock_ptr!(ssn_ptr)?;
+            ssn.status.state = SessionState::Closed;
+            ssn.completion_time = Some(Utc::now());
+            ssn.version += 1;
+            ssn.clone()
+        };
 
-        if old_ssn.version >= ssn.version {
-            return Err(FlameError::VersionMismatch(format!(
-                "session <{id}> version is not incremented",
-                id = ssn.id
-            )));
+        if let Err(e) = self.engine.close_session(id.clone()).await {
+            if !matches!(e, FlameError::NotFound(_)) {
+                return Err(e);
+            }
         }
 
-        old_ssn.status.state = ssn.status.state;
-        old_ssn.completion_time = ssn.completion_time;
-        old_ssn.version = ssn.version;
-        old_ssn.events = ssn.events.clone();
+        self.evict_sessions()?;
 
-        Ok(old_ssn.clone())
+        Ok(result_ssn)
     }
 
     pub fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
@@ -443,9 +501,12 @@ impl Storage {
         // Session not in cache or not open, delegate to engine for atomic get-or-create operation
         let ssn = self.engine.open_session(id.clone(), spec).await?;
 
-        // Update in-memory cache (only for newly created sessions)
-        let mut ssn_map = lock_ptr!(self.sessions)?;
-        ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+        {
+            let mut ssn_map = lock_ptr!(self.sessions)?;
+            ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+        }
+
+        self.evict_sessions()?;
 
         Ok(ssn)
     }
@@ -466,10 +527,25 @@ impl Storage {
     }
 
     pub async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {
-        let ssn = self.engine.delete_session(id.clone()).await?;
+        let ssn = {
+            let ssn_map = lock_ptr!(self.sessions)?;
+            let ssn_ptr = ssn_map
+                .get(&id)
+                .ok_or_else(|| FlameError::NotFound(format!("session <{}>", id)))?;
+            let ssn = lock_ptr!(ssn_ptr)?;
+            ssn.clone()
+        };
 
-        let mut ssn_map = lock_ptr!(self.sessions)?;
-        ssn_map.remove(&ssn.id);
+        if let Err(e) = self.engine.delete_session(id.clone()).await {
+            if !matches!(e, FlameError::NotFound(_)) {
+                return Err(e);
+            }
+        }
+
+        {
+            let mut ssn_map = lock_ptr!(self.sessions)?;
+            ssn_map.remove(&id);
+        }
 
         self.event_manager.remove_events(id)?;
 
@@ -687,16 +763,26 @@ impl Storage {
             },
         };
 
-        let task = self
+        let updated_task = match self
             .engine
-            .update_task_state(gid, task_state, message)
-            .await?;
+            .update_task_state(gid.clone(), task_state, message)
+            .await
+        {
+            Ok(task) => task,
+            Err(FlameError::NotFound(_)) => {
+                let mut task_ptr = lock_ptr!(task)?;
+                task_ptr.state = task_state;
+                task_ptr.version += 1;
+                task_ptr.clone()
+            }
+            Err(e) => return Err(e),
+        };
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
-        ssn_ptr.update_task(&task)?;
+        ssn_ptr.update_task(&updated_task)?;
 
         self.event_manager.record_event(
-            EventOwner::from(task.gid()),
+            EventOwner::from(updated_task.gid()),
             Event {
                 code: task_state.into(),
                 message: Some(format!("Task state was updated to <{:?}>", task_state)),
@@ -725,16 +811,30 @@ impl Storage {
             },
         };
 
-        // Extract the message and state before task_result is moved
         let task_state = task_result.state;
         let task_message = task_result.message.clone();
+        let task_output = task_result.output.clone();
 
-        let task = self.engine.update_task_result(gid, task_result).await?;
+        let updated_task = match self
+            .engine
+            .update_task_result(gid.clone(), task_result)
+            .await
+        {
+            Ok(task) => task,
+            Err(FlameError::NotFound(_)) => {
+                let mut task_ptr = lock_ptr!(task)?;
+                task_ptr.state = task_state;
+                task_ptr.version += 1;
+                task_ptr.completion_time = Some(Utc::now());
+                task_ptr.output = task_output;
+                task_ptr.clone()
+            }
+            Err(e) => return Err(e),
+        };
 
         let mut ssn_ptr = lock_ptr!(ssn)?;
-        ssn_ptr.update_task(&task)?;
+        ssn_ptr.update_task(&updated_task)?;
 
-        // Use the error message from task_result for failed tasks, otherwise use generic message
         let event_message = match task_state {
             TaskState::Failed => {
                 task_message.unwrap_or_else(|| format!("Task failed with state <{:?}>", task_state))
@@ -743,9 +843,9 @@ impl Storage {
         };
 
         self.event_manager.record_event(
-            EventOwner::from(task.gid()),
+            EventOwner::from(updated_task.gid()),
             Event {
-                code: task.state.into(),
+                code: updated_task.state.into(),
                 message: Some(event_message),
                 creation_time: Utc::now(),
             },
@@ -836,3 +936,6 @@ mod node_tests;
 
 #[cfg(test)]
 mod node_executor_tests;
+
+#[cfg(test)]
+mod session_limit_tests;
