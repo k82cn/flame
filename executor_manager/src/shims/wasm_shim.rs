@@ -17,9 +17,9 @@ use anyhow::Context;
 use async_trait::async_trait;
 use stdng::{logs::TraceFn, trace_fn};
 use tokio::sync::Mutex;
-use wasmtime::component::*;
+use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Config, Engine, Store};
-use wasmtime_wasi::preview2::{command, Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use crate::executor::Executor;
 use crate::shims::wasm_shim::exports::component::flame::service;
@@ -29,8 +29,12 @@ use common::{self, apis, FlameError};
 wasmtime::component::bindgen!({
     path: "wit/flame.wit",
     world: "flame",
-    async: true
 });
+
+// Note: We use synchronous Wasm calls here because wasmtime-wasi 43's WasiCtx
+// is not Sync-safe, which prevents using async instantiation with the Shim trait's
+// Arc<Mutex<dyn Shim>> pattern. The Wasm tasks are expected to be short-lived
+// and non-blocking. For long-running Wasm tasks, consider using tokio::task::spawn_blocking.
 
 pub struct WasmShim {
     session_context: Option<apis::SessionContext>,
@@ -47,12 +51,11 @@ impl WasmShim {
 
         let mut config = Config::default();
         config.wasm_component_model(true);
-        config.async_support(true);
 
         let engine =
             Engine::new(&config).map_err(|e| common::FlameError::Internal(e.to_string()))?;
         let mut linker = Linker::new(&engine);
-        command::add_to_linker(&mut linker)
+        wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .map_err(|e| common::FlameError::Internal(e.to_string()))?;
         let wasi_view = ServerWasiView::new();
         let mut store = Store::new(&engine, wasi_view);
@@ -62,14 +65,13 @@ impl WasmShim {
             .clone()
             .ok_or(FlameError::InvalidConfig("command is empty".to_string()))?;
 
-        let component = Component::from_file(&engine, cmd)
-            .context("Component file not found")
-            .map_err(|e| common::FlameError::Internal(e.to_string()))?;
+        let component = Component::from_file(&engine, cmd).map_err(|e| {
+            common::FlameError::Internal(format!("Component file not found: {}", e))
+        })?;
 
-        let (instance, _) = Flame::instantiate_async(&mut store, &component, &linker)
-            .await
-            .context("Failed to instantiate the flame world")
-            .map_err(|e| common::FlameError::Internal(e.to_string()))?;
+        let instance = Flame::instantiate(&mut store, &component, &linker).map_err(|e| {
+            common::FlameError::Internal(format!("Failed to instantiate the flame world: {}", e))
+        })?;
 
         Ok(Arc::new(Mutex::new(WasmShim {
             store,
@@ -94,11 +96,10 @@ impl Shim for WasmShim {
 
         let _ = self
             .instance
-            .interface0
+            .component_flame_service()
             .call_on_session_enter(&mut self.store, &ssn_ctx)
-            .await
             .map_err(|e| common::FlameError::Internal(e.to_string()))?
-            .map_err(|e| common::FlameError::Internal(e.to_string()))?;
+            .map_err(|e| common::FlameError::Internal(e.message))?;
 
         self.session_context = Some(ctx.clone());
 
@@ -118,13 +119,12 @@ impl Shim for WasmShim {
 
         let result = self
             .instance
-            .interface0
+            .component_flame_service()
             .call_on_task_invoke(
                 &mut self.store,
                 &task_ctx,
                 ctx.input.clone().map(apis::TaskInput::into).as_ref(),
             )
-            .await
             .map_err(|e| common::FlameError::Internal(e.to_string()))?;
 
         match result {
@@ -161,24 +161,23 @@ impl Shim for WasmShim {
 
         let _ = self
             .instance
-            .interface0
+            .component_flame_service()
             .call_on_session_leave(&mut self.store, &ssn_ctx)
-            .await
             .map_err(|e| common::FlameError::Internal(e.to_string()))?
-            .map_err(|e| common::FlameError::Internal(e.to_string()))?;
+            .map_err(|e| common::FlameError::Internal(e.message))?;
 
         Ok(())
     }
 }
 
 struct ServerWasiView {
-    table: Table,
+    table: ResourceTable,
     ctx: WasiCtx,
 }
 
 impl ServerWasiView {
     fn new() -> Self {
-        let table = Table::new();
+        let table = ResourceTable::new();
         let ctx = WasiCtxBuilder::new().inherit_stdio().build();
 
         Self { table, ctx }
@@ -186,19 +185,10 @@ impl ServerWasiView {
 }
 
 impl WasiView for ServerWasiView {
-    fn table(&self) -> &Table {
-        &self.table
-    }
-
-    fn table_mut(&mut self) -> &mut Table {
-        &mut self.table
-    }
-
-    fn ctx(&self) -> &WasiCtx {
-        &self.ctx
-    }
-
-    fn ctx_mut(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }

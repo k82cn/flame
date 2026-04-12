@@ -31,8 +31,8 @@ serde_json = { workspace = true }
 serde_derive = { workspace = true }
 
 bytes = { workspace = true }
-wasmtime = "16"
-wasmtime-wasi = "16"
+wasmtime = "43"
+wasmtime-wasi = "43"
 anyhow = "1"
 tokio-stream = { workspace = true }
 shellexpand = "3.1"

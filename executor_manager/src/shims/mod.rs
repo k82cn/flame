@@ -192,7 +192,7 @@ pub async fn new(executor: &Executor, app: &ApplicationContext) -> Result<ShimPt
 }
 
 #[async_trait]
-pub trait Shim: Send + Sync + 'static {
+pub trait Shim: Send + 'static {
     async fn on_session_enter(&mut self, ctx: &SessionContext) -> Result<(), FlameError>;
     async fn on_task_invoke(&mut self, ctx: &TaskContext) -> Result<TaskResult, FlameError>;
     async fn on_session_leave(&mut self) -> Result<(), FlameError>;
