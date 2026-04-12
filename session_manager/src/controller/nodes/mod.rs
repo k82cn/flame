@@ -86,7 +86,7 @@ pub trait NodeStates: Send + Sync + 'static {
 mod tests {
     use super::*;
     use common::apis::{Node, NodeInfo, NodeState, ResourceRequirement, Shim};
-    use common::ctx::{FlameCluster, FlameClusterContext, FlameExecutorLimits, FlameExecutors};
+    use common::ctx::{FlameCluster, FlameClusterContext, FlameExecutors, FlameLimits};
 
     /// Helper to create a test node with specified state
     fn create_test_node(name: &str, state: NodeState) -> NodePtr {
@@ -126,10 +126,12 @@ mod tests {
                 schedule_interval: 1000,
                 executors: FlameExecutors {
                     shim: Shim::default(),
-                    limits: FlameExecutorLimits { max_executors: 10 },
                 },
                 tls: None,
-                limits: Default::default(),
+                limits: FlameLimits {
+                    max_sessions: None,
+                    max_executors: 10,
+                },
             },
             cache: None,
         };
