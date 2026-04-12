@@ -1,19 +1,19 @@
 # RFE375 Status
 
-**Current Status:** Draft  
-**Last Updated:** 2026-03-17  
+**Current Status:** Phase 1 Complete  
+**Last Updated:** 2026-04-12  
 **Tracking Issue:** [#375](https://github.com/xflops/flame/issues/375)  
 
 ## Progress Tracker
 
-### Phase 1: Critical Safety Fixes
+### Phase 1: Critical Safety Fixes ✓
 
-| Task                              | Status      | Assignee | PR  | Notes                                         |
-| --------------------------------- | ----------- | -------- | --- | --------------------------------------------- |
-| P1.1: Eliminate `unwrap()` panics | Not Started | -        | -   | 167 occurrences in 35 files                   |
-| P1.2: Fix CLI `todo!()` panic     | Not Started | -        | -   | `flmctl/src/helper.rs:17`                     |
-| P1.3: Fix WasmShim task failure   | Not Started | -        | -   | `executor_manager/src/shims/wasm_shim.rs:131` |
-| P1.4: Fix executor persistence    | Not Started | -        | -   | `session_manager/src/storage/mod.rs:579`      |
+| Task                              | Status | Assignee | PR  | Notes                                              |
+| --------------------------------- | ------ | -------- | --- | -------------------------------------------------- |
+| P1.1: Eliminate `unwrap()` panics | Done   | -        | -   | ~26 production occurrences fixed with TryFrom/expect |
+| P1.2: Fix CLI `todo!()` panic     | Done   | -        | -   | Shows help instead of panicking                    |
+| P1.3: Fix WasmShim task failure   | Done   | -        | -   | Proper TaskState::Failed handling                  |
+| P1.4: Fix executor persistence    | N/A    | -        | -   | Already implemented in sqlite/filesystem           |
 
 ### Phase 2: Foundation Improvements
 

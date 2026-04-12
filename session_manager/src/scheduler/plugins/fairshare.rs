@@ -216,7 +216,9 @@ impl Plugin for FairShare {
             }
 
             let delta = remaining_slots / underused.len() as f64;
-            let ssn = underused.pop().unwrap();
+            let ssn = underused
+                .pop()
+                .expect("failed to pop session: loop guard ensures non-empty");
 
             if ssn.deserved + delta < ssn.desired {
                 ssn.deserved += delta;
@@ -252,8 +254,8 @@ impl Plugin for FairShare {
             return None;
         }
 
-        let ss1 = ss1.unwrap();
-        let ss2 = ss2.unwrap();
+        let ss1 = ss1.expect("failed to get session info for s1: checked non-None above");
+        let ss2 = ss2.expect("failed to get session info for s2: checked non-None above");
 
         let left = ss1.allocated * ss2.deserved;
         let right = ss2.allocated * ss1.deserved;
@@ -277,8 +279,8 @@ impl Plugin for FairShare {
             return None;
         }
 
-        let n1 = n1.unwrap();
-        let n2 = n2.unwrap();
+        let n1 = n1.expect("failed to get node info for n1: checked non-None above");
+        let n2 = n2.expect("failed to get node info for n2: checked non-None above");
 
         let left = n1.allocated * n2.allocatable as f64;
         let right = n2.allocated * n1.allocatable as f64;

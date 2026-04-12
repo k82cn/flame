@@ -61,7 +61,9 @@ impl Action for DispatchAction {
                 break;
             }
 
-            let ssn = open_ssns.pop().unwrap();
+            let ssn = open_ssns
+                .pop()
+                .expect("failed to pop open session: loop guard ensures non-empty");
 
             if !ctx.is_underused(&ssn)? {
                 tracing::debug!("Session <{}> is not underused, skip it.", ssn.id);

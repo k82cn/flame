@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 use tokio::task::JoinHandle;
@@ -47,23 +48,36 @@ pub struct Executor {
 
 pub type ExecutorPtr = Arc<Mutex<Executor>>;
 
-impl From<rpc::Executor> for Executor {
-    fn from(e: rpc::Executor) -> Self {
-        Executor::from(&e)
-    }
-}
+impl TryFrom<&rpc::Executor> for Executor {
+    type Error = FlameError;
 
-impl From<&rpc::Executor> for Executor {
-    fn from(e: &rpc::Executor) -> Self {
-        let spec = e.spec.clone().unwrap();
-        let status = e.status.clone().unwrap();
-        let metadata = e.metadata.clone().unwrap();
+    fn try_from(e: &rpc::Executor) -> Result<Self, Self::Error> {
+        // Validate presence of required proto fields
+        let spec = e
+            .spec
+            .as_ref()
+            .ok_or_else(|| FlameError::Internal("missing spec in executor response".to_string()))?;
+        let status = e.status.as_ref().ok_or_else(|| {
+            FlameError::Internal("missing status in executor response".to_string())
+        })?;
+        let metadata = e.metadata.as_ref().ok_or_else(|| {
+            FlameError::Internal("missing metadata in executor response".to_string())
+        })?;
 
-        let state = rpc::ExecutorState::try_from(status.state).unwrap().into();
+        // Validate and convert state with a clear error on failure
+        let state = rpc::ExecutorState::try_from(status.state)
+            .map_err(|_| FlameError::Internal("invalid executor state".to_string()))?
+            .into();
 
-        Executor {
+        // Validate nested fields
+        let resreq = *spec
+            .resreq
+            .as_ref()
+            .ok_or_else(|| FlameError::Internal("missing resreq in executor spec".to_string()))?;
+
+        Ok(Executor {
             id: metadata.id.clone(),
-            resreq: spec.resreq.unwrap().into(),
+            resreq: resreq.into(),
             node: spec.node.clone(),
             slots: spec.slots,
             shim: Shim::from(spec.shim()), // Get shim from spec
@@ -72,7 +86,7 @@ impl From<&rpc::Executor> for Executor {
             context: None,
             shim_instance: None,
             state,
-        }
+        })
     }
 }
 

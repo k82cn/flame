@@ -279,7 +279,7 @@ impl StreamHandler {
     ) -> Result<Option<ExecutorMessage>, FlameError> {
         match response.response {
             Some(proto::watch_node_response::Response::Executor(proto_executor)) => {
-                let executor: Executor = proto_executor.into();
+                let executor: Executor = Executor::try_from(&proto_executor)?;
 
                 tracing::debug!(
                     "WatchNode: Received executor <{}> with state {:?}",

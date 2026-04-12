@@ -66,7 +66,9 @@ impl Action for AllocateAction {
                 break;
             }
 
-            let ssn = open_ssns.pop().unwrap();
+            let ssn = open_ssns
+                .pop()
+                .expect("failed to pop open session: loop guard ensures non-empty");
 
             let is_underused = ctx.is_underused(&ssn)?;
             if !is_underused {
