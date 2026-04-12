@@ -129,6 +129,7 @@ mod tests {
                     limits: FlameExecutorLimits { max_executors: 10 },
                 },
                 tls: None,
+                limits: Default::default(),
             },
             cache: None,
         };

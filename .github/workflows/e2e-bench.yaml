@@ -20,8 +20,9 @@ jobs:
           chmod +x ci/generate-certs.sh
           ci/generate-certs.sh -o ci/certs -s "flame-session-manager,flame-executor-manager,localhost,127.0.0.1" -i "172.20.0.0/24"
 
-      - name: Start Flame
+      - name: Start Flame with benchmark config
         run: |
+          cp ci/flame-cluster-benchmark.yaml ci/flame-cluster.yaml
           docker compose up --build --force-recreate -d
 
       - name: Install gRPC
@@ -35,11 +36,11 @@ jobs:
           profile: minimal
           override: true
 
-      - name: Run Benchmark
+      - name: Run Rust E2E Tests
         env:
           FLAME_ROOT: ${{ github.workspace }}
         run: |
-          cargo test --package flame-rs --test benchmark_test -- --nocapture
+          make e2e-rs
 
       - name: Show logs on failure
         if: failure()

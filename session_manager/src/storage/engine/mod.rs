@@ -24,6 +24,7 @@ use common::apis::{
 };
 
 mod filesystem;
+mod none;
 mod sqlite;
 pub mod types;
 
@@ -114,6 +115,7 @@ pub trait Engine: Send + Sync + 'static {
 /// Supported URL schemes:
 /// - `sqlite://` or `sqlite:` - SQLite database (default)
 /// - `filesystem://`, `file://`, `fs://` - Filesystem-based storage
+/// - `none` - In-memory only, no persistence (for non-recoverable workloads)
 ///
 /// Path resolution:
 /// - Triple slash (e.g., `fs:///data`) - Absolute path (`/data`)
@@ -130,9 +132,17 @@ pub trait Engine: Send + Sync + 'static {
 ///
 /// // Filesystem storage (relative to FLAME_HOME)
 /// let engine = connect("fs://data").await?;  // -> ${FLAME_HOME}/data
+///
+/// // None storage (in-memory only, no persistence)
+/// let engine = connect("none").await?;
 /// ```
 pub async fn connect(url: &str) -> Result<EnginePtr, FlameError> {
-    if url.starts_with("filesystem://") || url.starts_with("file://") || url.starts_with("fs://") {
+    if url == "none" {
+        none::NoneEngine::new_ptr(url).await
+    } else if url.starts_with("filesystem://")
+        || url.starts_with("file://")
+        || url.starts_with("fs://")
+    {
         tracing::info!("Using filesystem storage engine: {}", url);
         filesystem::FilesystemEngine::new_ptr(url).await
     } else {
