@@ -44,8 +44,8 @@ cluster:
   slot: "cpu=1,mem=2g"
   policy: proportion
   storage: "fs://{prefix}/data"
-executors:
-  shim: host
+  executors:
+    shim: host
   limits:
     max_executors: 128
 cache:

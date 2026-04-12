@@ -77,7 +77,8 @@ struct FlameExecutorLimitsYaml {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FlameLimitsYaml {
-    pub sessions: Option<usize>,
+    pub max_sessions: Option<usize>,
+    pub max_executors: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,17 +141,12 @@ pub struct FlameCluster {
 #[derive(Debug, Clone, Default)]
 pub struct FlameExecutors {
     pub shim: Shim,
-    pub limits: FlameExecutorLimits,
 }
 
 #[derive(Debug, Clone)]
-pub struct FlameExecutorLimits {
-    pub max_executors: u32,
-}
-
-#[derive(Debug, Clone, Default)]
 pub struct FlameLimits {
-    pub sessions: Option<usize>,
+    pub max_sessions: Option<usize>,
+    pub max_executors: u32,
 }
 
 /// TLS configuration for Flame services.
@@ -391,37 +387,24 @@ impl TryFrom<FlameExecutorsYaml> for FlameExecutors {
     fn try_from(executors: FlameExecutorsYaml) -> Result<Self, Self::Error> {
         Ok(FlameExecutors {
             shim: Shim::try_from(executors.shim.unwrap_or(DEFAULT_SHIM.to_string()))?,
-            limits: executors
-                .limits
-                .map(FlameExecutorLimits::try_from)
-                .unwrap_or_else(|| Ok(FlameExecutorLimits::default()))?,
         })
-    }
-}
-
-impl TryFrom<FlameExecutorLimitsYaml> for FlameExecutorLimits {
-    type Error = FlameError;
-    fn try_from(limits: FlameExecutorLimitsYaml) -> Result<Self, Self::Error> {
-        Ok(FlameExecutorLimits {
-            max_executors: limits
-                .max_executors
-                .unwrap_or(DEFAULT_MAX_EXECUTORS_PER_NODE),
-        })
-    }
-}
-
-impl Default for FlameExecutorLimits {
-    fn default() -> Self {
-        FlameExecutorLimits {
-            max_executors: DEFAULT_MAX_EXECUTORS_PER_NODE,
-        }
     }
 }
 
 impl From<FlameLimitsYaml> for FlameLimits {
     fn from(yaml: FlameLimitsYaml) -> Self {
         FlameLimits {
-            sessions: yaml.sessions,
+            max_sessions: yaml.max_sessions,
+            max_executors: yaml.max_executors.unwrap_or(DEFAULT_MAX_EXECUTORS_PER_NODE),
+        }
+    }
+}
+
+impl Default for FlameLimits {
+    fn default() -> Self {
+        FlameLimits {
+            max_sessions: None,
+            max_executors: DEFAULT_MAX_EXECUTORS_PER_NODE,
         }
     }
 }
@@ -513,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_flame_context_from_file() -> Result<(), FlameError> {
-        // New config structure: executors is under cluster
+        // New config structure: max_executors is under cluster.limits
         let context_string = r#"---
 cluster:
   name: flame
@@ -523,8 +506,8 @@ cluster:
   storage: sqlite://flame.db
   executors:
     shim: host
-    limits:
-      max_executors: 10
+  limits:
+    max_executors: 10
         "#;
 
         let tmp_dir = TempDir::new().unwrap();
@@ -540,7 +523,7 @@ cluster:
         assert_eq!(ctx.cluster.policy, "priority");
         assert_eq!(ctx.cluster.storage, "sqlite://flame.db");
         assert_eq!(ctx.cluster.executors.shim, Shim::Host);
-        assert_eq!(ctx.cluster.executors.limits.max_executors, 10);
+        assert_eq!(ctx.cluster.limits.max_executors, 10);
 
         Ok(())
     }

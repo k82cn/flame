@@ -23,7 +23,8 @@ mod tests {
             cluster: FlameCluster {
                 storage: "none".to_string(),
                 limits: FlameLimits {
-                    sessions: max_sessions,
+                    max_sessions,
+                    max_executors: 128,
                 },
                 ..Default::default()
             },

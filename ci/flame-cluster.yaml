@@ -8,8 +8,8 @@ cluster:
   schedule_interval: 500           # Scheduler loop interval in milliseconds (default: 500)
   executors:
     shim: host
-    limits:
-      max_executors: 10
+  limits:
+    max_executors: 10
   # TLS Configuration for Session Manager
   tls:
     cert_file: "/etc/flame/certs/server.crt"

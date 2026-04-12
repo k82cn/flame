@@ -61,7 +61,7 @@ pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameEr
         nodes: stdng::new_ptr(HashMap::new()),
         applications: stdng::new_ptr(HashMap::new()),
         event_manager: Arc::new(EventManager::new(None)?),
-        max_sessions: config.cluster.limits.sessions,
+        max_sessions: config.cluster.limits.max_sessions,
     }))
 }
 

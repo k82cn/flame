@@ -69,14 +69,14 @@ async fn main() -> Result<(), FlameError> {
     } else {
         0
     };
-    let manager_threads = ctx.cluster.executors.limits.max_executors as usize + 1;
+    let manager_threads = ctx.cluster.limits.max_executors as usize + 1;
 
     tracing::info!(
         "CPU allocation: total={}, cache={}, manager={}, max_executors={}",
         num_cpus,
         cache_threads,
         manager_threads,
-        ctx.cluster.executors.limits.max_executors
+        ctx.cluster.limits.max_executors
     );
 
     // Keep dedicated runtimes alive for the lifetime of their join handles.
