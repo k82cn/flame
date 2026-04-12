@@ -13,6 +13,11 @@ limitations under the License.
 
 use std::error::Error;
 
+use crate::Cli;
+use clap::CommandFactory;
+
 pub async fn run() -> Result<(), Box<dyn Error>> {
-    todo!()
+    Cli::command().print_help()?;
+    println!();
+    Ok(())
 }

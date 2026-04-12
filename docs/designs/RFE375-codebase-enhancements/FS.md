@@ -418,7 +418,8 @@ message SessionSpec {
 | State machine boilerplate | `controller/states/`, `executor/states/` | Extract trait with default impls |
 | Schema validation         | `apiserver/frontend.rs:99-122, 172-195`  | Extract helper function          |
 | Session heap setup        | `scheduler/actions/*.rs`                 | Extract to Context method        |
-| Logger initialization     | `common/`, `sdk/rust/`                   | Single implementation            |
+
+**Note:** `common/` and `sdk/rust/` cannot share code (different dependency graphs and APIs for internal vs external use).
 
 ---
 

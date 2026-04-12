@@ -121,9 +121,9 @@ impl BackendClient {
         let executors = resp
             .into_inner()
             .executors
-            .into_iter()
-            .map(rpc::Executor::into)
-            .collect();
+            .iter()
+            .map(Executor::try_from)
+            .collect::<Result<Vec<Executor>, FlameError>>()?;
 
         Ok(executors)
     }

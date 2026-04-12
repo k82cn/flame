@@ -260,11 +260,9 @@ impl Connection {
 
         let mut client = FlameClient::new(self.channel.clone());
         let ssn = client.create_session(create_ssn_req).await?;
-        let ssn = ssn.into_inner();
-
-        let mut ssn = Session::from(&ssn);
+        let inner_ssn = ssn.into_inner();
+        let mut ssn = Session::try_from(&inner_ssn)?;
         ssn.client = Some(client);
-
         Ok(ssn)
     }
 
@@ -272,12 +270,12 @@ impl Connection {
         let mut client = FlameClient::new(self.channel.clone());
         let ssn_list = client.list_session(ListSessionRequest {}).await?;
 
-        Ok(ssn_list
-            .into_inner()
+        let inner = ssn_list.into_inner();
+        inner
             .sessions
             .iter()
-            .map(Session::from)
-            .collect())
+            .map(Session::try_from)
+            .collect::<Result<Vec<Session>, FlameError>>()
     }
 
     pub async fn get_session(&self, id: &SessionID) -> Result<Session, FlameError> {
@@ -288,10 +286,9 @@ impl Connection {
             })
             .await?;
 
-        let ssn = ssn.into_inner();
-        let mut ssn = Session::from(&ssn);
+        let inner_ssn = ssn.into_inner();
+        let mut ssn = Session::try_from(&inner_ssn)?;
         ssn.client = Some(client);
-
         Ok(ssn)
     }
 
@@ -315,11 +312,9 @@ impl Connection {
 
         let mut client = FlameClient::new(self.channel.clone());
         let ssn = client.open_session(open_ssn_req).await?;
-        let ssn = ssn.into_inner();
-
-        let mut ssn = Session::from(&ssn);
+        let inner_ssn = ssn.into_inner();
+        let mut ssn = Session::try_from(&inner_ssn)?;
         ssn.client = Some(client);
-
         Ok(ssn)
     }
 
@@ -403,12 +398,12 @@ impl Connection {
         let mut client = FlameClient::new(self.channel.clone());
         let app_list = client.list_application(ListApplicationRequest {}).await?;
 
-        Ok(app_list
+        app_list
             .into_inner()
             .applications
             .iter()
-            .map(Application::from)
-            .collect())
+            .map(Application::try_from)
+            .collect::<Result<Vec<Application>, FlameError>>()
     }
 
     pub async fn get_application(&self, name: &str) -> Result<Application, FlameError> {
@@ -418,18 +413,18 @@ impl Connection {
                 name: name.to_string(),
             })
             .await?;
-        Ok(Application::from(&app.into_inner()))
+        Application::try_from(&app.into_inner())
     }
 
     pub async fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
         let executor_list = client.list_executor(ListExecutorRequest {}).await?;
-        Ok(executor_list
-            .into_inner()
+        let inner = executor_list.into_inner();
+        inner
             .executors
             .iter()
-            .map(Executor::from)
-            .collect())
+            .map(Executor::try_from)
+            .collect::<Result<Vec<Executor>, FlameError>>()
     }
 
     pub async fn list_node(&self) -> Result<Vec<Node>, FlameError> {
@@ -476,8 +471,8 @@ impl Session {
 
         let task = client.create_task(create_task_req).await?;
 
-        let task = task.into_inner();
-        Ok(Task::from(&task))
+        let inner = task.into_inner();
+        Task::try_from(&inner)
     }
 
     pub async fn get_task(&self, id: &TaskID) -> Result<Task, FlameError> {
@@ -493,8 +488,8 @@ impl Session {
         };
         let task = client.get_task(get_task_req).await?;
 
-        let task = task.into_inner();
-        Ok(Task::from(&task))
+        let inner = task.into_inner();
+        Task::try_from(&inner)
     }
 
     pub async fn list_tasks(&self) -> Result<Vec<Task>, FlameError> {
@@ -515,7 +510,7 @@ impl Session {
         let mut task_stream = task_stream.into_inner();
         while let Some(task) = task_stream.next().await {
             if let Ok(t) = task {
-                task_list.push(Task::from(&t));
+                task_list.push(Task::try_from(&t)?);
             }
         }
 
@@ -554,7 +549,10 @@ impl Session {
             match task {
                 Ok(t) => {
                     let mut informer = lock_ptr!(informer_ptr)?;
-                    informer.on_update(Task::from(&t));
+                    match Task::try_from(&t) {
+                        Ok(parsed) => informer.on_update(parsed),
+                        Err(err) => informer.on_error(err),
+                    }
                 }
                 Err(e) => {
                     let mut informer = lock_ptr!(informer_ptr)?;
@@ -582,33 +580,68 @@ impl Session {
     }
 }
 
-impl From<&rpc::Task> for Task {
-    fn from(task: &rpc::Task) -> Self {
-        let metadata = task.metadata.clone().unwrap();
-        let spec = task.spec.clone().unwrap();
-        let status = task.status.clone().unwrap();
-        Task {
+impl TryFrom<&rpc::Task> for Task {
+    type Error = FlameError;
+    fn try_from(task: &rpc::Task) -> Result<Self, FlameError> {
+        let metadata = task
+            .metadata
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing metadata in response".to_string()))?;
+        let spec = task
+            .spec
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing spec in response".to_string()))?;
+        let status = task
+            .status
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing status in response".to_string()))?;
+
+        let events = status
+            .events
+            .clone()
+            .into_iter()
+            .map(|ev| Event::try_from(&ev))
+            .collect::<Result<Vec<Event>, FlameError>>()?;
+
+        Ok(Task {
             id: metadata.id,
             ssn_id: spec.session_id.clone(),
             input: spec.input.map(TaskInput::from),
             output: spec.output.map(TaskOutput::from),
             state: TaskState::try_from(status.state).unwrap_or(TaskState::default()),
-            events: status.events.clone().into_iter().map(Event::from).collect(),
-        }
+            events,
+        })
     }
 }
 
-impl From<&rpc::Session> for Session {
-    fn from(ssn: &rpc::Session) -> Self {
-        let metadata = ssn.metadata.clone().unwrap();
-        let status = ssn.status.clone().unwrap();
-        let spec = ssn.spec.clone().unwrap();
+impl TryFrom<&rpc::Session> for Session {
+    type Error = FlameError;
+    fn try_from(ssn: &rpc::Session) -> Result<Self, FlameError> {
+        let metadata = ssn
+            .metadata
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing metadata in response".to_string()))?;
+        let status = ssn
+            .status
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing status in response".to_string()))?;
+        let spec = ssn
+            .spec
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing spec in response".to_string()))?;
 
-        let naivedatetime_utc =
-            DateTime::from_timestamp_millis(status.creation_time * 1000).unwrap();
+        let naivedatetime_utc = DateTime::from_timestamp_millis(status.creation_time * 1000)
+            .ok_or_else(|| FlameError::Internal("invalid timestamp".to_string()))?;
         let creation_time = Utc.from_utc_datetime(&naivedatetime_utc.naive_utc());
 
-        Session {
+        let events = status
+            .events
+            .clone()
+            .into_iter()
+            .map(|ev| Event::try_from(&ev))
+            .collect::<Result<Vec<Event>, FlameError>>()?;
+
+        Ok(Session {
             client: None,
             id: metadata.id,
             slots: spec.slots,
@@ -619,47 +652,59 @@ impl From<&rpc::Session> for Session {
             running: status.running,
             succeed: status.succeed,
             failed: status.failed,
-            events: status.events.clone().into_iter().map(Event::from).collect(),
+            events,
             tasks: None,
-        }
+        })
     }
 }
 
-impl From<&rpc::Event> for Event {
-    fn from(event: &rpc::Event) -> Self {
+impl TryFrom<&rpc::Event> for Event {
+    type Error = FlameError;
+    fn try_from(event: &rpc::Event) -> Result<Self, FlameError> {
         let second = event.creation_time / 1000;
         let nanosecond = ((event.creation_time % 1000) * 1_000_000) as u32;
-
-        Self {
+        let creation_time = DateTime::from_timestamp(second, nanosecond)
+            .ok_or_else(|| FlameError::Internal("invalid timestamp".to_string()))?;
+        Ok(Event {
             code: event.code,
             message: event.message.clone(),
-            creation_time: DateTime::from_timestamp(second, nanosecond).unwrap(),
-        }
+            creation_time,
+        })
     }
 }
 
-impl From<rpc::Event> for Event {
-    fn from(event: rpc::Event) -> Self {
-        Event::from(&event)
+impl TryFrom<rpc::Event> for Event {
+    type Error = FlameError;
+    fn try_from(event: rpc::Event) -> Result<Self, FlameError> {
+        Event::try_from(&event)
     }
 }
 
-impl From<&rpc::Application> for Application {
-    fn from(app: &rpc::Application) -> Self {
-        let metadata = app.metadata.clone().unwrap();
-        let spec = app.spec.clone().unwrap();
-        let status = app.status.unwrap();
+impl TryFrom<&rpc::Application> for Application {
+    type Error = FlameError;
+    fn try_from(app: &rpc::Application) -> Result<Self, FlameError> {
+        let metadata = app
+            .metadata
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing metadata in application".to_string()))?;
+        let spec = app
+            .spec
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing spec in application".to_string()))?;
+        let status = app
+            .status
+            .ok_or_else(|| FlameError::Internal("missing status in application".to_string()))?;
 
-        let naivedatetime_utc =
-            DateTime::from_timestamp_millis(status.creation_time * 1000).unwrap();
+        let naivedatetime_utc = DateTime::from_timestamp_millis(status.creation_time * 1000)
+            .ok_or_else(|| FlameError::Internal("invalid timestamp".to_string()))?;
         let creation_time = Utc.from_utc_datetime(&naivedatetime_utc.naive_utc());
 
-        Self {
+        Ok(Self {
             name: metadata.name,
             attributes: ApplicationAttributes::from(spec),
             state: ApplicationState::from(status.state()),
             creation_time,
-        }
+        })
     }
 }
 
@@ -733,27 +778,33 @@ impl From<rpc::ApplicationSchema> for ApplicationSchema {
     }
 }
 
-impl From<&rpc::Executor> for Executor {
-    fn from(e: &rpc::Executor) -> Self {
-        let spec = e.spec.clone().unwrap();
-        let status = e.status.clone().unwrap();
-        let metadata = e.metadata.clone().unwrap();
+impl TryFrom<&rpc::Executor> for Executor {
+    type Error = FlameError;
+    fn try_from(e: &rpc::Executor) -> Result<Self, FlameError> {
+        let spec = e
+            .spec
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing spec in executor".to_string()))?;
+        let status = e
+            .status
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing status in executor".to_string()))?;
+        let metadata = e
+            .metadata
+            .clone()
+            .ok_or_else(|| FlameError::Internal("missing metadata in executor".to_string()))?;
 
-        let state = rpc::ExecutorState::try_from(status.state).unwrap().into();
+        let state = rpc::ExecutorState::try_from(status.state)
+            .map_err(|_| FlameError::Internal("invalid executor state".to_string()))?
+            .into();
 
-        Executor {
+        Ok(Executor {
             id: metadata.id,
             session_id: status.session_id,
             slots: spec.slots,
             node: spec.node,
             state,
-        }
-    }
-}
-
-impl From<rpc::Executor> for Executor {
-    fn from(e: rpc::Executor) -> Self {
-        Executor::from(&e)
+        })
     }
 }
 

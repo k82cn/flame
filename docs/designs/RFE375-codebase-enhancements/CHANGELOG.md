@@ -21,7 +21,7 @@ All notable changes to the Codebase Enhancement initiative will be documented in
 - Documented 17 documentation gaps including missing API docs and troubleshooting guide
 
 ### Design Decisions
-- Keep separate `FlameError` definitions: `common/` for internal components, `sdk/rust/` for end-users (intentionally different APIs)
+- `common/` and `sdk/rust/` cannot share any code: `common/` is for internal server components, `sdk/rust/` is for end-users with intentionally different APIs and dependencies
 - API versioning via package name only (`flame.v1`), no new message fields
 
 ## Future Releases

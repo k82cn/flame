@@ -116,7 +116,7 @@ impl Shim for WasmShim {
             task_id: ctx.task_id.clone(),
         };
 
-        let output = self
+        let result = self
             .instance
             .interface0
             .call_on_task_invoke(
@@ -125,23 +125,37 @@ impl Shim for WasmShim {
                 ctx.input.clone().map(apis::TaskInput::into).as_ref(),
             )
             .await
-            .map_err(|e| common::FlameError::Internal(e.to_string()))?
             .map_err(|e| common::FlameError::Internal(e.to_string()))?;
 
-        // TODO: Handle task failure
-        let output = output.map(apis::TaskOutput::from);
-        Ok(apis::TaskResult {
-            state: apis::TaskState::Succeed,
-            output,
-            message: None,
-        })
+        match result {
+            Ok(output) => Ok(apis::TaskResult {
+                state: apis::TaskState::Succeed,
+                output: output.map(apis::TaskOutput::from),
+                message: None,
+            }),
+            Err(e) => {
+                tracing::error!("Task failed: {}", e.message);
+                Ok(apis::TaskResult {
+                    state: apis::TaskState::Failed,
+                    output: None,
+                    message: Some(e.message),
+                })
+            }
+        }
     }
 
     async fn on_session_leave(&mut self) -> Result<(), common::FlameError> {
         trace_fn!("WasmShim::on_session_leave");
 
+        let session_context = self
+            .session_context
+            .as_ref()
+            .ok_or(FlameError::InvalidState(
+                "session context not set".to_string(),
+            ))?;
+
         let ssn_ctx = service::SessionContext {
-            session_id: self.session_context.clone().unwrap().session_id.clone(),
+            session_id: session_context.session_id.clone(),
             common_data: None,
         };
 
