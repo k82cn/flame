@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 
 use crate::client::BackendClient;
 use crate::shims::ShimPtr;
-use ::rpc::flame::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
+use ::rpc::flame::v1::{self as rpc, ExecutorSpec, ExecutorStatus, Metadata};
 
 use crate::states;
 use common::apis::{ExecutorState, ResourceRequirement, SessionContext, Shim, TaskContext};

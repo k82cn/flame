@@ -12,9 +12,11 @@ limitations under the License.
 */
 
 pub(crate) mod flame {
-    tonic::include_proto!("flame");
+    pub mod v1 {
+        tonic::include_proto!("flame.v1");
+    }
 }
-use flame as rpc;
+use flame::v1 as rpc;
 
 use bincode::{config, Decode, Encode};
 use bytes::Bytes;

@@ -16,8 +16,8 @@ use std::time::Duration;
 use tonic::transport::Server;
 
 use common::ctx::FlameClusterContext;
-use rpc::flame::backend_server::BackendServer;
-use rpc::flame::frontend_server::FrontendServer;
+use rpc::flame::v1::backend_server::BackendServer;
+use rpc::flame::v1::frontend_server::FrontendServer;
 
 use crate::controller::ControllerPtr;
 use crate::{FlameError, FlameThread};

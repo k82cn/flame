@@ -33,7 +33,7 @@ use self::rpc::{
     ListTaskRequest, OpenSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
     UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
-use crate::apis::flame as rpc;
+use crate::apis::flame::v1 as rpc;
 use crate::apis::FlameClientTls;
 use crate::apis::{
     ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,

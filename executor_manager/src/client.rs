@@ -17,9 +17,9 @@ use tokio_stream::Stream;
 use tonic::transport::Channel;
 use tonic::Streaming;
 
-use rpc::backend_client::BackendClient as FlameBackendClient;
-use rpc::flame as rpc;
-use rpc::{
+use ::rpc::flame::v1 as rpc;
+use ::rpc::flame::v1::backend_client::BackendClient as FlameBackendClient;
+use ::rpc::flame::v1::{
     BindExecutorCompletedRequest, BindExecutorRequest, CompleteTaskRequest, LaunchTaskRequest,
     RegisterExecutorRequest, RegisterNodeRequest, ReleaseNodeRequest, SyncNodeRequest,
     UnbindExecutorCompletedRequest, UnbindExecutorRequest, UnregisterExecutorRequest,
