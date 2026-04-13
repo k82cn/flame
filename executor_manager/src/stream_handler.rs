@@ -26,7 +26,7 @@ use tonic::Streaming;
 
 use common::apis::Node;
 use common::FlameError;
-use rpc::flame as proto;
+use rpc::flame::v1 as proto;
 use stdng::{lock_ptr, MutexPtr};
 
 use crate::client::BackendClient;

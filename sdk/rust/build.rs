@@ -13,14 +13,14 @@ limitations under the License.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
-        .type_attribute("flame.TaskState", "#[allow(clippy::enum_variant_names)]")
-        .type_attribute("flame.Shim", "#[allow(clippy::enum_variant_names)]")
+        .type_attribute("flame.v1.TaskState", "#[allow(clippy::enum_variant_names)]")
+        .type_attribute("flame.v1.Shim", "#[allow(clippy::enum_variant_names)]")
         .type_attribute(
-            "flame.ExecutorState",
+            "flame.v1.ExecutorState",
             "#[allow(clippy::enum_variant_names)]",
         )
-        .type_attribute("flame.NodeSpec", "#[allow(dead_code)]")
-        .type_attribute("flame.Node", "#[allow(dead_code)]")
+        .type_attribute("flame.v1.NodeSpec", "#[allow(dead_code)]")
+        .type_attribute("flame.v1.Node", "#[allow(dead_code)]")
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile_protos(
             &[

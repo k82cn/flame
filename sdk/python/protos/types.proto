@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package flame;
+package flame.v1;
 
-option go_package = "github.com/flame-sh/flame/sdk/go/rpc";
+option go_package = "github.com/flame-sh/flame/sdk/go/rpc/v1";
 
 message Metadata {
   string id = 1;
@@ -173,10 +173,12 @@ message ApplicationList {
 message ResourceRequirement {
   uint64 cpu = 1;
   uint64 memory = 2;
+  int32 gpu = 3;
 }
 
+// NodeSpec contains the static/desired attributes of a node.
 message NodeSpec {
-
+  string hostname = 1;
 }
 
 enum NodeState {
@@ -185,22 +187,38 @@ enum NodeState {
   NotReady = 2;
 }
 
+// NodeInfo contains system information about the node.
 message NodeInfo {
   string arch = 1;
   string os = 2;
 }
 
+// NodeAddress represents a network address for a node.
+message NodeAddress {
+  string type = 1;    // e.g., "InternalIP", "ExternalIP", "Hostname"
+  string address = 2;
+}
+
+// NodeStatus contains the dynamic/observed state of a node.
 message NodeStatus {
   NodeState state = 1;
   ResourceRequirement capacity = 2;
   ResourceRequirement allocatable = 3;
   NodeInfo info = 4;
+  repeated NodeAddress addresses = 5;
+  int64 last_heartbeat_time = 6;  // Unix epoch seconds
 }
 
+// Node follows the standard Kubernetes-style object pattern.
 message Node {
   Metadata metadata = 1;
   NodeSpec spec = 2;
   NodeStatus status = 3;
+}
+
+// NodeList contains a list of nodes.
+message NodeList {
+  repeated Node nodes = 1;
 }
 
 message Result {

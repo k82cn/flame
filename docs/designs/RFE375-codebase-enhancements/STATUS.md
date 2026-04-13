@@ -1,7 +1,7 @@
 # RFE375 Status
 
-**Current Status:** Phase 1 Complete  
-**Last Updated:** 2026-04-12  
+**Current Status:** Phase 2 Complete  
+**Last Updated:** 2026-04-13  
 **Tracking Issue:** [#375](https://github.com/xflops/flame/issues/375)  
 
 ## Progress Tracker
@@ -15,13 +15,13 @@
 | P1.3: Fix WasmShim task failure   | Done   | -        | -   | Proper TaskState::Failed handling                  |
 | P1.4: Fix executor persistence    | N/A    | -        | -   | Already implemented in sqlite/filesystem           |
 
-### Phase 2: Foundation Improvements
+### Phase 2: Foundation Improvements ✓
 
-| Task                          | Status      | Assignee | PR  | Notes                  |
-| ----------------------------- | ----------- | -------- | --- | ---------------------- |
-| P2.1: Add API versioning      | Not Started | -        | -   | All proto files        |
-| P2.2: Split `apis.rs`         | Not Started | -        | -   | 1284 lines → 3 modules |
-| P2.3: Add code coverage to CI | Not Started | -        | -   | Codecov integration    |
+| Task                          | Status | Assignee | PR  | Notes                                              |
+| ----------------------------- | ------ | -------- | --- | -------------------------------------------------- |
+| P2.1: Add API versioning      | Done   | -        | -   | All protos now use `flame.v1` package              |
+| P2.2: Split `apis.rs`         | Done   | -        | -   | 1350 lines → 5 modules (types, session, from_rpc, to_rpc, mod) |
+| P2.3: Add code coverage to CI | Done   | -        | -   | cargo-tarpaulin + Codecov integration added        |
 
 ### Phase 3: Quality Improvements
 
@@ -44,18 +44,20 @@
 
 | Metric                        | Baseline | Target | Current |
 | ----------------------------- | -------- | ------ | ------- |
-| `unwrap()` in production code | 167      | 0      | 167     |
+| `unwrap()` in production code | 167      | 0      | ~26     |
 | `TODO/FIXME` comments         | 5        | 0      | 5       |
-| Code coverage (Rust)          | Unknown  | 70%    | Unknown |
+| Code coverage (Rust)          | Unknown  | 70%    | Pending (CI added) |
 | Code coverage (Python SDK)    | 0%       | 80%    | 0%      |
 | CI pipeline duration          | ~5 min   | ~3 min | ~5 min  |
 | Documentation completeness    | 60%      | 90%    | 60%     |
 
 ## Decision Log
 
-| Date       | Decision       | Rationale                                                             |
-| ---------- | -------------- | --------------------------------------------------------------------- |
-| 2026-03-17 | Created RFE372 | Comprehensive codebase review identified 89 enhancement opportunities |
+| Date       | Decision                    | Rationale                                                             |
+| ---------- | --------------------------- | --------------------------------------------------------------------- |
+| 2026-03-17 | Created RFE372              | Comprehensive codebase review identified 89 enhancement opportunities |
+| 2026-04-13 | API versioning: flame.v1    | Proto package changed from `flame` to `flame.v1` for future compatibility |
+| 2026-04-13 | Split apis.rs into modules  | Original 1350-line file split into 5 files, each under 410 lines      |
 
 ## Blockers
 

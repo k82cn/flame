@@ -24,7 +24,7 @@ use tonic::{Request, Response, Status};
 
 #[cfg(unix)]
 use self::rpc::instance_server::{Instance, InstanceServer};
-use crate::apis::flame as rpc;
+use crate::apis::flame::v1 as rpc;
 
 use crate::apis::{CommonData, FlameError, TaskInput, TaskOutput};
 

@@ -29,7 +29,7 @@ use common::apis::{
     SessionID, SessionState, Shim, Task, TaskID, TaskState,
 };
 use common::FlameError;
-use rpc::flame as rpc;
+use rpc::flame::v1 as rpc;
 
 pub type SessionInfoPtr = Arc<SessionInfo>;
 pub type ExecutorInfoPtr = Arc<ExecutorInfo>;

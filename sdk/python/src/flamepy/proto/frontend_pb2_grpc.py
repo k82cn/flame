@@ -39,87 +39,97 @@ class FrontendStub(object):
             channel: A grpc.Channel.
         """
         self.RegisterApplication = channel.unary_unary(
-                '/flame.Frontend/RegisterApplication',
+                '/flame.v1.Frontend/RegisterApplication',
                 request_serializer=frontend__pb2.RegisterApplicationRequest.SerializeToString,
                 response_deserializer=types__pb2.Result.FromString,
                 _registered_method=True)
         self.UnregisterApplication = channel.unary_unary(
-                '/flame.Frontend/UnregisterApplication',
+                '/flame.v1.Frontend/UnregisterApplication',
                 request_serializer=frontend__pb2.UnregisterApplicationRequest.SerializeToString,
                 response_deserializer=types__pb2.Result.FromString,
                 _registered_method=True)
         self.UpdateApplication = channel.unary_unary(
-                '/flame.Frontend/UpdateApplication',
+                '/flame.v1.Frontend/UpdateApplication',
                 request_serializer=frontend__pb2.UpdateApplicationRequest.SerializeToString,
                 response_deserializer=types__pb2.Result.FromString,
                 _registered_method=True)
         self.GetApplication = channel.unary_unary(
-                '/flame.Frontend/GetApplication',
+                '/flame.v1.Frontend/GetApplication',
                 request_serializer=frontend__pb2.GetApplicationRequest.SerializeToString,
                 response_deserializer=types__pb2.Application.FromString,
                 _registered_method=True)
         self.ListApplication = channel.unary_unary(
-                '/flame.Frontend/ListApplication',
+                '/flame.v1.Frontend/ListApplication',
                 request_serializer=frontend__pb2.ListApplicationRequest.SerializeToString,
                 response_deserializer=types__pb2.ApplicationList.FromString,
                 _registered_method=True)
         self.ListExecutor = channel.unary_unary(
-                '/flame.Frontend/ListExecutor',
+                '/flame.v1.Frontend/ListExecutor',
                 request_serializer=frontend__pb2.ListExecutorRequest.SerializeToString,
                 response_deserializer=types__pb2.ExecutorList.FromString,
                 _registered_method=True)
+        self.ListNodes = channel.unary_unary(
+                '/flame.v1.Frontend/ListNodes',
+                request_serializer=frontend__pb2.ListNodesRequest.SerializeToString,
+                response_deserializer=types__pb2.NodeList.FromString,
+                _registered_method=True)
+        self.GetNode = channel.unary_unary(
+                '/flame.v1.Frontend/GetNode',
+                request_serializer=frontend__pb2.GetNodeRequest.SerializeToString,
+                response_deserializer=frontend__pb2.GetNodeResponse.FromString,
+                _registered_method=True)
         self.CreateSession = channel.unary_unary(
-                '/flame.Frontend/CreateSession',
+                '/flame.v1.Frontend/CreateSession',
                 request_serializer=frontend__pb2.CreateSessionRequest.SerializeToString,
                 response_deserializer=types__pb2.Session.FromString,
                 _registered_method=True)
         self.DeleteSession = channel.unary_unary(
-                '/flame.Frontend/DeleteSession',
+                '/flame.v1.Frontend/DeleteSession',
                 request_serializer=frontend__pb2.DeleteSessionRequest.SerializeToString,
                 response_deserializer=types__pb2.Session.FromString,
                 _registered_method=True)
         self.OpenSession = channel.unary_unary(
-                '/flame.Frontend/OpenSession',
+                '/flame.v1.Frontend/OpenSession',
                 request_serializer=frontend__pb2.OpenSessionRequest.SerializeToString,
                 response_deserializer=types__pb2.Session.FromString,
                 _registered_method=True)
         self.CloseSession = channel.unary_unary(
-                '/flame.Frontend/CloseSession',
+                '/flame.v1.Frontend/CloseSession',
                 request_serializer=frontend__pb2.CloseSessionRequest.SerializeToString,
                 response_deserializer=types__pb2.Session.FromString,
                 _registered_method=True)
         self.GetSession = channel.unary_unary(
-                '/flame.Frontend/GetSession',
+                '/flame.v1.Frontend/GetSession',
                 request_serializer=frontend__pb2.GetSessionRequest.SerializeToString,
                 response_deserializer=types__pb2.Session.FromString,
                 _registered_method=True)
         self.ListSession = channel.unary_unary(
-                '/flame.Frontend/ListSession',
+                '/flame.v1.Frontend/ListSession',
                 request_serializer=frontend__pb2.ListSessionRequest.SerializeToString,
                 response_deserializer=types__pb2.SessionList.FromString,
                 _registered_method=True)
         self.CreateTask = channel.unary_unary(
-                '/flame.Frontend/CreateTask',
+                '/flame.v1.Frontend/CreateTask',
                 request_serializer=frontend__pb2.CreateTaskRequest.SerializeToString,
                 response_deserializer=types__pb2.Task.FromString,
                 _registered_method=True)
         self.DeleteTask = channel.unary_unary(
-                '/flame.Frontend/DeleteTask',
+                '/flame.v1.Frontend/DeleteTask',
                 request_serializer=frontend__pb2.DeleteTaskRequest.SerializeToString,
                 response_deserializer=types__pb2.Task.FromString,
                 _registered_method=True)
         self.GetTask = channel.unary_unary(
-                '/flame.Frontend/GetTask',
+                '/flame.v1.Frontend/GetTask',
                 request_serializer=frontend__pb2.GetTaskRequest.SerializeToString,
                 response_deserializer=types__pb2.Task.FromString,
                 _registered_method=True)
         self.WatchTask = channel.unary_stream(
-                '/flame.Frontend/WatchTask',
+                '/flame.v1.Frontend/WatchTask',
                 request_serializer=frontend__pb2.WatchTaskRequest.SerializeToString,
                 response_deserializer=types__pb2.Task.FromString,
                 _registered_method=True)
         self.ListTask = channel.unary_stream(
-                '/flame.Frontend/ListTask',
+                '/flame.v1.Frontend/ListTask',
                 request_serializer=frontend__pb2.ListTaskRequest.SerializeToString,
                 response_deserializer=types__pb2.Task.FromString,
                 _registered_method=True)
@@ -162,6 +172,19 @@ class FrontendServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def ListExecutor(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListNodes(self, request, context):
+        """Node operations
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetNode(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -266,6 +289,16 @@ def add_FrontendServicer_to_server(servicer, server):
                     request_deserializer=frontend__pb2.ListExecutorRequest.FromString,
                     response_serializer=types__pb2.ExecutorList.SerializeToString,
             ),
+            'ListNodes': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListNodes,
+                    request_deserializer=frontend__pb2.ListNodesRequest.FromString,
+                    response_serializer=types__pb2.NodeList.SerializeToString,
+            ),
+            'GetNode': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetNode,
+                    request_deserializer=frontend__pb2.GetNodeRequest.FromString,
+                    response_serializer=frontend__pb2.GetNodeResponse.SerializeToString,
+            ),
             'CreateSession': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateSession,
                     request_deserializer=frontend__pb2.CreateSessionRequest.FromString,
@@ -323,9 +356,9 @@ def add_FrontendServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'flame.Frontend', rpc_method_handlers)
+            'flame.v1.Frontend', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('flame.Frontend', rpc_method_handlers)
+    server.add_registered_method_handlers('flame.v1.Frontend', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -349,7 +382,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/RegisterApplication',
+            '/flame.v1.Frontend/RegisterApplication',
             frontend__pb2.RegisterApplicationRequest.SerializeToString,
             types__pb2.Result.FromString,
             options,
@@ -376,7 +409,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/UnregisterApplication',
+            '/flame.v1.Frontend/UnregisterApplication',
             frontend__pb2.UnregisterApplicationRequest.SerializeToString,
             types__pb2.Result.FromString,
             options,
@@ -403,7 +436,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/UpdateApplication',
+            '/flame.v1.Frontend/UpdateApplication',
             frontend__pb2.UpdateApplicationRequest.SerializeToString,
             types__pb2.Result.FromString,
             options,
@@ -430,7 +463,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/GetApplication',
+            '/flame.v1.Frontend/GetApplication',
             frontend__pb2.GetApplicationRequest.SerializeToString,
             types__pb2.Application.FromString,
             options,
@@ -457,7 +490,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/ListApplication',
+            '/flame.v1.Frontend/ListApplication',
             frontend__pb2.ListApplicationRequest.SerializeToString,
             types__pb2.ApplicationList.FromString,
             options,
@@ -484,9 +517,63 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/ListExecutor',
+            '/flame.v1.Frontend/ListExecutor',
             frontend__pb2.ListExecutorRequest.SerializeToString,
             types__pb2.ExecutorList.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListNodes(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/flame.v1.Frontend/ListNodes',
+            frontend__pb2.ListNodesRequest.SerializeToString,
+            types__pb2.NodeList.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetNode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/flame.v1.Frontend/GetNode',
+            frontend__pb2.GetNodeRequest.SerializeToString,
+            frontend__pb2.GetNodeResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -511,7 +598,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/CreateSession',
+            '/flame.v1.Frontend/CreateSession',
             frontend__pb2.CreateSessionRequest.SerializeToString,
             types__pb2.Session.FromString,
             options,
@@ -538,7 +625,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/DeleteSession',
+            '/flame.v1.Frontend/DeleteSession',
             frontend__pb2.DeleteSessionRequest.SerializeToString,
             types__pb2.Session.FromString,
             options,
@@ -565,7 +652,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/OpenSession',
+            '/flame.v1.Frontend/OpenSession',
             frontend__pb2.OpenSessionRequest.SerializeToString,
             types__pb2.Session.FromString,
             options,
@@ -592,7 +679,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/CloseSession',
+            '/flame.v1.Frontend/CloseSession',
             frontend__pb2.CloseSessionRequest.SerializeToString,
             types__pb2.Session.FromString,
             options,
@@ -619,7 +706,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/GetSession',
+            '/flame.v1.Frontend/GetSession',
             frontend__pb2.GetSessionRequest.SerializeToString,
             types__pb2.Session.FromString,
             options,
@@ -646,7 +733,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/ListSession',
+            '/flame.v1.Frontend/ListSession',
             frontend__pb2.ListSessionRequest.SerializeToString,
             types__pb2.SessionList.FromString,
             options,
@@ -673,7 +760,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/CreateTask',
+            '/flame.v1.Frontend/CreateTask',
             frontend__pb2.CreateTaskRequest.SerializeToString,
             types__pb2.Task.FromString,
             options,
@@ -700,7 +787,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/DeleteTask',
+            '/flame.v1.Frontend/DeleteTask',
             frontend__pb2.DeleteTaskRequest.SerializeToString,
             types__pb2.Task.FromString,
             options,
@@ -727,7 +814,7 @@ class Frontend(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/flame.Frontend/GetTask',
+            '/flame.v1.Frontend/GetTask',
             frontend__pb2.GetTaskRequest.SerializeToString,
             types__pb2.Task.FromString,
             options,
@@ -754,7 +841,7 @@ class Frontend(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/flame.Frontend/WatchTask',
+            '/flame.v1.Frontend/WatchTask',
             frontend__pb2.WatchTaskRequest.SerializeToString,
             types__pb2.Task.FromString,
             options,
@@ -781,7 +868,7 @@ class Frontend(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/flame.Frontend/ListTask',
+            '/flame.v1.Frontend/ListTask',
             frontend__pb2.ListTaskRequest.SerializeToString,
             types__pb2.Task.FromString,
             options,

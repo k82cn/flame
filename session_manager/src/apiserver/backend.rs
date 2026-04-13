@@ -26,7 +26,7 @@ use self::rpc::{
     ReleaseNodeRequest, SyncNodeRequest, SyncNodeResponse, UnbindExecutorCompletedRequest,
     UnbindExecutorRequest, UnregisterExecutorRequest, WatchNodeRequest, WatchNodeResponse,
 };
-use ::rpc::flame as rpc;
+use ::rpc::flame::v1 as rpc;
 
 use crate::apiserver::Flame;
 use crate::controller::ControllerPtr;

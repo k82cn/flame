@@ -32,7 +32,7 @@ use self::rpc::{
     UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
 };
 
-use rpc::flame as rpc;
+use rpc::flame::v1 as rpc;
 
 use common::{apis, FlameError};
 

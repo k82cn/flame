@@ -2,9 +2,9 @@ syntax = "proto3";
 
 import "types.proto";
 
-package flame;
+package flame.v1;
 
-option go_package = "github.com/flame-sh/flame/sdk/go/rpc";
+option go_package = "github.com/flame-sh/flame/sdk/go/rpc/v1";
 
 message ApplicationContext {
     string name = 1;

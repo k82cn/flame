@@ -26,7 +26,7 @@ use tonic::transport::{Endpoint, Uri};
 use tonic::Request;
 use tower::service_fn;
 
-use ::rpc::flame as rpc;
+use ::rpc::flame::v1 as rpc;
 use rpc::instance_client::InstanceClient;
 use rpc::EmptyRequest;
 
