@@ -124,8 +124,9 @@ pub struct SessionInfo {
     pub completion_time: Option<DateTime<Utc>>,
 
     pub state: SessionState,
-    pub min_instances: u32,         // Minimum number of instances
-    pub max_instances: Option<u32>, // Maximum number of instances (None means unlimited)
+    pub min_instances: u32,
+    pub max_instances: Option<u32>,
+    pub batch_size: u32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -134,9 +135,10 @@ pub struct ExecutorInfo {
     pub node: String,
     pub resreq: ResourceRequirement,
     pub slots: u32,
-    pub shim: Shim, // Supported shim type reported by executor
+    pub shim: Shim,
     pub task_id: Option<TaskID>,
     pub ssn_id: Option<SessionID>,
+    pub batch_index: Option<u32>,
 
     pub creation_time: DateTime<Utc>,
     pub state: ExecutorState,
@@ -191,9 +193,10 @@ impl From<&Executor> for ExecutorInfo {
             node: exec.node.clone(),
             resreq: exec.resreq.clone(),
             slots: exec.slots,
-            shim: exec.shim, // Get shim from executor
+            shim: exec.shim,
             task_id: exec.task_id,
             ssn_id: exec.ssn_id.clone(),
+            batch_index: exec.batch_index,
             creation_time: exec.creation_time,
             state: exec.state,
         }
@@ -214,7 +217,6 @@ impl From<&Task> for TaskInfo {
 
 impl From<&Session> for SessionInfo {
     fn from(ssn: &Session) -> Self {
-        // let mut tasks = vec![];
         let mut tasks_status = HashMap::new();
         for (k, v) in &ssn.tasks_index {
             tasks_status.insert(*k, v.len() as i32);
@@ -224,13 +226,13 @@ impl From<&Session> for SessionInfo {
             id: ssn.id.clone(),
             application: ssn.application.clone(),
             slots: ssn.slots,
-            // tasks,
             tasks_status,
             creation_time: ssn.creation_time,
             completion_time: ssn.completion_time,
             state: ssn.status.state,
-            min_instances: ssn.min_instances, // Map from Session
-            max_instances: ssn.max_instances, // Map from Session
+            min_instances: ssn.min_instances,
+            max_instances: ssn.max_instances,
+            batch_size: ssn.batch_size.max(1),
         }
     }
 }
@@ -758,8 +760,9 @@ impl SnapShot {
             resreq: exec.resreq.clone(),
             task_id: exec.task_id,
             slots: exec.slots,
-            shim: exec.shim, // Preserve shim
+            shim: exec.shim,
             ssn_id: exec.ssn_id.clone(),
+            batch_index: exec.batch_index,
             creation_time: exec.creation_time,
             state,
         });
@@ -811,9 +814,10 @@ pub struct Executor {
     pub node: String,
     pub resreq: ResourceRequirement,
     pub slots: u32,
-    pub shim: Shim, // Supported shim type reported by executor
+    pub shim: Shim,
     pub task_id: Option<TaskID>,
     pub ssn_id: Option<SessionID>,
+    pub batch_index: Option<u32>,
 
     pub creation_time: DateTime<Utc>,
     pub state: ExecutorState,
@@ -829,6 +833,7 @@ impl Default for Executor {
             shim: Shim::Host,
             task_id: None,
             ssn_id: None,
+            batch_index: None,
             creation_time: Utc::now(),
             state: ExecutorState::default(),
         }
@@ -856,9 +861,10 @@ impl From<&rpc::Executor> for Executor {
             node: spec.node.clone(),
             resreq: spec.resreq.unwrap().into(),
             slots: spec.slots,
-            shim: Shim::from(spec.shim()), // Get shim from spec
+            shim: Shim::from(spec.shim()),
             task_id: None,
             ssn_id: None,
+            batch_index: status.batch_index,
             creation_time: Utc::now(),
             state,
         }
@@ -888,6 +894,7 @@ impl From<&Executor> for rpc::Executor {
         let status = Some(rpc::ExecutorStatus {
             state: rpc::ExecutorState::from(e.state).into(),
             session_id: e.ssn_id.clone(),
+            batch_index: e.batch_index,
         });
 
         rpc::Executor {
@@ -916,6 +923,7 @@ mod tests {
             shim: Shim::Host,
             task_id: None,
             ssn_id: None,
+            batch_index: None,
             creation_time: Utc::now(),
             state,
         })
@@ -933,6 +941,7 @@ mod tests {
             state,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         })
     }
 

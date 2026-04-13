@@ -24,6 +24,7 @@ jobs:
           ci/generate-certs.sh -o ci/certs -s "flame-session-manager,flame-executor-manager,localhost,127.0.0.1" -i "172.20.0.0/24"
       - name: Start Flame
         run: |
+          cp ci/flame-cluster-docker.yaml ci/flame-cluster.yaml
           docker compose up --build --force-recreate -d
       - name: Install gRPC
         run: |

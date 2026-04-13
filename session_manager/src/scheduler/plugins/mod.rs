@@ -20,12 +20,14 @@ use stdng::{lock_ptr, new_ptr, MutexPtr};
 
 use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot};
 use crate::scheduler::plugins::fairshare::FairShare;
+use crate::scheduler::plugins::gang::GangPlugin;
 use crate::scheduler::plugins::shim::ShimPlugin;
 use crate::scheduler::Context;
 
 use common::FlameError;
 
 mod fairshare;
+mod gang;
 mod shim;
 
 pub type PluginPtr = Box<dyn Plugin>;
@@ -83,12 +85,20 @@ pub trait Plugin: Send + Sync + 'static {
         None
     }
 
+    fn is_ready(&self, ssn: &SessionInfoPtr) -> Option<bool> {
+        None
+    }
+
     // Events callbacks
     fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
 
     fn on_session_bind(&mut self, ssn: SessionInfoPtr) {}
 
     fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {}
+
+    fn on_pipeline_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
+
+    fn on_discard_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
 }
 
 pub struct PluginManager {
@@ -100,6 +110,7 @@ impl PluginManager {
         let mut plugins = HashMap::from([
             ("fairshare".to_string(), FairShare::new_ptr()),
             ("shim".to_string(), ShimPlugin::new_ptr()),
+            ("gang".to_string(), GangPlugin::new_ptr()),
         ]);
 
         for plugin in plugins.values_mut() {
@@ -222,6 +233,42 @@ impl PluginManager {
         for plugin in plugins.values_mut() {
             plugin.on_session_unbind(ssn.clone());
         }
+        Ok(())
+    }
+
+    pub fn is_ready(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
+        let plugins = lock_ptr!(self.plugins)?;
+
+        Ok(plugins
+            .values()
+            .all(|plugin| plugin.is_ready(ssn).unwrap_or(true)))
+    }
+
+    pub fn on_pipeline_executor(
+        &self,
+        node: NodeInfoPtr,
+        ssn: SessionInfoPtr,
+    ) -> Result<(), FlameError> {
+        let mut plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values_mut() {
+            plugin.on_pipeline_executor(node.clone(), ssn.clone());
+        }
+
+        Ok(())
+    }
+
+    pub fn on_discard_executor(
+        &self,
+        node: NodeInfoPtr,
+        ssn: SessionInfoPtr,
+    ) -> Result<(), FlameError> {
+        let mut plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values_mut() {
+            plugin.on_discard_executor(node.clone(), ssn.clone());
+        }
+
         Ok(())
     }
 
@@ -355,6 +402,7 @@ mod tests {
             state: SessionState::Open,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         })
     }
 
@@ -371,6 +419,7 @@ mod tests {
             shim: Shim::Host,
             task_id: None,
             ssn_id: None,
+            batch_index: None,
             creation_time: Utc::now(),
             state: ExecutorState::Idle,
         })

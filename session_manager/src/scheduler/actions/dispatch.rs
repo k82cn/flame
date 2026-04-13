@@ -11,13 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
 use crate::model::{
-    ExecutorInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR,
+    ExecutorInfoPtr, SessionInfoPtr, ALL_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR,
+    VOID_EXECUTOR,
 };
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
@@ -30,6 +32,15 @@ pub struct DispatchAction {}
 impl DispatchAction {
     pub fn new_ptr() -> ActionPtr {
         Arc::new(DispatchAction {})
+    }
+
+    fn next_batch_index(ssn: &SessionInfoPtr, bound_count: u32) -> Option<u32> {
+        let batch_size = ssn.batch_size.max(1);
+        if batch_size <= 1 {
+            None
+        } else {
+            Some(bound_count % batch_size)
+        }
     }
 }
 
@@ -50,6 +61,14 @@ impl Action for DispatchAction {
         let mut idle_executors = ss.find_executors(IDLE_EXECUTOR)?;
         let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
         let mut unbinding_executors = ss.find_executors(UNBINDING_EXECUTOR)?;
+
+        let all_executors = ss.find_executors(ALL_EXECUTOR)?;
+        let mut bound_counts: HashMap<String, u32> = HashMap::new();
+        for exec in all_executors.values() {
+            if let Some(ssn_id) = &exec.ssn_id {
+                *bound_counts.entry(ssn_id.clone()).or_insert(0) += 1;
+            }
+        }
 
         tracing::debug!("Open sessions: <{:?}>", open_ssns.len());
         tracing::debug!("Idle executors: <{:?}>", idle_executors.len());
@@ -85,9 +104,18 @@ impl Action for DispatchAction {
             }
 
             if let Some(exec) = exec {
-                tracing::debug!("Bind executor <{}> for session <{}>.", exec.id, ssn.id);
-                ctx.bind_session(&exec, &ssn).await?;
+                let bound_count = bound_counts.entry(ssn.id.clone()).or_insert(0);
+                let batch_index = Self::next_batch_index(&ssn, *bound_count);
+
+                tracing::debug!(
+                    "Bind executor <{}> for session <{}> with batch_index={:?}.",
+                    exec.id,
+                    ssn.id,
+                    batch_index
+                );
+                ctx.bind_session(&exec, &ssn, batch_index).await?;
                 idle_executors.remove(&exec.id);
+                *bound_count += 1;
 
                 open_ssns.push(ssn);
                 continue;

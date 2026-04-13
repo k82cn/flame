@@ -5,6 +5,9 @@ flame.db*
 target/
 ci/
 .git/
+tmp/
+logs/
+certs/
 
 # Ignore logs
 **/*.log

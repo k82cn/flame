@@ -301,6 +301,7 @@ impl Frontend for Flame {
             common_data: ssn_spec.common_data.map(apis::CommonData::from),
             min_instances: ssn_spec.min_instances,
             max_instances: ssn_spec.max_instances,
+            batch_size: ssn_spec.batch_size.max(1),
         };
 
         tracing::debug!(
@@ -360,6 +361,7 @@ impl Frontend for Flame {
             common_data: ssn_spec.common_data.map(apis::CommonData::from),
             min_instances: ssn_spec.min_instances,
             max_instances: ssn_spec.max_instances,
+            batch_size: ssn_spec.batch_size.max(1),
         });
 
         let ssn = self

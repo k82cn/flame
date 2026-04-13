@@ -101,6 +101,9 @@ enum Commands {
         /// The slots requirements of each task
         #[arg(short, long)]
         slots: u32,
+        /// Number of executors per batch for gang scheduling
+        #[arg(short, long, default_value = "1")]
+        batch_size: u32,
     },
     /// Migrate Flame metadata
     Migrate {
@@ -140,7 +143,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             node,
         }) => list::run(&ctx, *application, *session, *executor, *node).await?,
         Some(Commands::Close { session }) => close::run(&ctx, session).await?,
-        Some(Commands::Create { app, slots }) => create::run(&ctx, app, slots).await?,
+        Some(Commands::Create {
+            app,
+            slots,
+            batch_size,
+        }) => create::run(&ctx, app, slots, batch_size).await?,
         Some(Commands::View {
             application,
             session,

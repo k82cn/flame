@@ -199,6 +199,7 @@ impl From<&Session> for rpc::Session {
                 common_data: ssn.common_data.clone().map(CommonData::into),
                 min_instances: ssn.min_instances,
                 max_instances: ssn.max_instances,
+                batch_size: ssn.batch_size,
             }),
             status: Some(status),
         }

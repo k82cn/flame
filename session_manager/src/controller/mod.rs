@@ -385,11 +385,12 @@ impl Controller {
         &self,
         node_name: String,
         ssn_id: SessionID,
+        batch_index: Option<u32>,
     ) -> Result<Executor, FlameError> {
         trace_fn!("Controller::create_executor");
         let executor = self
             .storage
-            .create_executor(node_name.clone(), ssn_id)
+            .create_executor(node_name.clone(), ssn_id, batch_index)
             .await?;
 
         // Notify the node about the new executor
@@ -406,6 +407,13 @@ impl Controller {
         }
 
         Ok(executor)
+    }
+
+    pub fn get_executor(&self, id: ExecutorID) -> Result<Executor, FlameError> {
+        trace_fn!("Controller::get_executor");
+        let exe_ptr = self.storage.get_executor_ptr(id)?;
+        let exe = lock_ptr!(exe_ptr)?;
+        Ok((*exe).clone())
     }
 
     pub fn list_executor(&self) -> Result<Vec<Executor>, FlameError> {
@@ -492,7 +500,12 @@ impl Controller {
         Ok(Some((*ssn).clone()))
     }
 
-    pub async fn bind_session(&self, id: ExecutorID, ssn_id: SessionID) -> Result<(), FlameError> {
+    pub async fn bind_session(
+        &self,
+        id: ExecutorID,
+        ssn_id: SessionID,
+        batch_index: Option<u32>,
+    ) -> Result<(), FlameError> {
         trace_fn!("Controller::bind_session");
 
         let exe_ptr = self.storage.get_executor_ptr(id.clone())?;
@@ -502,7 +515,8 @@ impl Controller {
         state.bind_session(ssn_ptr).await?;
 
         let executor = {
-            let exe = lock_ptr!(exe_ptr)?;
+            let mut exe = lock_ptr!(exe_ptr)?;
+            exe.batch_index = batch_index;
             (*exe).clone()
         };
         self.storage.update_executor(&executor).await?;
@@ -881,12 +895,14 @@ mod tests {
 
     /// Creates a test storage with a unique SQLite database.
     async fn create_test_storage() -> StoragePtr {
-        let temp_dir = std::env::temp_dir();
-        let db_name = format!(
-            "flame_test_controller_{}.db",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        let unique_id = format!(
+            "{}_{:?}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+            std::thread::current().id()
         );
-        let db_path = temp_dir.join(db_name);
+        let test_dir = std::env::temp_dir().join(format!("flame_test_{}", unique_id));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let db_path = test_dir.join("flame.db");
         let url = format!("sqlite://{}", db_path.display());
 
         let ctx = FlameClusterContext {

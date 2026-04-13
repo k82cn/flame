@@ -11,246 +11,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::collections::{hash_map::Entry, HashMap};
-use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use bincode::{Decode, Encode};
-use chrono::{DateTime, Utc};
-use stdng::{lock_ptr, new_ptr, MutexPtr};
-
-use common::apis::{Event, EventOwner, SessionID, TaskID};
-use common::storage::{DataStorage, Index, Object, ObjectId, ObjectStorage};
+use common::apis::{Event, EventOwner, SessionID};
 use common::FlameError;
 
-const EVENT_STORAGE: &str = "events";
+mod fs;
+mod memory;
 
-struct EventStorage {
-    object_storage: ObjectStorage,
-    data_storage: DataStorage,
+pub use fs::FsEventManager;
+pub use memory::MemoryEventManager;
+
+pub trait EventManager: Send + Sync {
+    fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError>;
+    fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError>;
+    fn remove_events(&self, session_id: SessionID) -> Result<(), FlameError>;
+    fn clear(&self) -> Result<(), FlameError>;
 }
 
-#[derive(Clone, Debug, Encode, Decode)]
-struct EventDao {
-    id: Option<u64>,
-    owner: TaskID,
-    code: i32,
-    message: Index,
-    creation_time: i64,
-}
-
-impl Object for EventDao {
-    fn id(&self) -> ObjectId {
-        self.id.unwrap_or(0)
-    }
-
-    fn owner(&self) -> ObjectId {
-        self.owner as ObjectId
-    }
-    fn set_id(&mut self, id: ObjectId) {
-        self.id = Some(id);
-    }
-}
-
-pub type EventManagerPtr = Arc<EventManager>;
-
-pub struct EventManager {
-    storage_path: String,
-    event_storage: MutexPtr<HashMap<SessionID, EventStorage>>,
-    events: MutexPtr<HashMap<SessionID, HashMap<TaskID, Vec<EventDao>>>>,
-}
-
-impl EventManager {
-    pub fn new(path: Option<&str>) -> Result<Self, FlameError> {
-        let storage_path = path.unwrap_or(EVENT_STORAGE);
-        fs::create_dir_all(storage_path)?;
-
-        let mut evtmgr = Self {
-            storage_path: storage_path.to_string(),
-            event_storage: new_ptr(HashMap::new()),
-            events: new_ptr(HashMap::new()),
-        };
-
-        // Setup event storage for all sessions.
-        let sessions = evtmgr.list_sessions()?;
-        for session_id in &sessions {
-            evtmgr.setup_event_storage(session_id.clone())?;
-        }
-
-        // Setup event message for all sessions.
-        evtmgr.load_events()?;
-
-        Ok(evtmgr)
-    }
-
-    fn load_events(&self) -> Result<(), FlameError> {
-        let mut event_storage = lock_ptr!(self.event_storage)?;
-        let mut events = lock_ptr!(self.events)?;
-        let sessions = event_storage.keys().cloned().collect::<Vec<SessionID>>();
-        for session_id in &sessions {
-            let event_daos: Vec<EventDao> = event_storage
-                .get_mut(session_id)
-                .ok_or(FlameError::Internal(format!(
-                    "Event storage not found: {}",
-                    session_id
-                )))?
-                .object_storage
-                .list(None)?;
-            for event_dao in event_daos {
-                events
-                    .entry(session_id.clone())
-                    .or_insert(HashMap::new())
-                    .entry(event_dao.owner as TaskID)
-                    .or_insert(vec![])
-                    .push(event_dao);
-            }
-        }
-        Ok(())
-    }
-
-    fn list_sessions(&self) -> Result<Vec<SessionID>, FlameError> {
-        let mut sessions = vec![];
-        let entries = fs::read_dir(&self.storage_path)?;
-        for entry in entries {
-            let file_name = entry?.file_name();
-            let session_id = file_name.to_string_lossy().to_string();
-            sessions.push(session_id);
-        }
-
-        Ok(sessions)
-    }
-
-    fn setup_event_storage(&self, session_id: SessionID) -> Result<(), FlameError> {
-        let base_path = format!("{}/{}", self.storage_path, session_id);
-
-        let mut event_storage = lock_ptr!(self.event_storage)?;
-        if let Entry::Vacant(e) = event_storage.entry(session_id) {
-            fs::create_dir_all(&base_path)?;
-
-            let storage = EventStorage {
-                object_storage: ObjectStorage::new(&base_path, "events")?,
-                data_storage: DataStorage::new(&base_path, "event_messages")?,
-            };
-            e.insert(storage);
-        }
-
-        Ok(())
-    }
-
-    pub fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
-        self.setup_event_storage(owner.session_id.clone())?;
-
-        let mut event_storage = lock_ptr!(self.event_storage)?;
-        let event_storage: &mut EventStorage = event_storage
-            .get_mut(&owner.session_id)
-            .ok_or(FlameError::Internal("Event storage not found".to_string()))?;
-
-        let message = event.message.unwrap_or_default();
-        let msg_index = event_storage.data_storage.save(message.as_bytes())?;
-
-        let event_dao = EventDao {
-            id: None,
-            owner: owner.task_id,
-            code: event.code,
-            message: msg_index,
-            creation_time: event.creation_time.timestamp(),
-        };
-
-        event_storage.object_storage.save(&event_dao)?;
-
-        let mut events = lock_ptr!(self.events)?;
-        events
-            .entry(owner.session_id)
-            .or_insert_with(HashMap::new)
-            .entry(owner.task_id)
-            .or_insert_with(Vec::new)
-            .push(event_dao);
-
-        Ok(())
-    }
-
-    pub fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
-        let mut event_storage = lock_ptr!(self.event_storage)?;
-        let event_storage: &mut EventStorage = event_storage
-            .get_mut(&owner.session_id)
-            .ok_or(FlameError::Internal("Event storage not found".to_string()))?;
-
-        let event_daos: Vec<EventDao> = event_storage.object_storage.list(None)?;
-
-        let events = lock_ptr!(self.events)?;
-        let event_daos = events
-            .get(&owner.session_id)
-            .ok_or(FlameError::Internal("Session not found".to_string()))?
-            .get(&owner.task_id)
-            .ok_or(FlameError::Internal("Task not found".to_string()))?;
-
-        let mut event_list = vec![];
-        for event_dao in event_daos {
-            let message = event_storage.data_storage.load(&event_dao.message)?;
-            event_list.push(Event {
-                code: event_dao.code,
-                message: Some(String::from_utf8(message)?),
-                creation_time: DateTime::<Utc>::from_timestamp(event_dao.creation_time, 0)
-                    .ok_or(FlameError::Internal("Invalid creation time".to_string()))?,
-            });
-        }
-
-        Ok(event_list)
-    }
-
-    pub fn remove_events(&self, session_id: SessionID) -> Result<(), FlameError> {
-        {
-            let mut event_storage = lock_ptr!(self.event_storage)?;
-            let event_storage: &mut EventStorage = event_storage
-                .get_mut(&session_id)
-                .ok_or(FlameError::Internal("Event storage not found".to_string()))?;
-
-            event_storage.object_storage.clear()?;
-            event_storage.data_storage.clear()?;
-        }
-
-        {
-            let mut events = lock_ptr!(self.events)?;
-            events
-                .remove(&session_id)
-                .ok_or(FlameError::Internal(format!(
-                    "Session not found: {}",
-                    session_id
-                )))?;
-        }
-
-        fs::remove_dir_all(format!("{}/{}", self.storage_path, session_id)).map_err(|e| {
-            FlameError::Storage(format!("Failed to remove event storage directory: {}", e))
-        })?;
-
-        Ok(())
-    }
-
-    pub fn clear(&self) -> Result<(), FlameError> {
-        let mut event_storage = lock_ptr!(self.event_storage)?;
-        for event_storage in event_storage.values_mut() {
-            event_storage.object_storage.clear()?;
-            event_storage.data_storage.clear()?;
-        }
-
-        let mut events = lock_ptr!(self.events)?;
-        events.clear();
-
-        Ok(())
-    }
-}
+pub type EventManagerPtr = Arc<dyn EventManager>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
 
-    #[test]
-    fn test_record_event() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let event_manager =
-            EventManager::new(Some(temp_dir.path().to_string_lossy().as_ref())).unwrap();
-        event_manager
+    fn test_event_manager_impl(manager: &dyn EventManager) {
+        manager
             .record_event(
                 EventOwner {
                     session_id: String::from("1"),
@@ -264,29 +51,7 @@ mod tests {
             )
             .unwrap();
 
-        event_manager.clear().unwrap();
-    }
-
-    #[test]
-    fn test_find_events() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let event_manager =
-            EventManager::new(Some(temp_dir.path().to_string_lossy().as_ref())).unwrap();
-        event_manager
-            .record_event(
-                EventOwner {
-                    session_id: String::from("1"),
-                    task_id: 1,
-                },
-                Event {
-                    code: 1,
-                    message: Some("test".to_string()),
-                    creation_time: Utc::now(),
-                },
-            )
-            .unwrap();
-
-        let events = event_manager
+        let events = manager
             .find_events(EventOwner {
                 session_id: String::from("1"),
                 task_id: 1,
@@ -297,6 +62,267 @@ mod tests {
         assert_eq!(events[0].code, 1);
         assert_eq!(events[0].message, Some("test".to_string()));
 
-        event_manager.clear().unwrap();
+        manager.clear().unwrap();
+    }
+
+    #[test]
+    fn test_memory_event_manager() {
+        let manager = MemoryEventManager::new();
+        test_event_manager_impl(&manager);
+    }
+
+    #[test]
+    fn test_fs_event_manager() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+        test_event_manager_impl(&manager);
+    }
+
+    #[test]
+    fn test_fs_event_manager_multiple_events_same_task() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+
+        let owner = EventOwner {
+            session_id: "session-1".to_string(),
+            task_id: 1,
+        };
+
+        for i in 0..3 {
+            manager
+                .record_event(
+                    owner.clone(),
+                    Event {
+                        code: i,
+                        message: Some(format!("event-{}", i)),
+                        creation_time: Utc::now(),
+                    },
+                )
+                .unwrap();
+        }
+
+        let events = manager.find_events(owner).unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].code, 0);
+        assert_eq!(events[1].code, 1);
+        assert_eq!(events[2].code, 2);
+    }
+
+    #[test]
+    fn test_fs_event_manager_multiple_tasks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+
+        let session_id = "session-1".to_string();
+
+        for task_id in 1..=3 {
+            manager
+                .record_event(
+                    EventOwner {
+                        session_id: session_id.clone(),
+                        task_id,
+                    },
+                    Event {
+                        code: task_id as i32,
+                        message: Some(format!("task-{}", task_id)),
+                        creation_time: Utc::now(),
+                    },
+                )
+                .unwrap();
+        }
+
+        for task_id in 1..=3 {
+            let events = manager
+                .find_events(EventOwner {
+                    session_id: session_id.clone(),
+                    task_id,
+                })
+                .unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].code, task_id as i32);
+        }
+    }
+
+    #[test]
+    fn test_fs_event_manager_multiple_sessions() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+
+        for i in 1..=3 {
+            manager
+                .record_event(
+                    EventOwner {
+                        session_id: format!("session-{}", i),
+                        task_id: 1,
+                    },
+                    Event {
+                        code: i,
+                        message: Some(format!("session-{}-event", i)),
+                        creation_time: Utc::now(),
+                    },
+                )
+                .unwrap();
+        }
+
+        for i in 1..=3 {
+            let events = manager
+                .find_events(EventOwner {
+                    session_id: format!("session-{}", i),
+                    task_id: 1,
+                })
+                .unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].code, i);
+        }
+    }
+
+    #[test]
+    fn test_fs_event_manager_remove_events() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+
+        let session_id = "session-to-remove".to_string();
+        let owner = EventOwner {
+            session_id: session_id.clone(),
+            task_id: 1,
+        };
+
+        manager
+            .record_event(
+                owner.clone(),
+                Event {
+                    code: 1,
+                    message: Some("test".to_string()),
+                    creation_time: Utc::now(),
+                },
+            )
+            .unwrap();
+
+        let events = manager.find_events(owner.clone()).unwrap();
+        assert_eq!(events.len(), 1);
+
+        manager.remove_events(session_id.clone()).unwrap();
+
+        let result = manager.find_events(owner);
+        assert!(result.is_err() || result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_fs_event_manager_find_nonexistent_task() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+
+        manager
+            .record_event(
+                EventOwner {
+                    session_id: "session-1".to_string(),
+                    task_id: 1,
+                },
+                Event {
+                    code: 1,
+                    message: Some("test".to_string()),
+                    creation_time: Utc::now(),
+                },
+            )
+            .unwrap();
+
+        let events = manager
+            .find_events(EventOwner {
+                session_id: "session-1".to_string(),
+                task_id: 999,
+            })
+            .unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_fs_event_manager_persistence() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().to_str().unwrap().to_string();
+
+        let owner = EventOwner {
+            session_id: "persistent-session".to_string(),
+            task_id: 1,
+        };
+
+        {
+            let manager = FsEventManager::new(&path).unwrap();
+            manager
+                .record_event(
+                    owner.clone(),
+                    Event {
+                        code: 42,
+                        message: Some("persistent event".to_string()),
+                        creation_time: Utc::now(),
+                    },
+                )
+                .unwrap();
+        }
+
+        {
+            let manager = FsEventManager::new(&path).unwrap();
+            let events = manager.find_events(owner).unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].code, 42);
+            assert_eq!(events[0].message, Some("persistent event".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_fs_event_manager_with_flame_test_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = temp_dir.path().to_str().unwrap();
+
+        std::env::set_var("FLAME_TEST_DIR", temp_path);
+
+        let events_path = format!("{}/events", temp_path);
+        let manager = FsEventManager::new(&events_path).unwrap();
+
+        let owner = EventOwner {
+            session_id: "test-session".to_string(),
+            task_id: 1,
+        };
+
+        manager
+            .record_event(
+                owner.clone(),
+                Event {
+                    code: 1,
+                    message: Some("test with FLAME_TEST_DIR".to_string()),
+                    creation_time: Utc::now(),
+                },
+            )
+            .unwrap();
+
+        let events = manager.find_events(owner).unwrap();
+        assert_eq!(events.len(), 1);
+
+        std::env::remove_var("FLAME_TEST_DIR");
+    }
+
+    #[test]
+    fn test_fs_event_manager_empty_message() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
+
+        let owner = EventOwner {
+            session_id: "session-1".to_string(),
+            task_id: 1,
+        };
+
+        manager
+            .record_event(
+                owner.clone(),
+                Event {
+                    code: 1,
+                    message: None,
+                    creation_time: Utc::now(),
+                },
+            )
+            .unwrap();
+
+        let events = manager.find_events(owner).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].message, Some("".to_string()));
     }
 }

@@ -117,6 +117,12 @@ pub struct SessionAttributes {
     pub common_data: Option<CommonData>,
     pub min_instances: u32,
     pub max_instances: Option<u32>,
+    #[serde(default = "default_batch_size")]
+    pub batch_size: u32,
+}
+
+fn default_batch_size() -> u32 {
+    1
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -255,6 +261,7 @@ impl Connection {
                 common_data: attrs.common_data.clone().map(CommonData::into),
                 min_instances: attrs.min_instances,
                 max_instances: attrs.max_instances,
+                batch_size: attrs.batch_size.max(1),
             }),
         };
 
@@ -303,6 +310,7 @@ impl Connection {
             common_data: attrs.common_data.clone().map(CommonData::into),
             min_instances: attrs.min_instances,
             max_instances: attrs.max_instances,
+            batch_size: attrs.batch_size.max(1),
         });
 
         let open_ssn_req = OpenSessionRequest {

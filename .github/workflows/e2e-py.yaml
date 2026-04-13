@@ -26,6 +26,7 @@ jobs:
       
       - name: Start Flame
         run: |
+          cp ci/flame-cluster-docker.yaml ci/flame-cluster.yaml
           docker compose up --build --force-recreate -d
       
       - name: Run Python E2E Test

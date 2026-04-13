@@ -16,10 +16,11 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{SessionInfoPtr, SnapShot, ALL_NODE, OPEN_SESSION};
+use crate::model::{ALL_NODE, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::node_order_fn;
 use crate::scheduler::plugins::ssn_order_fn;
+use crate::scheduler::statement::Statement;
 use crate::scheduler::Context;
 
 use common::FlameError;
@@ -60,7 +61,6 @@ impl Action for AllocateAction {
 
         let node_order_fn = node_order_fn(ctx);
 
-        // Allocate executors for open sessions on nodes.
         loop {
             if open_ssns.is_empty() {
                 break;
@@ -88,10 +88,6 @@ impl Action for AllocateAction {
                 ssn.tasks_status.get(&common::apis::TaskState::Running)
             );
 
-            // Explicit max_instances check (safety guard)
-            // The fairshare plugin caches allocated count from snapshot at the start of the cycle.
-            // Within a single cycle, if we allocate multiple executors, the cached count doesn't update.
-            // To prevent over-allocation, we count actual executors from the current snapshot.
             if let Some(max_instances) = ssn.max_instances {
                 let all_executors = ss.find_executors(None)?;
                 let current_count = all_executors
@@ -105,56 +101,51 @@ impl Action for AllocateAction {
                         current_count,
                         max_instances
                     );
-                    continue; // Already at max limit
+                    continue;
                 }
             }
 
-            // If there're still some executors in pipeline, skip allocate new executor to the session.
             let pipelined_executors = ss.pipelined_executors(ssn.clone())?;
             if !pipelined_executors.is_empty() {
-                tracing::debug!("Skip allocate resources for session <{}> because there are <{}> executors in pipeline.", ssn.id, pipelined_executors.len());
+                tracing::debug!(
+                    "Skip allocate resources for session <{}> because there are <{}> executors in pipeline.",
+                    ssn.id,
+                    pipelined_executors.len()
+                );
                 continue;
             }
 
-            let mut allocated = false;
-            for node in nodes.iter() {
-                tracing::debug!(
-                    "Checking node <{}> for session <{}> allocation",
-                    node.name,
-                    ssn.id
-                );
+            let mut stmt = Statement::new(ss.clone(), ctx.plugins.clone(), ctx.controller.clone());
 
-                let is_allocatable = ctx.is_allocatable(node, &ssn)?;
-                if !is_allocatable {
-                    tracing::debug!(
-                        "Node <{}> is NOT allocatable for session <{}> (node may be at capacity)",
-                        node.name,
-                        ssn.id
-                    );
-                    continue;
+            for node in nodes.iter() {
+                while ctx.is_allocatable(node, &ssn)? {
+                    stmt.pipeline(node, &ssn)?;
+
+                    if stmt.is_ready(&ssn)? {
+                        break;
+                    }
                 }
 
-                tracing::info!(
-                    "Allocating executor for session <{}> on node <{}>",
-                    ssn.id,
-                    node.name
-                );
-
-                ctx.create_executor(node, &ssn).await?;
-                allocated = true;
-
-                nodes.sort_by(|a, b| node_order_fn.cmp(a, b));
-                open_ssns.push(ssn.clone());
-
-                break;
+                if stmt.is_ready(&ssn)? {
+                    break;
+                }
             }
 
-            if !allocated {
-                tracing::debug!(
-                    "Failed to allocate executor for underused session <{}>: no allocatable nodes found (total nodes: {})",
-                    ssn.id,
-                    nodes.len()
+            if stmt.is_ready(&ssn)? {
+                tracing::info!(
+                    "Committing {} executor(s) for session <{}>",
+                    stmt.len(),
+                    ssn.id
                 );
+                stmt.commit().await?;
+                nodes.sort_by(|a, b| node_order_fn.cmp(a, b));
+                open_ssns.push(ssn.clone());
+            } else if !stmt.is_empty() {
+                tracing::debug!(
+                    "Discarding incomplete batch for session <{}>: not enough allocatable nodes",
+                    ssn.id
+                );
+                stmt.discard()?;
             }
         }
 

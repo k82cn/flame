@@ -68,8 +68,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             application: app,
             slots,
             common_data: None,
-            min_instances: 0,    // Default: no minimum guarantee
-            max_instances: None, // Default: unlimited
+            min_instances: 0,
+            max_instances: None,
+            batch_size: 1,
         })
         .await?;
 

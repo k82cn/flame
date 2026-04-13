@@ -1169,6 +1169,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
@@ -1271,6 +1272,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
         assert_eq!(ssn_1.id, ssn_1_id);
         assert_eq!(ssn_1.application, "flmexec");
@@ -1576,6 +1578,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
@@ -1627,6 +1630,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
@@ -1661,6 +1665,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_2.id, ssn_2_id);
@@ -1713,6 +1718,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
@@ -1752,6 +1758,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_1.status.state, SessionState::Open);
@@ -1783,6 +1790,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);
@@ -1823,6 +1831,7 @@ mod tests {
             common_data: None,
             min_instances: 0,
             max_instances: None,
+            batch_size: 1,
         }))?;
 
         assert_eq!(ssn_1.id, ssn_1_id);

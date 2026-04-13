@@ -347,17 +347,21 @@ impl Plugin for FairShare {
         }
     }
 
-    fn on_create_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn on_pipeline_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated += ssn.slots as f64;
-        } else {
-            tracing::warn!("Session <{}> not found for node <{}>.", ssn.id, node.name);
         }
+        if let Some(n) = self.node_map.get_mut(&node.name) {
+            n.allocated += ssn.slots as f64;
+        }
+    }
 
-        if let Some(node) = self.node_map.get_mut(&node.name) {
-            node.allocated += ssn.slots as f64;
-        } else {
-            tracing::warn!("Node <{}> not found for session <{}>.", node.name, ssn.id);
+    fn on_discard_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
+            ss.allocated -= ssn.slots as f64;
+        }
+        if let Some(n) = self.node_map.get_mut(&node.name) {
+            n.allocated -= ssn.slots as f64;
         }
     }
 
