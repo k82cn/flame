@@ -13,7 +13,6 @@ limitations under the License.
 
 use std::fs;
 use std::future::Future;
-use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -198,5 +197,166 @@ impl Future for WaitForSvcSocketFuture {
             ctx.waker().wake_by_ref();
             Poll::Pending
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::apis::{ApplicationContext, Shim as ShimType};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+    use tempfile::tempdir;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn setup_test_env(temp: &tempfile::TempDir) -> PathBuf {
+        let socket_dir = temp.path().join("sockets");
+        std::fs::create_dir_all(&socket_dir).unwrap();
+        std::env::set_var("FLAME_SOCKET_DIR", &socket_dir);
+        std::env::set_current_dir(temp.path()).unwrap();
+        socket_dir
+    }
+
+    fn create_test_work_dir(executor_id: &str, temp: &tempfile::TempDir) -> ExecutorWorkDir {
+        let app = ApplicationContext {
+            name: "test-app".to_string(),
+            shim: ShimType::Host,
+            image: None,
+            command: None,
+            arguments: vec![],
+            working_directory: None,
+            environments: HashMap::new(),
+            url: None,
+        };
+
+        ExecutorWorkDir::new(&app, executor_id).unwrap()
+    }
+
+    #[test]
+    fn test_grpc_shim_new() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        let socket_dir = setup_test_env(&temp);
+        let work_dir = create_test_work_dir("exec-grpc-test", &temp);
+
+        let shim = GrpcShim::new(&work_dir).unwrap();
+
+        assert!(shim.client.is_none());
+        assert!(shim.endpoint.contains("exec-grpc-test.sock"));
+        assert_eq!(
+            shim.endpoint,
+            socket_dir.join("exec-grpc-test.sock").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn test_grpc_shim_endpoint() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        let socket_dir = setup_test_env(&temp);
+        let work_dir = create_test_work_dir("exec-endpoint-test", &temp);
+
+        let shim = GrpcShim::new(&work_dir).unwrap();
+
+        assert_eq!(
+            shim.endpoint(),
+            socket_dir.join("exec-endpoint-test.sock").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn test_grpc_shim_close_without_connection() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+        let work_dir = create_test_work_dir("exec-close-test", &temp);
+
+        let mut shim = GrpcShim::new(&work_dir).unwrap();
+
+        shim.close();
+
+        assert!(shim.client.is_none());
+    }
+
+    #[test]
+    fn test_wait_for_svc_socket_future_new() {
+        let future = WaitForSvcSocketFuture::new("/tmp/test.sock".to_string());
+
+        assert_eq!(future.path, "/tmp/test.sock");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_on_session_enter_without_connection() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+        let work_dir = create_test_work_dir("exec-session-test", &temp);
+
+        let mut shim = GrpcShim::new(&work_dir).unwrap();
+
+        let ctx = SessionContext {
+            session_id: "test-session".to_string(),
+            application: ApplicationContext {
+                name: "test-app".to_string(),
+                shim: ShimType::Host,
+                image: None,
+                command: None,
+                arguments: vec![],
+                working_directory: None,
+                environments: HashMap::new(),
+                url: None,
+            },
+            slots: 1,
+            common_data: None,
+        };
+
+        let result = shim.on_session_enter(&ctx).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("no connection to service"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_on_task_invoke_without_connection() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+        let work_dir = create_test_work_dir("exec-task-test", &temp);
+
+        let mut shim = GrpcShim::new(&work_dir).unwrap();
+
+        let ctx = TaskContext {
+            task_id: "test-task".to_string(),
+            session_id: "test-session".to_string(),
+            input: None,
+        };
+
+        let result = shim.on_task_invoke(&ctx).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("no connection to service"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_on_session_leave_without_connection() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+        let work_dir = create_test_work_dir("exec-leave-test", &temp);
+
+        let mut shim = GrpcShim::new(&work_dir).unwrap();
+
+        let result = shim.on_session_leave().await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("no connection to service"));
     }
 }

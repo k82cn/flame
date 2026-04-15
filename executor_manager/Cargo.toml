@@ -49,3 +49,6 @@ bson = "2"
 [lints.rust]
 unused = "allow"
 unsafe_code = "forbid"
+
+[dev-dependencies]
+tempfile = "3"
