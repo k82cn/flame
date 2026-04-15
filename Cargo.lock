@@ -1625,6 +1625,7 @@ dependencies = [
  "serde_json",
  "shellexpand",
  "stdng",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",

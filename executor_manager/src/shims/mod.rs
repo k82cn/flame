@@ -38,20 +38,28 @@ pub type ShimPtr = Arc<Mutex<dyn Shim>>;
 /// Directory structure:
 ///   top_dir/                     - Process working directory, stdout/stderr logs
 ///   top_dir/work/<app_name>/     - App-specific directory for tmp, cache
-///   top_dir/work/<executor_id>.sock - Socket for gRPC communication
+///   /var/flame/executors/<executor_id>.sock - Socket for gRPC communication
 /// Cleanup:
 ///   - top_dir: cleaned up only if auto-generated
 ///   - app_dir: always cleaned up
 ///   - socket: always cleaned up
 pub struct ExecutorWorkDir {
-    /// Top-level working directory (process runs here)
+    /// Top-level working directory (process runs here).
     top_dir: PathBuf,
-    /// Application working directory: top_dir/work/<app-name> (for logs, tmp, cache)
+    /// Application working directory: top_dir/work/<app-name> (for logs, tmp, cache).
     app_dir: PathBuf,
-    /// Socket path: top_dir/work/<executor_id>.sock
+    /// Socket path: /var/flame/executors/<executor_id>.sock
     socket: PathBuf,
     /// If true, top_dir was auto-generated and should be cleaned up on release.
     auto_dir: bool,
+}
+
+const FLAME_SOCKET_DIR: &str = "/var/flame/executors";
+
+fn get_socket_dir() -> PathBuf {
+    std::env::var("FLAME_SOCKET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(FLAME_SOCKET_DIR))
 }
 
 impl ExecutorWorkDir {
@@ -69,8 +77,8 @@ impl ExecutorWorkDir {
 
         let work_dir = top_dir.join("work");
         let app_dir = work_dir.join(&app.name);
-        // Socket in work dir with executor_id ensures uniqueness per executor
-        let socket = work_dir.join(format!("{}.sock", executor_id));
+        let socket_dir = get_socket_dir();
+        let socket = socket_dir.join(format!("{}.sock", executor_id));
 
         // Create top_dir if auto-generated
         if auto_dir {
@@ -82,7 +90,7 @@ impl ExecutorWorkDir {
             })?;
         }
 
-        // Always create work dir (needed for socket)
+        // Always create work dir
         fs::create_dir_all(&work_dir).map_err(|e| {
             FlameError::Internal(format!(
                 "failed to create work directory {}: {e}",
@@ -95,6 +103,14 @@ impl ExecutorWorkDir {
             FlameError::Internal(format!(
                 "failed to create app working directory {}: {e}",
                 app_dir.display()
+            ))
+        })?;
+
+        // Create socket directory
+        fs::create_dir_all(&socket_dir).map_err(|e| {
+            FlameError::Internal(format!(
+                "failed to create socket directory {}: {e}",
+                socket_dir.display()
             ))
         })?;
 
@@ -116,7 +132,6 @@ impl ExecutorWorkDir {
         &self.top_dir
     }
 
-    /// Returns the socket path for gRPC communication.
     pub fn socket(&self) -> &Path {
         &self.socket
     }
@@ -196,4 +211,177 @@ pub trait Shim: Send + 'static {
     async fn on_session_enter(&mut self, ctx: &SessionContext) -> Result<(), FlameError>;
     async fn on_task_invoke(&mut self, ctx: &TaskContext) -> Result<TaskResult, FlameError>;
     async fn on_session_leave(&mut self) -> Result<(), FlameError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::sync::Mutex;
+    use tempfile::tempdir;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn create_test_app(name: &str, working_directory: Option<String>) -> ApplicationContext {
+        ApplicationContext {
+            name: name.to_string(),
+            shim: common::apis::Shim::Host,
+            image: None,
+            command: None,
+            arguments: vec![],
+            working_directory,
+            environments: HashMap::new(),
+            url: None,
+        }
+    }
+
+    fn setup_test_env(temp: &tempfile::TempDir) -> PathBuf {
+        let socket_dir = temp.path().join("sockets");
+        std::fs::create_dir_all(&socket_dir).unwrap();
+        std::env::set_var("FLAME_SOCKET_DIR", &socket_dir);
+        std::env::set_current_dir(temp.path()).unwrap();
+        socket_dir
+    }
+
+    #[test]
+    fn test_executor_work_dir_with_auto_dir() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        let socket_dir = setup_test_env(&temp);
+
+        let app = create_test_app("test-app", None);
+        let executor_id = "exec-123";
+
+        let work_dir = ExecutorWorkDir::new(&app, executor_id).unwrap();
+
+        assert!(work_dir.process_dir().ends_with(executor_id));
+        assert!(work_dir.app_dir().ends_with("test-app"));
+        assert_eq!(
+            work_dir.socket(),
+            socket_dir.join("exec-123.sock").as_path()
+        );
+        assert!(work_dir.process_dir().exists());
+        assert!(work_dir.app_dir().exists());
+    }
+
+    #[test]
+    fn test_executor_work_dir_with_custom_working_directory() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        let socket_dir = setup_test_env(&temp);
+        let custom_dir = temp.path().join("custom-workdir");
+        std::fs::create_dir_all(&custom_dir).unwrap();
+
+        let app = create_test_app("test-app", Some(custom_dir.to_string_lossy().to_string()));
+        let executor_id = "exec-456";
+
+        let work_dir = ExecutorWorkDir::new(&app, executor_id).unwrap();
+
+        assert_eq!(work_dir.process_dir(), custom_dir.as_path());
+        assert_eq!(work_dir.app_dir(), custom_dir.join("work").join("test-app"));
+        assert_eq!(
+            work_dir.socket(),
+            socket_dir.join("exec-456.sock").as_path()
+        );
+    }
+
+    #[test]
+    fn test_executor_work_dir_socket_path_length() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+
+        let app = create_test_app("test-app", None);
+        let long_executor_id = "550e8400-e29b-41d4-a716-446655440000";
+
+        let work_dir = ExecutorWorkDir::new(&app, long_executor_id).unwrap();
+
+        let socket_path = work_dir.socket();
+        let default_path = format!("{}/{}.sock", FLAME_SOCKET_DIR, long_executor_id);
+        assert!(
+            default_path.len() < 104,
+            "Default socket path should be under SUN_LEN limit: {} chars",
+            default_path.len()
+        );
+    }
+
+    #[test]
+    fn test_executor_work_dir_cleanup_on_drop() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+
+        let app = create_test_app("test-app", None);
+        let executor_id = "exec-drop-test";
+
+        let top_dir: PathBuf;
+        let app_dir: PathBuf;
+        let socket_path: PathBuf;
+
+        {
+            let work_dir = ExecutorWorkDir::new(&app, executor_id).unwrap();
+            top_dir = work_dir.process_dir().to_path_buf();
+            app_dir = work_dir.app_dir().to_path_buf();
+            socket_path = work_dir.socket().to_path_buf();
+
+            assert!(top_dir.exists());
+            assert!(app_dir.exists());
+
+            File::create(&socket_path).unwrap();
+            assert!(socket_path.exists());
+        }
+
+        assert!(!socket_path.exists(), "Socket should be cleaned up on drop");
+        assert!(!app_dir.exists(), "App dir should be cleaned up on drop");
+        assert!(
+            !top_dir.exists(),
+            "Top dir should be cleaned up on drop (auto_dir=true)"
+        );
+    }
+
+    #[test]
+    fn test_executor_work_dir_no_cleanup_custom_dir_on_drop() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+        let custom_dir = temp.path().join("persistent-workdir");
+        std::fs::create_dir_all(&custom_dir).unwrap();
+
+        let app = create_test_app("test-app", Some(custom_dir.to_string_lossy().to_string()));
+        let executor_id = "exec-persist-test";
+
+        let socket_path: PathBuf;
+
+        {
+            let work_dir = ExecutorWorkDir::new(&app, executor_id).unwrap();
+            socket_path = work_dir.socket().to_path_buf();
+
+            File::create(&socket_path).unwrap();
+        }
+
+        assert!(!socket_path.exists(), "Socket should be cleaned up on drop");
+        assert!(
+            custom_dir.exists(),
+            "Custom top_dir should NOT be cleaned up (auto_dir=false)"
+        );
+    }
+
+    #[test]
+    fn test_socket_path_is_fixed_location() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        let socket_dir = setup_test_env(&temp);
+
+        let app1 = create_test_app("app1", None);
+        let custom_work_dir = temp.path().join("custom");
+        std::fs::create_dir_all(&custom_work_dir).unwrap();
+        let app2 = create_test_app("app2", Some(custom_work_dir.to_string_lossy().to_string()));
+
+        let work_dir1 = ExecutorWorkDir::new(&app1, "exec-1").unwrap();
+        let work_dir2 = ExecutorWorkDir::new(&app2, "exec-2").unwrap();
+
+        assert_eq!(work_dir1.socket().parent().unwrap(), socket_dir.as_path());
+        assert_eq!(work_dir2.socket().parent().unwrap(), socket_dir.as_path());
+    }
 }
