@@ -150,6 +150,24 @@ impl Storage {
 
         let executor_list = self.engine.find_executors(None).await?;
         for executor in executor_list {
+            // Reset executors stuck in Binding state back to Idle.
+            // Binding is a transitional state during the binding handshake.
+            // If session manager restarted mid-binding, the binding was never completed,
+            // so the executor should return to Idle for re-scheduling.
+            let executor = if executor.state == ExecutorState::Binding {
+                tracing::warn!(
+                    "Executor <{}> was in Binding state during recovery, resetting to Idle",
+                    executor.id
+                );
+                let mut recovered = executor.clone();
+                recovered.state = ExecutorState::Idle;
+                recovered.ssn_id = None;
+                self.engine.update_executor(&recovered).await?;
+                recovered
+            } else {
+                executor
+            };
+
             let mut exe_map = lock_ptr!(self.executors)?;
             exe_map.insert(executor.id.clone(), ExecutorPtr::new(executor.into()));
         }
@@ -939,3 +957,6 @@ mod node_executor_tests;
 
 #[cfg(test)]
 mod session_limit_tests;
+
+#[cfg(test)]
+mod load_data_tests;
