@@ -20,6 +20,7 @@ use crate::executor::Executor;
 use common::apis::{Event, EventOwner, ExecutorState};
 use common::FlameError;
 
+mod binding;
 mod bound;
 mod idle;
 mod releasing;
@@ -36,6 +37,10 @@ pub fn from(client: BackendClient, e: Executor) -> Box<dyn State> {
             executor: e,
         }),
         ExecutorState::Idle => Box::new(idle::IdleState {
+            client,
+            executor: e,
+        }),
+        ExecutorState::Binding => Box::new(binding::BindingState {
             client,
             executor: e,
         }),
