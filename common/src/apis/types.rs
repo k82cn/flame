@@ -49,7 +49,7 @@ pub struct Event {
     pub creation_time: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TaskResult {
     pub state: TaskState,
     pub output: Option<TaskOutput>,
@@ -220,6 +220,22 @@ pub struct Task {
     pub completion_time: Option<DateTime<Utc>>,
     pub events: Vec<Event>,
     pub state: TaskState,
+}
+
+impl Default for Task {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            ssn_id: String::new(),
+            version: 0,
+            input: None,
+            output: None,
+            creation_time: Utc::now(),
+            completion_time: None,
+            events: Vec::new(),
+            state: TaskState::default(),
+        }
+    }
 }
 
 impl Task {

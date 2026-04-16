@@ -24,6 +24,50 @@ All notable changes to the Codebase Enhancement initiative will be documented in
 - `common/` and `sdk/rust/` cannot share any code: `common/` is for internal server components, `sdk/rust/` is for end-users with intentionally different APIs and dependencies
 - API versioning via package name only (`flame.v1`), no new message fields
 
+## Phase 3 Complete (2026-04-16)
+
+### P3.1: Python SDK Unit Tests
+- [x] Created `sdk/python/tests/` directory structure
+- [x] Added `conftest.py` with pytest fixtures (mock gRPC, Flight client, sample data)
+- [x] Added `test_types.py` - enum, dataclass, FlameContext, short_name tests
+- [x] Added `test_cache.py` - ObjectRef encode/decode, serialization round-trip
+- [x] Added `test_client.py` - Connection HTTP/HTTPS, session/task operations
+- [x] Added `test_agent.py` - Agent init/invoke, cloudpickle serialization
+- [x] Added `test_runner.py` - FileStorage, storage backend factory
+- [x] Added `test_service.py` - FlameService, FlameInstanceServicer, FlameInstanceServer (10 tests)
+- [x] Added `test_instance.py` - FlameInstance lifecycle, entrypoint decorator (18 tests)
+- [x] Added `test_runner_service.py` - ObjectFuture, RunnerService, Runner (16 tests)
+
+### P3.2: State Machine Tests
+- [x] Added comprehensive tests to `session_manager/src/controller/executors/mod.rs`:
+  - VoidState tests (8 tests: register_executor, all invalid operations)
+  - IdleState tests (9 tests: bind_session, release_executor, all invalid operations)
+  - BindingState tests (9 tests: bind_session_completed, bind_session idempotent, all invalid)
+  - BoundState tests (7 tests: unbind_executor, all invalid operations)
+  - UnbindingState tests (9 tests: unbind_executor_completed, all invalid operations)
+  - ReleasingState tests (10 tests: unregister_executor, all invalid operations)
+  - Factory tests (8 tests: from creates correct state for each ExecutorState)
+  - Lifecycle tests (2 tests: full bind/unbind and release lifecycles)
+- [x] Added factory tests to `executor_manager/src/states/mod.rs`:
+  - Tests for state factory creating correct state objects (8 tests)
+- Note: executor_manager `execute()` method tests require network calls to BackendClient; covered by e2e tests instead of unit tests
+
+### P3.3: Shell Completion
+- [x] Added `clap_complete = "4"` to workspace dependencies
+- [x] Added `clap_complete = { workspace = true }` to flmctl/Cargo.toml
+- [x] Added `clap_complete = { workspace = true }` to flmadm/Cargo.toml
+- [x] Added `Completion` subcommand to flmctl Commands enum
+- [x] Added `Completion` subcommand to flmadm Commands enum
+- [x] Implemented completion generation using `clap_complete::generate()`
+
+### P3.4: API Documentation
+- [x] Created `docs/api/` directory
+- [x] Added `index.md` - API reference overview with service table
+- [x] Added `frontend.md` - Frontend service documentation with examples
+- [x] Added `backend.md` - Backend service documentation with workflow diagrams
+- [x] Added `shim.md` - Instance service documentation with lifecycle flow
+- [x] Added `types.md` - Complete type definitions with field descriptions
+
 ## Phase 2 Complete (2026-04-13)
 
 ### P2.1: API Versioning
@@ -58,15 +102,7 @@ All notable changes to the Codebase Enhancement initiative will be documented in
 - [x] P1.3: Fixed WasmShim task failure handling
 - [x] P1.4: Executor persistence (already implemented)
 
-## Future Releases
-
-### Phase 3 (Planned)
-- [ ] P3.1: Add Python SDK unit tests
-- [ ] P3.2: Add state machine tests
-- [ ] P3.3: Add shell completion to CLIs
-- [ ] P3.4: Generate API documentation
-
-### Phase 4 (Ongoing)
+## Phase 4 (Ongoing)
 - [ ] P4.1: CI/CD enhancements
 - [ ] P4.2: Documentation improvements (including proto file comments aligned with design docs)
 - [ ] P4.3: Code deduplication

@@ -12,8 +12,10 @@ limitations under the License.
 */
 
 use std::error::Error;
+use std::io;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
 use flame_rs::apis::FlameContext;
 
 mod apis;
@@ -126,6 +128,12 @@ enum Commands {
         #[arg(short, long)]
         application: String,
     },
+    /// Generate shell completion scripts
+    Completion {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
 
 #[tokio::main]
@@ -159,6 +167,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Register { file }) => register::run(&ctx, file).await?,
         Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,
         Some(Commands::Update { application }) => update::run(&ctx, application).await?,
+        Some(Commands::Completion { shell }) => {
+            generate(*shell, &mut Cli::command(), "flmctl", &mut io::stdout());
+        }
         _ => helper::run().await?,
     };
 

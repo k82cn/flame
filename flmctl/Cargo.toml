@@ -16,6 +16,7 @@ tracing-subscriber = { workspace = true }
 sqlx = { workspace = true }
 
 clap = { workspace = true }
+clap_complete = { workspace = true }
 chrono = { workspace = true }
 
 url = { workspace = true }

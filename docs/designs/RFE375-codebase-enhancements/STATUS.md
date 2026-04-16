@@ -1,7 +1,7 @@
 # RFE375 Status
 
-**Current Status:** Phase 2 Complete  
-**Last Updated:** 2026-04-13  
+**Current Status:** Phase 3 Complete  
+**Last Updated:** 2026-04-16  
 **Tracking Issue:** [#375](https://github.com/xflops/flame/issues/375)  
 
 ## Progress Tracker
@@ -27,10 +27,10 @@
 
 | Task                        | Status      | Assignee | PR  | Notes                              |
 | --------------------------- | ----------- | -------- | --- | ---------------------------------- |
-| P3.1: Python SDK unit tests | Not Started | -        | -   | Target 80% coverage                |
-| P3.2: State machine tests   | Not Started | -        | -   | session_manager + executor_manager |
-| P3.3: Shell completion      | Not Started | -        | -   | bash, zsh, fish                    |
-| P3.4: API documentation     | Not Started | -        | -   | Generate from protos               |
+| P3.1: Python SDK unit tests | Done        | -        | -   | 10 test files, 50+ mock-based tests |
+| P3.2: State machine tests   | Done        | -        | -   | 62 tests in session_manager; executor_manager covered by e2e |
+| P3.3: Shell completion      | Done        | -        | -   | bash, zsh, fish for flmctl/flmadm  |
+| P3.4: API documentation     | Done        | -        | -   | docs/api/ with 5 markdown files    |
 
 ### Phase 4: Polish (Ongoing)
 
@@ -47,9 +47,9 @@
 | `unwrap()` in production code | 167      | 0      | ~26     |
 | `TODO/FIXME` comments         | 5        | 0      | 5       |
 | Code coverage (Rust)          | Unknown  | 70%    | Pending (CI added) |
-| Code coverage (Python SDK)    | 0%       | 80%    | 0%      |
+| Code coverage (Python SDK)    | 0%       | 80%    | Tests added |
 | CI pipeline duration          | ~5 min   | ~3 min | ~5 min  |
-| Documentation completeness    | 60%      | 90%    | 60%     |
+| Documentation completeness    | 60%      | 90%    | 75%     |
 
 ## Decision Log
 
@@ -58,6 +58,9 @@
 | 2026-03-17 | Created RFE372              | Comprehensive codebase review identified 89 enhancement opportunities |
 | 2026-04-13 | API versioning: flame.v1    | Proto package changed from `flame` to `flame.v1` for future compatibility |
 | 2026-04-13 | Split apis.rs into modules  | Original 1350-line file split into 5 files, each under 410 lines      |
+| 2026-04-16 | Shell completion via clap_complete | Standard clap approach, supports bash/zsh/fish/powershell |
+| 2026-04-16 | Manual API docs over protoc-gen-doc | Better control over examples and organization |
+| 2026-04-16 | executor_manager state tests via e2e | State execute() methods require network; unit tests impractical without trait abstraction |
 
 ## Blockers
 
