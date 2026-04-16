@@ -75,10 +75,9 @@ impl Context {
         &self,
         exec: &ExecutorInfoPtr,
         ssn: &SessionInfoPtr,
-        batch_index: Option<u32>,
     ) -> Result<(), FlameError> {
         self.controller
-            .bind_session(exec.id.clone(), ssn.id.clone(), batch_index)
+            .bind_session(exec.id.clone(), ssn.id.clone())
             .await?;
         self.plugins.on_session_bind(ssn.clone())?;
         self.snapshot

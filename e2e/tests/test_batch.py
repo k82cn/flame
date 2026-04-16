@@ -13,12 +13,11 @@ limitations under the License.
 
 from concurrent.futures import wait
 
-import pytest
 import flamepy
+import pytest
+
 from e2e.api import TestRequest
 from e2e.helpers import invoke_task
-from tests.utils import random_string
-
 
 FLM_TEST_SVC_APP = "flme2e-svc"
 FLM_TEST_SVC_APP_URL = "file:///opt/e2e"
@@ -82,5 +81,57 @@ def test_batch_session_parallel_tasks():
     results = [f.result() for f in futures]
 
     assert len(results) == task_num
+
+    session.close()
+
+
+def test_batch_session_no_partial_start():
+    """Test that tasks don't start partially with batch_size > 1.
+
+    With batch_size=2 and min_instances=0, a single task should remain
+    Pending until a second task is created to complete the batch.
+    """
+    import time
+
+    from flamepy.core.types import TaskState
+
+    session = flamepy.create_session(
+        application=FLM_TEST_SVC_APP,
+        batch_size=2,
+        min_instances=0,
+    )
+
+    task1 = session.create_task(b"partial_start_test_1")
+    task1_id = task1.id
+
+    time.sleep(3)
+
+    task1_status = session.get_task(task1_id)
+    assert task1_status.state == TaskState.PENDING, f"Task should remain Pending with batch_size=2 and only 1 task. Got: {task1_status.state}"
+
+    task2 = session.create_task(b"partial_start_test_2")
+    task2_id = task2.id
+
+    timeout = 120
+    poll_interval = 0.5
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        t1 = session.get_task(task1_id)
+        t2 = session.get_task(task2_id)
+
+        t1_done = t1.state in (TaskState.SUCCEED, TaskState.FAILED)
+        t2_done = t2.state in (TaskState.SUCCEED, TaskState.FAILED)
+
+        if t1_done and t2_done:
+            assert t1.state == TaskState.SUCCEED, f"Task 1 should succeed, got {t1.state}"
+            assert t2.state == TaskState.SUCCEED, f"Task 2 should succeed, got {t2.state}"
+            break
+
+        time.sleep(poll_interval)
+    else:
+        t1 = session.get_task(task1_id)
+        t2 = session.get_task(task2_id)
+        pytest.fail(f"Timeout waiting for tasks to complete. Task1: {t1.state}, Task2: {t2.state}")
 
     session.close()

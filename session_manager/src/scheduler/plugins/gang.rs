@@ -72,6 +72,12 @@ impl Plugin for GangPlugin {
         }
     }
 
+    fn on_bind_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
+            state.pipelined += 1;
+        }
+    }
+
     fn on_discard_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined = state.pipelined.saturating_sub(1);

@@ -137,7 +137,7 @@ impl Action for AllocateAction {
                     stmt.len(),
                     ssn.id
                 );
-                stmt.commit().await?;
+                let _ = stmt.commit().await?;
                 nodes.sort_by(|a, b| node_order_fn.cmp(a, b));
                 open_ssns.push(ssn.clone());
             } else if !stmt.is_empty() {

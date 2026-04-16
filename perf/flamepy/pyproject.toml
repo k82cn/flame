@@ -1,0 +1,13 @@
+[project]
+name = "flamepy-perf"
+version = "0.1.0"
+description = "Performance benchmark for Flame Python SDK"
+requires-python = ">=3.10"
+dependencies = ["flamepy"]
+
+[project.scripts]
+flamepy-bench = "main:main"
+flamepy-bench-service = "service:main"
+
+[tool.uv.sources]
+flamepy = { path = "../../sdk/python", editable = true }

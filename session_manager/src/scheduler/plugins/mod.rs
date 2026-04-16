@@ -98,6 +98,8 @@ pub trait Plugin: Send + Sync + 'static {
 
     fn on_pipeline_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
 
+    fn on_bind_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
+
     fn on_discard_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
 }
 
@@ -253,6 +255,20 @@ impl PluginManager {
 
         for plugin in plugins.values_mut() {
             plugin.on_pipeline_executor(node.clone(), ssn.clone());
+        }
+
+        Ok(())
+    }
+
+    pub fn on_bind_executor(
+        &self,
+        node: NodeInfoPtr,
+        ssn: SessionInfoPtr,
+    ) -> Result<(), FlameError> {
+        let mut plugins = lock_ptr!(self.plugins)?;
+
+        for plugin in plugins.values_mut() {
+            plugin.on_bind_executor(node.clone(), ssn.clone());
         }
 
         Ok(())
@@ -419,7 +435,6 @@ mod tests {
             shim: Shim::Host,
             task_id: None,
             ssn_id: None,
-            batch_index: None,
             creation_time: Utc::now(),
             state: ExecutorState::Idle,
         })

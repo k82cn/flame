@@ -33,15 +33,6 @@ impl DispatchAction {
     pub fn new_ptr() -> ActionPtr {
         Arc::new(DispatchAction {})
     }
-
-    fn next_batch_index(ssn: &SessionInfoPtr, bound_count: u32) -> Option<u32> {
-        let batch_size = ssn.batch_size.max(1);
-        if batch_size <= 1 {
-            None
-        } else {
-            Some(bound_count % batch_size)
-        }
-    }
 }
 
 #[async_trait::async_trait]
@@ -105,15 +96,9 @@ impl Action for DispatchAction {
 
             if let Some(exec) = exec {
                 let bound_count = bound_counts.entry(ssn.id.clone()).or_insert(0);
-                let batch_index = Self::next_batch_index(&ssn, *bound_count);
 
-                tracing::debug!(
-                    "Bind executor <{}> for session <{}> with batch_index={:?}.",
-                    exec.id,
-                    ssn.id,
-                    batch_index
-                );
-                ctx.bind_session(&exec, &ssn, batch_index).await?;
+                tracing::debug!("Bind executor <{}> for session <{}>.", exec.id, ssn.id,);
+                ctx.bind_session(&exec, &ssn).await?;
                 idle_executors.remove(&exec.id);
                 *bound_count += 1;
 

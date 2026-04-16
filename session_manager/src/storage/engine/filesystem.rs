@@ -162,8 +162,6 @@ struct ExecutorMetadata {
     pub shim: i32,
     pub task_id: Option<i64>,
     pub ssn_id: Option<String>,
-    #[serde(default)]
-    pub batch_index: Option<u32>,
     pub creation_time: i64,
     pub state: i32,
 }
@@ -1453,7 +1451,6 @@ impl Engine for FilesystemEngine {
             shim: i32::from(executor.shim),
             task_id: executor.task_id,
             ssn_id: executor.ssn_id.clone(),
-            batch_index: executor.batch_index,
             creation_time: executor.creation_time.timestamp(),
             state: i32::from(executor.state),
         };
@@ -1483,7 +1480,6 @@ impl Engine for FilesystemEngine {
                 shim: Shim::try_from(meta.shim).unwrap_or_default(),
                 task_id: meta.task_id.map(|t| t as TaskID),
                 ssn_id: meta.ssn_id,
-                batch_index: meta.batch_index,
                 creation_time: DateTime::from_timestamp(meta.creation_time, 0).unwrap_or_default(),
                 state: ExecutorState::from(meta.state),
             })),
@@ -1504,7 +1500,6 @@ impl Engine for FilesystemEngine {
             shim: i32::from(executor.shim),
             task_id: executor.task_id,
             ssn_id: executor.ssn_id.clone(),
-            batch_index: executor.batch_index,
             creation_time: executor.creation_time.timestamp(),
             state: i32::from(executor.state),
         };
@@ -1536,7 +1531,6 @@ impl Engine for FilesystemEngine {
             shim: Shim::try_from(meta.shim).unwrap_or_default(),
             task_id: meta.task_id.map(|t| t as TaskID),
             ssn_id: meta.ssn_id,
-            batch_index: meta.batch_index,
             creation_time: DateTime::from_timestamp(meta.creation_time, 0).unwrap_or_default(),
             state,
         })
@@ -1602,7 +1596,6 @@ impl Engine for FilesystemEngine {
                             shim: Shim::try_from(meta.shim).unwrap_or_default(),
                             task_id: meta.task_id.map(|t| t as TaskID),
                             ssn_id: meta.ssn_id,
-                            batch_index: meta.batch_index,
                             creation_time: DateTime::from_timestamp(meta.creation_time, 0)
                                 .unwrap_or_default(),
                             state: ExecutorState::from(meta.state),
@@ -2206,7 +2199,6 @@ mod tests {
             shim: Shim::Host,
             task_id: None,
             ssn_id: None,
-            batch_index: None,
             creation_time: Utc::now(),
             state: ExecutorState::Void,
         };
@@ -2271,7 +2263,6 @@ mod tests {
                 shim: Shim::Host,
                 task_id: None,
                 ssn_id: None,
-                batch_index: None,
                 creation_time: Utc::now(),
                 state: ExecutorState::Void,
             };
