@@ -45,6 +45,7 @@ mod tests {
                 common_data: None,
                 min_instances: 1,
                 max_instances: None,
+                batch_size: 1,
             };
             storage.create_session(attr).await.unwrap();
         }
@@ -70,6 +71,7 @@ mod tests {
                 common_data: None,
                 min_instances: 1,
                 max_instances: None,
+                batch_size: 1,
             };
             storage.create_session(attr).await.unwrap();
         }
@@ -99,6 +101,7 @@ mod tests {
                 common_data: None,
                 min_instances: 1,
                 max_instances: None,
+                batch_size: 1,
             };
             storage.create_session(attr).await.unwrap();
         }
@@ -122,6 +125,7 @@ mod tests {
                 common_data: None,
                 min_instances: 1,
                 max_instances: None,
+                batch_size: 1,
             };
             storage.create_session(attr).await.unwrap();
         }

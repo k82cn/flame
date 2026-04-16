@@ -83,10 +83,23 @@ impl Session {
         Ok(())
     }
 
-    pub fn pop_pending_task(&mut self) -> Option<TaskPtr> {
+    pub fn pop_pending_task(&mut self, batch_index: u32, batch_size: u32) -> Option<TaskPtr> {
         let pending_tasks = self.tasks_index.get_mut(&TaskState::Pending)?;
-        let task_id = *pending_tasks.keys().next()?;
-        pending_tasks.remove(&task_id)
+
+        if batch_size <= 1 {
+            let task_id = *pending_tasks.keys().next()?;
+            return pending_tasks.remove(&task_id);
+        }
+
+        let mut sorted_task_ids: Vec<_> = pending_tasks.keys().copied().collect();
+        sorted_task_ids.sort();
+
+        for task_id in sorted_task_ids {
+            if (task_id as u32) % batch_size == batch_index {
+                return pending_tasks.remove(&task_id);
+            }
+        }
+        None
     }
 
     pub fn validate_spec(&self, attr: &SessionAttributes) -> Result<(), FlameError> {
@@ -114,6 +127,12 @@ impl Session {
                 self.id, self.max_instances, attr.max_instances
             )));
         }
+        if self.batch_size != attr.batch_size {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: batch_size differs (expected {}, got {})",
+                self.id, self.batch_size, attr.batch_size
+            )));
+        }
         Ok(())
     }
 }
@@ -134,6 +153,7 @@ impl Clone for Session {
             status: self.status.clone(),
             min_instances: self.min_instances,
             max_instances: self.max_instances,
+            batch_size: self.batch_size,
         };
 
         for (id, t) in &self.tasks {

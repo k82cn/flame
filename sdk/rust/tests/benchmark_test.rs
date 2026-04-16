@@ -103,6 +103,7 @@ async fn run_session(
         common_data: None,
         min_instances: 0,
         max_instances: None,
+        batch_size: 1,
     };
 
     let ssn = conn.create_session(&ssn_attr).await?;

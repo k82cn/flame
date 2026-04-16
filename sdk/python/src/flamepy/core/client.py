@@ -73,7 +73,7 @@ def connect(addr: str, tls_config: Optional[FlameClientTls] = None) -> "Connecti
     return Connection.connect(addr, tls_config)
 
 
-def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1, min_instances: int = 0, max_instances: Optional[int] = None) -> "Session":
+def create_session(application: str, common_data: Optional[bytes] = None, session_id: Optional[str] = None, slots: int = 1, min_instances: int = 0, max_instances: Optional[int] = None, batch_size: int = 1) -> "Session":
     """Create a new session.
 
     Args:
@@ -83,9 +83,10 @@ def create_session(application: str, common_data: Optional[bytes] = None, sessio
         slots: Number of slots
         min_instances: Minimum number of instances (default: 0)
         max_instances: Maximum number of instances (None = unlimited)
+        batch_size: Number of executors per batch for gang scheduling (default: 1)
     """
     conn = ConnectionInstance.instance()
-    return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots, min_instances=min_instances, max_instances=max_instances))
+    return conn.create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, slots=slots, min_instances=min_instances, max_instances=max_instances, batch_size=batch_size))
 
 
 def open_session(session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
@@ -398,6 +399,7 @@ class Connection:
             common_data=common_data_bytes,
             min_instances=attrs.min_instances,
             max_instances=attrs.max_instances if attrs.max_instances is not None else None,
+            batch_size=attrs.batch_size,
         )
 
         request = CreateSessionRequest(session_id=session_id, session=session_spec)
@@ -478,6 +480,7 @@ class Connection:
                 common_data=spec.common_data,
                 min_instances=spec.min_instances,
                 max_instances=spec.max_instances,
+                batch_size=spec.batch_size,
             )
 
         request = OpenSessionRequest(session_id=session_id, session=session_spec)

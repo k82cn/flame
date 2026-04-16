@@ -75,9 +75,10 @@ impl Context {
         &self,
         exec: &ExecutorInfoPtr,
         ssn: &SessionInfoPtr,
+        batch_index: Option<u32>,
     ) -> Result<(), FlameError> {
         self.controller
-            .bind_session(exec.id.clone(), ssn.id.clone())
+            .bind_session(exec.id.clone(), ssn.id.clone(), batch_index)
             .await?;
         self.plugins.on_session_bind(ssn.clone())?;
         self.snapshot
@@ -108,24 +109,6 @@ impl Context {
         self.plugins.on_session_unbind(ssn.clone())?;
         self.snapshot
             .update_executor_state(exec.clone(), ExecutorState::Unbinding)?;
-
-        Ok(())
-    }
-
-    pub async fn create_executor(
-        &self,
-        node: &NodeInfoPtr,
-        ssn: &SessionInfoPtr,
-    ) -> Result<(), FlameError> {
-        let executor = self
-            .controller
-            .create_executor(node.name.clone(), ssn.id.clone())
-            .await?;
-
-        let exec_info = ExecutorInfo::from(&executor);
-        self.snapshot.add_executor(Arc::new(exec_info))?;
-
-        self.plugins.on_create_executor(node.clone(), ssn.clone())?;
 
         Ok(())
     }

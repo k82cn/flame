@@ -106,8 +106,9 @@ class SessionAttributes:
     slots: int
     id: Optional[str] = None
     common_data: Any = None
-    min_instances: int = 0  # Minimum number of instances (default: 0)
-    max_instances: Optional[int] = None  # Maximum number of instances (None = unlimited)
+    min_instances: int = 0
+    max_instances: Optional[int] = None
+    batch_size: int = 1
 
 
 @dataclass

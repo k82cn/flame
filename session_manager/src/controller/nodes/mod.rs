@@ -107,13 +107,14 @@ mod tests {
 
     /// Creates a mock storage for testing state transitions (async version).
     async fn create_mock_storage() -> StoragePtr {
-        // Use a temp directory that works on both Unix and Windows
-        let temp_dir = std::env::temp_dir();
-        let db_name = format!(
-            "flame_test_node_states_{}.db",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        let unique_id = format!(
+            "{}_{:?}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+            std::thread::current().id()
         );
-        let db_path = temp_dir.join(db_name);
+        let test_dir = std::env::temp_dir().join(format!("flame_test_{}", unique_id));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let db_path = test_dir.join("flame.db");
         let url = format!("sqlite://{}", db_path.display());
 
         let ctx = FlameClusterContext {

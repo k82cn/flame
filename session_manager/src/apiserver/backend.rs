@@ -331,6 +331,7 @@ impl Backend for Flame {
             shim,
             task_id: None,
             ssn_id: None,
+            batch_index: None,
             creation_time: Utc::now(),
             state: ExecutorState::Idle,
         };
@@ -361,10 +362,11 @@ impl Backend for Flame {
     ) -> Result<Response<BindExecutorResponse>, Status> {
         trace_fn!("Backend::bind_executor");
         let req = req.into_inner();
+        let executor_id = req.executor_id.to_string();
 
         let ssn = self
             .controller
-            .wait_for_session(req.executor_id.to_string())
+            .wait_for_session(executor_id.clone())
             .await?;
 
         // If the session is not found, return.
@@ -372,6 +374,7 @@ impl Backend for Flame {
             return Ok(Response::new(BindExecutorResponse {
                 application: None,
                 session: None,
+                batch_index: None,
             }));
         };
 
@@ -382,16 +385,24 @@ impl Backend for Flame {
         let application = Some(rpc::Application::from(&app));
         let session = Some(rpc::Session::from(&ssn));
 
+        let batch_index = self
+            .controller
+            .get_executor(executor_id.clone())
+            .ok()
+            .and_then(|e| e.batch_index);
+
         tracing::debug!(
-            "Bind executor <{}> to Session <{}:{}>",
-            req.executor_id.to_string(),
+            "Bind executor <{}> to Session <{}:{}> with batch_index={:?}",
+            executor_id,
             app.name,
-            ssn.id
+            ssn.id,
+            batch_index
         );
 
         Ok(Response::new(BindExecutorResponse {
             application,
             session,
+            batch_index,
         }))
     }
 
@@ -439,14 +450,26 @@ impl Backend for Flame {
     ) -> Result<Response<LaunchTaskResponse>, Status> {
         trace_fn!("Backend::launch_task");
         let req = req.into_inner();
-        let task = self.controller.launch_task(req.executor_id).await?;
+        let executor_id = req.executor_id.clone();
+
+        let batch_index = self
+            .controller
+            .get_executor(executor_id.clone())
+            .ok()
+            .and_then(|e| e.batch_index);
+
+        let task = self.controller.launch_task(executor_id).await?;
         if let Some(task) = task {
             return Ok(Response::new(LaunchTaskResponse {
                 task: Some(rpc::Task::from(&task)),
+                batch_index,
             }));
         }
 
-        Ok(Response::new(LaunchTaskResponse { task: None }))
+        Ok(Response::new(LaunchTaskResponse {
+            task: None,
+            batch_index,
+        }))
     }
 
     async fn complete_task(

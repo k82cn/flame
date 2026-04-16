@@ -25,6 +25,7 @@ use common::FlameError;
 mod actions;
 mod ctx;
 mod plugins;
+pub mod statement;
 
 pub fn new(controller: ControllerPtr) -> Arc<dyn FlameThread> {
     Arc::new(ScheduleRunner { controller })
@@ -185,6 +186,7 @@ mod tests {
                 common_data: None,
                 min_instances: 0,
                 max_instances: None,
+                batch_size: 1,
             }))?;
 
         for _ in 0..task_num {

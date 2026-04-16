@@ -33,7 +33,7 @@ use crate::model::{
     SessionInfo, SessionInfoPtr, SnapShot, SnapShotPtr,
 };
 
-use crate::events::{EventManager, EventManagerPtr};
+use crate::events::{EventManagerPtr, FsEventManager, MemoryEventManager};
 use crate::storage::engine::EnginePtr;
 
 mod engine;
@@ -53,6 +53,13 @@ pub struct Storage {
 }
 
 pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameError> {
+    let event_manager: EventManagerPtr = if config.cluster.storage == "none" {
+        Arc::new(MemoryEventManager::new())
+    } else {
+        let events_path = derive_events_path(&config.cluster.storage);
+        Arc::new(FsEventManager::new(&events_path)?)
+    };
+
     Ok(Arc::new(Storage {
         context: config.clone(),
         engine: engine::connect(&config.cluster.storage).await?,
@@ -60,9 +67,20 @@ pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameEr
         executors: stdng::new_ptr(HashMap::new()),
         nodes: stdng::new_ptr(HashMap::new()),
         applications: stdng::new_ptr(HashMap::new()),
-        event_manager: Arc::new(EventManager::new(None)?),
+        event_manager,
         max_sessions: config.cluster.limits.max_sessions,
     }))
+}
+
+fn derive_events_path(storage_url: &str) -> String {
+    if let Ok(test_dir) = std::env::var("FLAME_TEST_DIR") {
+        return std::path::Path::new(&test_dir)
+            .join("events")
+            .to_string_lossy()
+            .to_string();
+    }
+
+    "events".to_string()
 }
 
 impl Storage {
@@ -353,6 +371,7 @@ impl Storage {
                     shim: exec.shim,
                     task_id: exec.task_id,
                     ssn_id: exec.ssn_id.clone(),
+                    batch_index: exec.batch_index,
                     creation_time: exec.creation_time,
                     state: exec.state,
                 });
@@ -876,6 +895,7 @@ impl Storage {
         &self,
         node_name: String,
         ssn_id: SessionID,
+        batch_index: Option<u32>,
     ) -> Result<Executor, FlameError> {
         trace_fn!("Storage::create_executor");
         let ssn = self.get_session_ptr(ssn_id.clone())?;
@@ -896,6 +916,7 @@ impl Storage {
             shim: Shim::default(),
             task_id: None,
             ssn_id: None,
+            batch_index,
             creation_time: Utc::now(),
             state: ExecutorState::Void,
         };
@@ -960,3 +981,6 @@ mod session_limit_tests;
 
 #[cfg(test)]
 mod load_data_tests;
+
+#[cfg(test)]
+mod derive_events_path_tests;

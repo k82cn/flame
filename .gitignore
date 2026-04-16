@@ -33,3 +33,5 @@ uv.lock
 work/
 dist/
 tmp/
+session_manager/events/
+certs/
