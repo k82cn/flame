@@ -64,3 +64,85 @@ pub fn from(client: BackendClient, e: Executor) -> Box<dyn State> {
 pub trait State: Send + Sync {
     async fn execute(&mut self) -> Result<Executor, FlameError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::executor::Executor;
+    use common::apis::{ResourceRequirement, Shim};
+
+    fn create_test_executor(id: &str, state: ExecutorState) -> Executor {
+        Executor {
+            id: id.to_string(),
+            node: "test-node".to_string(),
+            resreq: ResourceRequirement::default(),
+            slots: 1,
+            shim: Shim::Host,
+            session: None,
+            task: None,
+            context: None,
+            shim_instance: None,
+            state,
+        }
+    }
+
+    mod factory_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_from_void_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Void);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_idle_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Idle);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_binding_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Binding);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_bound_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Bound);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_unbinding_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Unbinding);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_releasing_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Releasing);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_unknown_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Unknown);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+
+        #[tokio::test]
+        async fn test_from_released_state() {
+            let exe = create_test_executor("exe-1", ExecutorState::Released);
+            let client = BackendClient::default();
+            let _state = from(client, exe);
+        }
+    }
+}

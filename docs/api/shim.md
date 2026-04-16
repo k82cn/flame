@@ -1,0 +1,205 @@
+# Instance Service (Shim)
+
+The Instance service defines the interface between executors and application instances. It handles session and task lifecycle events for the actual workload execution.
+
+## Service Definition
+
+```protobuf
+service Instance {
+  rpc OnSessionEnter(SessionContext) returns (Result) {}
+  rpc OnTaskInvoke(TaskContext) returns (TaskResult) {}
+  rpc OnSessionLeave(EmptyRequest) returns (Result) {}
+}
+```
+
+## Overview
+
+The Instance service is implemented by application shims that manage the actual workload. When an executor binds to a session, it calls these methods to notify the application of lifecycle events.
+
+### Lifecycle Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Executor Bound                          │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            v
+┌─────────────────────────────────────────────────────────────┐
+│                   OnSessionEnter()                          │
+│  - Receive application context                              │
+│  - Initialize resources (DB connections, etc.)              │
+│  - Load common_data if provided                             │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            v
+┌─────────────────────────────────────────────────────────────┐
+│                   OnTaskInvoke() (repeated)                 │
+│  - Receive task input                                       │
+│  - Execute task logic                                       │
+│  - Return task result                                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            v
+┌─────────────────────────────────────────────────────────────┐
+│                   OnSessionLeave()                          │
+│  - Clean up resources                                       │
+│  - Close connections                                        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            v
+┌─────────────────────────────────────────────────────────────┐
+│                    Executor Unbound                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Methods
+
+### OnSessionEnter
+
+Called when an executor binds to a session. Use this to initialize application-specific resources.
+
+**Request:** `SessionContext`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | string | Session identifier |
+| `application` | `ApplicationContext` | Application details |
+| `common_data` | bytes | Shared data for all tasks in session (optional) |
+
+**ApplicationContext:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Application name |
+| `shim` | [Shim](types.md#shim) | Shim type (Host or Wasm) |
+| `image` | string | Container/WASM image (optional) |
+| `command` | string | Command to execute (optional) |
+| `working_directory` | string | Working directory (optional) |
+| `url` | string | Service URL (optional) |
+
+**Response:** [Result](types.md#result)
+
+**Example Implementation (Python):**
+```python
+from flamepy import FlameService
+
+class MyService(FlameService):
+    def on_session_enter(self, context):
+        self.session_id = context.session_id
+        self.db = Database.connect()  # Initialize resources
+        if context.common_data:
+            self.config = json.loads(context.common_data)
+        return 0  # Success
+```
+
+### OnTaskInvoke
+
+Called for each task that needs to be executed.
+
+**Request:** `TaskContext`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `task_id` | string | Task identifier |
+| `session_id` | string | Session identifier |
+| `input` | bytes | Task input data (optional) |
+
+**Response:** [TaskResult](types.md#taskresult)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `return_code` | int32 | 0 for success, non-zero for failure |
+| `output` | bytes | Task output data (optional) |
+| `message` | string | Error or status message (optional) |
+
+**Example Implementation (Python):**
+```python
+def on_task_invoke(self, context):
+    try:
+        input_data = json.loads(context.input)
+        result = self.process(input_data)
+        return TaskResult(
+            return_code=0,
+            output=json.dumps(result).encode()
+        )
+    except Exception as e:
+        return TaskResult(
+            return_code=1,
+            message=str(e)
+        )
+```
+
+### OnSessionLeave
+
+Called when the executor unbinds from the session. Use this to clean up resources.
+
+**Request:** `EmptyRequest` (empty message)
+
+**Response:** [Result](types.md#result)
+
+**Example Implementation (Python):**
+```python
+def on_session_leave(self):
+    self.db.close()  # Clean up resources
+    return 0  # Success
+```
+
+## Implementing a Shim
+
+### Host Shim
+
+For native applications running on the host:
+
+```python
+from flamepy import FlameService, FlameInstanceServer
+
+class MyApplication(FlameService):
+    def on_session_enter(self, context):
+        # Initialize
+        return 0
+    
+    def on_task_invoke(self, context):
+        # Process task
+        result = do_work(context.input)
+        return TaskResult(return_code=0, output=result)
+    
+    def on_session_leave(self):
+        # Cleanup
+        return 0
+
+if __name__ == "__main__":
+    server = FlameInstanceServer(MyApplication())
+    server.start()
+```
+
+### Wasm Shim
+
+For WebAssembly modules, the shim interfaces with the WASM runtime:
+
+```rust
+// The executor loads and calls the WASM module's exported functions
+let module = WasmModule::load(application.image)?;
+
+// OnSessionEnter
+module.call("on_session_enter", session_context)?;
+
+// OnTaskInvoke (for each task)
+let result = module.call("on_task_invoke", task_context)?;
+
+// OnSessionLeave
+module.call("on_session_leave")?;
+```
+
+## Error Handling
+
+Return non-zero `return_code` values to indicate failures:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Invalid input |
+| 3 | Resource unavailable |
+| >0 | Application-specific error |
+
+Errors are propagated back to the client through task status.

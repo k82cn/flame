@@ -84,6 +84,15 @@ impl BackendClient {
         Ok(Self { client })
     }
 
+    #[cfg(test)]
+    pub fn default() -> Self {
+        use tonic::transport::Endpoint;
+        let channel = Endpoint::from_static("http://[::1]:50051").connect_lazy();
+        Self {
+            client: FlameBackendClient::new(channel),
+        }
+    }
+
     pub async fn register_node(
         &mut self,
         node: &Node,

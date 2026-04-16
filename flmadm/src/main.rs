@@ -10,7 +10,11 @@ mod managers;
 mod types;
 
 #[cfg(unix)]
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+#[cfg(unix)]
+use clap_complete::{generate, Shell};
+#[cfg(unix)]
+use std::io;
 #[cfg(unix)]
 use std::path::PathBuf;
 
@@ -110,6 +114,12 @@ enum Commands {
         /// Skip confirmation prompts
         #[arg(long)]
         force: bool,
+    },
+    /// Generate shell completion scripts
+    Completion {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
     },
 }
 
@@ -217,6 +227,10 @@ fn main() {
                 force,
             };
             commands::uninstall::run(config)
+        }
+        Commands::Completion { shell } => {
+            generate(shell, &mut Cli::command(), "flmadm", &mut io::stdout());
+            Ok(())
         }
     };
 
