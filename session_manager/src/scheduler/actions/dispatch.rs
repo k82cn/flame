@@ -81,7 +81,9 @@ impl Action for DispatchAction {
             for (_, exec) in idle_executors.iter() {
                 if ctx.is_available(exec, &ssn)? {
                     stmt.bind(exec, &ssn)?;
-                    break;
+                    if stmt.is_fulfilled(&ssn)? {
+                        break;
+                    }
                 }
             }
 

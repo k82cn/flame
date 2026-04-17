@@ -121,3 +121,273 @@ impl Plugin for GangPlugin {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{ExecutorInfo, NodeInfo, SessionInfo};
+    use chrono::Utc;
+    use common::apis::{ExecutorState, ResourceRequirement, SessionState, Shim, TaskState};
+    use std::sync::Arc;
+
+    fn create_test_session(id: &str, batch_size: u32) -> SessionInfoPtr {
+        Arc::new(SessionInfo {
+            id: id.to_string(),
+            application: "test-app".to_string(),
+            slots: 1,
+            tasks_status: HashMap::from([(TaskState::Pending, 1)]),
+            creation_time: Utc::now(),
+            completion_time: None,
+            state: SessionState::Open,
+            min_instances: 0,
+            max_instances: None,
+            batch_size,
+        })
+    }
+
+    fn create_test_executor(id: &str, ssn_id: Option<&str>) -> ExecutorInfoPtr {
+        Arc::new(ExecutorInfo {
+            id: id.to_string(),
+            node: "test-node".to_string(),
+            resreq: ResourceRequirement {
+                cpu: 1,
+                memory: 1024,
+            },
+            slots: 1,
+            shim: Shim::Host,
+            task_id: None,
+            ssn_id: ssn_id.map(|s| s.to_string()),
+            creation_time: Utc::now(),
+            state: ExecutorState::Idle,
+        })
+    }
+
+    fn create_test_node(name: &str) -> NodeInfoPtr {
+        Arc::new(NodeInfo {
+            name: name.to_string(),
+            allocatable: ResourceRequirement {
+                cpu: 4,
+                memory: 8192,
+            },
+            state: common::apis::NodeState::Ready,
+        })
+    }
+
+    #[test]
+    fn test_is_fulfilled_batch_size_1() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 1);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+
+        let node = create_test_node("node-1");
+        plugin.on_bind_executor(node, ssn.clone());
+
+        assert!(plugin.is_fulfilled(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_is_fulfilled_batch_size_2() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 2);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+
+        let node = create_test_node("node-1");
+        plugin.on_bind_executor(node.clone(), ssn.clone());
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+
+        plugin.on_bind_executor(node, ssn.clone());
+
+        assert!(plugin.is_fulfilled(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_is_fulfilled_with_allocated() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 2);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let exec = create_test_executor("exec-1", Some("ssn-1"));
+        ss.add_executor(exec).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+
+        let node = create_test_node("node-1");
+        plugin.on_bind_executor(node, ssn.clone());
+
+        assert!(plugin.is_fulfilled(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_is_ready_batch_size_1() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 1);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+
+        let node = create_test_node("node-1");
+        plugin.on_allocate_executor(node, ssn.clone());
+
+        assert!(plugin.is_ready(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_is_ready_batch_size_2() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 2);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+
+        let node = create_test_node("node-1");
+        plugin.on_allocate_executor(node.clone(), ssn.clone());
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+
+        plugin.on_allocate_executor(node, ssn.clone());
+
+        assert!(plugin.is_ready(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_is_ready_with_allocated() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 2);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let exec = create_test_executor("exec-1", Some("ssn-1"));
+        ss.add_executor(exec).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+
+        let node = create_test_node("node-1");
+        plugin.on_allocate_executor(node, ssn.clone());
+
+        assert!(plugin.is_ready(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_on_pipeline_and_discard() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 2);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        let exec = create_test_executor("exec-1", None);
+        plugin.on_pipeline_executor(exec.clone(), ssn.clone());
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+
+        plugin.on_pipeline_executor(exec.clone(), ssn.clone());
+
+        assert!(plugin.is_ready(&ssn).unwrap());
+
+        plugin.on_discard_executor(exec.clone(), ssn.clone());
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+
+        plugin.on_discard_executor(exec, ssn.clone());
+
+        assert!(!plugin.is_ready(&ssn).unwrap());
+    }
+
+    #[test]
+    fn test_on_bind_and_unbind() {
+        let ss = SnapShot::new(ResourceRequirement {
+            cpu: 1,
+            memory: 1024,
+        });
+
+        let ssn = create_test_session("ssn-1", 2);
+        ss.add_session(ssn.clone()).unwrap();
+
+        let mut plugin = GangPlugin {
+            ssn_state: HashMap::new(),
+        };
+        plugin.setup(&ss).unwrap();
+
+        let node = create_test_node("node-1");
+        plugin.on_bind_executor(node.clone(), ssn.clone());
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+
+        plugin.on_bind_executor(node.clone(), ssn.clone());
+
+        assert!(plugin.is_fulfilled(&ssn).unwrap());
+
+        plugin.on_unbind_executor(node.clone(), ssn.clone());
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+
+        plugin.on_unbind_executor(node, ssn.clone());
+
+        assert!(!plugin.is_fulfilled(&ssn).unwrap());
+    }
+}
