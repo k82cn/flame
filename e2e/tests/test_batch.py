@@ -17,7 +17,7 @@ import flamepy
 import pytest
 
 from e2e.api import TestRequest
-from e2e.helpers import invoke_task
+from e2e.helpers import invoke_task, serialize_request
 
 FLM_TEST_SVC_APP = "flme2e-svc"
 FLM_TEST_SVC_APP_URL = "file:///opt/e2e"
@@ -74,7 +74,8 @@ def test_batch_session_parallel_tasks():
     task_num = 4
     futures = []
     for i in range(task_num):
-        future = session.run(f"parallel_batch_task_{i}".encode())
+        request = TestRequest(input=f"parallel_batch_task_{i}")
+        future = session.run(serialize_request(request))
         futures.append(future)
 
     wait(futures)
@@ -101,7 +102,8 @@ def test_batch_session_no_partial_start():
         min_instances=0,
     )
 
-    task1 = session.create_task(b"partial_start_test_1")
+    request1 = TestRequest(input="partial_start_test_1")
+    task1 = session.create_task(serialize_request(request1))
     task1_id = task1.id
 
     time.sleep(3)
@@ -109,7 +111,8 @@ def test_batch_session_no_partial_start():
     task1_status = session.get_task(task1_id)
     assert task1_status.state == TaskState.PENDING, f"Task should remain Pending with batch_size=2 and only 1 task. Got: {task1_status.state}"
 
-    task2 = session.create_task(b"partial_start_test_2")
+    request2 = TestRequest(input="partial_start_test_2")
+    task2 = session.create_task(serialize_request(request2))
     task2_id = task2.id
 
     timeout = 120
