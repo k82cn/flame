@@ -127,32 +127,36 @@ impl Plugin for FairShare {
         );
 
         for ssn in open_ssns.values() {
-            let mut desired = 0.0;
+            // Sum pending + running *task counts* (not slot-weighted yet). Gang / batch_size is
+            // defined in terms of tasks per batch; rounding must happen on task counts first,
+            // then multiply by slots. Otherwise e.g. batch_size=2, slots=2, 1 pending task gives
+            // slot demand 2, and floor(2/2)*2 = 2 wrongly allocates a full batch.
+            let mut task_count = 0.0;
             for state in [TaskState::Pending, TaskState::Running] {
                 if let Some(d) = ssn.tasks_status.get(&state) {
-                    desired += *d as f64 * ssn.slots as f64;
+                    task_count += *d as f64;
                 }
             }
 
             if let Some(app) = apps.get(&ssn.application) {
+                let batch_size = ssn.batch_size.max(1) as f64;
+                let batched_tasks = (task_count / batch_size).floor() * batch_size;
+                let mut desired = batched_tasks * ssn.slots as f64;
+
+                tracing::debug!(
+                    "Session <{}>: task_count={}, batched_tasks={}, batch_size={}, slots={}, desired_slots={}",
+                    ssn.id,
+                    task_count,
+                    batched_tasks,
+                    ssn.batch_size,
+                    ssn.slots,
+                    desired
+                );
+
                 // Cap desired by session's max_instances (already includes app limit from session creation)
                 if let Some(max_instances) = ssn.max_instances {
                     desired = desired.min((max_instances * ssn.slots) as f64);
                 }
-
-                // Round down desired to a multiple of batch_size to ensure batch semantics.
-                // With batch_size=2 and 1 pending task, desired becomes 0 (no partial batch).
-                // This prevents executors from being allocated until enough tasks exist
-                // to form a complete batch.
-                let batch_size = ssn.batch_size.max(1) as f64;
-                tracing::debug!(
-                    "Session <{}>: pending tasks calculation - desired_before_batch={}, batch_size={}, slots={}",
-                    ssn.id,
-                    desired,
-                    ssn.batch_size,
-                    ssn.slots
-                );
-                desired = (desired / batch_size).floor() * batch_size;
 
                 // Ensure desired is at least min_instances * slots (minimum guarantee)
                 let min_allocation = (ssn.min_instances * ssn.slots) as f64;
