@@ -1039,21 +1039,18 @@ impl Engine for FilesystemEngine {
                     )));
                 }
 
-                // If spec provided, validate it matches
+                let ssn = self.session_from_metadata(&meta)?;
+
+                // If spec provided, validate full session attributes (same as sqlite engine
+                // and in-memory cache). Only checking application/slots was insufficient:
+                // a persisted session could have batch_size/min_instances/max_instances that
+                // differ from the client spec, leading to gang scheduling deadlocks (tasks
+                // never allocated) without a clear error.
                 if let Some(ref attr) = spec {
-                    if meta.application != attr.application {
-                        return Err(FlameError::InvalidConfig(format!(
-                            "Session {id} spec mismatch: application differs"
-                        )));
-                    }
-                    if meta.slots != attr.slots {
-                        return Err(FlameError::InvalidConfig(format!(
-                            "Session {id} spec mismatch: slots differs"
-                        )));
-                    }
+                    ssn.validate_spec(attr)?;
                 }
 
-                self.session_from_metadata(&meta)
+                Ok(ssn)
             }
             Err(_) => {
                 // Session doesn't exist
