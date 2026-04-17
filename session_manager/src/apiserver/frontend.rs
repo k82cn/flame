@@ -305,12 +305,13 @@ impl Frontend for Flame {
         };
 
         tracing::debug!(
-            "Creating session with attributes: id={}, application={}, slots={}, min_instances={}, max_instances={:?}",
+            "Creating session with attributes: id={}, application={}, slots={}, min_instances={}, max_instances={:?}, batch_size={}",
             attr.id,
             attr.application,
             attr.slots,
             attr.min_instances,
-            attr.max_instances
+            attr.max_instances,
+            attr.batch_size
         );
 
         let ssn = self

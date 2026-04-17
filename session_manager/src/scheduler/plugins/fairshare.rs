@@ -140,6 +140,20 @@ impl Plugin for FairShare {
                     desired = desired.min((max_instances * ssn.slots) as f64);
                 }
 
+                // Round down desired to a multiple of batch_size to ensure batch semantics.
+                // With batch_size=2 and 1 pending task, desired becomes 0 (no partial batch).
+                // This prevents executors from being allocated until enough tasks exist
+                // to form a complete batch.
+                let batch_size = ssn.batch_size.max(1) as f64;
+                tracing::debug!(
+                    "Session <{}>: pending tasks calculation - desired_before_batch={}, batch_size={}, slots={}",
+                    ssn.id,
+                    desired,
+                    ssn.batch_size,
+                    ssn.slots
+                );
+                desired = (desired / batch_size).floor() * batch_size;
+
                 // Ensure desired is at least min_instances * slots (minimum guarantee)
                 let min_allocation = (ssn.min_instances * ssn.slots) as f64;
                 desired = desired.max(min_allocation);
