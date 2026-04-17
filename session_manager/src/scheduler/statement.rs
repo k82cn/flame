@@ -21,20 +21,26 @@ use crate::scheduler::plugins::PluginManagerPtr;
 use common::apis::{ExecutorID, ExecutorState};
 use common::FlameError;
 
-struct PipelinedAllocation {
+struct Allocation {
     node: NodeInfoPtr,
     ssn: SessionInfoPtr,
 }
 
-struct PipelinedBinding {
+struct Pipeline {
+    executor: ExecutorInfoPtr,
+    ssn: SessionInfoPtr,
+}
+
+struct Binding {
     executor: ExecutorInfoPtr,
     node: NodeInfoPtr,
     ssn: SessionInfoPtr,
 }
 
 pub struct Statement {
-    allocations: Vec<PipelinedAllocation>,
-    bindings: Vec<PipelinedBinding>,
+    allocations: Vec<Allocation>,
+    pipelines: Vec<Pipeline>,
+    bindings: Vec<Binding>,
     snapshot: SnapShotPtr,
     plugins: PluginManagerPtr,
     controller: ControllerPtr,
@@ -48,6 +54,7 @@ impl Statement {
     ) -> Self {
         Statement {
             allocations: Vec::new(),
+            pipelines: Vec::new(),
             bindings: Vec::new(),
             snapshot,
             plugins,
@@ -55,11 +62,25 @@ impl Statement {
         }
     }
 
-    pub fn pipeline(&mut self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Result<(), FlameError> {
+    pub fn allocate(&mut self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Result<(), FlameError> {
         self.plugins
-            .on_pipeline_executor(node.clone(), ssn.clone())?;
-        self.allocations.push(PipelinedAllocation {
+            .on_allocate_executor(node.clone(), ssn.clone())?;
+        self.allocations.push(Allocation {
             node: node.clone(),
+            ssn: ssn.clone(),
+        });
+        Ok(())
+    }
+
+    pub fn pipeline(
+        &mut self,
+        executor: &ExecutorInfoPtr,
+        ssn: &SessionInfoPtr,
+    ) -> Result<(), FlameError> {
+        self.plugins
+            .on_pipeline_executor(executor.clone(), ssn.clone())?;
+        self.pipelines.push(Pipeline {
+            executor: executor.clone(),
             ssn: ssn.clone(),
         });
         Ok(())
@@ -79,7 +100,7 @@ impl Statement {
         })?;
 
         self.plugins.on_bind_executor(node.clone(), ssn.clone())?;
-        self.bindings.push(PipelinedBinding {
+        self.bindings.push(Binding {
             executor: executor.clone(),
             node: node.clone(),
             ssn: ssn.clone(),
@@ -91,8 +112,12 @@ impl Statement {
         self.plugins.is_ready(ssn)
     }
 
+    pub fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
+        self.plugins.is_fulfilled(ssn)
+    }
+
     pub async fn commit(self) -> Result<Vec<ExecutorID>, FlameError> {
-        let mut bound_executor_ids = Vec::new();
+        let mut executor_ids = Vec::new();
 
         for op in self.allocations.into_iter() {
             let executor = self
@@ -105,6 +130,10 @@ impl Statement {
             self.plugins.on_session_bind(op.ssn)?;
         }
 
+        for p in self.pipelines.into_iter() {
+            executor_ids.push(p.executor.id.clone());
+        }
+
         for binding in self.bindings.into_iter() {
             self.controller
                 .bind_session(binding.executor.id.clone(), binding.ssn.id.clone())
@@ -112,28 +141,30 @@ impl Statement {
             self.plugins.on_session_bind(binding.ssn.clone())?;
             self.snapshot
                 .update_executor_state(binding.executor.clone(), ExecutorState::Binding)?;
-            bound_executor_ids.push(binding.executor.id.clone());
+            executor_ids.push(binding.executor.id.clone());
         }
 
-        Ok(bound_executor_ids)
+        Ok(executor_ids)
     }
 
     pub fn discard(self) -> Result<(), FlameError> {
         for op in self.allocations.into_iter().rev() {
-            self.plugins.on_discard_executor(op.node, op.ssn)?;
+            self.plugins.on_unallocate_executor(op.node, op.ssn)?;
+        }
+        for p in self.pipelines.into_iter().rev() {
+            self.plugins.on_discard_executor(p.executor, p.ssn)?;
         }
         for binding in self.bindings.into_iter().rev() {
-            self.plugins
-                .on_discard_executor(binding.node, binding.ssn)?;
+            self.plugins.on_unbind_executor(binding.node, binding.ssn)?;
         }
         Ok(())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.allocations.is_empty() && self.bindings.is_empty()
+        self.allocations.is_empty() && self.pipelines.is_empty() && self.bindings.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.allocations.len() + self.bindings.len()
+        self.allocations.len() + self.pipelines.len() + self.bindings.len()
     }
 }

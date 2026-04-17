@@ -11,18 +11,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
 use crate::model::{
-    ExecutorInfoPtr, SessionInfoPtr, ALL_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR,
-    VOID_EXECUTOR,
+    ExecutorInfoPtr, SessionInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR,
 };
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
+use crate::scheduler::statement::Statement;
 use crate::scheduler::Context;
 
 use crate::FlameError;
@@ -53,14 +52,6 @@ impl Action for DispatchAction {
         let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
         let mut unbinding_executors = ss.find_executors(UNBINDING_EXECUTOR)?;
 
-        let all_executors = ss.find_executors(ALL_EXECUTOR)?;
-        let mut bound_counts: HashMap<String, u32> = HashMap::new();
-        for exec in all_executors.values() {
-            if let Some(ssn_id) = &exec.ssn_id {
-                *bound_counts.entry(ssn_id.clone()).or_insert(0) += 1;
-            }
-        }
-
         tracing::debug!("Open sessions: <{:?}>", open_ssns.len());
         tracing::debug!("Idle executors: <{:?}>", idle_executors.len());
         tracing::debug!("Void executors: <{:?}>", void_executors.len());
@@ -85,25 +76,30 @@ impl Action for DispatchAction {
                 &ssn.id
             );
 
-            // Allocate idle executors to underused sessions.
-            let mut exec: Option<ExecutorInfoPtr> = None;
-            for (_, e) in idle_executors.iter_mut() {
-                if ctx.is_available(e, &ssn)? {
-                    exec = Some(e.clone());
+            let mut stmt = Statement::new(ss.clone(), ctx.plugins.clone(), ctx.controller.clone());
+
+            for (_, exec) in idle_executors.iter() {
+                if ctx.is_available(exec, &ssn)? {
+                    stmt.bind(exec, &ssn)?;
                     break;
                 }
             }
 
-            if let Some(exec) = exec {
-                let bound_count = bound_counts.entry(ssn.id.clone()).or_insert(0);
-
-                tracing::debug!("Bind executor <{}> for session <{}>.", exec.id, ssn.id,);
-                ctx.bind_session(&exec, &ssn).await?;
-                idle_executors.remove(&exec.id);
-                *bound_count += 1;
+            if stmt.is_fulfilled(&ssn)? {
+                tracing::debug!("Bind executor for session <{}>.", ssn.id);
+                let bound_ids = stmt.commit().await?;
+                for id in &bound_ids {
+                    idle_executors.remove(id);
+                }
 
                 open_ssns.push(ssn);
                 continue;
+            } else if !stmt.is_empty() {
+                tracing::debug!(
+                    "Discarding unfulfilled binding for session <{}>: no available idle executors",
+                    ssn.id
+                );
+                stmt.discard()?;
             }
 
             // Pipeline void/unbinding executors to underused sessions.
@@ -112,22 +108,28 @@ impl Action for DispatchAction {
             // * For unbinding executors, it means the executor is being unbound from a session.
             //   Pipeline it to the underused session to avoid over preemption.
             for exe_list in [&mut void_executors, &mut unbinding_executors] {
-                let mut exec = None;
-                for (_, e) in exe_list.iter_mut() {
+                let mut stmt =
+                    Statement::new(ss.clone(), ctx.plugins.clone(), ctx.controller.clone());
+
+                for (_, e) in exe_list.iter() {
                     if ctx.is_available(e, &ssn)? {
-                        exec = Some(e.clone());
-                        break;
+                        stmt.pipeline(e, &ssn)?;
+                        if stmt.is_ready(&ssn)? {
+                            break;
+                        }
                     }
                 }
 
-                if let Some(exec) = exec {
-                    tracing::debug!("Pipeline executor <{}> for session <{}>.", exec.id, ssn.id);
-
-                    ctx.pipeline_session(&exec, &ssn).await?;
-                    exe_list.remove(&exec.id);
-
+                if stmt.is_ready(&ssn)? {
+                    let pipelined_ids = stmt.commit().await?;
+                    for id in &pipelined_ids {
+                        tracing::debug!("Pipeline executor <{}> for session <{}>.", id, ssn.id);
+                        exe_list.remove(id);
+                    }
                     open_ssns.push(ssn.clone());
                     continue;
+                } else if !stmt.is_empty() {
+                    stmt.discard()?;
                 }
             }
         }

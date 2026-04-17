@@ -16,12 +16,14 @@ use std::collections::HashMap;
 use common::apis::SessionID;
 use common::FlameError;
 
-use crate::model::{NodeInfoPtr, SessionInfoPtr, SnapShot};
+use crate::model::{ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr, SnapShot};
 use crate::scheduler::plugins::{Plugin, PluginPtr};
 
 struct GangState {
     batch_size: u32,
+    allocated: u32,
     pipelined: u32,
+    bound: u32,
 }
 
 pub struct GangPlugin {
@@ -40,19 +42,32 @@ impl Plugin for GangPlugin {
     fn setup(&mut self, ss: &SnapShot) -> Result<(), FlameError> {
         self.ssn_state.clear();
 
-        let sessions = ss
-            .sessions
-            .lock()
-            .map_err(|e| FlameError::Internal(format!("failed to lock sessions: {}", e)))?;
+        {
+            let sessions = ss
+                .sessions
+                .lock()
+                .map_err(|e| FlameError::Internal(format!("failed to lock sessions: {}", e)))?;
 
-        for ssn in sessions.values() {
-            self.ssn_state.insert(
-                ssn.id.clone(),
-                GangState {
-                    batch_size: ssn.batch_size.max(1),
-                    pipelined: 0,
-                },
-            );
+            for ssn in sessions.values() {
+                self.ssn_state.insert(
+                    ssn.id.clone(),
+                    GangState {
+                        batch_size: ssn.batch_size.max(1),
+                        allocated: 0,
+                        pipelined: 0,
+                        bound: 0,
+                    },
+                );
+            }
+        }
+
+        let executors = ss.find_executors(None)?;
+        for exec in executors.values() {
+            if let Some(ssn_id) = &exec.ssn_id {
+                if let Some(state) = self.ssn_state.get_mut(ssn_id) {
+                    state.allocated += 1;
+                }
+            }
         }
 
         Ok(())
@@ -60,13 +75,29 @@ impl Plugin for GangPlugin {
 
     fn is_ready(&self, ssn: &SessionInfoPtr) -> Option<bool> {
         let state = self.ssn_state.get(&ssn.id)?;
-        if state.batch_size <= 1 {
-            return Some(state.pipelined > 0);
-        }
-        Some(state.pipelined > 0 && state.pipelined % state.batch_size == 0)
+        let total = state.allocated + state.pipelined;
+        Some(total > 0 && total % state.batch_size == 0)
     }
 
-    fn on_pipeline_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Option<bool> {
+        let state = self.ssn_state.get(&ssn.id)?;
+        let total = state.allocated + state.bound;
+        Some(total > 0 && total % state.batch_size == 0)
+    }
+
+    fn on_allocate_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
+            state.pipelined += 1;
+        }
+    }
+
+    fn on_unallocate_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
+            state.pipelined = state.pipelined.saturating_sub(1);
+        }
+    }
+
+    fn on_pipeline_executor(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined += 1;
         }
@@ -74,13 +105,19 @@ impl Plugin for GangPlugin {
 
     fn on_bind_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
-            state.pipelined += 1;
+            state.bound += 1;
         }
     }
 
-    fn on_discard_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn on_discard_executor(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined = state.pipelined.saturating_sub(1);
+        }
+    }
+
+    fn on_unbind_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
+            state.bound = state.bound.saturating_sub(1);
         }
     }
 }

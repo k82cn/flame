@@ -119,7 +119,7 @@ impl Action for AllocateAction {
 
             for node in nodes.iter() {
                 while ctx.is_allocatable(node, &ssn)? {
-                    stmt.pipeline(node, &ssn)?;
+                    stmt.allocate(node, &ssn)?;
 
                     if stmt.is_ready(&ssn)? {
                         break;
