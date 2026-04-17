@@ -76,13 +76,13 @@ impl Plugin for GangPlugin {
     fn is_ready(&self, ssn: &SessionInfoPtr) -> Option<bool> {
         let state = self.ssn_state.get(&ssn.id)?;
         let total = state.allocated + state.pipelined;
-        Some(total > 0 && total % state.batch_size == 0)
+        Some(state.pipelined > 0 && total % state.batch_size == 0)
     }
 
     fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Option<bool> {
         let state = self.ssn_state.get(&ssn.id)?;
         let total = state.allocated + state.bound;
-        Some(total > 0 && total % state.batch_size == 0)
+        Some(state.bound > 0 && total % state.batch_size == 0)
     }
 
     fn on_allocate_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
