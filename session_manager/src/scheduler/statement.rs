@@ -108,14 +108,6 @@ impl Statement {
         Ok(())
     }
 
-    pub fn is_ready(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
-        self.plugins.is_ready(ssn)
-    }
-
-    pub fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
-        self.plugins.is_fulfilled(ssn)
-    }
-
     pub async fn commit(self) -> Result<Vec<ExecutorID>, FlameError> {
         let mut executor_ids = Vec::new();
 

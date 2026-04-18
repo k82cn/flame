@@ -105,12 +105,16 @@ impl Action for AllocateAction {
                 }
             }
 
-            let pipelined_executors = ss.pipelined_executors(ssn.clone())?;
-            if !pipelined_executors.is_empty() {
+            // Dispatch runs first each cycle; plugin state already reflects binds and pipelines it
+            // committed. If gang scheduling is satisfied, do not provision new executors here.
+            let fulfilled = ctx.is_fulfilled(&ssn)?;
+            let ready = ctx.is_ready(&ssn)?;
+            if fulfilled || ready {
                 tracing::debug!(
-                    "Skip allocate resources for session <{}> because there are <{}> executors in pipeline.",
+                    "Skip allocate resources for session <{}>: is_fulfilled={} is_ready={}",
                     ssn.id,
-                    pipelined_executors.len()
+                    fulfilled,
+                    ready
                 );
                 continue;
             }
@@ -121,17 +125,17 @@ impl Action for AllocateAction {
                 while ctx.is_allocatable(node, &ssn)? {
                     stmt.allocate(node, &ssn)?;
 
-                    if stmt.is_ready(&ssn)? {
+                    if ctx.is_ready(&ssn)? {
                         break;
                     }
                 }
 
-                if stmt.is_ready(&ssn)? {
+                if ctx.is_ready(&ssn)? {
                     break;
                 }
             }
 
-            if stmt.is_ready(&ssn)? {
+            if ctx.is_ready(&ssn)? {
                 tracing::info!(
                     "Committing {} executor(s) for session <{}>",
                     stmt.len(),

@@ -81,13 +81,13 @@ impl Action for DispatchAction {
             for (_, exec) in idle_executors.iter() {
                 if ctx.is_available(exec, &ssn)? {
                     stmt.bind(exec, &ssn)?;
-                    if stmt.is_fulfilled(&ssn)? {
+                    if ctx.is_fulfilled(&ssn)? {
                         break;
                     }
                 }
             }
 
-            if stmt.is_fulfilled(&ssn)? {
+            if ctx.is_fulfilled(&ssn)? {
                 tracing::debug!("Bind executor for session <{}>.", ssn.id);
                 let bound_ids = stmt.commit().await?;
                 for id in &bound_ids {
@@ -116,13 +116,13 @@ impl Action for DispatchAction {
                 for (_, e) in exe_list.iter() {
                     if ctx.is_available(e, &ssn)? {
                         stmt.pipeline(e, &ssn)?;
-                        if stmt.is_ready(&ssn)? {
+                        if ctx.is_ready(&ssn)? {
                             break;
                         }
                     }
                 }
 
-                if stmt.is_ready(&ssn)? {
+                if ctx.is_ready(&ssn)? {
                     let pipelined_ids = stmt.commit().await?;
                     for id in &pipelined_ids {
                         tracing::debug!("Pipeline executor <{}> for session <{}>.", id, ssn.id);

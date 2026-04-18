@@ -71,6 +71,14 @@ impl Context {
         self.plugins.is_available(exec, ssn)
     }
 
+    pub fn is_ready(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
+        self.plugins.is_ready(ssn)
+    }
+
+    pub fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
+        self.plugins.is_fulfilled(ssn)
+    }
+
     pub async fn bind_session(
         &self,
         exec: &ExecutorInfoPtr,
