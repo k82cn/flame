@@ -94,21 +94,17 @@ pub trait Plugin: Send + Sync + 'static {
     }
 
     // Events callbacks
-    fn on_allocate_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
+    fn on_executor_allocate(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
 
-    fn on_unallocate_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
+    fn on_executor_unallocate(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
 
     fn on_session_bind(&mut self, ssn: SessionInfoPtr) {}
 
     fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {}
 
-    fn on_pipeline_executor(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {}
+    fn on_executor_pipeline(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {}
 
-    fn on_bind_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
-
-    fn on_unbind_executor(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {}
-
-    fn on_discard_executor(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {}
+    fn on_executor_discard(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {}
 }
 
 pub struct PluginManager {
@@ -213,7 +209,7 @@ impl PluginManager {
             .all(|plugin| plugin.is_reclaimable(exec).unwrap_or(true)))
     }
 
-    pub fn on_allocate_executor(
+    pub fn on_executor_allocate(
         &self,
         node: NodeInfoPtr,
         ssn: SessionInfoPtr,
@@ -221,13 +217,13 @@ impl PluginManager {
         let mut plugins = lock_ptr!(self.plugins)?;
 
         for plugin in plugins.values_mut() {
-            plugin.on_allocate_executor(node.clone(), ssn.clone());
+            plugin.on_executor_allocate(node.clone(), ssn.clone());
         }
 
         Ok(())
     }
 
-    pub fn on_unallocate_executor(
+    pub fn on_executor_unallocate(
         &self,
         node: NodeInfoPtr,
         ssn: SessionInfoPtr,
@@ -235,7 +231,7 @@ impl PluginManager {
         let mut plugins = lock_ptr!(self.plugins)?;
 
         for plugin in plugins.values_mut() {
-            plugin.on_unallocate_executor(node.clone(), ssn.clone());
+            plugin.on_executor_unallocate(node.clone(), ssn.clone());
         }
 
         Ok(())
@@ -260,6 +256,10 @@ impl PluginManager {
         Ok(())
     }
 
+    /// True if every plugin that implements [`Plugin::is_ready`] reports readiness (no opinion
+    /// defaults to true). Counters are in-memory and advance when [`crate::scheduler::Statement`]
+    /// records `allocate` / `pipeline` without `discard`. Dispatch and Allocate share one
+    /// `PluginManager` per scheduling cycle.
     pub fn is_ready(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
@@ -268,6 +268,9 @@ impl PluginManager {
             .all(|plugin| plugin.is_ready(ssn).unwrap_or(true)))
     }
 
+    /// True if every plugin that implements [`Plugin::is_fulfilled`] reports fulfillment (no opinion
+    /// defaults to true). Updates when [`crate::scheduler::Statement`] records `bind`; after
+    /// Dispatch commits, Allocate uses this to skip redundant provisioning.
     pub fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         let plugins = lock_ptr!(self.plugins)?;
 
@@ -276,7 +279,7 @@ impl PluginManager {
             .all(|plugin| plugin.is_fulfilled(ssn).unwrap_or(true)))
     }
 
-    pub fn on_pipeline_executor(
+    pub fn on_executor_pipeline(
         &self,
         exec: ExecutorInfoPtr,
         ssn: SessionInfoPtr,
@@ -284,41 +287,13 @@ impl PluginManager {
         let mut plugins = lock_ptr!(self.plugins)?;
 
         for plugin in plugins.values_mut() {
-            plugin.on_pipeline_executor(exec.clone(), ssn.clone());
+            plugin.on_executor_pipeline(exec.clone(), ssn.clone());
         }
 
         Ok(())
     }
 
-    pub fn on_bind_executor(
-        &self,
-        node: NodeInfoPtr,
-        ssn: SessionInfoPtr,
-    ) -> Result<(), FlameError> {
-        let mut plugins = lock_ptr!(self.plugins)?;
-
-        for plugin in plugins.values_mut() {
-            plugin.on_bind_executor(node.clone(), ssn.clone());
-        }
-
-        Ok(())
-    }
-
-    pub fn on_unbind_executor(
-        &self,
-        node: NodeInfoPtr,
-        ssn: SessionInfoPtr,
-    ) -> Result<(), FlameError> {
-        let mut plugins = lock_ptr!(self.plugins)?;
-
-        for plugin in plugins.values_mut() {
-            plugin.on_unbind_executor(node.clone(), ssn.clone());
-        }
-
-        Ok(())
-    }
-
-    pub fn on_discard_executor(
+    pub fn on_executor_discard(
         &self,
         exec: ExecutorInfoPtr,
         ssn: SessionInfoPtr,
@@ -326,7 +301,7 @@ impl PluginManager {
         let mut plugins = lock_ptr!(self.plugins)?;
 
         for plugin in plugins.values_mut() {
-            plugin.on_discard_executor(exec.clone(), ssn.clone());
+            plugin.on_executor_discard(exec.clone(), ssn.clone());
         }
 
         Ok(())

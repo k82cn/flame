@@ -85,37 +85,37 @@ impl Plugin for GangPlugin {
         Some(state.bound > 0 && total % state.batch_size == 0)
     }
 
-    fn on_allocate_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn on_executor_allocate(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined += 1;
         }
     }
 
-    fn on_unallocate_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn on_executor_unallocate(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined = state.pipelined.saturating_sub(1);
         }
     }
 
-    fn on_pipeline_executor(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
+    fn on_executor_pipeline(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined += 1;
         }
     }
 
-    fn on_bind_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn on_session_bind(&mut self, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.bound += 1;
         }
     }
 
-    fn on_discard_executor(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
+    fn on_executor_discard(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.pipelined = state.pipelined.saturating_sub(1);
         }
     }
 
-    fn on_unbind_executor(&mut self, _node: NodeInfoPtr, ssn: SessionInfoPtr) {
+    fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {
         if let Some(state) = self.ssn_state.get_mut(&ssn.id) {
             state.bound = state.bound.saturating_sub(1);
         }
@@ -191,7 +191,7 @@ mod tests {
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
 
         let node = create_test_node("node-1");
-        plugin.on_bind_executor(node, ssn.clone());
+        plugin.on_session_bind(ssn.clone());
 
         assert!(plugin.is_fulfilled(&ssn).unwrap());
     }
@@ -214,11 +214,11 @@ mod tests {
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
 
         let node = create_test_node("node-1");
-        plugin.on_bind_executor(node.clone(), ssn.clone());
+        plugin.on_session_bind(ssn.clone());
 
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
 
-        plugin.on_bind_executor(node, ssn.clone());
+        plugin.on_session_bind(ssn.clone());
 
         assert!(plugin.is_fulfilled(&ssn).unwrap());
     }
@@ -244,7 +244,7 @@ mod tests {
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
 
         let node = create_test_node("node-1");
-        plugin.on_bind_executor(node, ssn.clone());
+        plugin.on_session_bind(ssn.clone());
 
         assert!(plugin.is_fulfilled(&ssn).unwrap());
     }
@@ -267,7 +267,7 @@ mod tests {
         assert!(!plugin.is_ready(&ssn).unwrap());
 
         let node = create_test_node("node-1");
-        plugin.on_allocate_executor(node, ssn.clone());
+        plugin.on_executor_allocate(node, ssn.clone());
 
         assert!(plugin.is_ready(&ssn).unwrap());
     }
@@ -290,11 +290,11 @@ mod tests {
         assert!(!plugin.is_ready(&ssn).unwrap());
 
         let node = create_test_node("node-1");
-        plugin.on_allocate_executor(node.clone(), ssn.clone());
+        plugin.on_executor_allocate(node.clone(), ssn.clone());
 
         assert!(!plugin.is_ready(&ssn).unwrap());
 
-        plugin.on_allocate_executor(node, ssn.clone());
+        plugin.on_executor_allocate(node, ssn.clone());
 
         assert!(plugin.is_ready(&ssn).unwrap());
     }
@@ -320,7 +320,7 @@ mod tests {
         assert!(!plugin.is_ready(&ssn).unwrap());
 
         let node = create_test_node("node-1");
-        plugin.on_allocate_executor(node, ssn.clone());
+        plugin.on_executor_allocate(node, ssn.clone());
 
         assert!(plugin.is_ready(&ssn).unwrap());
     }
@@ -341,19 +341,19 @@ mod tests {
         plugin.setup(&ss).unwrap();
 
         let exec = create_test_executor("exec-1", None);
-        plugin.on_pipeline_executor(exec.clone(), ssn.clone());
+        plugin.on_executor_pipeline(exec.clone(), ssn.clone());
 
         assert!(!plugin.is_ready(&ssn).unwrap());
 
-        plugin.on_pipeline_executor(exec.clone(), ssn.clone());
+        plugin.on_executor_pipeline(exec.clone(), ssn.clone());
 
         assert!(plugin.is_ready(&ssn).unwrap());
 
-        plugin.on_discard_executor(exec.clone(), ssn.clone());
+        plugin.on_executor_discard(exec.clone(), ssn.clone());
 
         assert!(!plugin.is_ready(&ssn).unwrap());
 
-        plugin.on_discard_executor(exec, ssn.clone());
+        plugin.on_executor_discard(exec, ssn.clone());
 
         assert!(!plugin.is_ready(&ssn).unwrap());
     }
@@ -373,20 +373,19 @@ mod tests {
         };
         plugin.setup(&ss).unwrap();
 
-        let node = create_test_node("node-1");
-        plugin.on_bind_executor(node.clone(), ssn.clone());
+        plugin.on_session_bind(ssn.clone());
 
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
 
-        plugin.on_bind_executor(node.clone(), ssn.clone());
+        plugin.on_session_bind(ssn.clone());
 
         assert!(plugin.is_fulfilled(&ssn).unwrap());
 
-        plugin.on_unbind_executor(node.clone(), ssn.clone());
+        plugin.on_session_unbind(ssn.clone());
 
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
 
-        plugin.on_unbind_executor(node, ssn.clone());
+        plugin.on_session_unbind(ssn.clone());
 
         assert!(!plugin.is_fulfilled(&ssn).unwrap());
     }

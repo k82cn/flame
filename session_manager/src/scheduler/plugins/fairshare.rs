@@ -365,7 +365,25 @@ impl Plugin for FairShare {
         }
     }
 
-    fn on_pipeline_executor(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
+    fn on_executor_allocate(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
+            ss.allocated += ssn.slots as f64;
+        }
+        if let Some(n) = self.node_map.get_mut(&node.name) {
+            n.allocated += ssn.slots as f64;
+        }
+    }
+
+    fn on_executor_unallocate(&mut self, node: NodeInfoPtr, ssn: SessionInfoPtr) {
+        if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
+            ss.allocated -= ssn.slots as f64;
+        }
+        if let Some(n) = self.node_map.get_mut(&node.name) {
+            n.allocated -= ssn.slots as f64;
+        }
+    }
+
+    fn on_executor_pipeline(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated += ssn.slots as f64;
         }
@@ -374,7 +392,7 @@ impl Plugin for FairShare {
         }
     }
 
-    fn on_discard_executor(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
+    fn on_executor_discard(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
         if let Some(ss) = self.ssn_map.get_mut(&ssn.id) {
             ss.allocated -= ssn.slots as f64;
         }

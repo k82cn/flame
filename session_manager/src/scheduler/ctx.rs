@@ -23,6 +23,9 @@ use crate::scheduler::plugins::{PluginManager, PluginManagerPtr};
 use common::apis::ExecutorState;
 use common::FlameError;
 
+/// One scheduling cycle: a single `Context` (one [`PluginManager::setup`] on the current
+/// snapshot) is shared by Dispatch → Allocate → Shuffle. In-memory plugin counters (e.g. Gang)
+/// accumulate across those actions; do not re-run `setup` between them.
 pub struct Context {
     pub snapshot: SnapShotPtr,
     pub controller: ControllerPtr,
@@ -71,10 +74,15 @@ impl Context {
         self.plugins.is_available(exec, ssn)
     }
 
+    /// Allocation-side batch readiness (e.g. Gang: pipelined + allocated executors form full
+    /// batches). Reflects in-memory plugin state, including `Statement` ops earlier in this
+    /// same cycle (typically pipeline/allocate before commit).
     pub fn is_ready(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         self.plugins.is_ready(ssn)
     }
 
+    /// Binding-side batch readiness (e.g. Gang: bound + on-session executors form full batches).
+    /// After Dispatch commits binds, this can be true so Allocate skips provisioning.
     pub fn is_fulfilled(&self, ssn: &SessionInfoPtr) -> Result<bool, FlameError> {
         self.plugins.is_fulfilled(ssn)
     }

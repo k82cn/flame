@@ -16,9 +16,7 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{
-    ExecutorInfoPtr, SessionInfoPtr, IDLE_EXECUTOR, OPEN_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR,
-};
+use crate::model::{IDLE_EXECUTOR, OPEN_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::statement::Statement;
@@ -49,13 +47,9 @@ impl Action for DispatchAction {
         }
 
         let mut idle_executors = ss.find_executors(IDLE_EXECUTOR)?;
-        let mut void_executors = ss.find_executors(VOID_EXECUTOR)?;
-        let mut unbinding_executors = ss.find_executors(UNBINDING_EXECUTOR)?;
 
         tracing::debug!("Open sessions: <{:?}>", open_ssns.len());
         tracing::debug!("Idle executors: <{:?}>", idle_executors.len());
-        tracing::debug!("Void executors: <{:?}>", void_executors.len());
-        tracing::debug!("Unbinding executors: <{:?}>", unbinding_executors.len());
 
         loop {
             if open_ssns.is_empty() {
@@ -102,37 +96,6 @@ impl Action for DispatchAction {
                     ssn.id
                 );
                 stmt.discard()?;
-            }
-
-            // Pipeline void/unbinding executors to underused sessions.
-            // * For void executors, it means the executor is not registered; it'll be idle later.
-            //   Pipeline it to the underused session to avoid over allocation.
-            // * For unbinding executors, it means the executor is being unbound from a session.
-            //   Pipeline it to the underused session to avoid over preemption.
-            for exe_list in [&mut void_executors, &mut unbinding_executors] {
-                let mut stmt =
-                    Statement::new(ss.clone(), ctx.plugins.clone(), ctx.controller.clone());
-
-                for (_, e) in exe_list.iter() {
-                    if ctx.is_available(e, &ssn)? {
-                        stmt.pipeline(e, &ssn)?;
-                        if ctx.is_ready(&ssn)? {
-                            break;
-                        }
-                    }
-                }
-
-                if ctx.is_ready(&ssn)? {
-                    let pipelined_ids = stmt.commit().await?;
-                    for id in &pipelined_ids {
-                        tracing::debug!("Pipeline executor <{}> for session <{}>.", id, ssn.id);
-                        exe_list.remove(id);
-                    }
-                    open_ssns.push(ssn.clone());
-                    continue;
-                } else if !stmt.is_empty() {
-                    stmt.discard()?;
-                }
             }
         }
 

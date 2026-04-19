@@ -64,7 +64,7 @@ impl Statement {
 
     pub fn allocate(&mut self, node: &NodeInfoPtr, ssn: &SessionInfoPtr) -> Result<(), FlameError> {
         self.plugins
-            .on_allocate_executor(node.clone(), ssn.clone())?;
+            .on_executor_allocate(node.clone(), ssn.clone())?;
         self.allocations.push(Allocation {
             node: node.clone(),
             ssn: ssn.clone(),
@@ -78,7 +78,7 @@ impl Statement {
         ssn: &SessionInfoPtr,
     ) -> Result<(), FlameError> {
         self.plugins
-            .on_pipeline_executor(executor.clone(), ssn.clone())?;
+            .on_executor_pipeline(executor.clone(), ssn.clone())?;
         self.pipelines.push(Pipeline {
             executor: executor.clone(),
             ssn: ssn.clone(),
@@ -99,7 +99,7 @@ impl Statement {
             ))
         })?;
 
-        self.plugins.on_bind_executor(node.clone(), ssn.clone())?;
+        self.plugins.on_session_bind(ssn.clone())?;
         self.bindings.push(Binding {
             executor: executor.clone(),
             node: node.clone(),
@@ -119,7 +119,6 @@ impl Statement {
 
             let exec_info = ExecutorInfo::from(&executor);
             self.snapshot.add_executor(Arc::new(exec_info))?;
-            self.plugins.on_session_bind(op.ssn)?;
         }
 
         for p in self.pipelines.into_iter() {
@@ -130,7 +129,6 @@ impl Statement {
             self.controller
                 .bind_session(binding.executor.id.clone(), binding.ssn.id.clone())
                 .await?;
-            self.plugins.on_session_bind(binding.ssn.clone())?;
             self.snapshot
                 .update_executor_state(binding.executor.clone(), ExecutorState::Binding)?;
             executor_ids.push(binding.executor.id.clone());
@@ -141,13 +139,13 @@ impl Statement {
 
     pub fn discard(self) -> Result<(), FlameError> {
         for op in self.allocations.into_iter().rev() {
-            self.plugins.on_unallocate_executor(op.node, op.ssn)?;
+            self.plugins.on_executor_unallocate(op.node, op.ssn)?;
         }
         for p in self.pipelines.into_iter().rev() {
-            self.plugins.on_discard_executor(p.executor, p.ssn)?;
+            self.plugins.on_executor_discard(p.executor, p.ssn)?;
         }
         for binding in self.bindings.into_iter().rev() {
-            self.plugins.on_unbind_executor(binding.node, binding.ssn)?;
+            self.plugins.on_session_unbind(binding.ssn)?;
         }
         Ok(())
     }
