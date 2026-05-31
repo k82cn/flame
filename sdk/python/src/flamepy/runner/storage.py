@@ -15,11 +15,15 @@ import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import requests
 
 from flamepy.core.types import FlameError, FlameErrorCode
+
+if TYPE_CHECKING:
+    from flamepy.core.cache import ObjectRef
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +318,13 @@ class CacheStorage(StorageBackend):
 
         self._endpoint = f"{self._scheme}://{self._host}:{self._port}"
 
+    @staticmethod
+    def _package_url_from_ref(ref: "ObjectRef") -> str:
+        endpoint = ref.endpoint
+        if endpoint.startswith("grpc+tls://"):
+            endpoint = endpoint.replace("grpc+tls://", "grpcs://", 1)
+        return f"{endpoint.rstrip('/')}/{ref.key.lstrip('/')}"
+
     def upload(self, local_path: str, filename: str) -> str:
         from flamepy.core.cache import upload_object
 
@@ -323,7 +334,7 @@ class CacheStorage(StorageBackend):
         try:
             key = f"{self._app_name}/pkg/{filename}"
             ref = upload_object(key, local_path)
-            url = f"{self._scheme}://{self._host}:{self._port}/{ref.key}"
+            url = self._package_url_from_ref(ref)
             logger.debug(f"Uploaded package to cache: {url}")
             return url
         except Exception as e:

@@ -83,6 +83,38 @@ class TestCacheStorage:
 
         assert url == "grpc://host:9090/myapp/pkg/myapp-1.0.0.tar.gz"
 
+    def test_upload_uses_object_ref_endpoint(self, monkeypatch, tmp_path):
+        from flamepy.core.cache import ObjectRef
+
+        test_file = tmp_path / "myapp-1.0.0.tar.gz"
+        test_file.write_bytes(b"package content")
+
+        def mock_upload_object(key, file_path):
+            return ObjectRef(endpoint="grpc://10.244.3.2:9090", key=key, version=1)
+
+        monkeypatch.setattr("flamepy.core.cache.upload_object", mock_upload_object)
+
+        storage = CacheStorage("grpc://flame-object-cache:9090", app_name="myapp")
+        url = storage.upload(str(test_file), "myapp-1.0.0.tar.gz")
+
+        assert url == "grpc://10.244.3.2:9090/myapp/pkg/myapp-1.0.0.tar.gz"
+
+    def test_upload_normalizes_tls_object_ref_endpoint(self, monkeypatch, tmp_path):
+        from flamepy.core.cache import ObjectRef
+
+        test_file = tmp_path / "myapp-1.0.0.tar.gz"
+        test_file.write_bytes(b"package content")
+
+        def mock_upload_object(key, file_path):
+            return ObjectRef(endpoint="grpc+tls://10.244.3.2:9090", key=key, version=1)
+
+        monkeypatch.setattr("flamepy.core.cache.upload_object", mock_upload_object)
+
+        storage = CacheStorage("grpcs://flame-object-cache:9090", app_name="myapp")
+        url = storage.upload(str(test_file), "myapp-1.0.0.tar.gz")
+
+        assert url == "grpcs://10.244.3.2:9090/myapp/pkg/myapp-1.0.0.tar.gz"
+
     def test_download(self, monkeypatch, tmp_path):
         dest_file = tmp_path / "downloaded.tar.gz"
 
