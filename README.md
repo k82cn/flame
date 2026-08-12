@@ -183,4 +183,10 @@ This project is licensed under the terms specified in the [LICENSE](LICENSE) fil
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=xflops/flame&type=timeline&legend=top-left)](https://www.star-history.com/#xflops/flame&type=timeline&legend=top-left)
+<a href="https://www.star-history.com/?type=timeline&legend=top-left&repos=xflops%2Fflame">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=xflops/flame&type=timeline&theme=dark&legend=top-left&sealed_token=GRUzNmtHMkf65gVX-8qQv5ySnurMDvSnFXcZRS8TxzoNQOlEvjAC_Hor_CgRSKNhgna6U_8Vv1Fs2S1yqtR06m9G3x3H9dMmQxPiGvuY6TlW2SzFwr0hxA" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=xflops/flame&type=timeline&legend=top-left&sealed_token=GRUzNmtHMkf65gVX-8qQv5ySnurMDvSnFXcZRS8TxzoNQOlEvjAC_Hor_CgRSKNhgna6U_8Vv1Fs2S1yqtR06m9G3x3H9dMmQxPiGvuY6TlW2SzFwr0hxA" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=xflops/flame&type=timeline&legend=top-left&sealed_token=GRUzNmtHMkf65gVX-8qQv5ySnurMDvSnFXcZRS8TxzoNQOlEvjAC_Hor_CgRSKNhgna6U_8Vv1Fs2S1yqtR06m9G3x3H9dMmQxPiGvuY6TlW2SzFwr0hxA" />
+ </picture>
+</a>
