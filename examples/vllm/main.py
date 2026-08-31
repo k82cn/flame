@@ -1,10 +1,16 @@
-from vllm import LLM
+from engine import DecodeEngine, PrefillEngine
+from flamepy.runner import Runner
+
 
 def main():
-    print("Hello from vllm!")
+    with Runner("vllm-example") as rr:
+        prefill = rr.service(PrefillEngine())
+        decode = rr.service(DecodeEngine())
 
-    # Initialize the vLLM engine.
-    llm = LLM(model="facebook/opt-125m")
+        out = prefill.prefill("Once upon a time")
+        text = decode.decode(out, 16).get()
+        print(text)
+
 
 if __name__ == "__main__":
     main()
