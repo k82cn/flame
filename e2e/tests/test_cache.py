@@ -76,7 +76,7 @@ def _remote_get(ref: ObjectRef, client_version: int):
 
 def test_cache_put_and_get():
     """Test basic put and get operations."""
-    key_prefix = "test-app/test-session-001"
+    key_prefix = "default/test-session-001"
     test_data = {"message": "Hello, Flame!", "value": 42}
 
     ref = put_object(key_prefix, test_data)
@@ -93,7 +93,7 @@ def test_cache_put_and_get():
 
 def test_cache_cloudpickle_object_and_patch_remain_raw():
     """Arbitrary Python objects remain uncompressed, including their patches."""
-    key_prefix = f"test-app/test-cloudpickle-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-cloudpickle-{uuid.uuid4().hex[:8]}"
     base = {"text": "repeat-me" * 2000}
     delta = {"text": "another-repeat" * 2000}
 
@@ -108,7 +108,7 @@ def test_cache_cloudpickle_object_and_patch_remain_raw():
 
 def test_cache_zstd_arrow_table():
     """The Python SDK compresses Arrow data and tags the stored type."""
-    key_prefix = f"test-app/test-zstd-arrow-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-zstd-arrow-{uuid.uuid4().hex[:8]}"
     table = pa.table({"item": ["repeat-me"] * 1000})
 
     ref = put_object(key_prefix, table)
@@ -120,7 +120,7 @@ def test_cache_zstd_arrow_table():
 
 def test_cache_put_and_get_native_arrow_table():
     """Test that Arrow tables round-trip through the object cache."""
-    key_prefix = f"test-app/test-native-arrow-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-native-arrow-{uuid.uuid4().hex[:8]}"
     table = pa.table({"col1": [1, 2, 3], "col2": ["a", "b", "c"]})
 
     ref = put_object(key_prefix, table)
@@ -135,7 +135,7 @@ def test_cache_put_and_get_native_arrow_table():
 
 def test_cache_native_arrow_table_update():
     """Test that Arrow table updates rewrite the base object."""
-    key_prefix = f"test-app/test-native-arrow-update-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-native-arrow-update-{uuid.uuid4().hex[:8]}"
     table = pa.table({"value": [1, 2, 3]})
     updated = pa.table({"value": [4, 5], "label": ["x", "y"]})
 
@@ -152,7 +152,7 @@ def test_cache_native_arrow_table_update():
 
 def test_cache_update():
     """Test update operation."""
-    key_prefix = "test-app/test-session-002"
+    key_prefix = "default/test-session-002"
     original_data = {"count": 0}
     updated_data = {"count": 1}
 
@@ -168,7 +168,7 @@ def test_cache_update():
 
 def test_cache_with_complex_objects():
     """Test caching complex Python objects."""
-    key_prefix = "test-app/test-session-003"
+    key_prefix = "default/test-session-003"
 
     class ComplexObject:
         def __init__(self, name, data):
@@ -232,7 +232,7 @@ def _cached_object(ref: ObjectRef):
 
 def test_patch_single_delta():
     """Test patching an object with a single delta."""
-    key_prefix = "test-app/test-patch-001"
+    key_prefix = "default/test-patch-001"
     base_data = {"logs": []}
     delta_data = {"worker": 1, "log": "started"}
 
@@ -251,7 +251,7 @@ def test_patch_single_delta():
 
 def test_patch_multiple_deltas():
     """Test patching an object with multiple deltas."""
-    key_prefix = "test-app/test-patch-002"
+    key_prefix = "default/test-patch-002"
     base_data = {"results": []}
 
     ref = put_object(key_prefix, base_data)
@@ -275,7 +275,7 @@ def test_patch_multiple_deltas():
 
 def test_incremental_get_applies_remote_patch_only_response():
     """Test a cached client applies only patches appended by another client."""
-    key_prefix = f"test-app/test-incremental-patch-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-incremental-patch-{uuid.uuid4().hex[:8]}"
     base_data = {"items": ["base"]}
     delta_data_1 = {"items": ["patch-1"]}
     delta_data_2 = {"items": ["patch-2"]}
@@ -312,7 +312,7 @@ def test_incremental_get_applies_remote_patch_only_response():
 
 def test_version_zero_forces_full_response_with_cached_object():
     """Test version=0 gets the full base plus patches even with a local cache."""
-    key_prefix = f"test-app/test-incremental-full-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-incremental-full-{uuid.uuid4().hex[:8]}"
     base_data = {"items": ["base"]}
     delta_data = {"items": ["patch-1"]}
 
@@ -332,7 +332,7 @@ def test_version_zero_forces_full_response_with_cached_object():
 
 def test_incremental_get_falls_back_to_full_after_remote_update():
     """Test stale cached base is replaced by a full response after update."""
-    key_prefix = f"test-app/test-incremental-update-{uuid.uuid4().hex[:8]}"
+    key_prefix = f"default/test-incremental-update-{uuid.uuid4().hex[:8]}"
     base_data = {"version": 1}
     updated_data = {"version": 2}
 
@@ -356,7 +356,7 @@ def test_incremental_get_falls_back_to_full_after_remote_update():
 
 def test_patch_preserves_delta_order():
     """Test that deltas are returned in the order they were appended."""
-    key_prefix = "test-app/test-patch-003"
+    key_prefix = "default/test-patch-003"
     base_data = {"sequence": "start"}
 
     ref = put_object(key_prefix, base_data)
@@ -375,7 +375,7 @@ def test_patch_preserves_delta_order():
 
 def test_patch_with_complex_delta():
     """Test patching with complex Python objects as deltas."""
-    key_prefix = "test-app/test-patch-004"
+    key_prefix = "default/test-patch-004"
 
     class LogEntry:
         def __init__(self, level, message):
@@ -407,7 +407,7 @@ def test_patch_with_complex_delta():
 
 def test_update_clears_deltas():
     """Test that update operation clears all existing deltas."""
-    key_prefix = "test-app/test-patch-005"
+    key_prefix = "default/test-patch-005"
     base_data = {"version": 1}
 
     ref = put_object(key_prefix, base_data)
@@ -429,7 +429,7 @@ def test_update_clears_deltas():
 
 def test_put_clears_deltas():
     """Test that put operation on same key clears existing deltas."""
-    key_prefix = "test-app/test-patch-006"
+    key_prefix = "default/test-patch-006"
     base_data = {"initial": True}
 
     ref = put_object(key_prefix, base_data)
@@ -452,7 +452,7 @@ def test_patch_nonexistent_object():
     cache_config = ctx.cache
     cache_endpoint = cache_config.get("endpoint") if isinstance(cache_config, dict) else cache_config
 
-    fake_ref = ObjectRef(endpoint=cache_endpoint, key="test-app/nonexistent-session/nonexistent-object", version=0)
+    fake_ref = ObjectRef(endpoint=cache_endpoint, key="default/nonexistent-session/nonexistent-object", version=0)
 
     with pytest.raises(Exception):
         patch_object(fake_ref, {"delta": "data"})
@@ -460,7 +460,7 @@ def test_patch_nonexistent_object():
 
 def test_patch_with_nested_data():
     """Test patching with deeply nested data structures."""
-    key_prefix = "test-app/test-patch-007"
+    key_prefix = "default/test-patch-007"
     base_data = {"root": {"level1": {"level2": []}}}
 
     ref = put_object(key_prefix, base_data)
@@ -476,7 +476,7 @@ def test_patch_with_nested_data():
 
 def test_patch_with_binary_data():
     """Test patching with binary data."""
-    key_prefix = "test-app/test-patch-008"
+    key_prefix = "default/test-patch-008"
     base_data = {"type": "binary_container"}
 
     ref = put_object(key_prefix, base_data)
@@ -492,7 +492,7 @@ def test_patch_with_binary_data():
 
 def test_patch_with_none_values():
     """Test patching with None values in data."""
-    key_prefix = "test-app/test-patch-009"
+    key_prefix = "default/test-patch-009"
     base_data = {"value": None}
 
     ref = put_object(key_prefix, base_data)
@@ -508,7 +508,7 @@ def test_patch_with_none_values():
 
 def test_patch_large_number_of_deltas():
     """Test patching with a large number of deltas."""
-    key_prefix = "test-app/test-patch-010"
+    key_prefix = "default/test-patch-010"
     base_data = {"counter": 0}
 
     ref = put_object(key_prefix, base_data)
@@ -548,9 +548,9 @@ TEST_APP = "cache-pressure-test-app"
 TEST_SESSION_PREFIX = "cache-pressure-test-ssn"
 
 
-def generate_session_id() -> str:
-    """Generate a unique key prefix in <app>/<ssn> format for testing."""
-    return f"{TEST_APP}/{TEST_SESSION_PREFIX}-{uuid.uuid4().hex[:8]}"
+def generate_session_name() -> str:
+    """Generate a unique key prefix in <workspace>/<ssn> format for testing."""
+    return f"default/{TEST_APP}-{TEST_SESSION_PREFIX}-{uuid.uuid4().hex[:8]}"
 
 
 def create_large_object(size_kb: int) -> dict:
@@ -575,7 +575,7 @@ class TestCachePressureRetrieval:
 
     def test_objects_remain_retrievable_after_many_writes(self):
         """Test that objects remain retrievable after writing many objects."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         object_refs = []
         num_objects = 15
@@ -583,7 +583,7 @@ class TestCachePressureRetrieval:
         for i in range(num_objects):
             obj = create_large_object(size_kb=100)
             obj["sequence"] = i
-            ref = put_object(session_id, obj)
+            ref = put_object(session, obj)
             object_refs.append(ref)
 
         for i, ref in enumerate(object_refs):
@@ -592,13 +592,13 @@ class TestCachePressureRetrieval:
 
     def test_accessed_objects_remain_retrievable_after_more_writes(self):
         """Test that accessed objects remain retrievable after more writes."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         object_refs = []
         for i in range(5):
             obj = create_large_object(size_kb=100)
             obj["sequence"] = i
-            ref = put_object(session_id, obj)
+            ref = put_object(session, obj)
             object_refs.append(ref)
 
         _ = get_object(object_refs[0])
@@ -607,7 +607,7 @@ class TestCachePressureRetrieval:
         for i in range(5, 15):
             obj = create_large_object(size_kb=100)
             obj["sequence"] = i
-            ref = put_object(session_id, obj)
+            ref = put_object(session, obj)
             object_refs.append(ref)
 
         for i, ref in enumerate(object_refs):
@@ -616,19 +616,19 @@ class TestCachePressureRetrieval:
 
     def test_early_object_remains_retrievable_after_many_writes(self):
         """Test that an early object remains retrievable after many writes."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         test_marker = str(uuid.uuid4())
 
         first_obj = create_large_object(size_kb=100)
         first_obj["marker"] = test_marker
         first_obj["position"] = "first"
-        first_ref = put_object(session_id, first_obj)
+        first_ref = put_object(session, first_obj)
 
         for i in range(20):
             obj = create_large_object(size_kb=100)
             obj["filler"] = i
-            put_object(session_id, obj)
+            put_object(session, obj)
 
         retrieved = get_object(first_ref)
         assert retrieved["marker"] == test_marker, "First object marker mismatch"
@@ -636,16 +636,16 @@ class TestCachePressureRetrieval:
 
     def test_repeatedly_accessed_object_remains_retrievable(self):
         """Test that repeated access does not corrupt object retrieval."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         hot_obj = create_large_object(size_kb=50)
         hot_obj["type"] = "hot"
-        hot_ref = put_object(session_id, hot_obj)
+        hot_ref = put_object(session, hot_obj)
 
         for i in range(20):
             obj = create_large_object(size_kb=100)
             obj["sequence"] = i
-            put_object(session_id, obj)
+            put_object(session, obj)
 
             if i % 3 == 0:
                 retrieved = get_object(hot_ref)
@@ -660,23 +660,23 @@ class TestCachePressureEdgeCases:
 
     def test_single_large_object(self):
         """Test handling of a single object that approaches memory limit."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         large_obj = create_large_object(size_kb=500)
         large_obj["type"] = "large"
-        ref = put_object(session_id, large_obj)
+        ref = put_object(session, large_obj)
 
         retrieved = get_object(ref)
         assert retrieved["type"] == "large"
 
     def test_many_small_objects(self):
         """Test retrieval with many small objects."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         object_refs = []
         for i in range(100):
             obj = {"id": i, "data": "x" * 1024}
-            ref = put_object(session_id, obj)
+            ref = put_object(session, obj)
             object_refs.append(ref)
 
         for i, ref in enumerate(object_refs):
@@ -685,12 +685,12 @@ class TestCachePressureEdgeCases:
 
     def test_object_update_remains_retrievable_after_more_writes(self):
         """Test that an updated object remains retrievable after more writes."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         refs = []
         for i in range(5):
             obj = {"sequence": i, "version": 1}
-            ref = put_object(session_id, obj)
+            ref = put_object(session, obj)
             refs.append(ref)
 
         updated_obj = {"sequence": 0, "version": 2}
@@ -699,7 +699,7 @@ class TestCachePressureEdgeCases:
         for i in range(5, 15):
             obj = create_large_object(size_kb=100)
             obj["sequence"] = i
-            put_object(session_id, obj)
+            put_object(session, obj)
 
         retrieved = get_object(refs[0])
         assert retrieved["sequence"] == 0
@@ -707,19 +707,19 @@ class TestCachePressureEdgeCases:
 
     def test_concurrent_session_isolation(self):
         """Test that cache keys are isolated per session."""
-        session_id_1 = generate_session_id()
-        session_id_2 = generate_session_id()
+        session_1 = generate_session_name()
+        session_2 = generate_session_name()
 
         refs_1 = []
         for i in range(5):
             obj = {"session": 1, "sequence": i}
-            ref = put_object(session_id_1, obj)
+            ref = put_object(session_1, obj)
             refs_1.append(ref)
 
         refs_2 = []
         for i in range(5):
             obj = {"session": 2, "sequence": i}
-            ref = put_object(session_id_2, obj)
+            ref = put_object(session_2, obj)
             refs_2.append(ref)
 
         for i, ref in enumerate(refs_1):
@@ -738,7 +738,7 @@ class TestCachePressureDataIntegrity:
 
     def test_retrieval_preserves_data_integrity_after_many_writes(self):
         """Test that retrieved objects have identical data to originals."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         original_obj = {
             "string": "test string with special chars: äöü",
@@ -748,11 +748,11 @@ class TestCachePressureDataIntegrity:
             "none": None,
             "bool": True,
         }
-        ref = put_object(session_id, original_obj)
+        ref = put_object(session, original_obj)
 
         for i in range(20):
             obj = create_large_object(size_kb=100)
-            put_object(session_id, obj)
+            put_object(session, obj)
 
         retrieved = get_object(ref)
         assert retrieved["string"] == original_obj["string"]
@@ -764,17 +764,17 @@ class TestCachePressureDataIntegrity:
 
     def test_retrieval_after_multiple_write_cycles(self):
         """Test that objects remain retrievable across multiple write cycles."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         target_obj = {"target": True, "id": str(uuid.uuid4())}
-        target_ref = put_object(session_id, target_obj)
+        target_ref = put_object(session, target_obj)
 
         for cycle in range(3):
             for i in range(10):
                 obj = create_large_object(size_kb=100)
                 obj["cycle"] = cycle
                 obj["index"] = i
-                put_object(session_id, obj)
+                put_object(session, obj)
 
             retrieved = get_object(target_ref)
             assert retrieved["target"] is True, f"Target object corrupted in cycle {cycle}"
@@ -782,14 +782,14 @@ class TestCachePressureDataIntegrity:
 
     def test_mixed_access_pattern_preserves_data(self):
         """Test that mixed access and write patterns preserve data."""
-        session_id = generate_session_id()
+        session = generate_session_name()
 
         markers = ["alpha", "beta", "gamma", "delta", "epsilon"]
         refs = {}
 
         for marker in markers:
             obj = {"marker": marker, "padding": "x" * 10000}
-            ref = put_object(session_id, obj)
+            ref = put_object(session, obj)
             refs[marker] = ref
 
         for marker in ["gamma", "alpha", "epsilon"]:
@@ -797,7 +797,7 @@ class TestCachePressureDataIntegrity:
 
         for i in range(15):
             obj = create_large_object(size_kb=100)
-            put_object(session_id, obj)
+            put_object(session, obj)
 
         for marker in markers:
             retrieved = get_object(refs[marker])

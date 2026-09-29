@@ -21,6 +21,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "flame.v1.ExecutorState",
             "#[allow(clippy::enum_variant_names)]",
         )
+        .type_attribute(
+            ".flame.v1.WatchNodeResponse.response",
+            "#[allow(clippy::large_enum_variant)]",
+        )
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile_protos(
             &[

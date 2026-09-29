@@ -28,7 +28,7 @@ use tonic::{Request, Response, Status};
 use self::rpc::instance_server::{Instance, InstanceServer};
 use crate::apis::flame::v1 as rpc;
 
-use crate::apis::{ApplicationID, CommonData, FlameError, TaskInput, TaskOutput};
+use crate::apis::{CommonData, FlameError, TaskInput, TaskOutput};
 
 pub use tonic::async_trait;
 
@@ -41,7 +41,8 @@ const FLAME_INSTANCE_ENDPOINT: &str = "FLAME_INSTANCE_ENDPOINT";
 
 #[derive(Clone, Debug)]
 pub struct ApplicationContext {
-    pub name: String,
+    pub workspace: String,
+    pub application: String,
     pub image: Option<String>,
     pub command: Option<String>,
 }
@@ -118,19 +119,22 @@ impl Publisher {
 
 #[derive(Clone, Debug)]
 pub struct SessionContext {
-    pub session_id: String,
-    pub application: ApplicationContext,
+    pub workspace: String,
+    pub session: String,
+    pub application: String,
     pub common_data: Option<CommonData>,
 }
 
 impl SessionContext {
     pub fn new(
-        session_id: String,
-        application: ApplicationContext,
+        workspace: String,
+        session: String,
+        application: String,
         common_data: Option<CommonData>,
     ) -> Self {
         Self {
-            session_id,
+            workspace,
+            session,
             application,
             common_data,
         }
@@ -139,8 +143,10 @@ impl SessionContext {
 
 #[derive(Clone, Debug)]
 pub struct TaskContext {
-    pub task_id: String,
-    pub session_id: String,
+    pub task: String,
+    pub workspace: String,
+    pub application: String,
+    pub session: String,
     pub input: Option<TaskInput>,
 }
 
@@ -182,16 +188,12 @@ impl FlameInstance {
         self.publisher.publish(attributes)
     }
 
-    pub fn session_id(&self) -> &str {
-        &self.session.session_id
+    pub fn session(&self) -> &str {
+        &self.session.session
     }
 
-    pub fn application(&self) -> &ApplicationContext {
+    pub fn application(&self) -> &str {
         &self.session.application
-    }
-
-    pub fn application_name(&self) -> &ApplicationID {
-        &self.session.application.name
     }
 
     pub fn common_data<T>(&self) -> Result<Option<T>, FlameError>
@@ -339,7 +341,8 @@ pub async fn run(_service: impl FlameService) -> Result<(), Box<dyn std::error::
 impl From<rpc::ApplicationContext> for ApplicationContext {
     fn from(ctx: rpc::ApplicationContext) -> Self {
         Self {
-            name: ctx.name.clone(),
+            workspace: ctx.workspace,
+            application: ctx.application.clone(),
             image: ctx.image.clone(),
             command: ctx.command.clone(),
         }
@@ -350,26 +353,29 @@ impl TryFrom<rpc::SessionContext> for SessionContext {
     type Error = FlameError;
 
     fn try_from(ctx: rpc::SessionContext) -> Result<Self, Self::Error> {
-        let application = ctx
-            .application
-            .map(ApplicationContext::from)
-            .ok_or_else(|| {
-                FlameError::InvalidConfig("session context missing application".to_string())
-            })?;
+        if ctx.application.is_empty() {
+            return Err(FlameError::InvalidConfig(
+                "session context missing application".to_string(),
+            ));
+        }
 
-        Ok(SessionContext::new(
-            ctx.session_id.clone(),
-            application,
+        let session = SessionContext::new(
+            ctx.workspace.clone(),
+            ctx.session.clone(),
+            ctx.application.clone(),
             ctx.common_data.map(|data| data.into()),
-        ))
+        );
+        Ok(session)
     }
 }
 
 impl From<rpc::TaskContext> for TaskContext {
     fn from(ctx: rpc::TaskContext) -> Self {
         TaskContext {
-            task_id: ctx.task_id.clone(),
-            session_id: ctx.session_id.clone(),
+            task: ctx.task,
+            workspace: ctx.workspace,
+            application: ctx.application,
+            session: ctx.session,
             input: ctx.input.map(|data| data.into()),
         }
     }
@@ -382,8 +388,11 @@ mod tests {
     #[test]
     fn session_context_requires_application() {
         let ctx = rpc::SessionContext {
-            session_id: "ssn-1".to_string(),
-            application: None,
+            workspace: "default".to_string(),
+            session: "ssn-1".to_string(),
+            application: String::new(),
+            image: None,
+            command: None,
             common_data: None,
         };
 
@@ -404,7 +413,7 @@ mod tests {
         }
 
         async fn on_session_enter(&self, context: SessionContext) -> Result<(), FlameError> {
-            if context.session_id == "ssn-failed" {
+            if context.session == "ssn-failed" {
                 self.publish([b"failed-enter-key".to_vec()])?;
                 return Err(FlameError::Internal("session enter failed".to_string()));
             }
@@ -415,11 +424,11 @@ mod tests {
             &self,
             task: TaskContext,
         ) -> Result<Option<TaskOutput>, FlameError> {
-            if task.task_id == "task-1" {
+            if task.task == "1" {
                 self.publish([b"a".to_vec()])?;
                 self.publish([b"b".to_vec(), b"c".to_vec()])?;
                 self.publish(Vec::<Vec<u8>>::new())?;
-            } else if task.task_id == "task-error" {
+            } else if task.task == "9" {
                 self.publish([b"error-key".to_vec()])?;
                 return Err(FlameError::Internal("task failed".to_string()));
             }
@@ -478,17 +487,19 @@ mod tests {
                 publisher: Publisher::default(),
             }),
         };
-        let request = |task_id: &str| {
+        let request = |task: i64| {
             Request::new(rpc::TaskContext {
-                task_id: task_id.to_string(),
-                session_id: "session".to_string(),
+                task: task.to_string(),
+                application: "test-app".to_string(),
+                workspace: "default".to_string(),
+                session: "session".to_string(),
                 input: None,
             })
         };
 
         let (response_a, response_b) = tokio::join!(
-            Instance::on_task_invoke(&shim_a, request("task-a")),
-            Instance::on_task_invoke(&shim_b, request("task-b")),
+            Instance::on_task_invoke(&shim_a, request(1)),
+            Instance::on_task_invoke(&shim_b, request(2)),
         );
 
         assert_eq!(
@@ -510,12 +521,9 @@ mod tests {
         let publisher = shim.service.publisher().clone();
 
         let detached = FlameInstance::new(SessionContext::new(
+            "default".to_string(),
             "detached".to_string(),
-            ApplicationContext {
-                name: "test-app".to_string(),
-                image: None,
-                command: None,
-            },
+            "test-app".to_string(),
             None,
         ));
         assert!(detached.publish([b"not-delivered".to_vec()]).is_err());
@@ -526,12 +534,9 @@ mod tests {
         assert_eq!(publisher.take().attr.len(), 1);
         let instance = FlameInstance::with_publisher(
             SessionContext::new(
+                "default".to_string(),
                 "ssn-handle".to_string(),
-                ApplicationContext {
-                    name: "test-app".to_string(),
-                    image: None,
-                    command: None,
-                },
+                "test-app".to_string(),
                 None,
             ),
             publisher.clone(),
@@ -545,11 +550,11 @@ mod tests {
         let failed_enter = Instance::on_session_enter(
             &shim,
             Request::new(rpc::SessionContext {
-                session_id: "ssn-failed".to_string(),
-                application: Some(rpc::ApplicationContext {
-                    name: "test-app".to_string(),
-                    ..Default::default()
-                }),
+                workspace: "default".to_string(),
+                session: "ssn-failed".to_string(),
+                application: "test-app".to_string(),
+                image: None,
+                command: None,
                 common_data: None,
             }),
         )
@@ -567,11 +572,11 @@ mod tests {
         let enter = Instance::on_session_enter(
             &shim,
             Request::new(rpc::SessionContext {
-                session_id: "ssn-1".to_string(),
-                application: Some(rpc::ApplicationContext {
-                    name: "test-app".to_string(),
-                    ..Default::default()
-                }),
+                workspace: "default".to_string(),
+                session: "ssn-1".to_string(),
+                application: "test-app".to_string(),
+                image: None,
+                command: None,
                 common_data: None,
             }),
         )
@@ -591,8 +596,10 @@ mod tests {
         let invoke = Instance::on_task_invoke(
             &shim,
             Request::new(rpc::TaskContext {
-                task_id: "task-1".to_string(),
-                session_id: "ssn-1".to_string(),
+                task: "1".to_string(),
+                application: "test-app".to_string(),
+                workspace: "default".to_string(),
+                session: "ssn-1".to_string(),
                 input: None,
             }),
         )
@@ -612,8 +619,10 @@ mod tests {
         let next_invoke = Instance::on_task_invoke(
             &shim,
             Request::new(rpc::TaskContext {
-                task_id: "task-2".to_string(),
-                session_id: "ssn-1".to_string(),
+                task: "2".to_string(),
+                application: "test-app".to_string(),
+                workspace: "default".to_string(),
+                session: "ssn-1".to_string(),
                 input: None,
             }),
         )
@@ -625,8 +634,10 @@ mod tests {
         let republished = Instance::on_task_invoke(
             &shim,
             Request::new(rpc::TaskContext {
-                task_id: "task-2".to_string(),
-                session_id: "ssn-1".to_string(),
+                task: "2".to_string(),
+                application: "test-app".to_string(),
+                workspace: "default".to_string(),
+                session: "ssn-1".to_string(),
                 input: None,
             }),
         )
@@ -649,11 +660,11 @@ mod tests {
         let reenter = Instance::on_session_enter(
             &shim,
             Request::new(rpc::SessionContext {
-                session_id: "ssn-2".to_string(),
-                application: Some(rpc::ApplicationContext {
-                    name: "test-app".to_string(),
-                    ..Default::default()
-                }),
+                workspace: "default".to_string(),
+                session: "ssn-2".to_string(),
+                application: "test-app".to_string(),
+                image: None,
+                command: None,
                 common_data: None,
             }),
         )
@@ -675,11 +686,11 @@ mod tests {
         let empty_enter = Instance::on_session_enter(
             &shim,
             Request::new(rpc::SessionContext {
-                session_id: "ssn-3".to_string(),
-                application: Some(rpc::ApplicationContext {
-                    name: "test-app".to_string(),
-                    ..Default::default()
-                }),
+                workspace: "default".to_string(),
+                session: "ssn-3".to_string(),
+                application: "test-app".to_string(),
+                image: None,
+                command: None,
                 common_data: None,
             }),
         )
@@ -691,8 +702,10 @@ mod tests {
         let failed = Instance::on_task_invoke(
             &shim,
             Request::new(rpc::TaskContext {
-                task_id: "task-error".to_string(),
-                session_id: "ssn-2".to_string(),
+                task: "9".to_string(),
+                application: "test-app".to_string(),
+                workspace: "default".to_string(),
+                session: "ssn-2".to_string(),
                 input: None,
             }),
         )

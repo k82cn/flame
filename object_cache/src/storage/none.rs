@@ -75,8 +75,8 @@ mod tests {
 
     fn test_key() -> ObjectKey {
         ObjectKey {
-            app_name: "app".to_string(),
-            session_id: "session".to_string(),
+            workspace: "app".to_string(),
+            session: "session".to_string(),
             object_id: Some("obj1".to_string()),
         }
     }

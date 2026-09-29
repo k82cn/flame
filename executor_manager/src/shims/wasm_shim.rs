@@ -107,7 +107,9 @@ impl Shim for WasmShim {
         trace_fn!("WasmShim::on_session_enter");
 
         let ssn_ctx = service::SessionContext {
-            session_id: ctx.session_id.clone(),
+            workspace: ctx.workspace.clone(),
+            application: ctx.application.name.clone(),
+            session: ctx.session.clone(),
             common_data: ctx.common_data.clone().map(apis::CommonData::into),
         };
 
@@ -136,8 +138,10 @@ impl Shim for WasmShim {
         trace_fn!("WasmShim::on_task_invoke");
 
         let task_ctx = service::TaskContext {
-            session_id: ctx.session_id.clone(),
-            task_id: ctx.task_id.clone(),
+            workspace: ctx.workspace.clone(),
+            application: ctx.application.clone(),
+            session: ctx.session.clone(),
+            task: ctx.task.clone(),
         };
 
         let runtime = self
@@ -188,7 +192,9 @@ impl Shim for WasmShim {
             ))?;
 
         let ssn_ctx = service::SessionContext {
-            session_id: session_context.session_id.clone(),
+            workspace: session_context.workspace.clone(),
+            application: session_context.application.name.clone(),
+            session: session_context.session.clone(),
             common_data: None,
         };
 

@@ -13,12 +13,13 @@ limitations under the License.
 
 use std::collections::{hash_map::Entry, HashMap};
 use std::fs;
+use std::path::PathBuf;
 
 use bincode::{Decode, Encode};
 use chrono::{DateTime, Utc};
 use stdng::{lock_ptr, new_ptr, MutexPtr};
 
-use crate::apis::{Event, EventOwner, SessionID, TaskID};
+use crate::apis::{Event, EventOwner, SessionPath, TaskName};
 use crate::storage::{DataStorage, Index, Object, ObjectId, ObjectStorage};
 use crate::FlameError;
 
@@ -32,7 +33,7 @@ struct EventStorage {
 #[derive(Clone, Debug, Encode, Decode)]
 struct EventDao {
     id: Option<u64>,
-    owner: TaskID,
+    owner: TaskName,
     code: i32,
     message: Index,
     creation_time: i64,
@@ -54,11 +55,19 @@ impl Object for EventDao {
 
 pub struct FsEventManager {
     storage_path: String,
-    event_storage: MutexPtr<HashMap<SessionID, EventStorage>>,
-    events: MutexPtr<HashMap<SessionID, HashMap<TaskID, Vec<EventDao>>>>,
+    event_storage: MutexPtr<HashMap<SessionPath, EventStorage>>,
+    events: MutexPtr<HashMap<SessionPath, HashMap<TaskName, Vec<EventDao>>>>,
 }
 
 impl FsEventManager {
+    fn session_events_path(&self, session_path: &str) -> Result<PathBuf, FlameError> {
+        let (workspace, session) = crate::apis::parse_session_path(session_path)?;
+        Ok(PathBuf::from(&self.storage_path)
+            .join(workspace)
+            .join("events")
+            .join(session))
+    }
+
     pub fn new(path: &str) -> Result<Self, FlameError> {
         fs::create_dir_all(path)?;
 
@@ -69,8 +78,8 @@ impl FsEventManager {
         };
 
         let sessions = manager.list_sessions()?;
-        for session_id in &sessions {
-            manager.setup_event_storage(session_id.clone())?;
+        for session_path in &sessions {
+            manager.setup_event_storage(session_path.clone())?;
         }
 
         manager.load_events()?;
@@ -81,23 +90,23 @@ impl FsEventManager {
     fn load_events(&self) -> Result<(), FlameError> {
         let mut event_storage = lock_ptr!(self.event_storage)?;
         let mut events = lock_ptr!(self.events)?;
-        let sessions = event_storage.keys().cloned().collect::<Vec<SessionID>>();
+        let sessions = event_storage.keys().cloned().collect::<Vec<SessionPath>>();
 
-        for session_id in &sessions {
+        for session_path in &sessions {
             let event_daos: Vec<EventDao> = event_storage
-                .get_mut(session_id)
+                .get_mut(session_path)
                 .ok_or(FlameError::Internal(format!(
                     "Event storage not found: {}",
-                    session_id
+                    session_path
                 )))?
                 .object_storage
                 .list(None)?;
 
             for event_dao in event_daos {
                 events
-                    .entry(session_id.clone())
+                    .entry(session_path.clone())
                     .or_default()
-                    .entry(event_dao.owner as TaskID)
+                    .entry(event_dao.owner as TaskName)
                     .or_default()
                     .push(event_dao);
             }
@@ -105,23 +114,41 @@ impl FsEventManager {
         Ok(())
     }
 
-    fn list_sessions(&self) -> Result<Vec<SessionID>, FlameError> {
+    fn list_sessions(&self) -> Result<Vec<SessionPath>, FlameError> {
         let mut sessions = vec![];
-        let entries = fs::read_dir(&self.storage_path)?;
-        for entry in entries {
-            let file_name = entry?.file_name();
-            let session_id = file_name.to_string_lossy().to_string();
-            sessions.push(session_id);
+        for workspace in fs::read_dir(&self.storage_path)? {
+            let workspace = workspace?;
+            if !workspace.file_type()?.is_dir() {
+                continue;
+            }
+            let events_dir = workspace.path().join("events");
+            if !events_dir.is_dir() {
+                continue;
+            }
+            for session in fs::read_dir(events_dir)? {
+                let session = session?;
+                if !session.file_type()?.is_dir() {
+                    continue;
+                }
+                let session_path = format!(
+                    "{}/{}",
+                    workspace.file_name().to_string_lossy(),
+                    session.file_name().to_string_lossy()
+                );
+                crate::apis::parse_session_path(&session_path)?;
+                sessions.push(session_path);
+            }
         }
         Ok(sessions)
     }
 
-    fn setup_event_storage(&self, session_id: SessionID) -> Result<(), FlameError> {
-        let base_path = format!("{}/{}", self.storage_path, session_id);
+    fn setup_event_storage(&self, session_path: SessionPath) -> Result<(), FlameError> {
+        let base_path = self.session_events_path(&session_path)?;
         let mut event_storage = lock_ptr!(self.event_storage)?;
 
-        if let Entry::Vacant(e) = event_storage.entry(session_id) {
+        if let Entry::Vacant(e) = event_storage.entry(session_path) {
             fs::create_dir_all(&base_path)?;
+            let base_path = base_path.to_string_lossy();
             let storage = EventStorage {
                 object_storage: ObjectStorage::new(&base_path, "events")?,
                 data_storage: DataStorage::new(&base_path, "event_messages")?,
@@ -134,11 +161,12 @@ impl FsEventManager {
 
 impl EventManager for FsEventManager {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
-        self.setup_event_storage(owner.session_id.clone())?;
+        let session = owner.session_path()?;
+        self.setup_event_storage(session.clone())?;
 
         let mut event_storage = lock_ptr!(self.event_storage)?;
         let storage = event_storage
-            .get_mut(&owner.session_id)
+            .get_mut(&session)
             .ok_or(FlameError::Internal("Event storage not found".to_string()))?;
 
         let message = event.message.unwrap_or_default();
@@ -146,7 +174,7 @@ impl EventManager for FsEventManager {
 
         let event_dao = EventDao {
             id: None,
-            owner: owner.task_id,
+            owner: owner.task,
             code: event.code,
             message: msg_index,
             creation_time: event.creation_time.timestamp_millis(),
@@ -156,9 +184,9 @@ impl EventManager for FsEventManager {
 
         let mut events = lock_ptr!(self.events)?;
         events
-            .entry(owner.session_id)
+            .entry(session)
             .or_default()
-            .entry(owner.task_id)
+            .entry(owner.task)
             .or_default()
             .push(event_dao);
 
@@ -166,15 +194,14 @@ impl EventManager for FsEventManager {
     }
 
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
+        let session = owner.session_path()?;
         let mut event_storage = lock_ptr!(self.event_storage)?;
-        let Some(storage) = event_storage.get_mut(&owner.session_id) else {
+        let Some(storage) = event_storage.get_mut(&session) else {
             return Ok(vec![]);
         };
 
         let events = lock_ptr!(self.events)?;
-        let event_daos = events
-            .get(&owner.session_id)
-            .and_then(|s| s.get(&owner.task_id));
+        let event_daos = events.get(&session).and_then(|s| s.get(&owner.task));
 
         let Some(event_daos) = event_daos else {
             return Ok(vec![]);
@@ -194,10 +221,10 @@ impl EventManager for FsEventManager {
         Ok(event_list)
     }
 
-    fn remove_events(&self, session_id: SessionID) -> Result<(), FlameError> {
+    fn remove_events(&self, session_path: SessionPath) -> Result<(), FlameError> {
         {
             let mut event_storage = lock_ptr!(self.event_storage)?;
-            if let Some(storage) = event_storage.get_mut(&session_id) {
+            if let Some(storage) = event_storage.get_mut(&session_path) {
                 storage.object_storage.clear()?;
                 storage.data_storage.clear()?;
             }
@@ -205,11 +232,11 @@ impl EventManager for FsEventManager {
 
         {
             let mut events = lock_ptr!(self.events)?;
-            events.remove(&session_id);
+            events.remove(&session_path);
         }
 
-        let dir_path = format!("{}/{}", self.storage_path, session_id);
-        if std::path::Path::new(&dir_path).exists() {
+        let dir_path = self.session_events_path(&session_path)?;
+        if dir_path.exists() {
             fs::remove_dir_all(&dir_path).map_err(|e| {
                 FlameError::Storage(format!("Failed to remove event storage directory: {}", e))
             })?;

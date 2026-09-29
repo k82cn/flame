@@ -19,7 +19,7 @@ use flame_rs::apis::{FlameContext, FlameError};
 
 use crate::utils::client_application_attributes;
 
-pub async fn run(ctx: &FlameContext, path: &String) -> Result<(), FlameError> {
+pub async fn run(ctx: &FlameContext, path: &String, workspace: &str) -> Result<(), FlameError> {
     if !Path::new(&path).is_file() {
         return Err(FlameError::InvalidConfig(format!("<{path}> is not a file")));
     }
@@ -43,7 +43,7 @@ pub async fn run(ctx: &FlameContext, path: &String) -> Result<(), FlameError> {
             .map(client_application_attributes)
             .map_err(|error| FlameError::InvalidConfig(error.to_string()))?;
 
-        conn.register_application(application.metadata.name, attributes)
+        conn.register_application_in_workspace(workspace, application.metadata.name, attributes)
             .await?;
     }
 

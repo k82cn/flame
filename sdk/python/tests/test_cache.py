@@ -161,36 +161,36 @@ class TestMaterializedCache:
 class TestObjectKey:
     def test_from_prefix_valid(self):
         key = ObjectKey.from_prefix("myapp/pkg")
-        assert key.app_name == "myapp"
-        assert key.session_id == "pkg"
+        assert key.workspace == "myapp"
+        assert key.session == "pkg"
         assert key.object_id is None
 
     def test_from_key_valid(self):
         key = ObjectKey.from_key("myapp/pkg/file.tar.gz")
-        assert key.app_name == "myapp"
-        assert key.session_id == "pkg"
+        assert key.workspace == "myapp"
+        assert key.session == "pkg"
         assert key.object_id == "file.tar.gz"
 
     def test_from_path_accepts_prefix_and_full_key(self):
         prefix = ObjectKey.from_path("myapp/pkg")
         full_key = ObjectKey.from_path("myapp/pkg/file.tar.gz")
 
-        assert prefix == ObjectKey(app_name="myapp", session_id="pkg")
-        assert full_key == ObjectKey(app_name="myapp", session_id="pkg", object_id="file.tar.gz")
+        assert prefix == ObjectKey(workspace="myapp", session="pkg")
+        assert full_key == ObjectKey(workspace="myapp", session="pkg", object_id="file.tar.gz")
 
     def test_from_prefix_invalid(self):
         with pytest.raises(ValueError):
             ObjectKey.from_prefix("invalid")
 
         with pytest.raises(ValueError):
-            ObjectKey.from_prefix("a/b/c")
+            ObjectKey.from_prefix("a/b/c/d")
 
     def test_from_key_invalid(self):
         with pytest.raises(ValueError):
             ObjectKey.from_key("a/b")
 
         with pytest.raises(ValueError):
-            ObjectKey.from_key("a/b/c/d")
+            ObjectKey.from_key("a/b/c/d/e")
 
     @pytest.mark.parametrize(
         "path",
@@ -202,7 +202,6 @@ class TestObjectKey:
             "app/session/",
             "*/session",
             "app/*/obj",
-            "app/session/*",
         ],
     )
     def test_from_path_rejects_invalid_components(self, path):

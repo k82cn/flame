@@ -28,11 +28,27 @@ from flamepy.core.types import (
     TaskState,
     short_name,
 )
+from tests.test_fixture import TLS_TEST_CONFIG
+
+
+def test_module_create_session_preserves_session_attributes(monkeypatch):
+    attrs = SessionAttributes(application="app")
+    received = []
+
+    class FakeConnection:
+        def create_session(self, value):
+            received.append(value)
+            return value
+
+    monkeypatch.setattr(client.ConnectionInstance, "instance", lambda: FakeConnection())
+
+    assert client.create_session(attrs) is attrs
+    assert received == [attrs]
 
 
 def test_sync_frontend_api_parity(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         connection.register_application(
             "app",
@@ -48,20 +64,20 @@ def test_sync_frontend_api_parity(frontend_server):
         assert connection.list_executors() == []
         assert connection.list_nodes() == []
 
-        attrs = SessionAttributes(application="app", id="sess-1", common_data=b"", resreq=ResourceRequirement(cpu=2))
+        attrs = SessionAttributes(application="app", name="sess-1", common_data=b"", resreq=ResourceRequirement(cpu=2))
         session = connection.create_session(attrs)
-        assert session.id == "sess-1" and session.common_data() == b""
+        assert session.name == "sess-1" and session.name == "sess-1" and session.common_data() == b""
         assert session.events[0].code == 1001
-        assert connection.open_session("sess-1").id == session.id
-        assert connection.get_session("sess-1").id == session.id
+        assert connection.open_session(session.name).name == session.name
+        assert connection.get_session(session.name).name == session.name
         assert len(connection.list_sessions()) == 1
         task = session.create_task(b"input")
-        assert task.id == "task-1"
-        assert session.get_task(task.id).input == b""
-        assert [item.id for item in session.list_tasks()] == ["task-1"]
-        assert next(session.watch_task(task.id)).output == b"done"
+        assert task.name == "1"
+        assert session.get_task(task.name).input == b""
+        assert [item.name for item in session.list_tasks()] == ["1"]
+        assert next(session.watch_task(task.name)).output == b"done"
         assert session.run(b"input") == b"done"
-        assert connection.close_session(session.id).id == session.id
+        assert connection.close_session(session.name).name == session.name
         created = [req for req in service.requests if req.DESCRIPTOR.name == "CreateSessionRequest"]
         assert created[0].session.resreq.cpu == 2
     finally:
@@ -70,13 +86,13 @@ def test_sync_frontend_api_parity(frontend_server):
 
 def test_failed_close_can_be_retried(frontend_server):
     endpoint, service, _ = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
         service.reject_close = True
         with pytest.raises(FlameError, match="close rejected"):
             session.close()
-        assert connection.get_session(session.id).id == session.id
+        assert connection.get_session(session.name).name == session.name
         service.reject_close = False
         session.close()
     finally:
@@ -85,7 +101,7 @@ def test_failed_close_can_be_retried(frontend_server):
 
 def test_run_reports_create_task_error_before_return(frontend_server):
     endpoint, service, _ = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
         service.reject_create_task = True
@@ -98,7 +114,7 @@ def test_run_reports_create_task_error_before_return(frontend_server):
 
 def test_submit_reports_create_task_error_on_future(frontend_server):
     endpoint, service, _ = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
         service.reject_create_task = True
@@ -112,7 +128,7 @@ def test_submit_reports_create_task_error_on_future(frontend_server):
 
 def test_run_returns_task_output(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     service.create_task_gate = asyncio.Event()
     try:
         session = connection.create_session(SessionAttributes(application="app"))
@@ -131,7 +147,7 @@ def test_run_returns_task_output(frontend_server):
 
 def test_submit_pipelines_create_task_requests(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     service.create_task_gate = asyncio.Event()
     try:
         session = connection.create_session(SessionAttributes(application="app"))
@@ -150,7 +166,7 @@ def test_submit_pipelines_create_task_requests(frontend_server):
 
 def test_submit_cancel_before_create_task_does_not_send_rpc(frontend_server):
     endpoint, service, _ = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     release_loop = threading.Event()
     loop_blocked = threading.Event()
     try:
@@ -176,7 +192,7 @@ def test_submit_cancel_before_create_task_does_not_send_rpc(frontend_server):
 
 def test_submit_cancel_during_create_task_does_not_start_watch(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     service.create_task_gate = asyncio.Event()
     try:
         session = connection.create_session(SessionAttributes(application="app"))
@@ -194,7 +210,7 @@ def test_submit_cancel_during_create_task_does_not_start_watch(frontend_server):
 
 def test_submit_close_during_create_task_errors_future(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     service.create_task_gate = asyncio.Event()
     try:
         session = connection.create_session(SessionAttributes(application="app"))
@@ -211,10 +227,10 @@ def test_submit_close_during_create_task_errors_future(frontend_server):
 
 def test_watch_current_then_update_and_sync_callback_off_loop(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
-        watcher = session.watch_task("hold", timeout=3)
+        watcher = session.watch_task("2", timeout=3)
         assert next(watcher).state == TaskState.PENDING
         future = session.submit(b"hold")
         assert isinstance(future, flamepy_core.TaskFuture)
@@ -243,7 +259,7 @@ def test_watch_current_then_update_and_sync_callback_off_loop(frontend_server):
 
 def test_close_errors_pending_watches_without_per_task_threads(frontend_server):
     endpoint, service, _ = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     session = connection.create_session(SessionAttributes(application="app"))
     futures = [session.submit(b"hold") for _ in range(20)]
     assert len([thread for thread in threading.enumerate() if thread.name == "flamepy-aio"]) == 1
@@ -255,7 +271,7 @@ def test_close_errors_pending_watches_without_per_task_threads(frontend_server):
 
 def test_result_callback_can_close_connection(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     session = connection.create_session(SessionAttributes(application="app"))
     result = session.submit(b"hold")
     closed = threading.Event()
@@ -278,7 +294,7 @@ def test_result_callback_can_close_connection(frontend_server):
 
 def test_blocked_callbacks_do_not_starve_task_completion(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
         blockers = [session.submit(b"hold") for _ in range(4)]
@@ -323,7 +339,7 @@ def test_blocked_callbacks_do_not_starve_task_completion(frontend_server):
 
 def test_callbacks_keep_registration_order(frontend_server):
     endpoint, service, server_loop = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
         future = session.submit(b"hold")
@@ -347,7 +363,7 @@ def test_callbacks_keep_registration_order(frontend_server):
 def test_slow_callbacks_bound_completion_jobs_without_blocking_aio(frontend_server, monkeypatch):
     endpoint, service, server_loop = frontend_server
     monkeypatch.setattr(client, "_MAX_CALLBACK_JOBS", 4)
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     release_callbacks = threading.Event()
     workers_started = threading.Event()
     all_callbacks = threading.Event()
@@ -374,7 +390,7 @@ def test_slow_callbacks_bound_completion_jobs_without_blocking_aio(frontend_serv
             future.add_done_callback(callback)
         server_loop.call(_release(service))
         assert workers_started.wait(3)
-        assert session.get_task("task-1").id == "task-1"
+        assert session.get_task("1").name == "1"
         # The four occupied callback slots keep later watch tasks from
         # resolving; they do not create another unbounded completion queue.
         assert sum(future.done() for future in futures) <= 4
@@ -388,7 +404,7 @@ def test_slow_callbacks_bound_completion_jobs_without_blocking_aio(frontend_serv
 def test_close_drains_many_blocked_callbacks_with_fixed_workers(frontend_server, monkeypatch):
     endpoint, service, server_loop = frontend_server
     monkeypatch.setattr(client, "_MAX_CALLBACK_JOBS", 4)
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     release_callbacks = threading.Event()
     workers_started = threading.Event()
     all_callbacks = threading.Event()
@@ -423,7 +439,7 @@ def test_close_drains_many_blocked_callbacks_with_fixed_workers(frontend_server,
 
 def test_mass_cancellation_runs_callbacks_inline_without_queueing(frontend_server):
     endpoint, _, _ = frontend_server
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     release_callbacks = threading.Event()
     first_callback = threading.Event()
     all_callbacks = threading.Event()
@@ -474,7 +490,7 @@ def test_mass_cancellation_runs_callbacks_inline_without_queueing(frontend_serve
 def test_callback_worker_can_cancel_another_future_at_capacity(frontend_server, monkeypatch):
     endpoint, _, _ = frontend_server
     monkeypatch.setattr(client, "_MAX_CALLBACK_JOBS", 4)
-    connection = client.connect(endpoint)
+    connection = client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
         first = [session.submit(b"hold") for _ in range(4)]
@@ -528,9 +544,9 @@ def test_connection_rejects_empty_address():
 
 def test_module_connection_reopens_after_close(frontend_server, monkeypatch):
     endpoint, _, _ = frontend_server
-    first = client.connect(endpoint)
+    first = client.connect(endpoint, TLS_TEST_CONFIG)
     monkeypatch.setattr(client.ConnectionInstance, "_connection", first)
-    monkeypatch.setattr(client, "FlameContext", lambda: type("Context", (), {"endpoint": endpoint, "tls": None})())
+    monkeypatch.setattr(client, "FlameContext", lambda: type("Context", (), {"endpoint": endpoint, "tls": TLS_TEST_CONFIG})())
     assert client.ConnectionInstance.instance() is first
     first.close()
     second = client.ConnectionInstance.instance()
@@ -580,8 +596,8 @@ def test_dataclass_defaults_and_instantiation():
     ap_schema = ApplicationSchema()
     ap_attrs = ApplicationAttributes()
     dt = datetime.now(timezone.utc)
-    task = Task(id="tid", session_id="sid", state=TaskState.PENDING, creation_time=dt)
-    app = Application(id="aid", name="n", state=ApplicationState.ENABLED, creation_time=dt)
+    task = Task(id="tid", session="sid", name="1", workspace="ws", state=TaskState.PENDING, creation_time=dt)
+    app = Application(id="aid", name="n", workspace="ws", state=ApplicationState.ENABLED, creation_time=dt)
     assert t.code == 1
     assert sa.application == "app"
     assert ap_schema.input is None
@@ -720,6 +736,7 @@ def test_application_with_installer():
     app = Application(
         id="app-1",
         name="test-app",
+        workspace="default",
         state=ApplicationState.ENABLED,
         creation_time=dt,
         installer="curl -sSL https://install.sh | bash",
@@ -797,7 +814,7 @@ def test_flame_context_reads_client_identity(tmp_path, monkeypatch):
                     {
                         "name": "flame",
                         "cluster": {"endpoint": "https://cluster:8080", "tls": {"ca_file": "cluster-ca", "cert_file": "cluster-cert", "key_file": "cluster-key"}},
-                        "cache": {"endpoint": "grpcs-proxy://gateway:443", "tls": {"ca_file": "cache-ca", "cert_file": "cache-cert", "key_file": "cache-key"}},
+                        "cache": {"endpoint": "grpcs-proxy://gateway:443", "tls": {"ca_file": "cluster-ca", "cert_file": "cluster-cert", "key_file": "cluster-key"}},
                     }
                 ],
             }
@@ -805,10 +822,10 @@ def test_flame_context_reads_client_identity(tmp_path, monkeypatch):
     )
     ctx = FlameContext()
     assert (ctx.tls.ca_file, ctx.tls.cert_file, ctx.tls.key_file) == ("cluster-ca", "cluster-cert", "cluster-key")
-    assert (ctx.cache.tls.ca_file, ctx.cache.tls.cert_file, ctx.cache.tls.key_file) == ("cache-ca", "cache-cert", "cache-key")
+    assert (ctx.cache.tls.ca_file, ctx.cache.tls.cert_file, ctx.cache.tls.key_file) == ("cluster-ca", "cluster-cert", "cluster-key")
 
     monkeypatch.setenv("FLAME_CERT_FILE", "env-cert")
     monkeypatch.setenv("FLAME_KEY_FILE", "env-key")
     ctx = FlameContext()
     assert (ctx.tls.cert_file, ctx.tls.key_file) == ("cluster-cert", "cluster-key")
-    assert (ctx.cache.tls.cert_file, ctx.cache.tls.key_file) == ("cache-cert", "cache-key")
+    assert (ctx.cache.tls.cert_file, ctx.cache.tls.key_file) == ("cluster-cert", "cluster-key")

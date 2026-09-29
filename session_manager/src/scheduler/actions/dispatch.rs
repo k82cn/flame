@@ -16,10 +16,10 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{IDLE_EXECUTOR, READY_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
+use common::apis::{IDLE_EXECUTOR, READY_SESSION};
 
 use crate::FlameError;
 
@@ -60,7 +60,7 @@ impl Action for DispatchAction {
                 .expect("failed to pop open session: loop guard ensures non-empty");
 
             if !ctx.is_underused(&ssn)? {
-                tracing::debug!("Session <{}> is not underused, skip it.", ssn.id);
+                tracing::debug!("Session <{}> is not underused, skip it.", ssn.session);
                 continue;
             }
 
@@ -70,13 +70,13 @@ impl Action for DispatchAction {
             // another retained Idle executor, just as Allocate does before
             // creating or pipelining capacity.
             if ctx.is_ready(&ssn)? {
-                tracing::debug!("Session <{}> is ready, skip it.", ssn.id);
+                tracing::debug!("Session <{}> is ready, skip it.", ssn.session);
                 continue;
             }
 
             tracing::debug!(
                 "Session <{}> is underused, start to allocate resources.",
-                &ssn.id
+                &ssn.session
             );
 
             let available = ctx.select_executor(&ssn, &idle_executors)?;

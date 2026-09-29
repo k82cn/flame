@@ -45,25 +45,25 @@ impl DiskStorage {
     fn object_path(&self, key: &ObjectKey) -> PathBuf {
         let object_id = key.object_id.as_ref().expect("object_id required");
         self.storage_path
-            .join(&key.app_name)
-            .join(&key.session_id)
+            .join(&key.workspace)
+            .join(&key.session)
             .join(format!("{}.bin", object_id))
     }
 
     fn delta_dir(&self, key: &ObjectKey) -> PathBuf {
         let object_id = key.object_id.as_ref().expect("object_id required");
         self.storage_path
-            .join(&key.app_name)
-            .join(&key.session_id)
+            .join(&key.workspace)
+            .join(&key.session)
             .join(format!("{}.deltas", object_id))
     }
 
     fn session_dir(&self, key: &ObjectKey) -> PathBuf {
-        self.storage_path.join(&key.app_name).join(&key.session_id)
+        self.storage_path.join(&key.workspace).join(&key.session)
     }
 
-    fn app_dir(&self, key: &ObjectKey) -> PathBuf {
-        self.storage_path.join(&key.app_name)
+    fn workspace_dir(&self, key: &ObjectKey) -> PathBuf {
+        self.storage_path.join(&key.workspace)
     }
 }
 
@@ -194,7 +194,7 @@ impl StorageEngine for DiskStorage {
         let object_path = key.object_id.as_ref().map(|_| self.object_path(key));
         let delta_dir = key.object_id.as_ref().map(|_| self.delta_dir(key));
         let dir_to_delete = if object_path.is_none() && key.is_all_sessions() {
-            Some(self.app_dir(key))
+            Some(self.workspace_dir(key))
         } else if object_path.is_none() {
             Some(self.session_dir(key))
         } else {
@@ -236,29 +236,31 @@ impl StorageEngine for DiskStorage {
                 return Ok(results);
             }
 
-            for app_entry in fs::read_dir(&storage_path)? {
-                let app_entry = app_entry?;
-                let app_path = app_entry.path();
+            for workspace_entry in fs::read_dir(&storage_path)? {
+                let workspace_entry = workspace_entry?;
+                let workspace_path = workspace_entry.path();
 
-                if !app_path.is_dir() {
+                if !workspace_entry.file_type()?.is_dir() {
                     continue;
                 }
 
-                let app_name = app_path
+                let workspace = workspace_path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .ok_or_else(|| FlameError::Internal("Invalid app directory name".to_string()))?
+                    .ok_or_else(|| {
+                        FlameError::Internal("Invalid workspace directory name".to_string())
+                    })?
                     .to_string();
 
-                for session_entry in fs::read_dir(&app_path)? {
+                for session_entry in fs::read_dir(&workspace_path)? {
                     let session_entry = session_entry?;
                     let session_path = session_entry.path();
 
-                    if !session_path.is_dir() {
+                    if !session_entry.file_type()?.is_dir() {
                         continue;
                     }
 
-                    let session_id = session_path
+                    let session = session_path
                         .file_name()
                         .and_then(|n| n.to_str())
                         .ok_or_else(|| {
@@ -270,7 +272,7 @@ impl StorageEngine for DiskStorage {
                         let object_entry = object_entry?;
                         let object_path = object_entry.path();
 
-                        if object_path.is_dir() {
+                        if !object_entry.file_type()?.is_file() {
                             continue;
                         }
 
@@ -288,10 +290,16 @@ impl StorageEngine for DiskStorage {
                             .to_string();
 
                         let key = ObjectKey {
-                            app_name: app_name.clone(),
-                            session_id: session_id.clone(),
+                            workspace: workspace.clone(),
+                            session: session.clone(),
                             object_id: Some(object_id.clone()),
                         };
+                        // Ignore unrelated files or unsafe directory names rather than
+                        // turning persisted filesystem entries into unchecked cache keys.
+                        if ObjectKey::try_from(key.to_key().as_deref().unwrap_or_default()).is_err()
+                        {
+                            continue;
+                        }
 
                         let delta_dir = session_path.join(format!("{}.deltas", object_id));
                         let base = load_object_from_file(&object_path)?;
@@ -500,10 +508,10 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn test_key(app: &str, session: &str, object: &str) -> ObjectKey {
+    fn test_key(workspace: &str, session: &str, object: &str) -> ObjectKey {
         ObjectKey {
-            app_name: app.to_string(),
-            session_id: session.to_string(),
+            workspace: workspace.to_string(),
+            session: session.to_string(),
             object_id: Some(object.to_string()),
         }
     }
@@ -702,6 +710,31 @@ mod tests {
         let objects = storage.load_objects().await.unwrap();
         assert_eq!(objects.len(), 2);
     }
+
+    #[tokio::test]
+    async fn workspaces_with_matching_session_names_remain_separate() {
+        let temp_dir = tempdir().unwrap();
+        let storage = DiskStorage::new(temp_dir.path().to_path_buf()).unwrap();
+        let alice = ObjectKey::try_from("alice/session/object").unwrap();
+        let bob = ObjectKey::try_from("bob/session/object").unwrap();
+
+        storage
+            .write_object(&alice, &Object::new(1, b"alice".to_vec()))
+            .await
+            .unwrap();
+        storage
+            .write_object(&bob, &Object::new(1, b"bob".to_vec()))
+            .await
+            .unwrap();
+
+        assert!(temp_dir.path().join("alice/session/object.bin").is_file());
+        assert!(temp_dir.path().join("bob/session/object.bin").is_file());
+
+        let loaded = storage.load_objects().await.unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded.iter().any(|(key, _)| key.to_key() == alice.to_key()));
+        assert!(loaded.iter().any(|(key, _)| key.to_key() == bob.to_key()));
+    }
 }
 
 #[cfg(test)]
@@ -713,8 +746,8 @@ mod cache_benchmarks {
 
     fn key(name: &str) -> ObjectKey {
         ObjectKey {
-            app_name: "bench".to_string(),
-            session_id: "session".to_string(),
+            workspace: "bench".to_string(),
+            session: "session".to_string(),
             object_id: Some(name.to_string()),
         }
     }

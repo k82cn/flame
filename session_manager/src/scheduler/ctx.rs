@@ -17,8 +17,9 @@ use std::sync::Arc;
 
 use stdng::collections;
 
+use crate::controller::snapshot::SnapShotPtr;
 use crate::controller::ControllerPtr;
-use crate::model::{ExecutorInfo, ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr, SnapShotPtr};
+use crate::model::{ExecutorInfo, ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr};
 use crate::scheduler::actions::{ActionPtr, AllocateAction, DispatchAction, ShuffleAction};
 use crate::scheduler::plugins::{PluginManager, PluginManagerPtr, PluginsOptions};
 use common::apis::{ExecutorID, ExecutorState};
@@ -98,7 +99,7 @@ impl Context {
             .values()
             .map(|executor| {
                 Ok(
-                    (executor.ssn_id.is_none() && self.is_available(executor, session)?)
+                    (executor.session.is_none() && self.is_available(executor, session)?)
                         .then(|| executor.clone()),
                 )
             })
@@ -118,7 +119,7 @@ impl Context {
     ) -> Result<(), FlameError> {
         let executor = self
             .controller
-            .create_executor(node.name.clone(), ssn.id.clone())
+            .create_executor(node.name.clone(), ssn.session.clone())
             .await?;
         let exec_info = Arc::new(ExecutorInfo::from(&executor));
         self.snapshot.add_executor(exec_info.clone())?;
@@ -140,7 +141,7 @@ impl Context {
         ssn: &SessionInfoPtr,
     ) -> Result<(), FlameError> {
         self.controller
-            .bind_session(exec.id.clone(), ssn.id.clone())
+            .bind_session(exec.id.clone(), ssn.session.clone())
             .await?;
         self.plugins.on_session_bind(ssn.clone())?;
         self.snapshot
@@ -205,22 +206,22 @@ mod tests {
             gpu: 0,
         };
         let mut source = Session {
-            id: "session".to_string(),
+            gid: "session".to_string(),
             application: "test-app".to_string(),
             resreq: Some(resreq.clone()),
             ..Default::default()
         };
         source
             .update_task(&Task {
-                id: 1,
-                ssn_id: source.id.clone(),
+                number: 1,
+                session: source.gid.clone(),
                 affinity: HashSet::from([Bytes::from_static(b"local")]),
                 ..Default::default()
             })
             .unwrap();
 
         let session = Arc::new(SessionInfo::try_from(&source).unwrap());
-        let snapshot = crate::model::SnapShot::new();
+        let snapshot = crate::controller::snapshot::SnapShot::new();
         snapshot.add_session(session.clone()).unwrap();
         let options = PluginsOptions {
             policies: vec!["das".to_string()],
@@ -235,7 +236,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let storage = crate::storage::new_ptr(&config).await.unwrap();
+        let storage = common::storage::new_ptr(&config).await.unwrap();
         let controller = crate::controller::new_ptr(storage);
         let context = Context {
             snapshot: Arc::new(snapshot),
@@ -263,7 +264,7 @@ mod tests {
             id: "a-owned".to_string(),
             state: ExecutorState::Idle,
             application: "test-app".to_string(),
-            ssn_id: Some("other-session".to_string()),
+            session: Some("other-session".to_string()),
             resreq: resreq.clone(),
             attributes: HashSet::from([Bytes::from_static(b"local")]),
             ..Default::default()
@@ -318,7 +319,7 @@ mod tests {
         let first_eligible = idle_executors
             .values()
             .find(|executor| {
-                executor.ssn_id.is_none()
+                executor.session.is_none()
                     && context.is_available(executor, &session).unwrap_or(false)
             })
             .unwrap()

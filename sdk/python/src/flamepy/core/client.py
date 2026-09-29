@@ -18,9 +18,8 @@ from flamepy.core.types import (
     FlameErrorCode,
     ResourceRequirement,
     SessionAttributes,
-    SessionID,
     Task,
-    TaskID,
+    TaskName,
     TaskOptions,
 )
 
@@ -34,39 +33,70 @@ def connect(addr: str, tls_config: Optional[FlameClientTls] = None) -> "Connecti
 
 
 def create_session(
-    application: str,
+    application: Union[str, SessionAttributes],
     common_data: Optional[bytes] = None,
-    session_id: Optional[str] = None,
+    name: Optional[str] = None,
+    workspace: str = "default",
     min_instances: int = 0,
     max_instances: Optional[int] = None,
     batch_size: int = 1,
     resreq: Optional[ResourceRequirement] = None,
 ) -> "Session":
-    return ConnectionInstance.instance().create_session(SessionAttributes(id=session_id, application=application, common_data=common_data, min_instances=min_instances, max_instances=max_instances, batch_size=1, resreq=resreq))
+    attrs = (
+        application
+        if isinstance(application, SessionAttributes)
+        else SessionAttributes(
+            application=application,
+            workspace=workspace,
+            name=name,
+            common_data=common_data,
+            min_instances=min_instances,
+            max_instances=max_instances,
+            batch_size=batch_size,
+            resreq=resreq,
+        )
+    )
+    return ConnectionInstance.instance().create_session(attrs)
 
 
-def open_session(session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
-    return ConnectionInstance.instance().open_session(session_id, spec)
+def open_session(name: str, spec: Optional[SessionAttributes] = None, workspace: str = "default") -> "Session":
+    return ConnectionInstance.instance().open_session(name, spec, workspace)
 
 
-def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
-    ConnectionInstance.instance().register_application(name, app_attrs)
+def register_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]], workspace: Optional[str] = None) -> Application:
+    return ConnectionInstance.instance().register_application(name, app_attrs, workspace)
 
 
-def unregister_application(name: str) -> None:
-    ConnectionInstance.instance().unregister_application(name)
+def create_workspace(name: str):
+    return ConnectionInstance.instance().create_workspace(name)
 
 
-def list_applications() -> List[Application]:
-    return ConnectionInstance.instance().list_applications()
+def list_workspaces():
+    return ConnectionInstance.instance().list_workspaces()
 
 
-def get_application(name: str) -> Optional[Application]:
-    return ConnectionInstance.instance().get_application(name)
+def update_application(name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]], workspace: str = "default") -> None:
+    return ConnectionInstance.instance().update_application(name, app_attrs, workspace)
 
 
-def list_executors() -> List[Any]:
-    return ConnectionInstance.instance().list_executors()
+def get_application_by_name(name: str, workspace: str = "default") -> Optional[Application]:
+    return ConnectionInstance.instance().get_application_by_name(name, workspace)
+
+
+def unregister_application(name: str, workspace: str = "default") -> None:
+    ConnectionInstance.instance().unregister_application(name, workspace)
+
+
+def list_applications(workspace: str = "default") -> List[Application]:
+    return ConnectionInstance.instance().list_applications(workspace)
+
+
+def get_application(name: str, workspace: str = "default") -> Optional[Application]:
+    return ConnectionInstance.instance().get_application(name, workspace)
+
+
+def list_executors(application: Optional[str] = None, workspace: str = "default") -> List[Any]:
+    return ConnectionInstance.instance().list_executors(application, workspace)
 
 
 def list_nodes() -> List[Any]:
@@ -77,12 +107,12 @@ def list_sessions() -> List["Session"]:
     return ConnectionInstance.instance().list_sessions()
 
 
-def get_session(session_id: SessionID) -> "Session":
-    return ConnectionInstance.instance().get_session(session_id)
+def get_session(name: str, workspace: str = "default") -> "Session":
+    return ConnectionInstance.instance().get_session(name, workspace)
 
 
-def close_session(session_id: SessionID) -> "Session":
-    return ConnectionInstance.instance().close_session(session_id)
+def close_session(name: str, workspace: str = "default") -> "Session":
+    return ConnectionInstance.instance().close_session(name, workspace)
 
 
 class ConnectionInstance:
@@ -217,20 +247,32 @@ class Connection:
             self._callback_executor.shutdown(wait=False)
             self._bridge.close()
 
-    def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]]) -> None:
-        return self._call(self._aio.register_application(name, app_attrs))
+    def register_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]], workspace: Optional[str] = None) -> Application:
+        return self._call(self._aio.register_application(name, app_attrs, workspace))
 
-    def unregister_application(self, name: str) -> None:
-        return self._call(self._aio.unregister_application(name))
+    def create_workspace(self, name: str):
+        return self._call(self._aio.create_workspace(name))
 
-    def list_applications(self) -> List[Application]:
-        return self._call(self._aio.list_applications())
+    def list_workspaces(self):
+        return self._call(self._aio.list_workspaces())
 
-    def get_application(self, name: str) -> Optional[Application]:
-        return self._call(self._aio.get_application(name))
+    def update_application(self, name: str, app_attrs: Union[ApplicationAttributes, Dict[str, Any]], workspace: str = "default") -> None:
+        return self._call(self._aio.update_application(name, app_attrs, workspace))
 
-    def list_executors(self) -> List[Any]:
-        return self._call(self._aio.list_executors())
+    def unregister_application(self, name: str, workspace: str = "default") -> None:
+        return self._call(self._aio.unregister_application(name, workspace))
+
+    def list_applications(self, workspace: str = "default") -> List[Application]:
+        return self._call(self._aio.list_applications(workspace))
+
+    def get_application(self, name: str, workspace: str = "default") -> Optional[Application]:
+        return self._call(self._aio.get_application(name, workspace))
+
+    def get_application_by_name(self, name: str, workspace: str = "default") -> Optional[Application]:
+        return self._call(self._aio.get_application_by_name(name, workspace))
+
+    def list_executors(self, application: Optional[str] = None, workspace: str = "default") -> List[Any]:
+        return self._call(self._aio.list_executors(application, workspace))
 
     def list_nodes(self) -> List[Any]:
         return self._call(self._aio.list_nodes())
@@ -244,14 +286,14 @@ class Connection:
     def list_sessions(self) -> List["Session"]:
         return [self._session(session) for session in self._call(self._aio.list_sessions())]
 
-    def open_session(self, session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
-        return self._session(self._call(self._aio.open_session(session_id, spec)))
+    def open_session(self, name: str, spec: Optional[SessionAttributes] = None, workspace: str = "default") -> "Session":
+        return self._session(self._call(self._aio.open_session(name, spec, workspace)))
 
-    def get_session(self, session_id: SessionID) -> "Session":
-        return self._session(self._call(self._aio.get_session(session_id)))
+    def get_session(self, name: str, workspace: str = "default") -> "Session":
+        return self._session(self._call(self._aio.get_session(name, workspace)))
 
-    def close_session(self, session_id: SessionID) -> "Session":
-        return self._session(self._call(self._aio.close_session(session_id)))
+    def close_session(self, name: str, workspace: str = "default") -> "Session":
+        return self._session(self._call(self._aio.close_session(name, workspace)))
 
 
 class Session:
@@ -260,7 +302,7 @@ class Session:
     def __init__(self, connection: Connection, aio_session: aio_client.Session):
         self.connection = connection
         self._aio = aio_session
-        for name in ("id", "application", "state", "creation_time", "pending", "running", "succeed", "failed", "completion_time", "events"):
+        for name in ("id", "name", "workspace", "application", "state", "creation_time", "pending", "running", "succeed", "failed", "completion_time", "events"):
             setattr(self, name, getattr(aio_session, name))
         self.mutex = threading.Lock()
 
@@ -270,8 +312,8 @@ class Session:
     def create_task(self, input_data: bytes, option: Optional[TaskOptions] = None) -> Task:
         return self.connection._call(self._aio.create_task(input_data, option))
 
-    def get_task(self, task_id: TaskID) -> Task:
-        return self.connection._call(self._aio.get_task(task_id))
+    def get_task(self, task: TaskName) -> Task:
+        return self.connection._call(self._aio.get_task(task))
 
     def list_tasks(self) -> "TaskIterator":
         async def start():
@@ -279,9 +321,9 @@ class Session:
 
         return TaskIterator(self.connection._bridge, self.connection._call(start()))
 
-    def watch_task(self, task_id: TaskID, timeout: Optional[float] = None) -> "TaskWatcher":
+    def watch_task(self, task: TaskName, timeout: Optional[float] = None) -> "TaskWatcher":
         async def start():
-            return self._aio.watch_task(task_id, timeout)
+            return self._aio.watch_task(task, timeout)
 
         return TaskWatcher(self.connection._bridge, self.connection._call(start()))
 
@@ -375,7 +417,7 @@ class Session:
         return result
 
     def close(self) -> None:
-        self.connection.close_session(self.id)
+        self.connection.close_session(self.name, self.workspace)
 
 
 class _AsyncIteratorFacade:

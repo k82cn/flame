@@ -7,7 +7,8 @@ package flame.v1;
 option go_package = "github.com/flame-sh/flame/sdk/go/rpc/v1";
 
 message ApplicationContext {
-    string name = 1;
+    string application = 1;
+    string workspace = 8;
     Shim shim = 2;  // Required shim type for the application
     optional string image = 3;
     optional string command = 4;
@@ -17,15 +18,20 @@ message ApplicationContext {
 }
 
 message SessionContext {
-    string session_id = 1;
-    ApplicationContext application = 2;
+    string session = 1;
+    string application = 2;
     optional bytes common_data = 3;
+    string workspace = 4;
+    optional string image = 5;
+    optional string command = 6;
 }
 
 message TaskContext {
-    string task_id = 1;
-    string session_id = 2;
+    string task = 1;
+    string session = 2;
     optional bytes input = 4;
+    string workspace = 5;
+    string application = 6;
 }
 
 message OnSessionEnterResponse {

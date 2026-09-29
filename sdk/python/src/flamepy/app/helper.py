@@ -181,10 +181,10 @@ def get_data(data: bytes) -> Dict[str, Any]:
         >>> for task in session.tasks:
         ...     if task.input:
         ...         input_data = get_data(task.input)
-        ...         print(f"Task {task.id} input: {input_data}")
+        ...         print(f"Task {task.name} input: {input_data}")
         ...     if task.output:
         ...         output_data = get_data(task.output)
-        ...         print(f"Task {task.id} output: {output_data}")
+        ...         print(f"Task {task.name} output: {output_data}")
     """
     object_ref = None
     is_output = False

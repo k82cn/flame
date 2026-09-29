@@ -11,9 +11,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+#![allow(unused)]
+
 use std::sync::Arc;
 
-use crate::apis::{Event, EventOwner, SessionID};
+use crate::apis::{Event, EventOwner, SessionPath};
 use crate::FlameError;
 
 mod fs;
@@ -25,7 +27,7 @@ pub use memory::MemoryEventManager;
 pub trait EventManager: Send + Sync {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError>;
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError>;
-    fn remove_events(&self, session_id: SessionID) -> Result<(), FlameError>;
+    fn remove_events(&self, session_path: SessionPath) -> Result<(), FlameError>;
     fn clear(&self) -> Result<(), FlameError>;
 }
 
@@ -36,13 +38,19 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
+    fn event_owner(path: impl AsRef<str>, task: i64) -> EventOwner {
+        let (workspace, session) = crate::apis::parse_session_path(path.as_ref()).unwrap();
+        EventOwner {
+            workspace: workspace.to_string(),
+            session: session.to_string(),
+            task,
+        }
+    }
+
     fn test_event_manager_impl(manager: &dyn EventManager) {
         manager
             .record_event(
-                EventOwner {
-                    session_id: String::from("1"),
-                    task_id: 1,
-                },
+                event_owner("default/1", 1),
                 Event {
                     code: 1,
                     message: Some("test".to_string()),
@@ -51,12 +59,7 @@ mod tests {
             )
             .unwrap();
 
-        let events = manager
-            .find_events(EventOwner {
-                session_id: String::from("1"),
-                task_id: 1,
-            })
-            .unwrap();
+        let events = manager.find_events(event_owner("default/1", 1)).unwrap();
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].code, 1);
@@ -79,14 +82,51 @@ mod tests {
     }
 
     #[test]
+    fn event_owners_are_isolated_by_workspace() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let managers: Vec<Box<dyn EventManager>> = vec![
+            Box::new(MemoryEventManager::new()),
+            Box::new(FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap()),
+        ];
+
+        for manager in managers {
+            for (workspace, code) in [("alice", 1), ("bob", 2)] {
+                manager
+                    .record_event(
+                        EventOwner {
+                            workspace: workspace.to_string(),
+                            session: "shared-name".to_string(),
+                            task: 1,
+                        },
+                        Event {
+                            code,
+                            message: None,
+                            creation_time: Utc::now(),
+                        },
+                    )
+                    .unwrap();
+            }
+
+            for (workspace, code) in [("alice", 1), ("bob", 2)] {
+                let events = manager
+                    .find_events(EventOwner {
+                        workspace: workspace.to_string(),
+                        session: "shared-name".to_string(),
+                        task: 1,
+                    })
+                    .unwrap();
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].code, code);
+            }
+        }
+    }
+
+    #[test]
     fn test_fs_event_manager_multiple_events_same_task() {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
 
-        let owner = EventOwner {
-            session_id: "session-1".to_string(),
-            task_id: 1,
-        };
+        let owner = event_owner("default/session-1", 1);
 
         for i in 0..3 {
             manager
@@ -113,33 +153,27 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
 
-        let session_id = "session-1".to_string();
+        let session_path = "default/session-1".to_string();
 
-        for task_id in 1..=3 {
+        for task in 1..=3 {
             manager
                 .record_event(
-                    EventOwner {
-                        session_id: session_id.clone(),
-                        task_id,
-                    },
+                    event_owner(&session_path, task),
                     Event {
-                        code: task_id as i32,
-                        message: Some(format!("task-{}", task_id)),
+                        code: task as i32,
+                        message: Some(format!("task-{}", task)),
                         creation_time: Utc::now(),
                     },
                 )
                 .unwrap();
         }
 
-        for task_id in 1..=3 {
+        for task in 1..=3 {
             let events = manager
-                .find_events(EventOwner {
-                    session_id: session_id.clone(),
-                    task_id,
-                })
+                .find_events(event_owner(&session_path, task))
                 .unwrap();
             assert_eq!(events.len(), 1);
-            assert_eq!(events[0].code, task_id as i32);
+            assert_eq!(events[0].code, task as i32);
         }
     }
 
@@ -151,10 +185,7 @@ mod tests {
         for i in 1..=3 {
             manager
                 .record_event(
-                    EventOwner {
-                        session_id: format!("session-{}", i),
-                        task_id: 1,
-                    },
+                    event_owner(format!("default/session-{}", i), 1),
                     Event {
                         code: i,
                         message: Some(format!("session-{}-event", i)),
@@ -166,10 +197,7 @@ mod tests {
 
         for i in 1..=3 {
             let events = manager
-                .find_events(EventOwner {
-                    session_id: format!("session-{}", i),
-                    task_id: 1,
-                })
+                .find_events(event_owner(format!("default/session-{}", i), 1))
                 .unwrap();
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].code, i);
@@ -181,11 +209,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
 
-        let session_id = "session-to-remove".to_string();
-        let owner = EventOwner {
-            session_id: session_id.clone(),
-            task_id: 1,
-        };
+        let session_path = "default/session-to-remove".to_string();
+        let owner = event_owner(&session_path, 1);
 
         manager
             .record_event(
@@ -201,7 +226,7 @@ mod tests {
         let events = manager.find_events(owner.clone()).unwrap();
         assert_eq!(events.len(), 1);
 
-        manager.remove_events(session_id.clone()).unwrap();
+        manager.remove_events(session_path.clone()).unwrap();
 
         let result = manager.find_events(owner);
         assert!(result.unwrap().is_empty());
@@ -213,10 +238,7 @@ mod tests {
         let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
 
         let events = manager
-            .find_events(EventOwner {
-                session_id: "missing-session".to_string(),
-                task_id: 0,
-            })
+            .find_events(event_owner("default/missing-session", 0))
             .unwrap();
         assert!(events.is_empty());
     }
@@ -228,10 +250,7 @@ mod tests {
 
         manager
             .record_event(
-                EventOwner {
-                    session_id: "session-1".to_string(),
-                    task_id: 1,
-                },
+                event_owner("default/session-1", 1),
                 Event {
                     code: 1,
                     message: Some("test".to_string()),
@@ -241,10 +260,7 @@ mod tests {
             .unwrap();
 
         let events = manager
-            .find_events(EventOwner {
-                session_id: "session-1".to_string(),
-                task_id: 999,
-            })
+            .find_events(event_owner("default/session-1", 999))
             .unwrap();
         assert!(events.is_empty());
     }
@@ -254,10 +270,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap().to_string();
 
-        let owner = EventOwner {
-            session_id: "persistent-session".to_string(),
-            task_id: 1,
-        };
+        let owner = event_owner("default/persistent-session", 1);
 
         {
             let manager = FsEventManager::new(&path).unwrap();
@@ -292,10 +305,7 @@ mod tests {
         let events_path = format!("{}/events", temp_path);
         let manager = FsEventManager::new(&events_path).unwrap();
 
-        let owner = EventOwner {
-            session_id: "test-session".to_string(),
-            task_id: 1,
-        };
+        let owner = event_owner("default/test-session", 1);
 
         manager
             .record_event(
@@ -319,10 +329,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = FsEventManager::new(temp_dir.path().to_str().unwrap()).unwrap();
 
-        let owner = EventOwner {
-            session_id: "session-1".to_string(),
-            task_id: 1,
-        };
+        let owner = event_owner("default/session-1", 1);
 
         manager
             .record_event(

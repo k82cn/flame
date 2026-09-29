@@ -26,10 +26,11 @@ use common::FlameError;
 use stdng::{lock_ptr, MutexPtr};
 
 use super::from;
-use crate::model::{
-    ConnectionCallbacks, ConnectionState, Executor, NodeConnection, NodeConnectionPtr,
+use crate::connection::{
+    ConnectionCallbacks, ConnectionState, NodeConnection, NodeConnectionPtr,
     NodeConnectionReceiver, NodeConnectionSender, DEFAULT_DRAIN_TIMEOUT_SECS,
 };
+use common::apis::Executor;
 
 /// Manages all node connections in the controller.
 ///

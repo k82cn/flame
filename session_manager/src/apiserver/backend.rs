@@ -30,7 +30,7 @@ use ::rpc::flame::v1 as rpc;
 
 use crate::apiserver::Flame;
 use crate::controller::ControllerPtr;
-use crate::model::Executor;
+use common::apis::{self, Executor};
 use common::apis::{ExecutorState, FlameResult, Node, Shim, TaskResult};
 use common::FlameError;
 
@@ -329,9 +329,10 @@ impl Backend for Flame {
             node: spec.node,
             resreq: spec.resreq.unwrap_or_default().into(),
             shim,
-            application: spec.application,
-            task_id: None,
-            ssn_id: None,
+            application: apis::application_path(&spec.workspace, &spec.application)
+                .map_err(Status::from)?,
+            task: None,
+            session: None,
             attributes: Default::default(),
             creation_time: now,
             latest_updated_timestamp: now,
@@ -390,7 +391,7 @@ impl Backend for Flame {
             "Bind executor <{}> to Session <{}:{}>",
             executor_id,
             app.name,
-            ssn.id,
+            ssn.gid,
         );
 
         Ok(Response::new(BindExecutorResponse {

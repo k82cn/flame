@@ -207,7 +207,8 @@ import flamepy
 
 class Echo(flamepy.FlameService):
     def on_session_enter(self, context: flamepy.SessionContext):
-        self.session_id = context.session_id
+        self.session = context.session
+        self.workspace = context.workspace
         self.common_data = context.common_data()
 
     def on_task_invoke(self, context: flamepy.TaskContext) -> Optional[bytes]:
@@ -215,7 +216,8 @@ class Echo(flamepy.FlameService):
         return context.input
 
     def on_session_leave(self):
-        self.session_id = None
+        self.session = None
+        self.workspace = None
 
 
 if __name__ == "__main__":

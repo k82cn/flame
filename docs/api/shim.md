@@ -62,15 +62,19 @@ Called when an executor binds to a session. Use this to initialize application-s
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `session_id` | string | Session identifier |
-| `application` | `ApplicationContext` | Application details |
+| `session` | string | Session name |
+| `workspace` | string | Owning workspace |
+| `application` | string | Application name |
 | `common_data` | bytes | Shared data for all tasks in session (optional) |
+| `image` | string | Application image (optional) |
+| `command` | string | Application command (optional) |
 
 **ApplicationContext:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Application name |
+| `application` | string | Application name |
+| `workspace` | string | Owning workspace |
 | `shim` | [Shim](types.md#shim) | Shim type (Host or Wasm) |
 | `image` | string | Container/WASM image (optional) |
 | `command` | string | Command to execute (optional) |
@@ -99,7 +103,8 @@ import flamepy
 
 class MyService(flamepy.FlameService):
     def on_session_enter(self, context):
-        self.session_id = context.session_id
+        self.session = context.session
+        self.workspace = context.workspace
         self.db = Database.connect()  # Initialize resources
         common_data = context.common_data()
         if common_data:
@@ -114,8 +119,10 @@ Called for each task that needs to be executed.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `task_id` | string | Task identifier |
-| `session_id` | string | Session identifier |
+| `task` | string | Server-assigned decimal task name |
+| `session` | string | Session name |
+| `workspace` | string | Owning workspace |
+| `application` | string | Application name |
 | `input` | bytes | Task input data (optional) |
 
 **Response:** `OnTaskInvokeResponse`

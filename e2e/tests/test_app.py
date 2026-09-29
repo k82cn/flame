@@ -35,7 +35,7 @@ from e2e.helpers import (
     greet_func,
     sum_func,
 )
-from tests.utils import deploy_e2e_application, wait_for_application_deleted
+from tests.utils import create_session_by_application_name, deploy_e2e_application, unregister_application_by_name, wait_for_application_deleted
 
 
 @contextmanager
@@ -182,8 +182,8 @@ def test_app_data_aware_scheduling(check_package_config, check_flmrun_app):
                 return value, self.instance_key, self.executor_id
 
         warm_service = WarmDataService.remote()
-        warm_session_id = warm_service._session.id
-        bound = wait_for_executors(lambda executor: executor.status.state == ExecutorBound and executor.status.session_id == warm_session_id)
+        warm_session = warm_service._session.name
+        bound = wait_for_executors(lambda executor: executor.status.state == ExecutorBound and executor.status.session == warm_session)
 
         executor_ids = {executor.metadata.id for executor in bound}
         key_by_executor = {}
@@ -417,7 +417,7 @@ def test_objectfuture_explicit_objectref_result(check_package_config, check_flmr
             from flamepy.core import put_object
 
             context = session_context()
-            return put_object(f"{context.application.name}/{context.session_id}", value)
+            return put_object(f"{context.workspace}/{context.session}", value)
 
         result = cached_result.remote("cached value")
         assert isinstance(result.ref(), flamepy.core.ObjectRef)
@@ -726,7 +726,7 @@ def test_app_destroy_idempotent(check_package_config, check_flmrun_app):
     app.destroy()
 
 
-# Generated service session IDs are covered by the App service tests above.
+# Generated service session names are covered by the App service tests above.
 
 # =============================================================================
 # Recursive App Tests (open_session)
@@ -737,7 +737,7 @@ def test_app_recursive_same_session(check_package_config, check_flmrun_app):
     """Test recursive app execution within the same session.
 
     This test verifies that a task can create another ServiceInstance using the same
-    session ID, enabling recursive task submission within the same session.
+    session name, enabling recursive task submission within the same session.
     The open_session API allows this by returning the existing session instead of
     creating a new one.
 
@@ -767,7 +767,7 @@ def test_app_recursive_same_session(check_package_config, check_flmrun_app):
         # This test waits synchronously for nested results, so autoscaling
         # provides executor capacity for the child tasks.
         service = RecursiveTestService.remote()
-        logger.info(f"[TEST] Service created, session_id={service._session.id}")
+        logger.info(f"[TEST] Service created, session={service._session.name}")
 
         # Test with depth=0 (base case)
         logger.info("[TEST] Testing depth=0")
@@ -793,9 +793,9 @@ def test_app_recursive_same_session(check_package_config, check_flmrun_app):
         logger.info(f"[TEST] depth=2 result={value2} ({time.time() - start_time:.2f}s)")
         assert value2 == 4, f"Expected 4 for depth=2, got {value2}"
 
-        traced_value, session_ids = service.compute_recursive(2, True).get()
+        traced_value, sessions = service.compute_recursive(2, True).get()
         assert traced_value == 4
-        assert session_ids == [service._session.id] * 3
+        assert sessions == [service._session.name] * 3
 
     wait_for_application_deleted(shared_app_name)
     app_names = [registered.name for registered in flamepy.list_applications()]
@@ -826,7 +826,7 @@ def setup_flmrun_with_e2e():
 
     yield app_name
 
-    flamepy.unregister_application(app_name)
+    unregister_application_by_name(app_name)
 
 
 class TestFlmrunApplication:
@@ -853,7 +853,7 @@ class TestFlmrunApplication:
         app_name = setup_flmrun_with_e2e
         ctx = app.ServiceContext(execution_object=sum_func)
         common_data_bytes = serialize_service_context(ctx, app_name)
-        ssn = flamepy.create_session(app_name, common_data_bytes)
+        ssn = create_session_by_application_name(app_name, common_data_bytes)
 
         try:
             req = app.ServiceRequest(method=None, args=(1, 2))
@@ -873,7 +873,7 @@ class TestFlmrunApplication:
         app_name = setup_flmrun_with_e2e
         ctx = app.ServiceContext(execution_object=Calculator, constructor_args=())
         common_data_bytes = serialize_service_context(ctx, app_name)
-        ssn = flamepy.create_session(app_name, common_data_bytes)
+        ssn = create_session_by_application_name(app_name, common_data_bytes)
 
         try:
             req = app.ServiceRequest(method="add", args=(5, 3))
@@ -903,7 +903,7 @@ class TestFlmrunApplication:
         app_name = setup_flmrun_with_e2e
         ctx = app.ServiceContext(execution_object=greet_func)
         common_data_bytes = serialize_service_context(ctx, app_name)
-        ssn = flamepy.create_session(app_name, common_data_bytes)
+        ssn = create_session_by_application_name(app_name, common_data_bytes)
 
         try:
             req = app.ServiceRequest(method=None, kwargs={"name": "World", "greeting": "Hi"})
@@ -930,7 +930,7 @@ class TestFlmrunApplication:
             constructor_args=(10,),
         )
         common_data_bytes = serialize_service_context(ctx, app_name)
-        ssn = flamepy.create_session(app_name, common_data_bytes)
+        ssn = create_session_by_application_name(app_name, common_data_bytes)
 
         try:
             req = app.ServiceRequest(method="increment")
@@ -984,7 +984,7 @@ class TestGetData:
             value = result.get()
             assert value == 8, f"Expected 8, got {value}"
 
-            session = get_session(sum_service._session.id)
+            session = get_session(sum_service._session.name)
             tasks = list(session.list_tasks())
             assert len(tasks) >= 1, "Expected at least one task"
 
@@ -1013,7 +1013,7 @@ class TestGetData:
             value = result.get()
             assert value == 28, f"Expected 28, got {value}"
 
-            session = get_session(multiply_service._session.id)
+            session = get_session(multiply_service._session.name)
             tasks = list(session.list_tasks())
             assert len(tasks) >= 1, "Expected at least one task"
 
@@ -1067,7 +1067,7 @@ class TestGetData:
             value = result.get()
             assert value == 40, f"Expected 40, got {value}"
 
-            session = get_session(calc_service._session.id)
+            session = get_session(calc_service._session.name)
             tasks = list(session.list_tasks())
             assert len(tasks) >= 1, "Expected at least one task"
 
@@ -1483,10 +1483,10 @@ class TestDRFSessionManagement:
             result = sum_service(1, 2)
             assert result.get() == 3
 
-            session_id = sum_service._session.id
+            session = sum_service._session.name
 
         sessions = flamepy.list_sessions()
-        session = next((s for s in sessions if s.id == session_id), None)
+        session = next((s for s in sessions if s.name == session), None)
         if session:
             assert session.state == flamepy.SessionState.CLOSED
 

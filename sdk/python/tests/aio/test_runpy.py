@@ -29,45 +29,45 @@ from flamepy.core import ValueRef
 @pytest.mark.asyncio
 async def test_runpy_rejects_output_above_128_kib():
     from flamepy.app.types import INLINE_PAYLOAD_LIMIT
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     def echo(data):
         return data
 
     service = FlameRunpyService()
     service._load_app_context = lambda context: _context(ServiceContext(echo))
-    await service.on_session_enter(SessionContext(None, "session", ApplicationContext("app")))
+    await service.on_session_enter(SessionContext(None, "session", "default", "app"))
 
     size = next(size for size in range(INLINE_PAYLOAD_LIMIT - 384, INLINE_PAYLOAD_LIMIT) if len(cloudpickle.dumps(ServiceResponse(ValueRef(b"x" * size)))) == INLINE_PAYLOAD_LIMIT)
     exact = b"x" * size
     with patch("flamepy.app.runpy.aio_core.put_object", new=AsyncMock()) as put:
-        output = await service.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(args=(exact,)))))
+        output = await service.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(args=(exact,)))))
         assert cloudpickle.loads(output) == ServiceResponse(ValueRef(exact))
         with pytest.raises(ValueError, match="App task output exceeds"):
-            await service.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(args=(exact + b"x",)))))
+            await service.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(args=(exact + b"x",)))))
     put.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_runpy_rejects_worker_objectfuture_with_clear_error():
     from flamepy.app import ObjectFuture
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     def return_future():
         return ObjectFuture(Future())
 
     service = FlameRunpyService()
     service._load_app_context = lambda context: _context(ServiceContext(return_future))
-    await service.on_session_enter(SessionContext(None, "session", ApplicationContext("app")))
+    await service.on_session_enter(SessionContext(None, "session", "default", "app"))
 
     with pytest.raises(TypeError, match="cannot return ObjectFuture"):
-        await service.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest())))
+        await service.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest())))
 
 
 @pytest.mark.asyncio
 async def test_runpy_wraps_explicit_objectref_in_service_response():
     from flamepy.core import ObjectRef
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     ref = ObjectRef(endpoint="grpc://host:9090", key="app/session/value", version=1)
 
@@ -76,9 +76,9 @@ async def test_runpy_wraps_explicit_objectref_in_service_response():
 
     service = FlameRunpyService()
     service._load_app_context = lambda context: _context(ServiceContext(return_ref))
-    await service.on_session_enter(SessionContext(None, "session", ApplicationContext("app")))
+    await service.on_session_enter(SessionContext(None, "session", "default", "app"))
     with patch("flamepy.app.runpy.aio_core.put_object", new=AsyncMock()) as put:
-        output = await service.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest())))
+        output = await service.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest())))
     assert cloudpickle.loads(output) == ServiceResponse(ref)
     put.assert_not_awaited()
 
@@ -122,17 +122,17 @@ async def test_runpy_resolves_inline_and_cached_refs_in_arguments():
 @pytest.mark.asyncio
 async def test_runpy_binds_session_context_and_publishes_invocation_attributes():
     import flamepy.app as app
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         def run(self):
             app.publish_attributes({b"b"})
             app.publish_attributes({b"c"})
-            return app.session_context().session_id
+            return app.session_context().session
 
     svc = FlameRunpyService()
     svc._load_app_context = lambda context: _context(ServiceContext(Worker, constructor_args=()))
-    session = SessionContext(None, "session", ApplicationContext("app"))
+    session = SessionContext(None, "session", "default", "app")
 
     await svc.on_session_enter(session)
     assert list(svc._take_attributes().attr) == []
@@ -140,7 +140,7 @@ async def test_runpy_binds_session_context_and_publishes_invocation_attributes()
     request = ServiceRequest(method="run")
     object_ref = SimpleNamespace(encode=lambda: b"result-ref")
     with patch("flamepy.core.aio.put_object", new=AsyncMock(return_value=object_ref)) as put:
-        result = await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(request)))
+        result = await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(request)))
 
     assert cloudpickle.loads(result) == ServiceResponse(ValueRef("session"))
     put.assert_not_called()
@@ -150,26 +150,26 @@ async def test_runpy_binds_session_context_and_publishes_invocation_attributes()
 @pytest.mark.asyncio
 async def test_runpy_handles_async_method_and_sync_method_returning_awaitable():
     import flamepy.app as app
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         async def async_method(self):
             app.publish_attributes({b"async"})
-            return app.session_context().session_id
+            return app.session_context().session
 
         def returns_awaitable(self):
             async def resolve():
                 app.publish_attributes({b"awaitable"})
-                return app.session_context().session_id
+                return app.session_context().session
 
             return resolve()
 
     service = FlameRunpyService()
     service._load_app_context = lambda context: _context(ServiceContext(Worker, constructor_args=()))
-    await service.on_session_enter(SessionContext(None, "session", ApplicationContext("app")))
+    await service.on_session_enter(SessionContext(None, "session", "default", "app"))
 
     for method, attribute in (("async_method", b"async"), ("returns_awaitable", b"awaitable")):
-        request = TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(method=method)))
+        request = TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(method=method)))
         output = await service.on_task_invoke(request)
         assert cloudpickle.loads(output) == ServiceResponse(ValueRef("session"))
         assert list(service._take_attributes().attr) == [attribute]
@@ -177,7 +177,7 @@ async def test_runpy_handles_async_method_and_sync_method_returning_awaitable():
 
 @pytest.mark.asyncio
 async def test_runpy_request_decode_does_not_block_event_loop():
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     started = threading.Event()
     release = threading.Event()
@@ -190,13 +190,13 @@ async def test_runpy_request_decode_does_not_block_event_loop():
 
     service = FlameRunpyService()
     service._load_app_context = lambda context: _context(ServiceContext(lambda: b"ok"))
-    await service.on_session_enter(SessionContext(None, "session", ApplicationContext("app")))
+    await service.on_session_enter(SessionContext(None, "session", "default", "app"))
 
     timer = threading.Timer(2, release.set)
     timer.start()
     try:
         with patch("flamepy.app.runpy.cloudpickle.loads", side_effect=slow_decode):
-            call = asyncio.create_task(service.on_task_invoke(TaskContext("task", "session", b"request")))
+            call = asyncio.create_task(service.on_task_invoke(TaskContext(str(1), "session", "default", "app", b"request")))
             assert await asyncio.to_thread(started.wait, 3)
             assert not release.is_set(), "request decoding blocked the event loop"
             release.set()
@@ -210,7 +210,7 @@ async def test_runpy_request_decode_does_not_block_event_loop():
 async def test_runpy_binds_recursive_service_to_current_session(monkeypatch):
     import flamepy.app as app
     from flamepy import FlameError
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     captured = {}
 
@@ -235,19 +235,19 @@ async def test_runpy_binds_recursive_service_to_current_session(monkeypatch):
 
     svc = FlameRunpyService()
     svc._load_app_context = lambda context: _context(ServiceContext(Worker, constructor_args=()))
-    session_context = SessionContext(None, "recursive-session", ApplicationContext("recursive-app"))
+    session_context = SessionContext(None, "recursive-session", "default", "recursive-app")
     await svc.on_session_enter(session_context)
 
     request = ServiceRequest(method="run")
     result_ref = SimpleNamespace(encode=lambda: b"result-ref")
     with patch("flamepy.core.aio.put_object", new=AsyncMock(return_value=result_ref)):
-        result = await svc.on_task_invoke(TaskContext("task", "recursive-session", cloudpickle.dumps(request)))
+        result = await svc.on_task_invoke(TaskContext(str(1), "recursive-session", "default", "recursive-app", cloudpickle.dumps(request)))
 
     assert cloudpickle.loads(result) == ServiceResponse(ValueRef("recursive-session"))
     assert captured["proxy"]._session_context is session_context
     assert "_session_context" not in captured["execution_object"].__dict__
     put_context.assert_not_called()
-    open_session.assert_called_once_with(session_id="recursive-session")
+    open_session.assert_called_once_with(name="recursive-session", workspace="default")
     with pytest.raises(RuntimeError, match="not running in a Flame invocation"):
         app.session_context()
 
@@ -265,7 +265,7 @@ async def test_runpy_binds_recursive_service_to_current_session(monkeypatch):
 async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch):
     import flamepy.app as app
     from flamepy import FlameError
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         def run(self):
@@ -283,11 +283,11 @@ async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch)
 
     svc = FlameRunpyService()
     svc._load_app_context = lambda context: _context(ServiceContext(Worker, constructor_args=()))
-    await svc.on_session_enter(SessionContext(None, "recursive-session", ApplicationContext("recursive-app")))
+    await svc.on_session_enter(SessionContext(None, "recursive-session", "default", "recursive-app"))
     request = ServiceRequest(method="run")
 
     with pytest.raises(RuntimeError, match="service failed"):
-        await svc.on_task_invoke(TaskContext("task", "recursive-session", cloudpickle.dumps(request)))
+        await svc.on_task_invoke(TaskContext(str(1), "recursive-session", "default", "recursive-app", cloudpickle.dumps(request)))
 
     with pytest.raises(RuntimeError, match="not running in a Flame invocation"):
         app.session_context()
@@ -301,13 +301,13 @@ async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch)
 @pytest.mark.asyncio
 async def test_app_runtime_helpers_are_invocation_scoped():
     import flamepy.app as app
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         def run(self):
             app.publish_attributes({b"initial"})
             app.publish_attributes({b"initial", b"next"})
-            return app.session_context().session_id
+            return app.session_context().session
 
         def invalid(self):
             app.publish_attributes({"invalid"})
@@ -319,17 +319,17 @@ async def test_app_runtime_helpers_are_invocation_scoped():
 
     svc = FlameRunpyService()
     svc._load_app_context = lambda context: _context(ServiceContext(Worker, constructor_args=()))
-    session = SessionContext(None, "session", ApplicationContext("app"))
+    session = SessionContext(None, "session", "default", "app")
     await svc.on_session_enter(session)
 
     result_ref = SimpleNamespace(encode=lambda: b"result-ref")
     with patch("flamepy.core.aio.put_object", new=AsyncMock(return_value=result_ref)):
-        result = await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(method="run"))))
+        result = await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(method="run"))))
     assert cloudpickle.loads(result) == ServiceResponse(ValueRef("session"))
     assert set(svc._take_attributes().attr) == {b"initial", b"next"}
 
     with pytest.raises(TypeError, match="must contain bytes"):
-        await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(method="invalid"))))
+        await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(method="invalid"))))
     assert list(svc._take_attributes().attr) == []
 
 
@@ -361,7 +361,7 @@ async def test_runpy_uses_constructor_args_to_distinguish_class_from_function():
 
 @pytest.mark.asyncio
 async def test_runpy_reuses_class_execution_object_between_sessions():
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         init_count = 0
@@ -369,10 +369,10 @@ async def test_runpy_reuses_class_execution_object_between_sessions():
         def __init__(self):
             type(self).init_count += 1
 
-        def session_id(self):
+        def session(self):
             import flamepy.app as app
 
-            return app.session_context().session_id
+            return app.session_context().session
 
         def fail(self):
             import flamepy.app as app
@@ -404,7 +404,7 @@ async def test_runpy_reuses_class_execution_object_between_sessions():
         ]
     )
     svc._load_app_context = lambda context: _context(next(contexts))
-    session = SessionContext(None, "session", ApplicationContext("app"))
+    session = SessionContext(None, "session", "default", "app")
 
     await svc.on_session_enter(session)
     assert Worker.init_count == 1
@@ -412,11 +412,11 @@ async def test_runpy_reuses_class_execution_object_between_sessions():
 
     request = ServiceRequest(method="fail")
     with pytest.raises(RuntimeError, match="failed"):
-        await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(request)))
+        await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(request)))
     assert set(svc._take_attributes().attr) == {b"failed"}
 
     with pytest.raises(ValueError, match="Task input is None"):
-        await svc.on_task_invoke(TaskContext("invalid-task", "session", None))
+        await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", None))
     assert list(svc._take_attributes().attr) == []
 
     original = svc._execution_object
@@ -425,7 +425,7 @@ async def test_runpy_reuses_class_execution_object_between_sessions():
     assert svc._app_context is None
     assert svc._execution_object is None
 
-    rebound = SessionContext(None, "rebound-session", ApplicationContext("app"))
+    rebound = SessionContext(None, "rebound-session", "default", "app")
     await svc.on_session_enter(rebound)
     assert svc._execution_object is original
     assert Worker.init_count == 1
@@ -435,14 +435,16 @@ async def test_runpy_reuses_class_execution_object_between_sessions():
     with patch("flamepy.core.aio.put_object", new=AsyncMock(return_value=result_ref)):
         await svc.on_task_invoke(
             TaskContext(
-                "task",
+                str(1),
                 "rebound-session",
-                cloudpickle.dumps(ServiceRequest(method="session_id")),
+                "default",
+                "app",
+                cloudpickle.dumps(ServiceRequest(method="session")),
             )
         )
 
     previous = svc._execution_object
-    other = SessionContext(None, "other-session", ApplicationContext("app"))
+    other = SessionContext(None, "other-session", "default", "app")
     await svc.on_session_leave()
     await svc.on_session_enter(other)
     assert svc._execution_object is not previous

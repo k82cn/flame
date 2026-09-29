@@ -12,7 +12,8 @@ limitations under the License.
 */
 
 use super::{
-    ApplicationID, ApplicationState, ExecutorID, ExecutorState, SessionID, SessionState, TaskState,
+    ApplicationPath, ApplicationState, ExecutorID, ExecutorState, SessionPath, SessionState,
+    TaskState,
 };
 use crate::FlameError;
 use rpc::flame::v1 as rpc;
@@ -33,14 +34,14 @@ impl SessionPredicate {
 /// Filter for tasks owned by one session.
 pub struct TaskFilter {
     /// Owning session.
-    pub session: SessionID,
+    pub session: SessionPath,
     /// Task states to include. `None` matches every state.
     pub states: Option<Vec<TaskState>>,
 }
 
 impl TaskFilter {
     /// Creates a filter for every task in a session.
-    pub fn by_session(session: impl Into<SessionID>) -> Self {
+    pub fn by_session(session: impl Into<SessionPath>) -> Self {
         Self {
             session: session.into(),
             states: None,
@@ -49,7 +50,7 @@ impl TaskFilter {
 
     /// Creates a filter for tasks in any of the provided states.
     pub fn by_session_states(
-        session: impl Into<SessionID>,
+        session: impl Into<SessionPath>,
         states: impl Into<Vec<TaskState>>,
     ) -> Self {
         Self {
@@ -59,7 +60,7 @@ impl TaskFilter {
     }
 
     /// Creates a filter for non-terminal tasks in a session.
-    pub fn non_terminal(session: impl Into<SessionID>) -> Self {
+    pub fn non_terminal(session: impl Into<SessionPath>) -> Self {
         Self::by_session_states(session, vec![TaskState::Pending, TaskState::Running])
     }
 }
@@ -70,11 +71,11 @@ impl TaskFilter {
 /// - `Some(value)` = match exactly (empty vec matches nothing)
 pub struct SessionFilter {
     /// Filter by owning application
-    pub application: Option<ApplicationID>,
+    pub application: Option<ApplicationPath>,
     /// Filter by session state
     pub state: Option<SessionState>,
     /// Filter by session IDs
-    pub ids: Option<Vec<SessionID>>,
+    pub ids: Option<Vec<SessionPath>>,
     /// Additional in-memory predicate filter.
     pub predicate: Option<SessionPredicate>,
     /// Maximum number of matching sessions to return.
@@ -105,7 +106,7 @@ impl SessionFilter {
     }
 
     /// Creates a filter for specific session IDs.
-    pub fn by_ids(ids: Vec<SessionID>) -> Self {
+    pub fn by_ids(ids: Vec<SessionPath>) -> Self {
         Self {
             application: None,
             state: None,
@@ -116,7 +117,7 @@ impl SessionFilter {
     }
 
     /// Creates a filter for an application's sessions.
-    pub fn by_application(application: impl Into<ApplicationID>) -> Self {
+    pub fn by_application(application: impl Into<ApplicationPath>) -> Self {
         Self {
             application: Some(application.into()),
             state: None,
@@ -128,7 +129,7 @@ impl SessionFilter {
 
     /// Creates a filter for an application's sessions in a specific state.
     pub fn by_application_state(
-        application: impl Into<ApplicationID>,
+        application: impl Into<ApplicationPath>,
         state: SessionState,
     ) -> Self {
         Self {
@@ -188,6 +189,8 @@ pub struct ExecutorFilter {
     pub ids: Option<Vec<ExecutorID>>,
     /// Filter by node name
     pub node: Option<String>,
+    /// Filter by parent application IDs
+    pub applications: Option<Vec<ApplicationPath>>,
 }
 
 impl ExecutorFilter {
@@ -197,6 +200,7 @@ impl ExecutorFilter {
             state: None,
             ids: None,
             node: None,
+            applications: None,
         }
     }
 
@@ -206,6 +210,7 @@ impl ExecutorFilter {
             state: Some(state),
             ids: None,
             node: None,
+            applications: None,
         }
     }
 
@@ -215,6 +220,7 @@ impl ExecutorFilter {
             state: None,
             ids: None,
             node: Some(node.into()),
+            applications: None,
         }
     }
 
@@ -224,6 +230,16 @@ impl ExecutorFilter {
             state: None,
             ids: Some(ids),
             node: None,
+            applications: None,
+        }
+    }
+
+    pub fn by_applications(applications: Vec<ApplicationPath>) -> Self {
+        Self {
+            state: None,
+            ids: None,
+            node: None,
+            applications: Some(applications),
         }
     }
 }

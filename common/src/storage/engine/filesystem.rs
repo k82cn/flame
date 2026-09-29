@@ -21,7 +21,7 @@ limitations under the License.
 //!
 //! ```text
 //! <work_dir>/data/
-//! ├── sessions/<session_id>/
+//! ├── sessions/<session>/
 //! │   ├── metadata          # Session metadata (JSON)
 //! │   ├── tasks.bin         # TaskMetadata records (fixed-size, indexed by Task ID)
 //! │   ├── inputs.bin        # Concatenated input data (append-only)
@@ -50,10 +50,10 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::apis::{
-    Application, ApplicationAttributes, ApplicationID, ApplicationSchema, ApplicationState,
+    Application, ApplicationAttributes, ApplicationPath, ApplicationSchema, ApplicationState,
     ExecutorID, ExecutorState, Node, NodeInfo, NodeState, ResourceRequirement, Session,
-    SessionAttributes, SessionID, SessionState, SessionStatus, Shim, Task, TaskGID, TaskID,
-    TaskInput, TaskOptions, TaskResult, TaskState,
+    SessionAttributes, SessionPath, SessionState, SessionStatus, Shim, Task, TaskGID, TaskInput,
+    TaskName, TaskOptions, TaskOutput, TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
 };
 use crate::{FlameError, FLAME_HOME};
 
@@ -66,8 +66,9 @@ use crate::storage::engine::{Engine, EnginePtr};
 /// The checksum is calculated using `crc32fast` for data integrity.
 #[derive(Encode, Decode, Debug, Clone, Default)]
 struct TaskMetadata {
-    /// Task ID (index in file)
-    pub id: u64,
+    /// Persistent UUID and task number (index in file).
+    pub id: [u8; 16],
+    pub number: u64,
     /// Optimistic locking version
     pub version: u32,
     /// CRC32 checksum of the record (excluding this field)
@@ -93,9 +94,11 @@ struct TaskMetadata {
 }
 
 /// Session metadata stored as JSON.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct SessionMetadata {
     pub id: String,
+    pub gid: String,
+    pub name: String,
     pub application: String,
     pub version: u32,
     pub state: i32,
@@ -121,8 +124,10 @@ fn default_batch_size() -> u32 {
 }
 
 /// Application metadata stored as JSON.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct ApplicationMetadata {
+    pub id: String,
+    pub gid: String,
     pub name: String,
     pub version: u32,
     pub state: i32,
@@ -142,6 +147,16 @@ struct ApplicationMetadata {
     pub url: Option<String>,
     #[serde(default)]
     pub installer: Option<String>,
+}
+
+impl std::fmt::Debug for ApplicationMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApplicationMetadata")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -179,8 +194,8 @@ struct ExecutorMetadata {
     #[serde(default)]
     pub resreq_gpu: i32,
     pub shim: i32,
-    pub task_id: Option<i64>,
-    pub ssn_id: Option<String>,
+    pub task: Option<i64>,
+    pub session: Option<String>,
     pub creation_time: i64,
     pub state: i32,
 }
@@ -204,7 +219,8 @@ fn task_record_size() -> usize {
 /// Calculate CRC32 checksum for task metadata (excluding the checksum field itself).
 fn calculate_checksum(meta: &TaskMetadata) -> u32 {
     let mut hasher = crc32fast::Hasher::new();
-    hasher.update(&meta.id.to_le_bytes());
+    hasher.update(&meta.id);
+    hasher.update(&meta.number.to_le_bytes());
     hasher.update(&meta.version.to_le_bytes());
     hasher.update(&[meta.state]);
     hasher.update(&meta.creation_time.to_le_bytes());
@@ -225,14 +241,14 @@ pub struct FilesystemEngine {
 }
 
 macro_rules! lock_ssn {
-    ($self:expr, $ssn_id:expr) => {
+    ($self:expr, $session:expr) => {
         let __fs_local_ssn_lock = {
             let locks = $self
                 .ssn_locks
                 .read()
                 .map_err(|e| FlameError::Storage(format!("Session lock poisoned: {}", e)))?;
-            locks.get($ssn_id).cloned().ok_or_else(|| {
-                FlameError::NotFound(format!("Session lock not found: {}", $ssn_id))
+            locks.get($session).cloned().ok_or_else(|| {
+                FlameError::NotFound(format!("Session lock not found: {}", $session))
             })?
         };
         let __fs_local_ssn_guard = __fs_local_ssn_lock
@@ -296,6 +312,7 @@ impl FilesystemEngine {
         let sessions_path = path.join("sessions");
         let applications_path = path.join("applications");
         let nodes_path = path.join("nodes");
+        let workspaces_path = path.join("workspaces");
 
         fs::create_dir_all(&sessions_path).map_err(|e| {
             FlameError::Storage(format!("Failed to create sessions directory: {e}"))
@@ -305,6 +322,8 @@ impl FilesystemEngine {
         })?;
         fs::create_dir_all(&nodes_path)
             .map_err(|e| FlameError::Storage(format!("Failed to create nodes directory: {e}")))?;
+        fs::create_dir_all(workspaces_path.join(DEFAULT_WORKSPACE))
+            .map_err(|e| FlameError::Storage(format!("Failed to create default workspace: {e}")))?;
 
         let record_size = task_record_size();
         tracing::info!(
@@ -313,13 +332,20 @@ impl FilesystemEngine {
             record_size
         );
 
-        Ok(Arc::new(FilesystemEngine {
+        let engine = FilesystemEngine {
             base_path: path,
             record_size,
             ssn_locks: RwLock::new(HashMap::new()),
             node_locks: RwLock::new(HashMap::new()),
             executor_locks: RwLock::new(HashMap::new()),
-        }))
+        };
+        {
+            let mut locks = lock_app!(engine)?;
+            for (session, _) in engine._list_sessions_metadata(None)? {
+                locks.insert(session, Arc::new(Mutex::new(())));
+            }
+        }
+        Ok(Arc::new(engine))
     }
 
     /// Parse the storage URL to extract the base path.
@@ -345,12 +371,14 @@ impl FilesystemEngine {
         }
     }
 
-    fn session_path(&self, session_id: &str) -> PathBuf {
-        self.base_path.join("sessions").join(session_id)
+    fn session_path(&self, session: &str) -> Result<PathBuf, FlameError> {
+        crate::apis::parse_session_path(session)?;
+        Ok(self.base_path.join("sessions").join(session))
     }
 
-    fn application_path(&self, app_name: &str) -> PathBuf {
-        self.base_path.join("applications").join(app_name)
+    fn application_path(&self, app_id: &str) -> Result<PathBuf, FlameError> {
+        crate::apis::parse_application_path(app_id)?;
+        Ok(self.base_path.join("applications").join(app_id))
     }
 
     fn node_path(&self, node_name: &str) -> PathBuf {
@@ -364,14 +392,14 @@ impl FilesystemEngine {
     }
 
     /// Read session metadata from disk.
-    fn read_session_metadata(&self, session_id: &str) -> Result<SessionMetadata, FlameError> {
-        let path = self.session_path(session_id).join("metadata");
+    fn read_session_metadata(&self, session: &str) -> Result<SessionMetadata, FlameError> {
+        let path = self.session_path(session)?.join("metadata");
         let content = fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                FlameError::NotFound(format!("Session {session_id} not found: {e}"))
+                FlameError::NotFound(format!("Session {session} not found: {e}"))
             } else {
                 FlameError::Storage(format!(
-                    "Failed to read session metadata for {session_id}: {e}"
+                    "Failed to read session metadata for {session}: {e}"
                 ))
             }
         })?;
@@ -382,7 +410,7 @@ impl FilesystemEngine {
     fn _list_sessions_metadata(
         &self,
         filter: Option<&SessionFilter>,
-    ) -> Result<Vec<(SessionID, SessionMetadata)>, FlameError> {
+    ) -> Result<Vec<(SessionPath, SessionMetadata)>, FlameError> {
         if filter.and_then(|filter| filter.limit) == Some(0) {
             return Ok(Vec::new());
         }
@@ -398,32 +426,40 @@ impl FilesystemEngine {
         };
 
         let mut sessions = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|error| {
-                FlameError::Storage(format!("Failed to read a session directory entry: {error}"))
-            })?;
-            let session_id = entry.file_name().to_string_lossy().to_string();
-            let metadata = self.read_session_metadata(&session_id)?;
-            let matches = filter.is_none_or(|filter| {
-                filter
-                    .application
-                    .as_ref()
-                    .is_none_or(|application| metadata.application == *application)
-                    && filter
-                        .state
-                        .is_none_or(|state| metadata.state == state as i32)
-                    && filter
-                        .ids
+        'workspaces: for workspace_entry in entries {
+            let workspace_entry = workspace_entry?;
+            if !workspace_entry.file_type()?.is_dir() {
+                continue;
+            }
+            for entry in fs::read_dir(workspace_entry.path())? {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let session = format!(
+                    "{}/{}",
+                    workspace_entry.file_name().to_string_lossy(),
+                    entry.file_name().to_string_lossy()
+                );
+                let metadata = self.read_session_metadata(&session)?;
+                let matches = filter.is_none_or(|filter| {
+                    filter
+                        .application
                         .as_ref()
-                        .is_none_or(|ids| ids.contains(&session_id))
-            });
-            if matches {
-                sessions.push((session_id, metadata));
-                if filter
-                    .and_then(|filter| filter.limit)
-                    .is_some_and(|limit| sessions.len() >= limit)
-                {
-                    break;
+                        .is_none_or(|application| metadata.application == *application)
+                        && filter
+                            .state
+                            .is_none_or(|state| metadata.state == state as i32)
+                        && filter.ids.as_ref().is_none_or(|ids| ids.contains(&session))
+                });
+                if matches {
+                    sessions.push((session, metadata));
+                    if filter
+                        .and_then(|filter| filter.limit)
+                        .is_some_and(|limit| sessions.len() >= limit)
+                    {
+                        break 'workspaces;
+                    }
                 }
             }
         }
@@ -433,10 +469,10 @@ impl FilesystemEngine {
     /// Write session metadata to disk atomically.
     fn write_session_metadata(
         &self,
-        session_id: &str,
+        session: &str,
         meta: &SessionMetadata,
     ) -> Result<(), FlameError> {
-        let session_dir = self.session_path(session_id);
+        let session_dir = self.session_path(session)?;
         let path = session_dir.join("metadata");
         let tmp_path = session_dir.join("metadata.tmp");
 
@@ -457,7 +493,7 @@ impl FilesystemEngine {
 
     /// Read application metadata from disk.
     fn read_application_metadata(&self, app_name: &str) -> Result<ApplicationMetadata, FlameError> {
-        let path = self.application_path(app_name).join("metadata");
+        let path = self.application_path(app_name)?.join("metadata");
         let content = fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 FlameError::NotFound(format!("Application {app_name} not found: {e}"))
@@ -477,7 +513,7 @@ impl FilesystemEngine {
         app_name: &str,
         meta: &ApplicationMetadata,
     ) -> Result<(), FlameError> {
-        let app_dir = self.application_path(app_name);
+        let app_dir = self.application_path(app_name)?;
         fs::create_dir_all(&app_dir).map_err(|e| {
             FlameError::Storage(format!("Failed to create application directory: {e}"))
         })?;
@@ -600,29 +636,29 @@ impl FilesystemEngine {
     /// Read task metadata from tasks.bin.
     fn read_task_metadata(
         &self,
-        session_id: &str,
-        task_id: TaskID,
+        session: &str,
+        task: TaskName,
     ) -> Result<TaskMetadata, FlameError> {
-        if task_id < 1 {
+        if task < 1 {
             return Err(FlameError::NotFound(format!(
-                "Invalid task ID: {task_id} (must be >= 1)"
+                "Invalid task ID: {task} (must be >= 1)"
             )));
         }
 
-        let path = self.session_path(session_id).join("tasks.bin");
+        let path = self.session_path(session)?.join("tasks.bin");
 
         let mut file = std::fs::OpenOptions::new()
             .read(true)
             .open(&path)
             .map_err(|e| FlameError::NotFound(format!("Tasks file not found: {e}")))?;
 
-        let offset = (task_id as u64 - 1) * self.record_size as u64;
+        let offset = (task as u64 - 1) * self.record_size as u64;
         file.seek(SeekFrom::Start(offset))
-            .map_err(|e| FlameError::Storage(format!("Failed to seek to task {task_id}: {e}")))?;
+            .map_err(|e| FlameError::Storage(format!("Failed to seek to task {task}: {e}")))?;
 
         let mut buffer = vec![0u8; self.record_size];
         file.read_exact(&mut buffer)
-            .map_err(|e| FlameError::NotFound(format!("Task {task_id} not found: {e}")))?;
+            .map_err(|e| FlameError::NotFound(format!("Task {task} not found: {e}")))?;
 
         let (meta, _): (TaskMetadata, _) = bincode::decode_from_slice(&buffer, bincode_config())
             .map_err(|e| {
@@ -633,7 +669,7 @@ impl FilesystemEngine {
         let expected_checksum = calculate_checksum(&meta);
         if meta.checksum != expected_checksum {
             return Err(FlameError::Storage(format!(
-                "Task {task_id} checksum mismatch: expected {expected_checksum}, got {}",
+                "Task {task} checksum mismatch: expected {expected_checksum}, got {}",
                 meta.checksum
             )));
         }
@@ -642,8 +678,8 @@ impl FilesystemEngine {
     }
 
     /// Write task metadata to tasks.bin at the specified offset.
-    fn write_task_metadata(&self, session_id: &str, meta: &TaskMetadata) -> Result<(), FlameError> {
-        let path = self.session_path(session_id).join("tasks.bin");
+    fn write_task_metadata(&self, session: &str, meta: &TaskMetadata) -> Result<(), FlameError> {
+        let path = self.session_path(session)?.join("tasks.bin");
 
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -652,9 +688,10 @@ impl FilesystemEngine {
             .open(&path)
             .map_err(|e| FlameError::Storage(format!("Failed to open tasks file: {e}")))?;
 
-        let offset = (meta.id - 1) * self.record_size as u64;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|e| FlameError::Storage(format!("Failed to seek to task {}: {e}", meta.id)))?;
+        let offset = (meta.number - 1) * self.record_size as u64;
+        file.seek(SeekFrom::Start(offset)).map_err(|e| {
+            FlameError::Storage(format!("Failed to seek to task {}: {e}", meta.number))
+        })?;
 
         let buffer = bincode::encode_to_vec(meta, bincode_config())
             .map_err(|e| FlameError::Storage(format!("Failed to serialize task metadata: {e}")))?;
@@ -669,13 +706,8 @@ impl FilesystemEngine {
     }
 
     /// Append data to a file and return the offset where it was written.
-    fn append_data(
-        &self,
-        session_id: &str,
-        filename: &str,
-        data: &[u8],
-    ) -> Result<u64, FlameError> {
-        let path = self.session_path(session_id).join(filename);
+    fn append_data(&self, session: &str, filename: &str, data: &[u8]) -> Result<u64, FlameError> {
+        let path = self.session_path(session)?.join(filename);
 
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -700,7 +732,7 @@ impl FilesystemEngine {
     /// Read data from a file at the specified offset and length.
     fn read_data(
         &self,
-        session_id: &str,
+        session: &str,
         filename: &str,
         offset: u64,
         len: u64,
@@ -709,7 +741,7 @@ impl FilesystemEngine {
             return Ok(Vec::new());
         }
 
-        let path = self.session_path(session_id).join(filename);
+        let path = self.session_path(session)?.join(filename);
 
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -728,7 +760,7 @@ impl FilesystemEngine {
 
     /// Count tasks matching the filter.
     fn _count_task(&self, filter: &TaskFilter) -> Result<u64, FlameError> {
-        let path = self.session_path(&filter.session).join("tasks.bin");
+        let path = self.session_path(&filter.session)?.join("tasks.bin");
 
         let task_count = match fs::metadata(&path) {
             Ok(metadata) => metadata.len() / self.record_size as u64,
@@ -739,8 +771,8 @@ impl FilesystemEngine {
         };
 
         let mut count = 0;
-        for task_id in 1..=task_count {
-            let metadata = self.read_task_metadata(&filter.session, task_id as TaskID)?;
+        for task in 1..=task_count {
+            let metadata = self.read_task_metadata(&filter.session, task as TaskName)?;
             let state = TaskState::try_from(metadata.state as i32)?;
             if states.contains(&state) {
                 count += 1;
@@ -750,12 +782,12 @@ impl FilesystemEngine {
     }
 
     /// Read common data for a session.
-    fn read_common_data(&self, session_id: &str, len: u64) -> Result<Option<Bytes>, FlameError> {
+    fn read_common_data(&self, session: &str, len: u64) -> Result<Option<Bytes>, FlameError> {
         if len == 0 {
             return Ok(None);
         }
 
-        let path = self.session_path(session_id).join("common_data.bin");
+        let path = self.session_path(session)?.join("common_data.bin");
         match fs::read(&path) {
             Ok(data) => Ok(Some(Bytes::from(data))),
             Err(_) => Ok(None),
@@ -763,34 +795,25 @@ impl FilesystemEngine {
     }
 
     /// Write common data for a session.
-    fn write_common_data(&self, session_id: &str, data: &[u8]) -> Result<(), FlameError> {
-        let path = self.session_path(session_id).join("common_data.bin");
+    fn write_common_data(&self, session: &str, data: &[u8]) -> Result<(), FlameError> {
+        let path = self.session_path(session)?.join("common_data.bin");
         fs::write(&path, data)
             .map_err(|e| FlameError::Storage(format!("Failed to write common data: {e}")))?;
         Ok(())
     }
 
     /// Convert TaskMetadata to Task.
-    fn task_from_metadata(
-        &self,
-        session_id: &str,
-        meta: &TaskMetadata,
-    ) -> Result<Task, FlameError> {
+    fn task_from_metadata(&self, session: &str, meta: &TaskMetadata) -> Result<Task, FlameError> {
         let input = if meta.input_len > 0 {
-            let data =
-                self.read_data(session_id, "inputs.bin", meta.input_offset, meta.input_len)?;
+            let data = self.read_data(session, "inputs.bin", meta.input_offset, meta.input_len)?;
             Some(Bytes::from(data))
         } else {
             None
         };
 
         let output = if meta.output_len > 0 {
-            let data = self.read_data(
-                session_id,
-                "outputs.bin",
-                meta.output_offset,
-                meta.output_len,
-            )?;
+            let data =
+                self.read_data(session, "outputs.bin", meta.output_offset, meta.output_len)?;
             Some(Bytes::from(data))
         } else {
             None
@@ -798,7 +821,7 @@ impl FilesystemEngine {
 
         let affinity: std::collections::HashSet<Bytes> = if meta.affinity_len > 0 {
             let data = self.read_data(
-                session_id,
+                session,
                 "affinity.bin",
                 meta.affinity_offset,
                 meta.affinity_len,
@@ -818,8 +841,9 @@ impl FilesystemEngine {
         };
 
         Ok(Task {
-            id: meta.id as TaskID,
-            ssn_id: session_id.to_string(),
+            id: uuid::Uuid::from_bytes(meta.id).to_string(),
+            number: meta.number as TaskName,
+            session: session.to_string(),
             version: meta.version,
             input,
             output,
@@ -835,7 +859,7 @@ impl FilesystemEngine {
     /// Convert SessionMetadata to Session.
     fn session_from_metadata(&self, meta: &SessionMetadata) -> Result<Session, FlameError> {
         let state = SessionState::try_from(meta.state)?;
-        let common_data = self.read_common_data(&meta.id, meta.common_data_len)?;
+        let common_data = self.read_common_data(&meta.gid, meta.common_data_len)?;
         let completion_time = meta
             .completion_time
             .and_then(|t| DateTime::from_timestamp(t, 0));
@@ -847,6 +871,8 @@ impl FilesystemEngine {
 
         Ok(Session {
             id: meta.id.clone(),
+            gid: meta.gid.clone(),
+            name: meta.name.clone(),
             application: meta.application.clone(),
             version: meta.version,
             common_data,
@@ -876,6 +902,8 @@ impl FilesystemEngine {
         });
 
         Ok(Application {
+            id: meta.id.clone(),
+            gid: meta.gid.clone(),
             name: meta.name.clone(),
             version: meta.version,
             state,
@@ -899,11 +927,11 @@ impl FilesystemEngine {
 
     fn _update_task_state(
         &self,
-        ssn_id: &SessionID,
-        task_id: &TaskID,
+        session: &SessionPath,
+        task: &TaskName,
         task_state: TaskState,
     ) -> Result<Task, FlameError> {
-        let mut meta = self.read_task_metadata(ssn_id, *task_id)?;
+        let mut meta = self.read_task_metadata(session, *task)?;
 
         meta.state = task_state as u8;
         meta.version += 1;
@@ -914,23 +942,61 @@ impl FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(ssn_id, &meta)?;
-        self.task_from_metadata(ssn_id, &meta)
+        self.write_task_metadata(session, &meta)?;
+        self.task_from_metadata(session, &meta)
     }
 }
 
 #[async_trait]
 impl Engine for FilesystemEngine {
+    async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
+        crate::apis::validate_path_segment(&name)?;
+        let path = self.base_path.join("workspaces").join(&name);
+        fs::create_dir(&path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                FlameError::AlreadyExist(format!("workspace <{name}>"))
+            } else {
+                FlameError::Storage(error.to_string())
+            }
+        })?;
+        Ok(Workspace {
+            name,
+            creation_time: Utc::now(),
+        })
+    }
+
+    async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError> {
+        let mut workspaces = Vec::new();
+        for entry in fs::read_dir(self.base_path.join("workspaces"))? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            crate::apis::validate_path_segment(&name)?;
+            let creation_time: DateTime<Utc> = entry.metadata()?.created()?.into();
+            workspaces.push(Workspace {
+                name,
+                creation_time,
+            });
+        }
+        workspaces.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(workspaces)
+    }
+
     async fn register_application(
         &self,
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError> {
-        if self.read_application_metadata(&name).is_ok() {
-            return Err(FlameError::AlreadyExist(format!(
-                "Application '{}' already exists",
-                name
-            )));
+        let _guard = lock_app!(self)?;
+        let id = crate::apis::resolve_application_path(&name, &attr.id)?;
+        let (workspace, _) = crate::apis::parse_application_path(&id)?;
+        if !self.base_path.join("workspaces").join(workspace).is_dir() {
+            return Err(FlameError::NotFound(format!("workspace <{workspace}>")));
+        }
+        if self.read_application_metadata(&id).is_ok() {
+            return Err(FlameError::AlreadyExist(format!("application <{id}>")));
         }
 
         let schema = attr.schema.map(|s| ApplicationSchemaMetadata {
@@ -940,7 +1006,9 @@ impl Engine for FilesystemEngine {
         });
 
         let meta = ApplicationMetadata {
-            name: name.clone(),
+            id: uuid::Uuid::new_v4().to_string(),
+            gid: id.clone(),
+            name,
             version: 1,
             state: ApplicationState::Enabled as i32,
             creation_time: Utc::now().timestamp(),
@@ -959,13 +1027,13 @@ impl Engine for FilesystemEngine {
             installer: attr.installer,
         };
 
-        self.write_application_metadata(&name, &meta)?;
+        self.write_application_metadata(&id, &meta)?;
         Self::application_from_metadata(&meta)
     }
 
     async fn update_application_state(
         &self,
-        name: ApplicationID,
+        name: ApplicationPath,
         state: ApplicationState,
     ) -> Result<Application, FlameError> {
         let _guard = lock_app!(self)?;
@@ -980,7 +1048,7 @@ impl Engine for FilesystemEngine {
         Self::application_from_metadata(&meta)
     }
 
-    async fn delete_application(&self, name: ApplicationID) -> Result<(), FlameError> {
+    async fn delete_application(&self, name: ApplicationPath) -> Result<(), FlameError> {
         let _guard = lock_app!(self)?;
         let app = self.read_application_metadata(&name)?;
         if app.state != ApplicationState::Disabled as i32 {
@@ -1000,7 +1068,7 @@ impl Engine for FilesystemEngine {
             )));
         }
 
-        let app_dir = self.application_path(&name);
+        let app_dir = self.application_path(&name)?;
         fs::remove_dir_all(&app_dir).map_err(|e| {
             FlameError::Storage(format!("Failed to delete application '{}': {e}", name))
         })?;
@@ -1059,7 +1127,7 @@ impl Engine for FilesystemEngine {
         Self::application_from_metadata(&meta)
     }
 
-    async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError> {
+    async fn get_application(&self, id: ApplicationPath) -> Result<Application, FlameError> {
         let meta = self.read_application_metadata(&id)?;
         Self::application_from_metadata(&meta)
     }
@@ -1072,15 +1140,27 @@ impl Engine for FilesystemEngine {
         let apps_dir = self.base_path.join("applications");
 
         if let Ok(entries) = fs::read_dir(&apps_dir) {
-            for entry in entries.flatten() {
-                let app_name = entry.file_name().to_string_lossy().to_string();
-                if let Ok(meta) = self.read_application_metadata(&app_name) {
-                    if let Ok(app) = Self::application_from_metadata(&meta) {
-                        let matches = filter.is_none_or(|filter| {
-                            filter.state.is_none_or(|state| app.state == state)
-                        });
-                        if matches {
-                            apps.push(app);
+            for workspace_entry in entries.flatten() {
+                if !workspace_entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    continue;
+                }
+                for entry in fs::read_dir(workspace_entry.path())?.flatten() {
+                    if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                        continue;
+                    }
+                    let app_name = format!(
+                        "{}/{}",
+                        workspace_entry.file_name().to_string_lossy(),
+                        entry.file_name().to_string_lossy()
+                    );
+                    if let Ok(meta) = self.read_application_metadata(&app_name) {
+                        if let Ok(app) = Self::application_from_metadata(&meta) {
+                            let matches = filter.is_none_or(|filter| {
+                                filter.state.is_none_or(|state| app.state == state)
+                            });
+                            if matches {
+                                apps.push(app);
+                            }
                         }
                     }
                 }
@@ -1091,32 +1171,36 @@ impl Engine for FilesystemEngine {
     }
 
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
-        if self.read_session_metadata(&attr.id).is_ok() {
+        let gid = attr.gid()?;
+        let application = attr.application_gid()?;
+        if self.read_session_metadata(&gid).is_ok() {
             return Err(FlameError::AlreadyExist(format!(
                 "Session '{}' already exists",
-                attr.id
+                gid
             )));
         }
 
         {
             let mut locks = lock_app!(self)?;
-            locks.insert(attr.id.clone(), Arc::new(Mutex::new(())));
+            locks.insert(gid.clone(), Arc::new(Mutex::new(())));
         }
 
-        let session_dir = self.session_path(&attr.id);
+        let session_dir = self.session_path(&gid)?;
         fs::create_dir_all(&session_dir)
             .map_err(|e| FlameError::Storage(format!("Failed to create session directory: {e}")))?;
 
         let common_data_len = if let Some(ref data) = attr.common_data {
-            self.write_common_data(&attr.id, data)?;
+            self.write_common_data(&gid, data)?;
             data.len() as u64
         } else {
             0
         };
 
         let meta = SessionMetadata {
-            id: attr.id.clone(),
-            application: attr.application.clone(),
+            id: uuid::Uuid::new_v4().to_string(),
+            gid: gid.clone(),
+            name: attr.name.clone(),
+            application,
             version: 1,
             state: SessionState::Open as i32,
             creation_time: Utc::now().timestamp(),
@@ -1131,7 +1215,7 @@ impl Engine for FilesystemEngine {
             resreq_gpu: attr.resreq.as_ref().map(|r| r.gpu),
         };
 
-        self.write_session_metadata(&attr.id, &meta)?;
+        self.write_session_metadata(&gid, &meta)?;
 
         let tasks_path = session_dir.join("tasks.bin");
         let inputs_path = session_dir.join("inputs.bin");
@@ -1147,14 +1231,14 @@ impl Engine for FilesystemEngine {
         self.session_from_metadata(&meta)
     }
 
-    async fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    async fn get_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         let meta = self.read_session_metadata(&id)?;
         self.session_from_metadata(&meta)
     }
 
     async fn open_session(
         &self,
-        id: SessionID,
+        id: SessionPath,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         // Try to get existing session
@@ -1189,7 +1273,7 @@ impl Engine for FilesystemEngine {
         }
     }
 
-    async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    async fn close_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         lock_ssn!(self, &id);
 
         let mut meta = self.read_session_metadata(&id)?;
@@ -1198,15 +1282,15 @@ impl Engine for FilesystemEngine {
         let mut pending_tasks = Vec::new();
 
         // First pass: check for running tasks and collect pending tasks
-        for task_id in 1..=task_count {
-            if let Ok(task_meta) = self.read_task_metadata(&id, task_id as TaskID) {
+        for task in 1..=task_count {
+            if let Ok(task_meta) = self.read_task_metadata(&id, task as TaskName) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!(
                             "Task {}/{} has corrupted state ({}): {}, treating as incomplete",
                             id,
-                            task_id,
+                            task,
                             task_meta.state,
                             e
                         );
@@ -1221,14 +1305,14 @@ impl Engine for FilesystemEngine {
                     ));
                 }
                 if state == TaskState::Pending {
-                    pending_tasks.push(task_id as TaskID);
+                    pending_tasks.push(task as TaskName);
                 }
             }
         }
 
         // Second pass: cancel pending tasks
-        for task_id in pending_tasks {
-            self._update_task_state(&id, &task_id, TaskState::Cancelled)?;
+        for task in pending_tasks {
+            self._update_task_state(&id, &task, TaskState::Cancelled)?;
         }
 
         meta.state = SessionState::Closed as i32;
@@ -1239,7 +1323,7 @@ impl Engine for FilesystemEngine {
         self.session_from_metadata(&meta)
     }
 
-    async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    async fn delete_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         let meta = self.read_session_metadata(&id)?;
 
         if meta.state != SessionState::Closed as i32 {
@@ -1256,7 +1340,7 @@ impl Engine for FilesystemEngine {
 
         let session = self.session_from_metadata(&meta)?;
 
-        let session_dir = self.session_path(&id);
+        let session_dir = self.session_path(&id)?;
         fs::remove_dir_all(&session_dir)
             .map_err(|e| FlameError::Storage(format!("Failed to delete session: {e}")))?;
 
@@ -1270,11 +1354,11 @@ impl Engine for FilesystemEngine {
 
     async fn find_sessions(&self) -> Result<Vec<Session>, FlameError> {
         let mut sessions = Vec::new();
-        for (session_id, metadata) in self._list_sessions_metadata(None)? {
+        for (session_path, metadata) in self._list_sessions_metadata(None)? {
             let session = self.session_from_metadata(&metadata)?;
             {
                 let mut locks = lock_app!(self)?;
-                locks.insert(session_id, Arc::new(Mutex::new(())));
+                locks.insert(session_path, Arc::new(Mutex::new(())));
             }
             sessions.push(session);
         }
@@ -1284,24 +1368,24 @@ impl Engine for FilesystemEngine {
 
     async fn create_task(
         &self,
-        ssn_id: SessionID,
+        session: SessionPath,
         input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
-        let ssn_meta = self.read_session_metadata(&ssn_id)?;
+        let ssn_meta = self.read_session_metadata(&session)?;
         if ssn_meta.state != SessionState::Open as i32 {
             return Err(FlameError::InvalidState(
                 "Cannot create task in closed session".to_string(),
             ));
         }
 
-        lock_ssn!(self, &ssn_id);
+        lock_ssn!(self, &session);
 
-        let task_count = self._count_task(&TaskFilter::by_session(&ssn_id))?;
-        let task_id = task_count + 1;
+        let task_count = self._count_task(&TaskFilter::by_session(&session))?;
+        let task = task_count + 1;
 
         let (input_offset, input_len) = if let Some(ref data) = input {
-            let offset = self.append_data(&ssn_id, "inputs.bin", data)?;
+            let offset = self.append_data(&session, "inputs.bin", data)?;
             (offset, data.len() as u64)
         } else {
             (0, 0)
@@ -1315,10 +1399,11 @@ impl Engine for FilesystemEngine {
             .collect::<Vec<_>>();
         let affinity_data = bincode::encode_to_vec(affinity_data, bincode_config())
             .map_err(|e| FlameError::Storage(e.to_string()))?;
-        let affinity_offset = self.append_data(&ssn_id, "affinity.bin", &affinity_data)?;
+        let affinity_offset = self.append_data(&session, "affinity.bin", &affinity_data)?;
 
         let mut meta = TaskMetadata {
-            id: task_id,
+            id: *uuid::Uuid::new_v4().as_bytes(),
+            number: task,
             version: 1,
             checksum: 0,
             state: TaskState::Pending as u8,
@@ -1334,28 +1419,30 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&ssn_id, &meta)?;
+        self.write_task_metadata(&session, &meta)?;
 
-        self.task_from_metadata(&ssn_id, &meta)
+        self.task_from_metadata(&session, &meta)
     }
 
     async fn get_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
-        lock_ssn!(self, &gid.ssn_id);
-        let meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
-        self.task_from_metadata(&gid.ssn_id, &meta)
+        let session = gid.session_path()?;
+        lock_ssn!(self, &session);
+        let meta = self.read_task_metadata(&session, gid.task)?;
+        self.task_from_metadata(&session, &meta)
     }
 
     async fn retry_task(&self, gid: TaskGID) -> Result<Task, FlameError> {
-        lock_ssn!(self, &gid.ssn_id);
+        let session = gid.session_path()?;
+        lock_ssn!(self, &session);
 
-        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
+        let mut meta = self.read_task_metadata(&session, gid.task)?;
 
         meta.state = TaskState::Pending as u8;
         meta.version += 1;
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid.ssn_id, &meta)?;
-        self.task_from_metadata(&gid.ssn_id, &meta)
+        self.write_task_metadata(&session, &meta)?;
+        self.task_from_metadata(&session, &meta)
     }
 
     async fn update_task_state(
@@ -1364,9 +1451,10 @@ impl Engine for FilesystemEngine {
         task_state: TaskState,
         _message: Option<String>,
     ) -> Result<Task, FlameError> {
-        lock_ssn!(self, &gid.ssn_id);
+        let session = gid.session_path()?;
+        lock_ssn!(self, &session);
 
-        self._update_task_state(&gid.ssn_id, &gid.task_id, task_state)
+        self._update_task_state(&session, &gid.task, task_state)
     }
 
     async fn update_task_result(
@@ -1374,12 +1462,13 @@ impl Engine for FilesystemEngine {
         gid: TaskGID,
         task_result: TaskResult,
     ) -> Result<Task, FlameError> {
-        lock_ssn!(self, &gid.ssn_id);
+        let session = gid.session_path()?;
+        lock_ssn!(self, &session);
 
-        let mut meta = self.read_task_metadata(&gid.ssn_id, gid.task_id)?;
+        let mut meta = self.read_task_metadata(&session, gid.task)?;
 
         if let Some(ref output) = task_result.output {
-            let offset = self.append_data(&gid.ssn_id, "outputs.bin", output)?;
+            let offset = self.append_data(&session, "outputs.bin", output)?;
             meta.output_offset = offset;
             meta.output_len = output.len() as u64;
         }
@@ -1393,19 +1482,19 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid.ssn_id, &meta)?;
-        self.task_from_metadata(&gid.ssn_id, &meta)
+        self.write_task_metadata(&session, &meta)?;
+        self.task_from_metadata(&session, &meta)
     }
 
-    async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
-        lock_ssn!(self, &ssn_id);
+    async fn find_tasks(&self, session: SessionPath) -> Result<Vec<Task>, FlameError> {
+        lock_ssn!(self, &session);
 
         let mut tasks = Vec::new();
-        let task_count = self._count_task(&TaskFilter::by_session(&ssn_id))?;
+        let task_count = self._count_task(&TaskFilter::by_session(&session))?;
 
-        for task_id in 1..=task_count {
-            if let Ok(meta) = self.read_task_metadata(&ssn_id, task_id as TaskID) {
-                if let Ok(task) = self.task_from_metadata(&ssn_id, &meta) {
+        for task in 1..=task_count {
+            if let Ok(meta) = self.read_task_metadata(&session, task as TaskName) {
+                if let Ok(task) = self.task_from_metadata(&session, &meta) {
                     tasks.push(task);
                 }
             }
@@ -1556,8 +1645,8 @@ impl Engine for FilesystemEngine {
             resreq_memory: executor.resreq.memory,
             resreq_gpu: executor.resreq.gpu,
             shim: i32::from(executor.shim),
-            task_id: executor.task_id,
-            ssn_id: executor.ssn_id.clone(),
+            task: executor.task,
+            session: executor.session.clone(),
             creation_time: executor.creation_time.timestamp(),
             state: i32::from(executor.state),
         };
@@ -1586,8 +1675,8 @@ impl Engine for FilesystemEngine {
                 },
                 shim: Shim::try_from(meta.shim).unwrap_or_default(),
                 application: meta.application,
-                task_id: meta.task_id.map(|t| t as TaskID),
-                ssn_id: meta.ssn_id,
+                task: meta.task.map(|t| t as TaskName),
+                session: meta.session,
                 attributes: Default::default(),
                 creation_time: DateTime::from_timestamp(meta.creation_time, 0).unwrap_or_default(),
                 latest_updated_timestamp: Utc::now(),
@@ -1609,8 +1698,8 @@ impl Engine for FilesystemEngine {
             resreq_memory: executor.resreq.memory,
             resreq_gpu: executor.resreq.gpu,
             shim: i32::from(executor.shim),
-            task_id: executor.task_id,
-            ssn_id: executor.ssn_id.clone(),
+            task: executor.task,
+            session: executor.session.clone(),
             creation_time: executor.creation_time.timestamp(),
             state: i32::from(executor.state),
         };
@@ -1641,8 +1730,8 @@ impl Engine for FilesystemEngine {
             },
             shim: Shim::try_from(meta.shim).unwrap_or_default(),
             application: meta.application,
-            task_id: meta.task_id.map(|t| t as TaskID),
-            ssn_id: meta.ssn_id,
+            task: meta.task.map(|t| t as TaskName),
+            session: meta.session,
             attributes: Default::default(),
             creation_time: DateTime::from_timestamp(meta.creation_time, 0).unwrap_or_default(),
             latest_updated_timestamp: Utc::now(),
@@ -1709,8 +1798,8 @@ impl Engine for FilesystemEngine {
                             },
                             shim: Shim::try_from(meta.shim).unwrap_or_default(),
                             application: meta.application,
-                            task_id: meta.task_id.map(|t| t as TaskID),
-                            ssn_id: meta.ssn_id,
+                            task: meta.task.map(|t| t as TaskName),
+                            session: meta.session,
                             attributes: Default::default(),
                             creation_time: DateTime::from_timestamp(meta.creation_time, 0)
                                 .unwrap_or_default(),
@@ -1748,6 +1837,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workspace_paths_isolate_same_named_applications_and_sessions() {
+        let (engine, _temp_dir) = create_test_engine().await;
+        engine.create_workspace("team".to_string()).await.unwrap();
+
+        for workspace in ["default", "team"] {
+            let id = format!("{workspace}/app");
+            let app = engine
+                .register_application(
+                    "app".to_string(),
+                    ApplicationAttributes {
+                        id: id.clone(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(app.gid, id);
+
+            let session_path = format!("{workspace}/run");
+            let session = engine
+                .create_session(SessionAttributes {
+                    workspace: workspace.to_string(),
+                    name: "run".to_string(),
+                    application: "app".to_string(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!(session.gid, session_path);
+        }
+
+        assert_eq!(engine.list_workspaces().await.unwrap().len(), 2);
+        assert_eq!(engine.find_applications(None).await.unwrap().len(), 2);
+        assert_eq!(engine.find_sessions().await.unwrap().len(), 2);
+        let limited = SessionFilter::new().with_limit(1);
+        assert_eq!(
+            engine
+                ._list_sessions_metadata(Some(&limited))
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn resource_uuids_survive_filesystem_restart() {
+        let (engine, temp_dir) = create_test_engine().await;
+        let app = engine
+            .register_application("app".to_string(), ApplicationAttributes::default())
+            .await
+            .unwrap();
+        let session = engine
+            .create_session(SessionAttributes {
+                workspace: "default".to_string(),
+                name: "run".to_string(),
+                application: app.name.clone(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let task = engine
+            .create_task(session.gid.clone(), None, None)
+            .await
+            .unwrap();
+        for uuid in [&app.id, &session.id, &task.id] {
+            uuid::Uuid::parse_str(uuid).unwrap();
+        }
+        for (path, id, gid) in [
+            (
+                engine.application_path(&app.gid).unwrap(),
+                &app.id,
+                &app.gid,
+            ),
+            (
+                engine.session_path(&session.gid).unwrap(),
+                &session.id,
+                &session.gid,
+            ),
+        ] {
+            let metadata: serde_json::Value =
+                serde_json::from_slice(&fs::read(path.join("metadata")).unwrap()).unwrap();
+            assert_eq!(metadata["id"], id.as_str());
+            assert_eq!(metadata["gid"], gid.as_str());
+            assert!(metadata.get("uuid").is_none());
+        }
+        let task_metadata = engine
+            .read_task_metadata(&session.gid, task.number)
+            .unwrap();
+        assert_eq!(
+            uuid::Uuid::from_bytes(task_metadata.id).to_string(),
+            task.id
+        );
+        assert_eq!(task_metadata.number as i64, task.number);
+        let task_gid = task.gid().unwrap();
+        drop(engine);
+
+        let url = format!("filesystem://{}", temp_dir.path().display());
+        let reopened = FilesystemEngine::new_ptr(&url).await.unwrap();
+        assert_eq!(reopened.get_application(app.gid).await.unwrap().id, app.id);
+        assert_eq!(
+            reopened.get_session(session.gid).await.unwrap().id,
+            session.id
+        );
+        assert_eq!(reopened.get_task(task_gid).await.unwrap().id, task.id);
+    }
+
+    #[tokio::test]
     async fn test_record_size_is_constant() {
         let size1 = task_record_size();
         let size2 = task_record_size();
@@ -1756,7 +1952,8 @@ mod tests {
         // Verify different metadata values produce same size
         let meta1 = TaskMetadata::default();
         let meta2 = TaskMetadata {
-            id: u64::MAX,
+            id: *uuid::Uuid::new_v4().as_bytes(),
+            number: u64::MAX,
             version: u32::MAX,
             checksum: u32::MAX,
             state: 255,
@@ -1779,7 +1976,8 @@ mod tests {
     #[tokio::test]
     async fn test_checksum_calculation() {
         let meta = TaskMetadata {
-            id: 1,
+            id: *uuid::Uuid::new_v4().as_bytes(),
+            number: 1,
             version: 1,
             checksum: 0,
             state: TaskState::Pending as u8,
@@ -1799,7 +1997,7 @@ mod tests {
         assert_eq!(checksum1, checksum2);
 
         // Different metadata should produce different checksum
-        let meta2 = TaskMetadata { id: 2, ..meta };
+        let meta2 = TaskMetadata { number: 2, ..meta };
 
         let checksum3 = calculate_checksum(&meta2);
         assert_ne!(checksum1, checksum3);
@@ -1839,6 +2037,7 @@ mod tests {
 
         // Register application
         let attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Host,
             image: Some("test-image".to_string()),
             description: Some("Test application".to_string()),
@@ -1862,10 +2061,7 @@ mod tests {
         assert_eq!(app.state, ApplicationState::Enabled);
 
         // Get application
-        let app2 = engine
-            .get_application("test-app".to_string())
-            .await
-            .unwrap();
+        let app2 = engine.get_application(app.gid.clone()).await.unwrap();
         assert_eq!(app2.name, "test-app");
 
         // Find applications
@@ -1874,13 +2070,14 @@ mod tests {
 
         // Update application
         let updated_attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Cri,
             image: Some("updated-image".to_string()),
             description: Some("Updated description".to_string()),
             ..attr
         };
         let app3 = engine
-            .update_application("test-app".to_string(), updated_attr)
+            .update_application(app.gid.clone(), updated_attr)
             .await
             .unwrap();
         assert_eq!(app3.description, Some("Updated description".to_string()));
@@ -1888,34 +2085,32 @@ mod tests {
         assert_eq!(app3.image.as_deref(), Some("updated-image"));
         assert_eq!(app3.version, 2);
 
-        let result = engine.delete_application("test-app".to_string()).await;
+        let result = engine.delete_application(app.gid.clone()).await;
         assert!(matches!(result, Err(FlameError::InvalidState(_))));
 
         let disabled = engine
-            .update_application_state("test-app".to_string(), ApplicationState::Disabled)
+            .update_application_state(app.gid.clone(), ApplicationState::Disabled)
             .await
             .unwrap();
         assert_eq!(disabled.version, 3);
         let unchanged = engine
-            .update_application_state("test-app".to_string(), ApplicationState::Disabled)
+            .update_application_state(app.gid.clone(), ApplicationState::Disabled)
             .await
             .unwrap();
         assert_eq!(unchanged.version, disabled.version);
 
         let result = engine
             .update_application(
-                "test-app".to_string(),
+                app.gid.clone(),
                 ApplicationAttributes {
+                    id: String::new(),
                     image: Some("must-not-be-written".to_string()),
                     ..Default::default()
                 },
             )
             .await;
         assert!(matches!(result, Err(FlameError::InvalidState(_))));
-        let unchanged = engine
-            .get_application("test-app".to_string())
-            .await
-            .unwrap();
+        let unchanged = engine.get_application(app.gid.clone()).await.unwrap();
         assert_eq!(unchanged.version, disabled.version);
         assert_eq!(unchanged.image, disabled.image);
 
@@ -1924,37 +2119,35 @@ mod tests {
         assert_eq!(disabled_apps.len(), 1);
         assert_eq!(disabled_apps[0].name, "test-app");
 
-        engine
-            .delete_application("test-app".to_string())
-            .await
-            .unwrap();
+        engine.delete_application(app.gid.clone()).await.unwrap();
 
         // Verify it's gone
-        let result = engine.get_application("test-app".to_string()).await;
+        let result = engine.get_application(app.gid).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_application_deletion_waits_for_open_sessions() {
         let (engine, _temp_dir) = create_test_engine().await;
-        engine
+        let app = engine
             .register_application("test-app".to_string(), ApplicationAttributes::default())
             .await
             .unwrap();
-        engine
+        let session = engine
             .create_session(SessionAttributes {
-                id: "test-session".to_string(),
-                application: "test-app".to_string(),
+                name: "test-session".to_string(),
+                workspace: "default".to_string(),
+                application: app.name.clone(),
                 ..Default::default()
             })
             .await
             .unwrap();
         engine
-            .update_application_state("test-app".to_string(), ApplicationState::Disabled)
+            .update_application_state(app.gid.clone(), ApplicationState::Disabled)
             .await
             .unwrap();
 
-        let open_sessions = SessionFilter::by_application_state("test-app", SessionState::Open);
+        let open_sessions = SessionFilter::by_application_state(&app.gid, SessionState::Open);
         assert_eq!(
             engine
                 ._list_sessions_metadata(Some(&open_sessions))
@@ -1962,27 +2155,18 @@ mod tests {
                 .len(),
             1
         );
-        let result = engine.delete_application("test-app".to_string()).await;
+        let result = engine.delete_application(app.gid.clone()).await;
         assert!(matches!(result, Err(FlameError::InvalidState(_))));
 
-        engine
-            .close_session("test-session".to_string())
-            .await
-            .unwrap();
-        let result = engine.delete_application("test-app".to_string()).await;
+        engine.close_session(session.gid.clone()).await.unwrap();
+        let result = engine.delete_application(app.gid.clone()).await;
         assert!(matches!(result, Err(FlameError::InvalidState(_))));
-        assert!(engine.get_session("test-session".to_string()).await.is_ok());
+        assert!(engine.get_session(session.gid.clone()).await.is_ok());
 
-        engine
-            .delete_session("test-session".to_string())
-            .await
-            .unwrap();
-        engine
-            .delete_application("test-app".to_string())
-            .await
-            .unwrap();
+        engine.delete_session(session.gid.clone()).await.unwrap();
+        engine.delete_application(app.gid).await.unwrap();
         assert!(matches!(
-            engine.get_session("test-session".to_string()).await,
+            engine.get_session(session.gid).await,
             Err(FlameError::NotFound(_))
         ));
     }
@@ -1990,26 +2174,23 @@ mod tests {
     #[tokio::test]
     async fn test_application_deletion_fails_closed_on_unreadable_session() {
         let (engine, _temp_dir) = create_test_engine().await;
-        engine
+        let app = engine
             .register_application("test-app".to_string(), ApplicationAttributes::default())
             .await
             .unwrap();
         engine
-            .update_application_state("test-app".to_string(), ApplicationState::Disabled)
+            .update_application_state(app.gid.clone(), ApplicationState::Disabled)
             .await
             .unwrap();
-        fs::create_dir_all(engine.session_path("incomplete-session")).unwrap();
+        fs::create_dir_all(engine.session_path("default/incomplete-session").unwrap()).unwrap();
 
         let sessions = SessionFilter {
-            application: Some("test-app".to_string()),
+            application: Some(app.gid.clone()),
             ..SessionFilter::default()
         };
         assert!(engine._list_sessions_metadata(Some(&sessions)).is_err());
-        assert!(engine
-            .delete_application("test-app".to_string())
-            .await
-            .is_err());
-        assert!(engine.get_application("test-app".to_string()).await.is_ok());
+        assert!(engine.delete_application(app.gid.clone()).await.is_err());
+        assert!(engine.get_application(app.gid).await.is_ok());
     }
 
     #[tokio::test]
@@ -2018,6 +2199,7 @@ mod tests {
 
         // First register an application
         let app_attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Host,
             image: None,
             description: None,
@@ -2039,7 +2221,8 @@ mod tests {
 
         // Create session
         let ssn_attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: Some(Bytes::from("test data")),
             min_instances: 0,
@@ -2050,15 +2233,15 @@ mod tests {
         };
 
         let session = engine.create_session(ssn_attr).await.unwrap();
-        assert_eq!(session.id, "test-session");
+        assert_eq!(session.gid, "default/test-session");
         assert_eq!(session.status.state, SessionState::Open);
 
         // Get session
         let session2 = engine
-            .get_session("test-session".to_string())
+            .get_session("default/test-session".to_string())
             .await
             .unwrap();
-        assert_eq!(session2.id, "test-session");
+        assert_eq!(session2.gid, "default/test-session");
 
         // Find sessions
         let sessions = engine.find_sessions().await.unwrap();
@@ -2066,17 +2249,17 @@ mod tests {
 
         // Close session (should work since no tasks)
         let closed = engine
-            .close_session("test-session".to_string())
+            .close_session("default/test-session".to_string())
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
 
         // Delete session
         let deleted = engine
-            .delete_session("test-session".to_string())
+            .delete_session("default/test-session".to_string())
             .await
             .unwrap();
-        assert_eq!(deleted.id, "test-session");
+        assert_eq!(deleted.gid, "default/test-session");
     }
 
     #[tokio::test]
@@ -2085,6 +2268,7 @@ mod tests {
 
         // Setup: register app and create session
         let app_attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Host,
             image: None,
             description: None,
@@ -2105,7 +2289,8 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 0,
@@ -2119,20 +2304,21 @@ mod tests {
         // Create task with input
         let input = Bytes::from("test input data");
         let task = engine
-            .create_task("test-session".to_string(), Some(input.clone()), None)
+            .create_task(
+                "default/test-session".to_string(),
+                Some(input.clone()),
+                None,
+            )
             .await
             .unwrap();
-        assert_eq!(task.id, 1);
+        assert_eq!(task.number, 1);
         assert_eq!(task.state, TaskState::Pending);
         assert_eq!(task.input, Some(input));
 
         // Get task
-        let gid = TaskGID {
-            ssn_id: "test-session".to_string(),
-            task_id: 1,
-        };
+        let gid = TaskGID::from_session_path("default/test-session", 1).unwrap();
         let task2 = engine.get_task(gid.clone()).await.unwrap();
-        assert_eq!(task2.id, 1);
+        assert_eq!(task2.number, 1);
 
         // Update task state
         let task3 = engine
@@ -2156,21 +2342,21 @@ mod tests {
         assert_eq!(task4.output, Some(output));
 
         // Find tasks
-        let tasks = engine.find_tasks("test-session".to_string()).await.unwrap();
+        let tasks = engine
+            .find_tasks("default/test-session".to_string())
+            .await
+            .unwrap();
         assert_eq!(tasks.len(), 1);
 
         // Create another task
         let task5 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task5.id, 2);
+        assert_eq!(task5.number, 2);
 
         // Complete second task
-        let gid2 = TaskGID {
-            ssn_id: "test-session".to_string(),
-            task_id: 2,
-        };
+        let gid2 = TaskGID::from_session_path("default/test-session", 2).unwrap();
         engine
             .update_task_state(gid2, TaskState::Succeed, None)
             .await
@@ -2178,7 +2364,7 @@ mod tests {
 
         // Now we can close the session
         let closed = engine
-            .close_session("test-session".to_string())
+            .close_session("default/test-session".to_string())
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
@@ -2189,6 +2375,7 @@ mod tests {
         let (engine, _temp_dir) = create_test_engine().await;
 
         let attr = ApplicationAttributes {
+            id: "default/test-app".to_string(),
             shim: Shim::Host,
             image: Some("test-image".to_string()),
             description: Some("Test application".to_string()),
@@ -2223,6 +2410,7 @@ mod tests {
         let (engine, _temp_dir) = create_test_engine().await;
 
         let app_attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Host,
             image: None,
             description: None,
@@ -2243,7 +2431,8 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 0,
@@ -2267,6 +2456,7 @@ mod tests {
         let (engine, _temp_dir) = create_test_engine().await;
 
         let app_attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Host,
             image: None,
             description: None,
@@ -2287,7 +2477,8 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 0,
@@ -2299,31 +2490,31 @@ mod tests {
         engine.create_session(ssn_attr).await.unwrap();
 
         let task1 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
         assert_eq!(task1.state, TaskState::Pending);
 
         let task2 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
         assert_eq!(task2.state, TaskState::Pending);
 
         let closed = engine
-            .close_session("test-session".to_string())
+            .close_session("default/test-session".to_string())
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
 
-        let task1_after = engine.get_task(task1.gid()).await.unwrap();
+        let task1_after = engine.get_task(task1.gid().unwrap()).await.unwrap();
         assert_eq!(task1_after.state, TaskState::Cancelled);
 
-        let task2_after = engine.get_task(task2.gid()).await.unwrap();
+        let task2_after = engine.get_task(task2.gid().unwrap()).await.unwrap();
         assert_eq!(task2_after.state, TaskState::Cancelled);
 
         engine
-            .delete_session("test-session".to_string())
+            .delete_session("default/test-session".to_string())
             .await
             .unwrap();
     }
@@ -2333,6 +2524,7 @@ mod tests {
         let (engine, _temp_dir) = create_test_engine().await;
 
         let app_attr = ApplicationAttributes {
+            id: String::new(),
             shim: Shim::Host,
             image: None,
             description: None,
@@ -2353,7 +2545,8 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 0,
@@ -2365,16 +2558,18 @@ mod tests {
         engine.create_session(ssn_attr).await.unwrap();
 
         let task = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
 
         engine
-            .update_task_state(task.gid(), TaskState::Running, None)
+            .update_task_state(task.gid().unwrap(), TaskState::Running, None)
             .await
             .unwrap();
 
-        let result = engine.close_session("test-session".to_string()).await;
+        let result = engine
+            .close_session("default/test-session".to_string())
+            .await;
         assert!(result.is_err());
     }
 
@@ -2456,9 +2651,9 @@ mod tests {
                 gpu: 0,
             },
             shim: Shim::Host,
-            application: "test-app".to_string(),
-            task_id: None,
-            ssn_id: None,
+            application: "default/test-app".to_string(),
+            task: None,
+            session: None,
             attributes: Default::default(),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
@@ -2467,22 +2662,22 @@ mod tests {
 
         let created = engine.create_executor(&executor).await.unwrap();
         assert_eq!(created.id, "exec-1");
-        assert_eq!(created.application, "test-app");
+        assert_eq!(created.application, "default/test-app");
 
         let found = engine.get_executor(&"exec-1".to_string()).await.unwrap();
         assert!(found.is_some());
-        assert_eq!(found.unwrap().application, "test-app");
+        assert_eq!(found.unwrap().application, "default/test-app");
 
         let updated = engine
             .update_executor_state(&"exec-1".to_string(), ExecutorState::Idle)
             .await
             .unwrap();
         assert_eq!(updated.state, ExecutorState::Idle);
-        assert_eq!(updated.application, "test-app");
+        assert_eq!(updated.application, "default/test-app");
 
         let executors = engine.find_executors(None).await.unwrap();
         assert_eq!(executors.len(), 1);
-        assert_eq!(executors[0].application, "test-app");
+        assert_eq!(executors[0].application, "default/test-app");
 
         let by_node = engine.find_executors(Some("exec-test-node")).await.unwrap();
         assert_eq!(by_node.len(), 1);
@@ -2529,9 +2724,9 @@ mod tests {
                     gpu: 0,
                 },
                 shim: Shim::Host,
-                application: "test-app".to_string(),
-                task_id: None,
-                ssn_id: None,
+                application: "default/test-app".to_string(),
+                task: None,
+                session: None,
                 attributes: Default::default(),
                 creation_time: Utc::now(),
                 latest_updated_timestamp: Utc::now(),

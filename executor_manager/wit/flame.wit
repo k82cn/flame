@@ -14,13 +14,17 @@ interface service {
     type task-output = list<u8>;
 
     record session-context {
-        session-id: string,
+        workspace: string,
+        application: string,
+        session: string,
         common-data: option<list<u8>>,
     }
 
     record task-context {
-        task-id: string,
-        session-id: string,
+        workspace: string,
+        application: string,
+        session: string,
+        task: string,
     }
     
     // handle request function

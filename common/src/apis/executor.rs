@@ -17,7 +17,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use stdng::MutexPtr;
 
-use super::{ExecutorID, ExecutorState, ResourceRequirement, SessionID, Shim, TaskID};
+use super::{ExecutorID, ExecutorState, ResourceRequirement, SessionPath, Shim, TaskName};
 use rpc::flame::v1 as rpc;
 
 #[derive(Clone, Debug)]
@@ -28,8 +28,8 @@ pub struct Executor {
     pub shim: Shim,
     /// Persisted owner of the retained service instance, also carried by RPC.
     pub application: String,
-    pub task_id: Option<TaskID>,
-    pub ssn_id: Option<SessionID>,
+    pub task: Option<TaskName>,
+    pub session: Option<SessionPath>,
     /// Volatile instance attributes, intentionally omitted from storage/RPC.
     pub attributes: HashSet<Bytes>,
 
@@ -54,8 +54,8 @@ impl Default for Executor {
             resreq: ResourceRequirement::default(),
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             attributes: HashSet::new(),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
@@ -85,9 +85,9 @@ impl From<&rpc::Executor> for Executor {
             node: spec.node.clone(),
             resreq: spec.resreq.unwrap().into(),
             shim: Shim::from(spec.shim()),
-            application: spec.application.clone(),
-            task_id: None,
-            ssn_id: None,
+            application: format!("{}/{}", spec.workspace, spec.application),
+            task: None,
+            session: None,
             attributes: HashSet::new(),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
@@ -104,21 +104,35 @@ impl From<Executor> for rpc::Executor {
 
 impl From<&Executor> for rpc::Executor {
     fn from(e: &Executor) -> Self {
+        let (workspace, application) = e
+            .application
+            .split_once('/')
+            .unwrap_or(("", e.application.as_str()));
+        let (session_workspace, session) = e
+            .session
+            .as_deref()
+            .and_then(|path| path.split_once('/'))
+            .map_or((workspace, None), |(workspace, session)| {
+                (workspace, Some(session.to_string()))
+            });
         let metadata = Some(rpc::Metadata {
             id: e.id.clone(),
             name: e.id.clone(),
+            workspace: workspace.to_string(),
         });
 
         let spec = Some(rpc::ExecutorSpec {
             resreq: Some(e.resreq.clone().into()),
             node: e.node.clone(),
             shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
-            application: e.application.clone(),
+            application: application.to_string(),
+            workspace: workspace.to_string(),
         });
 
         let status = Some(rpc::ExecutorStatus {
             state: rpc::ExecutorState::from(e.state).into(),
-            session_id: e.ssn_id.clone(),
+            session,
+            workspace: session_workspace.to_string(),
         });
 
         rpc::Executor {

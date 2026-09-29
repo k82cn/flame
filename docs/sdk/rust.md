@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-For bulk submission, `Session::run()` returns a `TaskFuture<O>`. Awaiting it returns `Result<TaskResult<O>, FlameError>`: `Ok` contains task ID, session ID, terminal state, decoded output, and task-level error details, while `Err` reports SDK-level failures such as watch or decode errors. `Session::invoke()` converts that result into a simpler handle that resolves to successful output or `FlameError`.
+For bulk submission, `Session::run()` returns a `TaskFuture<O>`. Awaiting it returns `Result<TaskResult<O>, FlameError>`: `Ok` contains task number, session name, terminal state, decoded output, and task-level error details, while `Err` reports SDK-level failures such as watch or decode errors. `Session::invoke()` converts that result into a simpler handle that resolves to successful output or `FlameError`.
 
 ## Write A Service
 
@@ -219,12 +219,12 @@ attached to a service publisher, so its `publish()` method returns an error.
 
 ## Use Object Cache
 
-Object keys use either a prefix, `<app>/<session>`, or a full key, `<app>/<session>/<object>`.
+Object keys use either a prefix, `<workspace>/<session>`, or a full key, `<workspace>/<session>/<object>`.
 
 ```rust
 use flame_rs as flame;
 
-let reference = flame::put_object("pi/shared", &model_config).await?;
+let reference = flame::put_object("default/shared", &model_config).await?;
 let loaded: ModelConfig = reference.get().await?;
 
 let updated = flame::update_object(&reference, &next_model_config).await?;

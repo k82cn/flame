@@ -7,30 +7,56 @@ import pytest
 from flamepy.core import aio
 from flamepy.core import client as sync_client
 from flamepy.core._bridge import LoopThread
+from flamepy.core.aio.client import _application_from_proto, _application_spec
 from flamepy.core.types import ApplicationAttributes, FlameError, SessionAttributes, TaskState
+from flamepy.proto.types_pb2 import Application as ApplicationProto
+from flamepy.proto.types_pb2 import ApplicationStatus, Metadata
+from tests.test_fixture import TLS_TEST_CONFIG
+
+
+def test_application_url_spec_and_public_response():
+    spec = _application_spec(ApplicationAttributes(url="grpcs://cache/app/pkg.tar.gz"))
+    assert spec.url == "grpcs://cache/app/pkg.tar.gz"
+
+    response = ApplicationProto(metadata=Metadata(id="app-id", name="app"), spec=spec, status=ApplicationStatus())
+    app = _application_from_proto(response)
+    assert app.url == "grpcs://cache/app/pkg.tar.gz"
+
+
+def test_aio_frontend_connects_without_security(frontend_server):
+    endpoint, _, _ = frontend_server
+
+    async def exercise():
+        async with await aio.connect(endpoint) as connection:
+            assert await connection.list_nodes() == []
+
+    asyncio.run(exercise())
 
 
 def test_aio_frontend_api_parity(frontend_server):
     endpoint, service, server_loop = frontend_server
 
     async def exercise():
-        async with await aio.connect(endpoint) as connection:
+        async with await aio.connect(endpoint, TLS_TEST_CONFIG) as connection:
             await connection.register_application("app", ApplicationAttributes())
             await connection.unregister_application("app")
             assert len(await connection.list_applications()) == 1
             assert (await connection.get_application("app")).name == "app"
             assert await connection.get_application("missing") is None
             assert await connection.list_executors() == []
+            assert service.last_executor_application is None
+            assert await connection.list_executors("app-id") == []
+            assert service.last_executor_application == "app-id"
             assert await connection.list_nodes() == []
             session = await connection.create_session(SessionAttributes(application="app"))
             assert session.common_data() == b""
-            assert (await connection.open_session(session.id)).id == session.id
-            assert (await connection.get_session(session.id)).id == session.id
+            assert (await connection.open_session(session.name)).name == session.name
+            assert (await connection.get_session(session.name)).name == session.name
             assert len(await connection.list_sessions()) == 1
-            assert (await session.create_task(b"input")).id == "task-1"
-            assert (await session.get_task("task-1")).output == b"done"
-            assert [task.id async for task in session.list_tasks()] == ["task-1"]
-            updates = session.watch_task("task-1")
+            assert (await session.create_task(b"input")).name == "1"
+            assert (await session.get_task("1")).output == b"done"
+            assert [task.name async for task in session.list_tasks()] == ["1"]
+            updates = session.watch_task("1")
             assert (await updates.__anext__()).state == TaskState.SUCCEED
             updates.close()
             assert await session.run(b"input") == b"done"
@@ -48,20 +74,20 @@ def test_aio_watchers_share_session_stream_and_close_reports_error(frontend_serv
     endpoint, service, _ = frontend_server
 
     async def exercise():
-        async with await aio.connect(endpoint) as connection:
+        async with await aio.connect(endpoint, TLS_TEST_CONFIG) as connection:
             session = await connection.create_session(SessionAttributes(application="app"))
-            first = session.watch_task("task-1")
-            second = session.watch_task("task-1")
+            first = session.watch_task("1")
+            second = session.watch_task("1")
             assert (await first.__anext__()).state == TaskState.SUCCEED
             assert (await second.__anext__()).state == TaskState.SUCCEED
             with pytest.raises(StopAsyncIteration):
                 await first.__anext__()
 
-            held = session.watch_task("hold")
+            held = session.watch_task("2")
             assert (await held.__anext__()).state == TaskState.PENDING
-            second_held = session.watch_task("hold")
+            second_held = session.watch_task("2")
             assert (await second_held.__anext__()).state == TaskState.PENDING
-            assert service.watch_requests.count("hold") == 2
+            assert service.watch_requests.count(2) == 2
             await session.close()
             with pytest.raises(FlameError, match="session closed"):
                 await held.__anext__()
@@ -76,10 +102,10 @@ def test_aio_watch_failure_and_cancellation(frontend_server):
     endpoint, service, server_loop = frontend_server
 
     async def exercise():
-        connection = await aio.connect(endpoint)
+        connection = await aio.connect(endpoint, TLS_TEST_CONFIG)
         try:
             session = await connection.create_session(SessionAttributes(application="app"))
-            watcher = session.watch_task("error")
+            watcher = session.watch_task("9")
             assert (await watcher.__anext__()).state == TaskState.PENDING
             with pytest.raises(FlameError, match="watch failed"):
                 await watcher.__anext__()
@@ -98,9 +124,9 @@ def test_aio_watch_timeout_and_connection_close_error(frontend_server):
     endpoint, _, _ = frontend_server
 
     async def exercise():
-        connection = await aio.connect(endpoint)
+        connection = await aio.connect(endpoint, TLS_TEST_CONFIG)
         session = await connection.create_session(SessionAttributes(application="app"))
-        watcher = session.watch_task("hold", timeout=0.01)
+        watcher = session.watch_task("2", timeout=0.01)
         assert (await watcher.__anext__()).state == TaskState.PENDING
         with pytest.raises(TimeoutError, match="watch_task timed out"):
             await watcher.__anext__()
@@ -117,7 +143,7 @@ def test_aio_submit_then_close_settles_submitted_task(frontend_server):
     endpoint, _, _ = frontend_server
 
     async def exercise():
-        connection = await aio.connect(endpoint)
+        connection = await aio.connect(endpoint, TLS_TEST_CONFIG)
         session = await connection.create_session(SessionAttributes(application="app"))
         submitted = session.submit(b"input")
         await connection.close()
@@ -132,7 +158,7 @@ def test_aio_submit_reports_create_task_error_on_task(frontend_server):
     endpoint, service, _ = frontend_server
 
     async def exercise():
-        async with await aio.connect(endpoint) as connection:
+        async with await aio.connect(endpoint, TLS_TEST_CONFIG) as connection:
             session = await connection.create_session(SessionAttributes(application="app"))
             service.reject_create_task = True
             submitted = session.submit(b"input")
@@ -147,7 +173,7 @@ def test_aio_submit_close_during_create_task_settles_submitted_task(frontend_ser
     service.create_task_gate = asyncio.Event()
 
     async def exercise():
-        connection = await aio.connect(endpoint)
+        connection = await aio.connect(endpoint, TLS_TEST_CONFIG)
         session = await connection.create_session(SessionAttributes(application="app"))
         submitted = session.submit(b"input")
         assert await asyncio.to_thread(service.create_task_started.wait, 3)
@@ -167,7 +193,7 @@ def test_aio_connection_rejects_other_loop(frontend_server):
     owner = LoopThread("test-aio-owner")
 
     async def make_connection():
-        return await aio.connect(endpoint)
+        return await aio.connect(endpoint, TLS_TEST_CONFIG)
 
     connection = owner.call(make_connection())
 
@@ -184,7 +210,7 @@ def test_aio_connection_rejects_other_loop(frontend_server):
 
 def test_asyncio_wrap_future_on_sync_core_result(frontend_server):
     endpoint, _, _ = frontend_server
-    connection = sync_client.connect(endpoint)
+    connection = sync_client.connect(endpoint, TLS_TEST_CONFIG)
     try:
         session = connection.create_session(SessionAttributes(application="app"))
 

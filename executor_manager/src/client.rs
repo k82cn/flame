@@ -189,6 +189,7 @@ impl BackendClient {
                 node: exe.node.clone(),
                 shim: rpc::Shim::from(exe.shim).into(), // Include shim in registration
                 application: exe.application.clone(),
+                workspace: exe.workspace.clone(),
             }),
         };
 
@@ -281,7 +282,10 @@ impl BackendClient {
             .map_err(FlameError::from)?;
 
         if let Some(t) = resp.into_inner().task {
-            return Ok(Some(TaskContext::try_from(t)?));
+            let session = exe.session.as_ref().ok_or_else(|| {
+                FlameError::InvalidState("executor has no bound session".to_string())
+            })?;
+            return Ok(Some(TaskContext::try_from((t, session))?));
         }
 
         Ok(None)

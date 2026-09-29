@@ -19,6 +19,7 @@ use flame_rs::client::{ResourceRequirement, SessionAttributes};
 
 pub async fn run(
     ctx: &FlameContext,
+    workspace: &str,
     app: &str,
     priority: &u32,
     resreq_str: &Option<String>,
@@ -38,7 +39,8 @@ pub async fn run(
         .transpose()?;
 
     let attr = SessionAttributes {
-        id: format!("{app}-{}", stdng::rand::short_name()),
+        name: format!("{}-{}", app, stdng::rand::short_name()),
+        workspace: workspace.to_string(),
         application: app.to_owned(),
         common_data: None,
         min_instances: 0,
@@ -50,7 +52,10 @@ pub async fn run(
 
     let ssn = conn.create_session(&attr).await?;
 
-    println!("Session <{}> was created.", ssn.id);
+    println!(
+        "Session <{}> was created in workspace <{}>.",
+        ssn.name, ssn.workspace
+    );
 
     Ok(())
 }

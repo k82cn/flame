@@ -91,10 +91,10 @@ impl From<rpc::Result> for FlameResult {
     }
 }
 
-impl TryFrom<rpc::Task> for TaskContext {
+impl TryFrom<(rpc::Task, &SessionContext)> for TaskContext {
     type Error = FlameError;
 
-    fn try_from(task: rpc::Task) -> Result<Self, Self::Error> {
+    fn try_from((task, session): (rpc::Task, &SessionContext)) -> Result<Self, Self::Error> {
         let metadata = task
             .metadata
             .ok_or(FlameError::InvalidConfig("metadata".to_string()))?;
@@ -103,9 +103,27 @@ impl TryFrom<rpc::Task> for TaskContext {
             .spec
             .ok_or(FlameError::InvalidConfig("spec".to_string()))?;
 
+        let number: TaskName = metadata
+            .name
+            .parse()
+            .map_err(|_| FlameError::InvalidConfig("task number".into()))?;
+        if number <= 0 {
+            return Err(FlameError::InvalidConfig("task number".into()));
+        }
+        if spec.workspace != session.workspace
+            || spec.session != session.session
+            || metadata.workspace != session.workspace
+        {
+            return Err(FlameError::InvalidConfig(
+                "task does not belong to the bound session".into(),
+            ));
+        }
+
         Ok(TaskContext {
-            task_id: metadata.id.clone(),
-            session_id: spec.session_id.to_string(),
+            task: metadata.name.clone(),
+            session: spec.session.clone(),
+            workspace: metadata.workspace.clone(),
+            application: session.application.name.clone(),
             input: spec.input.map(TaskInput::from),
         })
     }
@@ -124,6 +142,7 @@ impl TryFrom<rpc::Application> for ApplicationContext {
             .ok_or(FlameError::InvalidConfig("spec".to_string()))?;
 
         Ok(ApplicationContext {
+            workspace: metadata.workspace.clone(),
             name: metadata.name.clone(),
             shim: Shim::from(spec.shim()),
             image: spec.image.clone(),
@@ -156,7 +175,8 @@ impl TryFrom<(rpc::Application, rpc::Session)> for SessionContext {
         let application = ApplicationContext::try_from(app)?;
 
         Ok(SessionContext {
-            session_id: metadata.id,
+            session: metadata.name.clone(),
+            workspace: metadata.workspace.clone(),
             application,
             common_data: spec.common_data.map(CommonData::from),
         })
@@ -196,6 +216,8 @@ impl TryFrom<&rpc::Application> for Application {
         ))?;
 
         Ok(Application {
+            id: metadata.id.clone(),
+            gid: crate::apis::application_path(&metadata.workspace, &metadata.name)?,
             name: metadata.name.clone(),
             version: 0,
             state: ApplicationState::from(status.state()),
@@ -230,6 +252,7 @@ impl TryFrom<&rpc::Application> for Application {
 impl From<rpc::ApplicationSpec> for ApplicationAttributes {
     fn from(spec: rpc::ApplicationSpec) -> Self {
         Self {
+            id: String::new(),
             shim: Shim::from(spec.shim()),
             image: spec.image.clone(),
             description: spec.description.clone(),

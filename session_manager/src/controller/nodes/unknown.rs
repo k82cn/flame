@@ -12,8 +12,8 @@ limitations under the License.
 */
 
 use crate::controller::nodes::NodeStates;
-use crate::model::ExecutorFilter;
-use crate::storage::StoragePtr;
+use common::apis::ExecutorFilter;
+use common::storage::StoragePtr;
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use common::apis::{Node, NodePtr, NodeState};

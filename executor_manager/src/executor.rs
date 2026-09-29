@@ -28,6 +28,7 @@ use common::{ctx::FlameClusterContext, FlameError};
 #[derive(Clone)]
 pub struct Executor {
     pub id: String,
+    pub workspace: String,
     pub application: String,
     pub resreq: ResourceRequirement,
     pub node: String,
@@ -78,6 +79,7 @@ impl TryFrom<&rpc::Executor> for Executor {
 
         Ok(Executor {
             id: metadata.id.clone(),
+            workspace: spec.workspace.clone(),
             application: spec.application.clone(),
             resreq: resreq.into(),
             node: spec.node.clone(),
@@ -102,6 +104,7 @@ impl From<&Executor> for rpc::Executor {
         let metadata = Some(Metadata {
             id: e.id.clone(),
             name: e.id.clone(),
+            workspace: e.workspace.clone(),
         });
 
         let spec = Some(ExecutorSpec {
@@ -109,11 +112,16 @@ impl From<&Executor> for rpc::Executor {
             node: e.node.clone(),
             shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
             application: e.application.clone(),
+            workspace: e.workspace.clone(),
         });
 
         let status = Some(ExecutorStatus {
             state: rpc::ExecutorState::from(e.state).into(),
-            session_id: e.session.clone().map(|s| s.session_id),
+            session: e.session.as_ref().map(|s| s.session.clone()),
+            workspace: e
+                .session
+                .as_ref()
+                .map_or_else(|| e.workspace.clone(), |s| s.workspace.clone()),
         });
 
         rpc::Executor {
@@ -140,6 +148,7 @@ impl Executor {
             next.state
         );
         self.application = next.application.clone();
+        self.workspace = next.workspace.clone();
         self.state = next.state;
         self.shim_instance = next.shim_instance.clone();
         self.session = next.session.clone();
@@ -185,24 +194,23 @@ pub fn start(client: BackendClient, executor: ExecutorPtr, app_manager: Arc<Appl
                     }
                 }
                 Err(e) => {
-                    let session_id = exec
+                    let session = exec
                         .session
                         .as_ref()
-                        .map(|session| session.session_id.as_str());
+                        .map(|session| session.session.as_str());
                     let application = exec
                         .session
                         .as_ref()
                         .map(|session| session.application.name.as_str());
-                    let task_id = exec.task.as_ref().map(|task| task.task_id.as_str());
-                    let task_session_id = exec.task.as_ref().map(|task| task.session_id.as_str());
+                    let task = exec.task.as_ref().map(|task| task.task.as_str());
                     tracing::error!(
                         executor_id = %exec.id,
                         node = %exec.node,
                         state = %exec.state,
-                        session_id = ?session_id,
+                        workspace = %exec.workspace,
+                        session = ?session,
                         application = ?application,
-                        task_session_id = ?task_session_id,
-                        task_id = ?task_id,
+                        task = ?task,
                         error = %e,
                         "Failed to execute executor state"
                     );

@@ -14,7 +14,6 @@ from typing import Optional
 import cloudpickle
 import flamepy.app as app
 from flamepy import ObjectRef, get_object, put_object
-from flamepy.util import short_name
 
 from e2e.api import (
     ApplicationContextInfo,
@@ -133,15 +132,17 @@ def serialize_service_context(service_context: app.ServiceContext, app_name: str
 
     Args:
         service_context: app.ServiceContext object to serialize
-        app_name: Application name for generating session ID
+        app_name: Application name used to select the workspace
 
     Returns:
         bytes representation of ObjectRef
     """
     # Serialize the context using cloudpickle
     serialized_ctx = cloudpickle.dumps(service_context, protocol=cloudpickle.DEFAULT_PROTOCOL)
-    # Generate key prefix in <app>/<session> format for caching
-    key_prefix = f"{app_name}/{short_name(app_name)}"
+    # The context is written before the session exists and must remain available
+    # when an executor binds a later session.
+    workspace = app_name.split("/", 1)[0] if "/" in app_name else "default"
+    key_prefix = f"{workspace}/shared"
     # Put in cache to get ObjectRef
     object_ref = put_object(key_prefix, serialized_ctx)
     # Encode ObjectRef to bytes for core API
@@ -186,7 +187,7 @@ def serialize_common_data(common_data: Optional[TestContext], app_name: str) -> 
 
     Args:
         common_data: TestContext object to serialize, or None
-        app_name: Application name for generating session ID
+        app_name: Application name for generating session name
 
     Returns:
         bytes representation of ObjectRef, or None if common_data is None
@@ -197,7 +198,8 @@ def serialize_common_data(common_data: Optional[TestContext], app_name: str) -> 
     # Serialize with JSON
     serialized_ctx = json.dumps(asdict(common_data)).encode("utf-8")
     # Put in cache to get ObjectRef
-    key_prefix = f"{app_name}/{short_name(app_name)}"
+    workspace = app_name.split("/", 1)[0] if "/" in app_name else "default"
+    key_prefix = f"{workspace}/shared"
     object_ref = put_object(key_prefix, serialized_ctx)
     # Encode ObjectRef to bytes for core API
     return object_ref.encode()
@@ -323,13 +325,13 @@ class RecursiveService:
     using the open_session API.
     """
 
-    def compute_recursive(self, depth: int, include_session_ids: bool = False):
+    def compute_recursive(self, depth: int, include_sessions: bool = False):
         """Compute recursively by declaring another proxy for this session.
 
         At depth 0, returns 1.
         At depth > 0, declares a service with the existing session context,
         calls compute_recursive(depth - 1), then multiplies by 2.
-        When include_session_ids is true, also returns the session ID observed
+        When include_sessions is true, also returns the session name observed
         at every recursion level so callers can verify session reuse.
         """
         import logging
@@ -338,12 +340,12 @@ class RecursiveService:
 
         logger.info(f"[RecursiveService] compute_recursive called with depth={depth}")
         session_context = app.session_context()
-        logger.info(f"[RecursiveService] session_context: session_id={session_context.session_id}, app_name={session_context.application.name}")
+        logger.info(f"[RecursiveService] session_context: session={session_context.session}, application={session_context.application}")
 
         if depth <= 0:
             logger.info("[RecursiveService] Base case reached, returning 1")
-            if include_session_ids:
-                return 1, [session_context.session_id]
+            if include_sessions:
+                return 1, [session_context.session]
             return 1
 
         try:
@@ -357,18 +359,18 @@ class RecursiveService:
                 pass
 
             inner_service = InnerRecursiveService.remote()
-            logger.info(f"[RecursiveService] Inner service created, session_id={inner_service._session.id}")
+            logger.info(f"[RecursiveService] Inner service created, session={inner_service._session.name}")
 
             logger.info(f"[RecursiveService] Calling compute_recursive({depth - 1}) on inner service")
-            result = inner_service.compute_recursive(depth - 1, include_session_ids)
+            result = inner_service.compute_recursive(depth - 1, include_sessions)
             logger.info("[RecursiveService] Got result future, calling get()")
             inner_value = result.get()
             logger.info(f"[RecursiveService] Inner value = {inner_value}")
 
-            if include_session_ids:
-                value, session_ids = inner_value
+            if include_sessions:
+                value, sessions = inner_value
                 final_result = value * 2
-                return final_result, [session_context.session_id, *session_ids]
+                return final_result, [session_context.session, *sessions]
 
             final_result = inner_value * 2
             logger.info(f"[RecursiveService] Returning {final_result}")

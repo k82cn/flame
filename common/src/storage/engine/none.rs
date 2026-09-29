@@ -15,7 +15,7 @@ limitations under the License.
 //!
 //! This engine does NOT persist any data. The controller's in-memory cache is the
 //! source of truth. The NoneEngine retains only the application/session metadata needed for
-//! lifecycle checks plus task ID counters for allocation.
+//! lifecycle checks plus task name counters for allocation.
 //!
 //! Use cases:
 //! - Real-time processing where task results are consumed immediately
@@ -36,26 +36,28 @@ use chrono::Utc;
 use stdng::{lock_ptr, MutexPtr};
 
 use crate::apis::{
-    Application, ApplicationAttributes, ApplicationID, ApplicationState, ExecutorID, ExecutorState,
-    Node, Session, SessionAttributes, SessionID, SessionState, SessionStatus, Task, TaskGID,
-    TaskID, TaskInput, TaskOptions, TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationPath, ApplicationState, ExecutorID,
+    ExecutorState, Node, Session, SessionAttributes, SessionPath, SessionState, SessionStatus,
+    Task, TaskGID, TaskInput, TaskName, TaskOptions, TaskOutput, TaskResult, TaskState, Workspace,
+    DEFAULT_WORKSPACE,
 };
 use crate::apis::{ApplicationFilter, Executor};
 use crate::FlameError;
 
 use super::{Engine, EnginePtr};
 
-/// None Storage Engine - stores lifecycle metadata in memory and allocates task IDs.
+/// None Storage Engine - stores lifecycle metadata in memory and allocates task names.
 ///
 /// The controller cache is the source of truth for all data.
 /// This engine also maintains the minimal application/session index needed for lifecycle guards.
 pub struct NoneEngine {
-    /// Per-session task ID counters for allocation
-    task_counters: MutexPtr<HashMap<SessionID, Arc<AtomicI64>>>,
+    workspaces: MutexPtr<HashMap<String, Workspace>>,
+    /// Per-session task name counters for allocation
+    task_counters: MutexPtr<HashMap<SessionPath, Arc<AtomicI64>>>,
     /// In-memory application cache (required for get_application)
-    applications: MutexPtr<HashMap<ApplicationID, Application>>,
+    applications: MutexPtr<HashMap<ApplicationPath, Application>>,
     /// In-memory session metadata used by lifecycle reconciliation.
-    sessions: MutexPtr<HashMap<SessionID, Session>>,
+    sessions: MutexPtr<HashMap<SessionPath, Session>>,
 }
 
 impl NoneEngine {
@@ -63,39 +65,67 @@ impl NoneEngine {
     pub async fn new_ptr(_url: &str) -> Result<EnginePtr, FlameError> {
         tracing::info!("Using none storage engine (no persistence)");
         Ok(Arc::new(Self {
+            workspaces: stdng::new_ptr(HashMap::from([(
+                DEFAULT_WORKSPACE.to_string(),
+                Workspace {
+                    name: DEFAULT_WORKSPACE.to_string(),
+                    creation_time: Utc::now(),
+                },
+            )])),
             task_counters: stdng::new_ptr(HashMap::new()),
             applications: stdng::new_ptr(HashMap::new()),
             sessions: stdng::new_ptr(HashMap::new()),
         }))
     }
 
-    /// Allocate the next task ID for a session.
+    /// Allocate the next task name for a session.
     /// Task IDs are sequential starting from 1.
-    fn next_task_id(&self, ssn_id: &SessionID) -> Result<TaskID, FlameError> {
+    fn next_task_name(&self, session: &SessionPath) -> Result<TaskName, FlameError> {
         let mut counters = lock_ptr!(self.task_counters)?;
         let counter = counters
-            .entry(ssn_id.clone())
+            .entry(session.clone())
             .or_insert_with(|| Arc::new(AtomicI64::new(0)));
         Ok(counter.fetch_add(1, Ordering::SeqCst) + 1)
     }
 
     /// Initialize task counter for a new session.
-    fn init_task_counter(&self, ssn_id: &SessionID) -> Result<(), FlameError> {
+    fn init_task_counter(&self, session: &SessionPath) -> Result<(), FlameError> {
         let mut counters = lock_ptr!(self.task_counters)?;
-        counters.insert(ssn_id.clone(), Arc::new(AtomicI64::new(0)));
+        counters.insert(session.clone(), Arc::new(AtomicI64::new(0)));
         Ok(())
     }
 
     /// Clean up task counter when session is deleted.
-    fn remove_task_counter(&self, ssn_id: &SessionID) -> Result<(), FlameError> {
+    fn remove_task_counter(&self, session: &SessionPath) -> Result<(), FlameError> {
         let mut counters = lock_ptr!(self.task_counters)?;
-        counters.remove(ssn_id);
+        counters.remove(session);
         Ok(())
     }
 }
 
 #[async_trait]
 impl Engine for NoneEngine {
+    async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
+        crate::apis::validate_path_segment(&name)?;
+        let mut workspaces = lock_ptr!(self.workspaces)?;
+        if workspaces.contains_key(&name) {
+            return Err(FlameError::AlreadyExist(format!("workspace <{name}>")));
+        }
+        let workspace = Workspace {
+            name: name.clone(),
+            creation_time: Utc::now(),
+        };
+        workspaces.insert(name, workspace.clone());
+        Ok(workspace)
+    }
+
+    async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError> {
+        let workspaces = lock_ptr!(self.workspaces)?;
+        let mut result: Vec<_> = workspaces.values().cloned().collect();
+        result.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(result)
+    }
+
     // ========== Application operations ==========
 
     async fn register_application(
@@ -103,8 +133,15 @@ impl Engine for NoneEngine {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError> {
+        let id = crate::apis::resolve_application_path(&name, &attr.id)?;
+        let (workspace, _) = crate::apis::parse_application_path(&id)?;
+        if !lock_ptr!(self.workspaces)?.contains_key(workspace) {
+            return Err(FlameError::NotFound(format!("workspace <{workspace}>")));
+        }
         let app = Application {
-            name: name.clone(),
+            id: uuid::Uuid::new_v4().to_string(),
+            gid: id.clone(),
+            name,
             version: 1,
             state: ApplicationState::Enabled,
             creation_time: Utc::now(),
@@ -124,19 +161,17 @@ impl Engine for NoneEngine {
         };
 
         let mut apps = lock_ptr!(self.applications)?;
-        if apps.contains_key(&name) {
-            return Err(FlameError::AlreadyExist(format!(
-                "application <{name}> already exists"
-            )));
+        if apps.contains_key(&id) {
+            return Err(FlameError::AlreadyExist(format!("application <{id}>")));
         }
-        apps.insert(name, app.clone());
+        apps.insert(id, app.clone());
 
         Ok(app)
     }
 
     async fn update_application_state(
         &self,
-        id: ApplicationID,
+        id: ApplicationPath,
         state: ApplicationState,
     ) -> Result<Application, FlameError> {
         let mut apps = lock_ptr!(self.applications)?;
@@ -150,7 +185,7 @@ impl Engine for NoneEngine {
         Ok(app.clone())
     }
 
-    async fn delete_application(&self, id: ApplicationID) -> Result<(), FlameError> {
+    async fn delete_application(&self, id: ApplicationPath) -> Result<(), FlameError> {
         let mut apps = lock_ptr!(self.applications)?;
         let app = apps
             .get(&id)
@@ -190,7 +225,9 @@ impl Engine for NoneEngine {
         }
 
         let updated = Application {
-            name: id.clone(),
+            id: app.id.clone(),
+            gid: app.gid.clone(),
+            name: app.name.clone(),
             version: app.version + 1,
             state: app.state,
             creation_time: app.creation_time,
@@ -213,7 +250,7 @@ impl Engine for NoneEngine {
         Ok(updated)
     }
 
-    async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError> {
+    async fn get_application(&self, id: ApplicationPath) -> Result<Application, FlameError> {
         let apps = lock_ptr!(self.applications)?;
         apps.get(&id)
             .cloned()
@@ -237,9 +274,13 @@ impl Engine for NoneEngine {
     // ========== Session operations ==========
 
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
+        let gid = attr.gid()?;
+        let application = attr.application_gid()?;
         let session = Session {
-            id: attr.id,
-            application: attr.application,
+            id: uuid::Uuid::new_v4().to_string(),
+            gid,
+            name: attr.name,
+            application,
             common_data: attr.common_data,
             min_instances: attr.min_instances,
             max_instances: attr.max_instances,
@@ -257,18 +298,25 @@ impl Engine for NoneEngine {
             events: vec![],
             retry_count: 0,
         };
-        lock_ptr!(self.sessions)?.insert(session.id.clone(), session.clone());
-        self.init_task_counter(&session.id)?;
+        let mut sessions = lock_ptr!(self.sessions)?;
+        if sessions.contains_key(&session.gid) {
+            return Err(FlameError::AlreadyExist(format!(
+                "session <{}> already exists",
+                session.gid
+            )));
+        }
+        self.init_task_counter(&session.gid)?;
+        sessions.insert(session.gid.clone(), session.clone());
         Ok(session)
     }
 
-    async fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    async fn get_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         Err(FlameError::NotFound(format!("session <{id}>")))
     }
 
     async fn open_session(
         &self,
-        id: SessionID,
+        id: SessionPath,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         match spec {
@@ -277,7 +325,7 @@ impl Engine for NoneEngine {
         }
     }
 
-    async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    async fn close_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         if let Some(session) = lock_ptr!(self.sessions)?.get_mut(&id) {
             if session.status.state == SessionState::Open {
                 session.status.state = SessionState::Closed;
@@ -288,7 +336,7 @@ impl Engine for NoneEngine {
         Err(FlameError::NotFound(format!("session <{id}>")))
     }
 
-    async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    async fn delete_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         let session = lock_ptr!(self.sessions)?
             .remove(&id)
             .ok_or_else(|| FlameError::NotFound(format!("session <{id}>")))?;
@@ -304,15 +352,16 @@ impl Engine for NoneEngine {
 
     async fn create_task(
         &self,
-        ssn_id: SessionID,
+        session: SessionPath,
         task_input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
-        let task_id = self.next_task_id(&ssn_id)?;
+        let task = self.next_task_name(&session)?;
 
         Ok(Task {
-            ssn_id,
-            id: task_id,
+            session,
+            id: uuid::Uuid::new_v4().to_string(),
+            number: task,
             version: 1,
             state: TaskState::Pending,
             creation_time: Utc::now(),
@@ -349,7 +398,7 @@ impl Engine for NoneEngine {
         Err(FlameError::NotFound(format!("task <{}>", gid)))
     }
 
-    async fn find_tasks(&self, _ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
+    async fn find_tasks(&self, _session: SessionPath) -> Result<Vec<Task>, FlameError> {
         Ok(vec![])
     }
 
@@ -415,7 +464,8 @@ mod tests {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -426,16 +476,48 @@ mod tests {
         };
 
         let session = engine.create_session(attr).await.unwrap();
-        assert_eq!(session.id, "test-session");
-        assert_eq!(session.application, "test-app");
+        assert_eq!(session.gid, "default/test-session");
+        assert_eq!(session.application, "default/test-app");
         assert_eq!(session.status.state, SessionState::Open);
+    }
+
+    #[tokio::test]
+    async fn duplicate_session_preserves_task_number() {
+        let engine = NoneEngine::new_ptr("none").await.unwrap();
+        let attr = SessionAttributes {
+            workspace: "default".to_string(),
+            name: "run".to_string(),
+            application: "app".to_string(),
+            ..Default::default()
+        };
+        let original = engine.create_session(attr.clone()).await.unwrap();
+        assert_eq!(
+            engine
+                .create_task(original.gid.clone(), None, None)
+                .await
+                .unwrap()
+                .number,
+            1
+        );
+        assert!(matches!(
+            engine.create_session(attr).await,
+            Err(FlameError::AlreadyExist(_))
+        ));
+        assert_eq!(
+            engine
+                .create_task(original.gid.clone(), None, None)
+                .await
+                .unwrap()
+                .number,
+            2
+        );
     }
 
     #[tokio::test]
     async fn test_none_engine_get_session_returns_not_found() {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
-        let result = engine.get_session("test-session".to_string()).await;
+        let result = engine.get_session("default/test-session".to_string()).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), FlameError::NotFound(_)));
     }
@@ -449,11 +531,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_none_engine_task_id_allocation() {
+    async fn test_none_engine_task_name_allocation() {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -465,30 +548,31 @@ mod tests {
         engine.create_session(attr).await.unwrap();
 
         let task1 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task1.id, 1);
+        assert_eq!(task1.number, 1);
 
         let task2 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task2.id, 2);
+        assert_eq!(task2.number, 2);
 
         let task3 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task3.id, 3);
+        assert_eq!(task3.number, 3);
     }
 
     #[tokio::test]
-    async fn test_none_engine_task_id_per_session() {
+    async fn test_none_engine_task_name_per_session() {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr1 = SessionAttributes {
-            id: "session-1".to_string(),
+            name: "session-1".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -500,7 +584,8 @@ mod tests {
         engine.create_session(attr1).await.unwrap();
 
         let attr2 = SessionAttributes {
-            id: "session-2".to_string(),
+            name: "session-2".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -512,22 +597,22 @@ mod tests {
         engine.create_session(attr2).await.unwrap();
 
         let task1_s1 = engine
-            .create_task("session-1".to_string(), None, None)
+            .create_task("default/session-1".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task1_s1.id, 1);
+        assert_eq!(task1_s1.number, 1);
 
         let task1_s2 = engine
-            .create_task("session-2".to_string(), None, None)
+            .create_task("default/session-2".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task1_s2.id, 1);
+        assert_eq!(task1_s2.number, 1);
 
         let task2_s1 = engine
-            .create_task("session-1".to_string(), None, None)
+            .create_task("default/session-1".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task2_s1.id, 2);
+        assert_eq!(task2_s1.number, 2);
     }
 
     #[tokio::test]
@@ -535,7 +620,8 @@ mod tests {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr = SessionAttributes {
-            id: "test-session".to_string(),
+            name: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -547,20 +633,22 @@ mod tests {
         engine.create_session(attr.clone()).await.unwrap();
 
         let task1 = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task1.id, 1);
+        assert_eq!(task1.number, 1);
 
-        let result = engine.delete_session("test-session".to_string()).await;
-        assert_eq!(result.unwrap().id, "test-session");
+        let result = engine
+            .delete_session("default/test-session".to_string())
+            .await;
+        assert_eq!(result.unwrap().gid, "default/test-session");
 
         engine.create_session(attr).await.unwrap();
 
         let task_new = engine
-            .create_task("test-session".to_string(), None, None)
+            .create_task("default/test-session".to_string(), None, None)
             .await
             .unwrap();
-        assert_eq!(task_new.id, 1);
+        assert_eq!(task_new.number, 1);
     }
 }

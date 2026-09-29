@@ -22,7 +22,6 @@ import grpc
 
 from flamepy.core.service import (
     FLAME_INSTANCE_ENDPOINT,
-    ApplicationContext,
     SessionContext,
     TaskContext,
     _active_response_publisher,
@@ -71,6 +70,7 @@ class FlameInstanceServicer(InstanceServicer):
         self._binding_lock = asyncio.Lock()
         self._active_tasks = 0
         self._hook_calls: set[asyncio.Task] = set()
+        self._bound_session_context: Optional[SessionContext] = None
 
     async def close(self):
         if self._hook_calls:
@@ -133,21 +133,15 @@ class FlameInstanceServicer(InstanceServicer):
 
     async def OnSessionEnter(self, request, context):  # noqa: N802
         try:
-            app = request.application
-            app_context = ApplicationContext(
-                name=app.name,
-                image=app.image if app.HasField("image") else None,
-                command=app.command if app.HasField("command") else None,
-                working_directory=app.working_directory if app.HasField("working_directory") else None,
-                url=app.url if app.HasField("url") else None,
-            )
             session_context = SessionContext(
                 _common_data=request.common_data if request.HasField("common_data") else None,
-                session_id=request.session_id,
-                application=app_context,
+                session=request.session,
+                workspace=request.workspace,
+                application=request.application,
             )
             async with self._binding_lock:
                 _, attributes = await self._binding_hook("on_session_enter", session_context)
+                self._bound_session_context = session_context
             return OnSessionEnterResponse(result=Result(return_code=0), attributes=attributes)
         except Exception as exc:
             logger.exception("OnSessionEnter failed")
@@ -155,8 +149,10 @@ class FlameInstanceServicer(InstanceServicer):
 
     async def OnTaskInvoke(self, request, context):  # noqa: N802
         task_context = TaskContext(
-            task_id=request.task_id,
-            session_id=request.session_id,
+            task=request.task,
+            session=request.session,
+            workspace=request.workspace,
+            application=request.application,
             input=request.input if request.HasField("input") else None,
         )
         if self._active_tasks >= self._max_inflight:
@@ -196,6 +192,7 @@ class FlameInstanceServicer(InstanceServicer):
         try:
             async with self._binding_lock:
                 await self._binding_hook("on_session_leave")
+                self._bound_session_context = None
             return Result(return_code=0)
         except Exception as exc:
             logger.exception("OnSessionLeave failed")

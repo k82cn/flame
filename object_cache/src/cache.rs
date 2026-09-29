@@ -27,7 +27,7 @@ use common::ctx::{FlameCache, FlameCluster};
 use common::FlameError;
 
 use crate::eviction::{new_policy, EvictionConfig, EvictionPolicyPtr};
-use crate::gc::ApplicationGarbageCollector;
+use crate::gc::SessionGarbageCollector;
 
 mod grpc;
 use grpc::GrpcCacheServer;
@@ -36,15 +36,15 @@ use rpc::flame::v1::object_cache_service_server::ObjectCacheServiceServer;
 /// Default batch size for eviction operations
 const EVICTION_BATCH_SIZE: usize = 10;
 
-/// Wildcard session identifier for matching all sessions of an application
+/// Wildcard session identifier for matching all sessions of a workspace.
 pub const WILDCARD_SESSION: &str = "*";
 
-/// Parsed object key: `<app_name>/<session_id>/<object_id>`
-/// session_id can be "*" for wildcard (all sessions), requires object_id to be None
+/// Parsed object key: `<workspace>/<session>/<object_id>`.
+/// Session `*` denotes every session in a workspace for prefix operations.
 #[derive(Debug, Clone)]
 pub struct ObjectKey {
-    pub app_name: String,
-    pub session_id: String,
+    pub workspace: String,
+    pub session: String,
     pub object_id: Option<String>,
 }
 
@@ -52,61 +52,54 @@ impl ObjectKey {
     /// Parse from path string.
     ///
     /// Wildcard '*' handling:
-    /// - Only allowed for session_id (e.g., "app/*" for delete all sessions)
-    /// - Not allowed for app_name or object_id
-    /// - Wildcard session cannot have object_id (e.g., "app/*/obj" is invalid)
+    /// - Only allowed for session (e.g., "workspace/*" for all sessions)
+    /// - Wildcard session cannot have object_id
     pub fn from_path(path_str: &str) -> Result<Self, FlameError> {
         let parts: Vec<&str> = path_str.split('/').collect();
 
+        // Cache keys are filesystem paths, so every component must follow the
+        // same safe segment rules as workspace and session IDs.
         for (i, part) in parts.iter().enumerate() {
-            if part.is_empty() || part.contains("..") || part.contains('\\') {
-                return Err(FlameError::InvalidConfig(format!(
-                    "Invalid key component: '{}'",
-                    part
-                )));
+            if *part == WILDCARD_SESSION && i == 1 {
+                continue;
             }
-            // Wildcard only allowed at index 1 (session_id position)
-            if *part == WILDCARD_SESSION && i != 1 {
-                return Err(FlameError::InvalidConfig(
-                    "Wildcard '*' only allowed for session_id".to_string(),
-                ));
-            }
+            common::apis::validate_path_segment(part)?;
         }
 
-        match parts.len() {
-            2 => Ok(ObjectKey {
-                app_name: parts[0].to_string(),
-                session_id: parts[1].to_string(),
+        match parts.as_slice() {
+            [workspace, session] => Ok(ObjectKey {
+                workspace: (*workspace).to_string(),
+                session: (*session).to_string(),
                 object_id: None,
             }),
-            3 => {
+            [workspace, session, object_id] => {
                 // Wildcard session cannot reference specific objects
-                if parts[1] == WILDCARD_SESSION {
+                if *session == WILDCARD_SESSION {
                     return Err(FlameError::InvalidConfig(
                         "Wildcard session '*' cannot have object_id".to_string(),
                     ));
                 }
                 // Object ID cannot be wildcard
-                if parts[2] == WILDCARD_SESSION {
+                if *object_id == WILDCARD_SESSION {
                     return Err(FlameError::InvalidConfig(
                         "Wildcard '*' not allowed for object_id".to_string(),
                     ));
                 }
                 Ok(ObjectKey {
-                    app_name: parts[0].to_string(),
-                    session_id: parts[1].to_string(),
-                    object_id: Some(parts[2].to_string()),
+                    workspace: (*workspace).to_string(),
+                    session: (*session).to_string(),
+                    object_id: Some((*object_id).to_string()),
                 })
             }
             _ => Err(FlameError::InvalidConfig(format!(
-                "Invalid path '{}': expected '<app>/<ssn>' or '<app>/<ssn>/<uuid>'",
+                "Invalid path '{}': expected '<workspace>/<ssn>' or '<workspace>/<ssn>/<object>'",
                 path_str
             ))),
         }
     }
 
     pub fn is_all_sessions(&self) -> bool {
-        self.session_id == WILDCARD_SESSION
+        self.session == WILDCARD_SESSION
     }
 
     pub fn to_key(&self) -> Option<String> {
@@ -115,20 +108,20 @@ impl ObjectKey {
         }
         self.object_id
             .as_ref()
-            .map(|oid| format!("{}/{}/{}", self.app_name, self.session_id, oid))
+            .map(|oid| format!("{}/{}/{}", self.workspace, self.session, oid))
     }
 
     pub fn to_prefix(&self) -> String {
         if self.is_all_sessions() {
-            self.app_name.clone()
+            self.workspace.clone()
         } else {
-            format!("{}/{}", self.app_name, self.session_id)
+            format!("{}/{}", self.workspace, self.session)
         }
     }
 
     pub fn matches(&self, key_str: &str) -> bool {
         if self.is_all_sessions() {
-            key_str.starts_with(&format!("{}/", self.app_name))
+            key_str.starts_with(&format!("{}/", self.workspace))
         } else if let Some(full_key) = self.to_key() {
             key_str == full_key
         } else {
@@ -149,12 +142,7 @@ impl ObjectKey {
                 "Wildcard session '*' cannot have object_id".to_string(),
             ));
         }
-        if id.is_empty() || id.contains("..") || id.contains('\\') || id.contains('/') {
-            return Err(FlameError::InvalidConfig(format!(
-                "Invalid object_id: '{}'",
-                id
-            )));
-        }
+        common::apis::validate_path_segment(&id)?;
         Ok(Self {
             object_id: Some(id),
             ..self
@@ -166,29 +154,14 @@ impl TryFrom<&str> for ObjectKey {
     type Error = FlameError;
 
     fn try_from(key: &str) -> Result<Self, Self::Error> {
-        let parts: Vec<&str> = key.split('/').collect();
-
-        if parts.len() != 3 {
+        let parsed = Self::from_path(key)?;
+        if parsed.object_id.is_none() {
             return Err(FlameError::InvalidConfig(format!(
-                "Invalid key '{}': expected '<app>/<ssn>/<uuid>'",
+                "Invalid key '{}': expected '<workspace>/<ssn>/<object>'",
                 key
             )));
         }
-
-        for part in &parts {
-            if part.is_empty() || part.contains("..") || part.contains('\\') {
-                return Err(FlameError::InvalidConfig(format!(
-                    "Invalid key component: '{}'",
-                    part
-                )));
-            }
-        }
-
-        Ok(ObjectKey {
-            app_name: parts[0].to_string(),
-            session_id: parts[1].to_string(),
-            object_id: Some(parts[2].to_string()),
-        })
+        Ok(parsed)
     }
 }
 
@@ -755,11 +728,8 @@ pub async fn run(
 
     cache.load_from_storage().await?;
 
-    let collector = ApplicationGarbageCollector::new(
-        Arc::clone(&cache),
-        cluster_config,
-        cache_config.gc.interval,
-    )?;
+    let collector =
+        SessionGarbageCollector::new(Arc::clone(&cache), cluster_config, cache_config.gc.interval)?;
     let gc_handle = tokio::spawn(collector.run());
 
     let grpc_server = GrpcCacheServer::new(Arc::clone(&cache));
@@ -837,37 +807,49 @@ mod tests {
         #[test]
         fn object_key_from_path_two_parts() {
             let key = ObjectKey::from_path("my-app/my-session").unwrap();
-            assert_eq!(key.app_name, "my-app");
-            assert_eq!(key.session_id, "my-session");
+            assert_eq!(key.workspace, "my-app");
+            assert_eq!(key.session, "my-session");
             assert!(key.object_id.is_none());
         }
 
         #[test]
         fn object_key_from_path_three_parts() {
-            let key = ObjectKey::from_path("my-app/my-session/my-uuid").unwrap();
-            assert_eq!(key.app_name, "my-app");
-            assert_eq!(key.session_id, "my-session");
-            assert_eq!(key.object_id, Some("my-uuid".to_string()));
+            let key = ObjectKey::from_path("team/my-session/object").unwrap();
+            assert_eq!(key.workspace, "team");
+            assert_eq!(key.session, "my-session");
+            assert_eq!(key.object_id.as_deref(), Some("object"));
         }
 
         #[test]
         fn object_key_to_key_and_prefix() {
-            let key = ObjectKey::from_path("app/session/uuid").unwrap();
-            assert_eq!(key.to_key(), Some("app/session/uuid".to_string()));
-            assert_eq!(key.to_prefix(), "app/session");
+            let key = ObjectKey::from_path("team/session/uuid").unwrap();
+            assert_eq!(key.to_key(), Some("team/session/uuid".to_string()));
+            assert_eq!(key.to_prefix(), "team/session");
+        }
+
+        #[test]
+        fn object_key_rejects_unsafe_path_components() {
+            for path in [
+                ".hidden/session/object",
+                "team/../object",
+                "team/session/.",
+                "team/session/other/path",
+            ] {
+                assert!(ObjectKey::from_path(path).is_err(), "{path}");
+            }
         }
 
         #[test]
         fn object_key_matches_exact_full_key() {
-            let full_key = ObjectKey::from_path("app/session/uuid").unwrap();
-            let session_key = ObjectKey::from_path("app/session").unwrap();
-            let app_key = ObjectKey::from_path("app/*").unwrap();
+            let full_key = ObjectKey::from_path("team/session/uuid").unwrap();
+            let session_key = ObjectKey::from_path("team/session").unwrap();
+            let app_key = ObjectKey::from_path("team/*").unwrap();
 
-            assert!(full_key.matches("app/session/uuid"));
-            assert!(!full_key.matches("app/session/other"));
-            assert!(session_key.matches("app/session/uuid"));
-            assert!(session_key.matches("app/session/other"));
-            assert!(app_key.matches("app/other/uuid"));
+            assert!(full_key.matches("team/session/uuid"));
+            assert!(!full_key.matches("team/session/other"));
+            assert!(session_key.matches("team/session/uuid"));
+            assert!(session_key.matches("team/session/other"));
+            assert!(app_key.matches("team/other/uuid"));
         }
 
         #[test]

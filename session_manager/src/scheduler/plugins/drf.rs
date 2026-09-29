@@ -14,17 +14,16 @@ limitations under the License.
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::model::{
-    ExecutorInfoPtr, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_EXECUTOR, ALL_NODE,
-    OPEN_SESSION,
-};
+use crate::controller::snapshot::SnapShot;
+use crate::model::{ExecutorInfoPtr, NodeInfoPtr, SessionInfo, SessionInfoPtr, ALL_NODE};
 use crate::scheduler::plugins::{Plugin, PluginPtr};
-use common::apis::{ResourceRequirement, SessionID, TaskState};
+use common::apis::{ResourceRequirement, SessionPath, TaskState};
+use common::apis::{ALL_EXECUTOR, OPEN_SESSION};
 use common::FlameError;
 
 #[derive(Default, Clone)]
 struct DRFSessionInfo {
-    pub id: SessionID,
+    pub session: SessionPath,
     pub allocated: ResourceRequirement,
     pub pipelined: ResourceRequirement,
     pub dominant_share: f64,
@@ -32,7 +31,7 @@ struct DRFSessionInfo {
 
 pub struct DRFPlugin {
     total: ResourceRequirement,
-    ssn_map: HashMap<SessionID, DRFSessionInfo>,
+    ssn_map: HashMap<SessionPath, DRFSessionInfo>,
     node_allocations: HashMap<String, ResourceRequirement>,
 }
 
@@ -119,12 +118,12 @@ impl Plugin for DRFPlugin {
                 }
             }
 
-            if let Some(ssn_id) = &exec.ssn_id {
+            if let Some(session) = &exec.session {
                 let entry = self
                     .ssn_map
-                    .entry(ssn_id.clone())
+                    .entry(session.clone())
                     .or_insert_with(|| DRFSessionInfo {
-                        id: ssn_id.clone(),
+                        session: session.clone(),
                         ..Default::default()
                     });
                 entry.allocated.cpu += exec.resreq.cpu;
@@ -135,27 +134,27 @@ impl Plugin for DRFPlugin {
 
         let sessions = ss.find_sessions(OPEN_SESSION)?;
         for ssn in sessions.values() {
-            let ssn_id = ssn.id.clone();
+            let session = ssn.session.clone();
             let _ = self
                 .ssn_map
-                .entry(ssn_id.clone())
+                .entry(session.clone())
                 .or_insert_with(|| DRFSessionInfo {
-                    id: ssn.id.clone(),
+                    session: ssn.session.clone(),
                     ..Default::default()
                 });
             let allocated_clone = self
                 .ssn_map
-                .get(&ssn_id)
+                .get(&session)
                 .map(|e| e.allocated.clone())
                 .unwrap_or_default();
             let dominant_share = self.calculate_dominant_share(&allocated_clone);
-            if let Some(entry) = self.ssn_map.get_mut(&ssn_id) {
+            if let Some(entry) = self.ssn_map.get_mut(&session) {
                 entry.dominant_share = dominant_share;
             }
 
             tracing::debug!(
                 "[DRF] Session <{}>: allocated=({},{},{}), dominant_share={:.4}",
-                ssn.id,
+                ssn.session,
                 allocated_clone.cpu,
                 allocated_clone.memory,
                 allocated_clone.gpu,
@@ -169,12 +168,12 @@ impl Plugin for DRFPlugin {
     fn ssn_order_fn(&self, s1: &SessionInfo, s2: &SessionInfo) -> Option<Ordering> {
         let ds1 = self
             .ssn_map
-            .get(&s1.id)
+            .get(&s1.session)
             .map(|s| s.dominant_share)
             .unwrap_or(0.0);
         let ds2 = self
             .ssn_map
-            .get(&s2.id)
+            .get(&s2.session)
             .map(|s| s.dominant_share)
             .unwrap_or(0.0);
 
@@ -192,7 +191,7 @@ impl Plugin for DRFPlugin {
             return Some(false);
         }
 
-        let ssn_info = self.ssn_map.get(&ssn.id)?;
+        let ssn_info = self.ssn_map.get(&ssn.session)?;
         let num_sessions = self.ssn_map.len().max(1) as f64;
         let fair_share = 1.0 / num_sessions;
 
@@ -200,7 +199,7 @@ impl Plugin for DRFPlugin {
     }
 
     fn is_ready(&self, ssn: &SessionInfoPtr) -> Option<bool> {
-        let ssn_info = self.ssn_map.get(&ssn.id)?;
+        let ssn_info = self.ssn_map.get(&ssn.session)?;
         let mut supplied = ssn_info.allocated.clone();
         supplied.add(&ssn_info.pipelined);
         let num_sessions = self.ssn_map.len().max(1) as f64;
@@ -223,7 +222,7 @@ impl Plugin for DRFPlugin {
     }
 
     fn on_executor_pipeline(&mut self, exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
-        if let Some(entry) = self.ssn_map.get_mut(&ssn.id) {
+        if let Some(entry) = self.ssn_map.get_mut(&ssn.session) {
             entry.pipelined.add(&exec.resreq);
         }
 
@@ -241,14 +240,14 @@ impl Plugin for DRFPlugin {
     fn on_session_bind(&mut self, ssn: SessionInfoPtr) {
         let ssn_resreq = self.get_session_resreq(&ssn);
 
-        if let Some(entry) = self.ssn_map.get_mut(&ssn.id) {
+        if let Some(entry) = self.ssn_map.get_mut(&ssn.session) {
             entry.allocated.cpu += ssn_resreq.cpu;
             entry.allocated.memory += ssn_resreq.memory;
             entry.allocated.gpu += ssn_resreq.gpu;
         }
-        if let Some(entry) = self.ssn_map.get(&ssn.id) {
+        if let Some(entry) = self.ssn_map.get(&ssn.session) {
             let ds = self.calculate_dominant_share(&entry.allocated);
-            if let Some(entry) = self.ssn_map.get_mut(&ssn.id) {
+            if let Some(entry) = self.ssn_map.get_mut(&ssn.session) {
                 entry.dominant_share = ds;
             }
         }
@@ -257,14 +256,14 @@ impl Plugin for DRFPlugin {
     fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {
         let ssn_resreq = self.get_session_resreq(&ssn);
 
-        if let Some(entry) = self.ssn_map.get_mut(&ssn.id) {
+        if let Some(entry) = self.ssn_map.get_mut(&ssn.session) {
             entry.allocated.cpu = entry.allocated.cpu.saturating_sub(ssn_resreq.cpu);
             entry.allocated.memory = entry.allocated.memory.saturating_sub(ssn_resreq.memory);
             entry.allocated.gpu = entry.allocated.gpu.saturating_sub(ssn_resreq.gpu);
         }
-        if let Some(entry) = self.ssn_map.get(&ssn.id) {
+        if let Some(entry) = self.ssn_map.get(&ssn.session) {
             let ds = self.calculate_dominant_share(&entry.allocated);
-            if let Some(entry) = self.ssn_map.get_mut(&ssn.id) {
+            if let Some(entry) = self.ssn_map.get_mut(&ssn.session) {
                 entry.dominant_share = ds;
             }
         }
@@ -289,7 +288,7 @@ mod tests {
 
     fn session() -> SessionInfoPtr {
         Arc::new(SessionInfo {
-            id: "session-1".to_string(),
+            session: "session-1".to_string(),
             application: "app".to_string(),
             tasks_status: [(TaskState::Pending, 1)].into_iter().collect(),
             creation_time: Utc::now(),
@@ -312,8 +311,8 @@ mod tests {
             resreq: rr(1),
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
             state: ExecutorState::Void,
@@ -327,9 +326,9 @@ mod tests {
         let mut plugin = DRFPlugin {
             total: rr(4),
             ssn_map: HashMap::from([(
-                ssn.id.clone(),
+                ssn.session.clone(),
                 DRFSessionInfo {
-                    id: ssn.id.clone(),
+                    session: ssn.session.clone(),
                     ..Default::default()
                 },
             )]),
@@ -340,7 +339,7 @@ mod tests {
             plugin.on_executor_pipeline(void_executor(&format!("exec-{i}")), ssn.clone());
         }
 
-        let info = plugin.ssn_map.get(&ssn.id).unwrap();
+        let info = plugin.ssn_map.get(&ssn.session).unwrap();
         assert_eq!(info.allocated, rr(0));
         assert_eq!(info.pipelined, rr(4));
         assert_eq!(plugin.node_allocations.get("node-1"), Some(&rr(4)));
@@ -369,7 +368,7 @@ mod tests {
         snapshot.add_executor(retained).unwrap();
 
         let pending = Arc::new(SessionInfo {
-            id: "session-app-b".to_string(),
+            session: "session-app-b".to_string(),
             application: "app-b".to_string(),
             tasks_status: [(TaskState::Pending, 1)].into_iter().collect(),
             state: SessionState::Open,
@@ -387,7 +386,10 @@ mod tests {
 
         assert_eq!(plugin.node_allocations.get(&node.name), Some(&rr(1)));
         assert_eq!(plugin.is_allocatable(&node, &pending), Some(false));
-        assert_eq!(plugin.ssn_map.get(&pending.id).unwrap().allocated, rr(0));
+        assert_eq!(
+            plugin.ssn_map.get(&pending.session).unwrap().allocated,
+            rr(0)
+        );
     }
 
     #[test]
@@ -404,7 +406,7 @@ mod tests {
             id: "unbinding".to_string(),
             node: node.name.clone(),
             resreq: rr(1),
-            ssn_id: None,
+            session: None,
             state: ExecutorState::Unbinding,
             ..Default::default()
         });

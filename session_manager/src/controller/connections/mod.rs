@@ -26,7 +26,8 @@ use std::sync::Arc;
 use common::FlameError;
 use stdng::lock_ptr;
 
-use crate::model::{ConnectionState, Executor, NodeConnectionPtr};
+use crate::connection::{ConnectionState, NodeConnectionPtr};
+use common::apis::Executor;
 
 mod closed;
 mod connected;

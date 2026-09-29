@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS sessions (
     id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
     application     TEXT NOT NULL,
 
     common_data     BLOB,
@@ -10,9 +11,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     state           INTEGER NOT NULL
 );
 
+CREATE INDEX idx_sessions_name ON sessions(name);
+CREATE INDEX idx_sessions_application ON sessions(application);
+
 CREATE TABLE IF NOT EXISTS tasks (
-    id              INTEGER NOT NULL,
-    ssn_id          TEXT NOT NULL,
+    id              TEXT PRIMARY KEY,
+    number          INTEGER NOT NULL,
+    session          TEXT NOT NULL,
 
     input           BLOB,
     output          BLOB,
@@ -22,5 +27,5 @@ CREATE TABLE IF NOT EXISTS tasks (
 
     state           INTEGER NOT NULL,
 
-    PRIMARY KEY (id, ssn_id)
+    UNIQUE (session, number)
 );

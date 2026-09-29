@@ -36,7 +36,7 @@ chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 actix-rt = "2"
 nix = { version = "0.30", features = ["signal"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }

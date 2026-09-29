@@ -46,8 +46,15 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Manage workspaces.
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
     /// View the object of Flame
     View {
+        #[arg(long, default_value = "default")]
+        workspace: String,
         /// The name of application
         #[arg(short, long)]
         application: Option<String>,
@@ -73,6 +80,9 @@ enum Commands {
         /// The yaml file of the application
         #[arg(short, long)]
         application: Option<String>,
+        /// Workspace containing the application.
+        #[arg(long, default_value = "default")]
+        workspace: String,
     },
     /// List the objects of Flame
     List {
@@ -91,15 +101,22 @@ enum Commands {
         /// Output format for the list
         #[arg(short, long, default_value = "table", value_parser = ["table", "json"])]
         output_format: String,
+        /// Workspace whose applications to list.
+        #[arg(long, default_value = "default")]
+        workspace: String,
     },
     /// Close the session in Flame
     Close {
+        #[arg(long, default_value = "default")]
+        workspace: String,
         /// The id of session
         #[arg(short, long)]
         session: String,
     },
     /// Create a session in Flame
     Create {
+        #[arg(long, default_value = "default")]
+        workspace: String,
         /// The name of Application
         #[arg(short, long)]
         app: String,
@@ -126,11 +143,16 @@ enum Commands {
         /// The yaml file of the application
         #[arg(short, long)]
         file: String,
+        /// Workspace to register the application in.
+        #[arg(long, default_value = "default")]
+        workspace: String,
     },
     /// Deploy an application package to object cache and register it
     Deploy(Box<deploy::Options>),
     /// Unregister the application from Flame
     Unregister {
+        #[arg(long, default_value = "default")]
+        workspace: String,
         /// The name of the application
         #[arg(short, long)]
         application: String,
@@ -143,6 +165,14 @@ enum Commands {
     },
 }
 
+#[derive(Subcommand)]
+enum WorkspaceCommand {
+    /// Create a workspace.
+    Create { name: String },
+    /// List workspaces.
+    List,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     flame_rs::apis::init_logger()?;
@@ -151,12 +181,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let ctx = FlameContext::from_file(cli.config)?;
 
     match &cli.command {
+        Some(Commands::Workspace { command }) => {
+            let current = ctx.get_current_context()?;
+            let conn = flame_rs::client::connect_with_tls(
+                &current.cluster.endpoint,
+                current.cluster.tls.as_ref(),
+            )
+            .await?;
+            match command {
+                WorkspaceCommand::Create { name } => {
+                    let workspace = conn.create_workspace(name).await?;
+                    println!("{}", workspace.name);
+                }
+                WorkspaceCommand::List => {
+                    for workspace in conn.list_workspaces().await? {
+                        println!("{}", workspace.name);
+                    }
+                }
+            }
+        }
         Some(Commands::List {
             application,
             session,
             executor,
             node,
             output_format,
+            workspace,
         }) => {
             list::run(
                 &ctx,
@@ -165,27 +215,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 *executor,
                 *node,
                 output_format,
+                workspace,
             )
             .await?
         }
-        Some(Commands::Close { session }) => close::run(&ctx, session).await?,
+        Some(Commands::Close { session, workspace }) => {
+            close::run(&ctx, workspace, session).await?
+        }
         Some(Commands::Create {
             app,
+            workspace,
             priority,
             resreq,
-        }) => create::run(&ctx, app, priority, resreq).await?,
+        }) => create::run(&ctx, workspace, app, priority, resreq).await?,
         Some(Commands::View {
             application,
             session,
             task,
             node,
             output_format,
-        }) => view::run(&ctx, output_format, application, session, task, node).await?,
+            workspace,
+        }) => {
+            view::run(
+                &ctx,
+                output_format,
+                workspace,
+                application,
+                session,
+                task,
+                node,
+            )
+            .await?
+        }
         Some(Commands::Migrate { url, sql }) => migrate::run(&ctx, url, sql).await?,
-        Some(Commands::Register { file }) => register::run(&ctx, file).await?,
+        Some(Commands::Register { file, workspace }) => {
+            register::run(&ctx, file, workspace).await?
+        }
         Some(Commands::Deploy(options)) => deploy::run(&ctx, options).await?,
-        Some(Commands::Unregister { application }) => unregister::run(&ctx, application).await?,
-        Some(Commands::Update { application }) => update::run(&ctx, application).await?,
+        Some(Commands::Unregister {
+            application,
+            workspace,
+        }) => unregister::run(&ctx, workspace, application).await?,
+        Some(Commands::Update {
+            application,
+            workspace,
+        }) => update::run(&ctx, application, workspace).await?,
         Some(Commands::Completion { shell }) => {
             generate(*shell, &mut Cli::command(), "flmctl", &mut io::stdout());
         }

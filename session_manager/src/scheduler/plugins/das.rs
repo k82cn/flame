@@ -19,15 +19,16 @@ use std::collections::{HashMap, HashSet};
 use bytes::Bytes;
 use stdng::lock_ptr;
 
-use crate::model::{ExecutorInfo, SessionInfo, SnapShot};
+use crate::controller::snapshot::SnapShot;
+use crate::model::{ExecutorInfo, SessionInfo};
 use crate::scheduler::plugins::{Plugin, PluginPtr};
-use common::apis::SessionID;
+use common::apis::SessionPath;
 use common::FlameError;
 
 /// Orders eligible Idle executors by coverage of a session's Pending affinity.
 #[derive(Default)]
 pub struct DasPlugin {
-    affinity: HashMap<SessionID, HashSet<Bytes>>,
+    affinity: HashMap<SessionPath, HashSet<Bytes>>,
 }
 
 impl DasPlugin {
@@ -36,7 +37,7 @@ impl DasPlugin {
     }
 
     fn score(&self, executor: &ExecutorInfo, session: &SessionInfo) -> usize {
-        self.affinity.get(&session.id).map_or(0, |affinity| {
+        self.affinity.get(&session.session).map_or(0, |affinity| {
             executor
                 .attributes
                 .iter()
@@ -56,7 +57,7 @@ impl Plugin for DasPlugin {
 
         let sessions = lock_ptr!(ss.sessions)?;
         for session in sessions.values() {
-            let affinity = self.affinity.entry(session.id.clone()).or_default();
+            let affinity = self.affinity.entry(session.session.clone()).or_default();
             if let Some(tasks) = session.task_index.get(&common::apis::TaskState::Pending) {
                 for task in tasks.values() {
                     affinity.extend(task.affinity.iter().cloned());
@@ -96,10 +97,10 @@ mod tests {
         }
     }
 
-    fn task(session_id: &str, id: i64, keys: &[&'static [u8]]) -> Task {
+    fn task(session: &str, id: i64, keys: &[&'static [u8]]) -> Task {
         Task {
-            id,
-            ssn_id: session_id.to_string(),
+            number: id,
+            session: session.to_string(),
             version: 1,
             state: TaskState::Pending,
             affinity: keys.iter().copied().map(Bytes::from_static).collect(),
@@ -176,8 +177,8 @@ mod tests {
         };
         source
             .update_task(&Task {
-                id: 1,
-                ssn_id: "session".to_string(),
+                number: 1,
+                session: "session".to_string(),
                 version: 1,
                 affinity: HashSet::from([Bytes::from_static(b"popped")]),
                 ..Default::default()
@@ -185,8 +186,8 @@ mod tests {
             .unwrap();
         source
             .update_task(&Task {
-                id: 2,
-                ssn_id: "session".to_string(),
+                number: 2,
+                session: "session".to_string(),
                 version: 1,
                 affinity: HashSet::from([Bytes::from_static(b"pending")]),
                 ..Default::default()

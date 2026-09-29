@@ -17,7 +17,7 @@ from flamepy import SessionState
 from flamepy.serving import open_session
 
 from e2e.api import TestContext, TestRequest
-from tests.utils import deploy_e2e_application, random_string
+from tests.utils import deploy_e2e_application, random_string, unregister_application_by_name
 
 FLM_TEST_APP = "flme2e"
 
@@ -32,11 +32,11 @@ def setup_test_env():
     sessions = flamepy.list_sessions()
     for sess in sessions:
         try:
-            flamepy.close_session(sess.id)
+            flamepy.close_session(sess.name)
         except Exception:
             pass
 
-    flamepy.unregister_application(FLM_TEST_APP)
+    unregister_application_by_name(FLM_TEST_APP)
 
 
 # ============================================================================
@@ -50,8 +50,8 @@ def test_create_service_session():
 
     ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
-    session_id = session.id()
-    assert ssn_list[0].id == session_id
+    session = session.name
+    assert ssn_list[0].name == session
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
@@ -59,7 +59,7 @@ def test_create_service_session():
 
     ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP]
     assert len(ssn_list) == 1
-    assert ssn_list[0].id == session_id
+    assert ssn_list[0].name == session
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.CLOSED
 
@@ -70,7 +70,7 @@ def test_invoke_task_without_context():
 
     ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
-    assert ssn_list[0].id == session.id()
+    assert ssn_list[0].name == session.name
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
@@ -92,7 +92,7 @@ def test_invoke_task_with_context():
 
     ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
-    assert ssn_list[0].id == session.id()
+    assert ssn_list[0].name == session.name
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
@@ -111,7 +111,7 @@ def test_update_context():
 
     ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
     assert len(ssn_list) == 1
-    assert ssn_list[0].id == session.id()
+    assert ssn_list[0].name == session.name
     assert ssn_list[0].application == FLM_TEST_APP
     assert ssn_list[0].state == SessionState.OPEN
 
@@ -151,16 +151,16 @@ def test_service_session_context_manager():
     with open_session(FLM_TEST_APP, ctx=None) as session:
         ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.state == SessionState.OPEN]
         assert len(ssn_list) == 1
-        session_id = session.id()
-        assert ssn_list[0].id == session_id
+        session = session.name
+        assert ssn_list[0].name == session
 
         output = session.run(TestRequest(input=input))
         assert output.output == input
 
     # After context exit, session should be closed
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.id == session_id]
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.name == session]
     assert len(ssn_list) == 1
-    assert ssn_list[0].id == session_id
+    assert ssn_list[0].name == session
     assert ssn_list[0].state == SessionState.CLOSED
 
 
@@ -168,17 +168,17 @@ def test_service_session_open_existing_session():
     """Test opening an existing session with service Session."""
     # First create a session and keep it open
     session1 = open_session(FLM_TEST_APP, ctx=TestContext(common_data=random_string()))
-    session_id = session1.id()
+    session = session1.name
 
     # Now open the same open session with service Session
-    session2 = open_session(session_id=session_id)
+    session2 = open_session(session=session)
 
-    assert session2.id() == session_id
-    assert session2.id() == session1.id()
+    assert session2.name == session
+    assert session2.name == session1.name
 
-    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.id == session_id]
+    ssn_list = [s for s in flamepy.list_sessions() if s.application == FLM_TEST_APP and s.name == session]
     assert len(ssn_list) == 1
-    assert ssn_list[0].id == session_id
+    assert ssn_list[0].name == session
     assert ssn_list[0].state == SessionState.OPEN
 
     session1.close()
@@ -186,12 +186,12 @@ def test_service_session_open_existing_session():
 
 
 def test_service_session_validation():
-    """Test that service Session raises ValueError when both name and session_id are None."""
-    with pytest.raises(ValueError, match="Either 'name' or 'session_id' must be provided"):
-        open_session(name=None, session_id=None)
+    """Test that service Session raises ValueError when both name and session are None."""
+    with pytest.raises(ValueError, match="Either 'name' or 'session' must be provided"):
+        open_session(name=None, session=None)
 
 
 def test_service_session_validation_both_provided():
-    """Test that service Session raises ValueError when both name and session_id are provided."""
-    with pytest.raises(ValueError, match="Cannot provide both 'name' and 'session_id'"):
-        open_session(name=FLM_TEST_APP, session_id="some-session-id")
+    """Test that service Session raises ValueError when both name and session are provided."""
+    with pytest.raises(ValueError, match="Cannot provide both 'name' and 'session'"):
+        open_session(name=FLM_TEST_APP, session="some-session-id")

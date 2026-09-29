@@ -14,13 +14,13 @@ limitations under the License.
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use common::apis::{ResourceRequirement, SessionID, TaskState};
+use common::apis::{ResourceRequirement, SessionPath, TaskState};
 use common::FlameError;
 
-use crate::model::{
-    ExecutorInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_EXECUTOR, ALL_NODE, OPEN_SESSION,
-};
+use crate::controller::snapshot::SnapShot;
+use crate::model::{ExecutorInfoPtr, SessionInfo, SessionInfoPtr, ALL_NODE};
 use crate::scheduler::plugins::{Plugin, PluginPtr};
+use common::apis::{ALL_EXECUTOR, OPEN_SESSION};
 
 /// PriorityPlugin implements priority-based session ordering and allocation blocking.
 ///
@@ -56,25 +56,25 @@ pub struct PriorityPlugin {
     max_needy_priority: u32,
     /// Priority for each open session, keyed by session ID.
     /// Populated in `setup()`.
-    ssn_priority: HashMap<SessionID, u32>,
+    ssn_priority: HashMap<SessionPath, u32>,
     /// Per-session priority-distributed share, expressed as a `ResourceRequirement`
     /// (cpu/memory/gpu). Populated in `setup()` step 2 from the cluster-capacity
     /// distribution loop. Read-only thereafter for the cycle.
-    ssn_desired: HashMap<SessionID, ResourceRequirement>,
+    ssn_desired: HashMap<SessionPath, ResourceRequirement>,
     /// Executor resources currently allocated per session, expressed as a
     /// `ResourceRequirement`. Initialised from the snapshot in `setup()`; updated
     /// via callbacks.
-    ssn_allocated: HashMap<SessionID, ResourceRequirement>,
+    ssn_allocated: HashMap<SessionPath, ResourceRequirement>,
     /// Resources selected during this scheduling cycle but not yet bound to a
     /// session. Pipeline accounting prevents Allocate from creating more
     /// executors for demand that is already in flight.
-    ssn_pipelined: HashMap<SessionID, ResourceRequirement>,
+    ssn_pipelined: HashMap<SessionPath, ResourceRequirement>,
     /// Per-executor effective resource requirement for each session, cached in
     /// `setup()` so lifecycle callbacks can adjust resource accounting without
     /// re-deriving from the snapshot. After the slots-cleanup refactor, every open session's
     /// `resreq` is guaranteed to be populated by `resolve_session_resreq` in
     /// `apiserver::frontend`, so this is simply a clone of `ssn.resreq`.
-    ssn_unit: HashMap<SessionID, ResourceRequirement>,
+    ssn_unit: HashMap<SessionPath, ResourceRequirement>,
 }
 
 impl PriorityPlugin {
@@ -178,7 +178,7 @@ impl Plugin for PriorityPlugin {
 
         let mut remaining = total.clone();
         for ssn in &sessions {
-            self.ssn_priority.insert(ssn.id.clone(), ssn.priority);
+            self.ssn_priority.insert(ssn.session.clone(), ssn.priority);
 
             // Per-task / per-executor effective resreq. After the slots-cleanup
             // refactor, `resolve_session_resreq` in `apiserver::frontend` always
@@ -193,12 +193,13 @@ impl Plugin for PriorityPlugin {
             // Per-field min — guaranteed `granted ≤ remaining` per resource.
             let granted = demand.min(&remaining);
 
-            self.ssn_desired.insert(ssn.id.clone(), granted.clone());
+            self.ssn_desired
+                .insert(ssn.session.clone(), granted.clone());
             self.ssn_allocated
-                .insert(ssn.id.clone(), ResourceRequirement::default());
+                .insert(ssn.session.clone(), ResourceRequirement::default());
             self.ssn_pipelined
-                .insert(ssn.id.clone(), ResourceRequirement::default());
-            self.ssn_unit.insert(ssn.id.clone(), per_task);
+                .insert(ssn.session.clone(), ResourceRequirement::default());
+            self.ssn_unit.insert(ssn.session.clone(), per_task);
 
             // `granted = remaining.min(demand)` per-field, so `granted ≤ remaining`
             // always holds in every dimension; sub() cannot underflow here.
@@ -224,8 +225,8 @@ impl Plugin for PriorityPlugin {
         // the source of truth for what resources are actually consumed.
         let executors = ss.find_executors(ALL_EXECUTOR)?;
         for exe in executors.values() {
-            if let Some(ref ssn_id) = exe.ssn_id {
-                if let Some(alloc) = self.ssn_allocated.get_mut(ssn_id) {
+            if let Some(ref session) = exe.session {
+                if let Some(alloc) = self.ssn_allocated.get_mut(session) {
                     alloc.add(&exe.resreq);
                 }
             }
@@ -246,8 +247,8 @@ impl Plugin for PriorityPlugin {
     /// Returns ordering based on priority (descending). Returns `None` when
     /// priorities are equal, deferring tiebreaking to the next plugin in the chain.
     fn ssn_order_fn(&self, s1: &SessionInfo, s2: &SessionInfo) -> Option<Ordering> {
-        let p1 = self.ssn_priority.get(&s1.id).copied().unwrap_or(0);
-        let p2 = self.ssn_priority.get(&s2.id).copied().unwrap_or(0);
+        let p1 = self.ssn_priority.get(&s1.session).copied().unwrap_or(0);
+        let p2 = self.ssn_priority.get(&s2.session).copied().unwrap_or(0);
 
         if p1 != p2 {
             // Higher priority comes first → descending order.
@@ -272,12 +273,12 @@ impl Plugin for PriorityPlugin {
     /// Because `PluginManager::is_underused` uses "first non-`None` wins", the `Some(true)`
     /// path overrides any downstream-plugin veto for high-priority sessions.
     fn is_underused(&self, ssn: &SessionInfoPtr) -> Option<bool> {
-        let priority = self.ssn_priority.get(&ssn.id).copied()?;
+        let priority = self.ssn_priority.get(&ssn.session).copied()?;
 
         if priority < self.max_needy_priority {
             tracing::debug!(
                 "[PriorityPlugin] Session <{}> (priority={}) blocked: needy session at priority={} exists",
-                ssn.id, priority, self.max_needy_priority
+                ssn.session, priority, self.max_needy_priority
             );
             return Some(false);
         }
@@ -286,15 +287,15 @@ impl Plugin for PriorityPlugin {
         // has unmet demand. With ResourceRequirement semantics, "unmet" means
         // `allocated < desired` in *any* dimension (i.e. `!allocated.great_equal(desired)`).
         // Demand of zero (default) is treated as "no demand → defer to the next plugin".
-        let desired = self.ssn_desired.get(&ssn.id)?;
-        let allocated = self.ssn_allocated.get(&ssn.id)?;
+        let desired = self.ssn_desired.get(&ssn.session)?;
+        let allocated = self.ssn_allocated.get(&ssn.session)?;
         let zero = ResourceRequirement::default();
 
         if !desired.equal(&zero) && !allocated.great_equal(desired) {
             tracing::debug!(
                 "[PriorityPlugin] Session <{}> (priority={}) underused: \
                 allocated=(cpu={}, memory={}, gpu={}) < desired=(cpu={}, memory={}, gpu={})",
-                ssn.id,
+                ssn.session,
                 priority,
                 allocated.cpu,
                 allocated.memory,
@@ -311,44 +312,44 @@ impl Plugin for PriorityPlugin {
     }
 
     fn is_ready(&self, ssn: &SessionInfoPtr) -> Option<bool> {
-        let desired = self.ssn_desired.get(&ssn.id)?;
-        let allocated = self.ssn_allocated.get(&ssn.id)?;
-        let pipelined = self.ssn_pipelined.get(&ssn.id)?;
+        let desired = self.ssn_desired.get(&ssn.session)?;
+        let allocated = self.ssn_allocated.get(&ssn.session)?;
+        let pipelined = self.ssn_pipelined.get(&ssn.session)?;
         let mut available = allocated.clone();
         available.add(pipelined);
         Some(available.great_equal(desired))
     }
 
     fn on_executor_pipeline(&mut self, _exec: ExecutorInfoPtr, ssn: SessionInfoPtr) {
-        let unit = match self.ssn_unit.get(&ssn.id) {
+        let unit = match self.ssn_unit.get(&ssn.session) {
             Some(u) => u.clone(),
             None => return,
         };
-        if let Some(pipelined) = self.ssn_pipelined.get_mut(&ssn.id) {
+        if let Some(pipelined) = self.ssn_pipelined.get_mut(&ssn.session) {
             pipelined.add(&unit);
         }
     }
 
     fn on_session_bind(&mut self, ssn: SessionInfoPtr) {
-        let unit = match self.ssn_unit.get(&ssn.id) {
+        let unit = match self.ssn_unit.get(&ssn.session) {
             Some(u) => u.clone(),
             None => return,
         };
-        if let Some(alloc) = self.ssn_allocated.get_mut(&ssn.id) {
+        if let Some(alloc) = self.ssn_allocated.get_mut(&ssn.session) {
             alloc.add(&unit);
         }
     }
 
     fn on_session_unbind(&mut self, ssn: SessionInfoPtr) {
-        let unit = match self.ssn_unit.get(&ssn.id) {
+        let unit = match self.ssn_unit.get(&ssn.session) {
             Some(u) => u.clone(),
             None => return,
         };
-        if let Some(alloc) = self.ssn_allocated.get_mut(&ssn.id) {
+        if let Some(alloc) = self.ssn_allocated.get_mut(&ssn.session) {
             if let Err(e) = alloc.sub(&unit) {
                 tracing::warn!(
                     "[PriorityPlugin] sub underflow on unbind for ssn <{}>: {e}",
-                    ssn.id
+                    ssn.session
                 );
             }
         }
@@ -358,7 +359,8 @@ impl Plugin for PriorityPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{AppInfo, ExecutorInfo, NodeInfo, SessionInfo, SnapShot};
+    use crate::controller::snapshot::SnapShot;
+    use crate::model::{AppInfo, ExecutorInfo, NodeInfo, SessionInfo};
     use chrono::{DateTime, Duration, Utc};
     use common::apis::{
         ApplicationState, ExecutorState, NodeState, ResourceRequirement, SessionState, Shim,
@@ -420,7 +422,7 @@ mod tests {
             tasks_status.insert(TaskState::Running, running);
         }
         Arc::new(SessionInfo {
-            id: id.to_string(),
+            session: id.to_string(),
             application: "test-app".to_string(),
             tasks_status,
             creation_time,
@@ -489,7 +491,7 @@ mod tests {
 
     fn create_snapshot_with_executor(
         sessions: Vec<Arc<SessionInfo>>,
-        exec_ssn_id: &str,
+        executor_session: &str,
         slots: u32,
         total_slots: u32,
     ) -> SnapShot {
@@ -507,8 +509,8 @@ mod tests {
             },
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: Some(exec_ssn_id.to_string()),
+            task: None,
+            session: Some(executor_session.to_string()),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
             state: ExecutorState::Bound,

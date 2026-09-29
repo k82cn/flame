@@ -4,9 +4,7 @@ use std::sync::Mutex;
 
 use flame_rs as flame;
 use flame_rs::apis::{CommonData, FlameError};
-use flame_rs::service::{
-    ApplicationContext, FlameInstance, FlameService, SessionContext, TaskContext,
-};
+use flame_rs::service::{FlameInstance, FlameService, SessionContext, TaskContext};
 use flame_rs::{FlameMessage, IntoFlameInstance};
 use serde::Serializer;
 use serde_derive::{Deserialize, Serialize};
@@ -81,20 +79,19 @@ impl Multiplier {
 
 fn session_context(common_data: Option<CommonData>) -> SessionContext {
     SessionContext::new(
+        "default".to_string(),
         "ssn-1".to_string(),
-        ApplicationContext {
-            name: "test-app".to_string(),
-            image: None,
-            command: None,
-        },
+        "test-app".to_string(),
         common_data,
     )
 }
 
 fn task_context(input: Option<flame::apis::TaskInput>) -> TaskContext {
     TaskContext {
-        task_id: "task-1".to_string(),
-        session_id: "ssn-1".to_string(),
+        task: "1".to_string(),
+        workspace: "default".to_string(),
+        application: "test-app".to_string(),
+        session: "ssn-1".to_string(),
         input,
     }
 }

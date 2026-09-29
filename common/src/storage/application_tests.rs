@@ -33,6 +33,7 @@ mod tests {
 
     mod register_application {
         use super::*;
+        use crate::apis::ApplicationState;
 
         #[tokio::test]
         async fn registers_new_application() {
@@ -75,6 +76,7 @@ mod tests {
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
             let attr = ApplicationAttributes {
+                id: String::new(),
                 image: Some("custom-image:v1".to_string()),
                 command: Some("python main.py".to_string()),
                 ..Default::default()
@@ -83,13 +85,45 @@ mod tests {
                 .register_application("attr-app".to_string(), attr)
                 .await
                 .unwrap();
-
-            let app = storage
-                .get_application("attr-app".to_string())
+            let registered = storage
+                .list_applications(None)
                 .await
-                .unwrap();
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "attr-app")
+                .unwrap()
+                .gid;
+
+            let app = storage.get_application(registered).await.unwrap();
             assert_eq!(app.image, Some("custom-image:v1".to_string()));
             assert_eq!(app.command, Some("python main.py".to_string()));
+        }
+
+        #[tokio::test]
+        async fn registration_preserves_explicit_id() {
+            let storage = storage::new_ptr(&test_context()).await.unwrap();
+            let id = "default/first".to_string();
+            let attr = ApplicationAttributes {
+                id: id.clone(),
+                ..Default::default()
+            };
+
+            storage
+                .register_application("first".to_string(), attr.clone())
+                .await
+                .unwrap();
+            assert_eq!(storage.get_application(id.clone()).await.unwrap().gid, id);
+            storage
+                .update_application_state(id.clone(), ApplicationState::Disabled)
+                .await
+                .unwrap();
+            storage.delete_application(id.clone()).await.unwrap();
+
+            storage
+                .register_application("first".to_string(), attr)
+                .await
+                .unwrap();
+            assert_eq!(storage.list_applications(None).await.unwrap().len(), 1);
         }
     }
 
@@ -106,12 +140,18 @@ mod tests {
                 .register_application("get-app".to_string(), attr)
                 .await
                 .unwrap();
-
-            let app = storage
-                .get_application("get-app".to_string())
+            let registered = storage
+                .list_applications(None)
                 .await
-                .unwrap();
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "get-app")
+                .unwrap()
+                .gid;
+
+            let app = storage.get_application(registered.clone()).await.unwrap();
             assert_eq!(app.name, "get-app");
+            assert_eq!(app.gid, registered);
         }
 
         #[tokio::test]
@@ -138,20 +178,26 @@ mod tests {
                 .register_application("update-app".to_string(), attr)
                 .await
                 .unwrap();
+            let registered = storage
+                .list_applications(None)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "update-app")
+                .unwrap()
+                .gid;
 
             let new_attr = ApplicationAttributes {
+                id: String::new(),
                 image: Some("new-image:v2".to_string()),
                 ..Default::default()
             };
             storage
-                .update_application("update-app".to_string(), new_attr)
+                .update_application(registered.clone(), new_attr)
                 .await
                 .unwrap();
 
-            let app = storage
-                .get_application("update-app".to_string())
-                .await
-                .unwrap();
+            let app = storage.get_application(registered).await.unwrap();
             assert_eq!(app.image, Some("new-image:v2".to_string()));
         }
 
@@ -162,15 +208,24 @@ mod tests {
                 .register_application("disabled-app".to_string(), create_app_attr())
                 .await
                 .unwrap();
+            let registered = storage
+                .list_applications(None)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "disabled-app")
+                .unwrap()
+                .gid;
             let disabled = storage
-                .update_application_state("disabled-app".to_string(), ApplicationState::Disabled)
+                .update_application_state(registered.clone(), ApplicationState::Disabled)
                 .await
                 .unwrap();
 
             let result = storage
                 .update_application(
-                    "disabled-app".to_string(),
+                    registered.clone(),
                     ApplicationAttributes {
+                        id: String::new(),
                         image: Some("must-not-be-written".to_string()),
                         ..Default::default()
                     },
@@ -178,10 +233,7 @@ mod tests {
                 .await;
             assert!(matches!(result, Err(crate::FlameError::InvalidState(_))));
 
-            let unchanged = storage
-                .get_application("disabled-app".to_string())
-                .await
-                .unwrap();
+            let unchanged = storage.get_application(registered).await.unwrap();
             assert_eq!(unchanged.version, disabled.version);
             assert_eq!(unchanged.image, disabled.image);
         }
@@ -193,8 +245,9 @@ mod tests {
 
         fn create_session_attr(id: &str, app: &str) -> SessionAttributes {
             SessionAttributes {
-                id: id.to_string(),
-                application: app.to_string(),
+                name: id.rsplit('/').next().unwrap().to_string(),
+                workspace: "default".to_string(),
+                application: app.rsplit('/').next().unwrap().to_string(),
                 common_data: None,
                 min_instances: 1,
                 max_instances: None,
@@ -214,24 +267,29 @@ mod tests {
                 .register_application("unregister-app".to_string(), attr)
                 .await
                 .unwrap();
+            let registered = storage
+                .list_applications(None)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "unregister-app")
+                .unwrap()
+                .gid;
 
             let disabled = storage
-                .update_application_state("unregister-app".to_string(), ApplicationState::Disabled)
+                .update_application_state(registered.clone(), ApplicationState::Disabled)
                 .await
                 .unwrap();
             assert_eq!(disabled.state, ApplicationState::Disabled);
             assert_eq!(disabled.version, 2);
 
             let unchanged = storage
-                .update_application_state("unregister-app".to_string(), ApplicationState::Disabled)
+                .update_application_state(registered.clone(), ApplicationState::Disabled)
                 .await
                 .unwrap();
             assert_eq!(unchanged.version, disabled.version);
 
-            storage
-                .delete_application("unregister-app".to_string())
-                .await
-                .unwrap();
+            storage.delete_application(registered).await.unwrap();
 
             let apps = storage.list_applications(None).await.unwrap();
             assert!(apps.is_empty());
@@ -247,39 +305,38 @@ mod tests {
                 .register_application("cleanup-app".to_string(), app_attr)
                 .await
                 .unwrap();
+            let registered = storage
+                .list_applications(None)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "cleanup-app")
+                .unwrap()
+                .gid;
 
-            let ssn_attr = create_session_attr("cleanup-ssn", "cleanup-app");
-            storage.create_session(ssn_attr).await.unwrap();
+            let ssn_attr = create_session_attr("default/cleanup-ssn", &registered);
+            let session = storage.create_session(ssn_attr).await.unwrap();
 
             assert_eq!(storage.list_sessions(None).unwrap().len(), 1);
 
             storage
-                .update_application_state("cleanup-app".to_string(), ApplicationState::Disabled)
+                .update_application_state(registered.clone(), ApplicationState::Disabled)
                 .await
                 .unwrap();
 
             let open_sessions =
-                crate::apis::SessionFilter::by_application_state("cleanup-app", SessionState::Open);
+                crate::apis::SessionFilter::by_application_state(&registered, SessionState::Open);
             assert_eq!(storage.count_session(&open_sessions).unwrap(), 1);
-            let result = storage.delete_application("cleanup-app".to_string()).await;
+            let result = storage.delete_application(registered.clone()).await;
             assert!(matches!(result, Err(crate::FlameError::InvalidState(_))));
 
-            storage
-                .close_session("cleanup-ssn".to_string())
-                .await
-                .unwrap();
-            let result = storage.delete_application("cleanup-app".to_string()).await;
+            storage.close_session(session.gid.clone()).await.unwrap();
+            let result = storage.delete_application(registered.clone()).await;
             assert!(matches!(result, Err(crate::FlameError::InvalidState(_))));
             assert_eq!(storage.list_sessions(None).unwrap().len(), 1);
 
-            storage
-                .delete_session("cleanup-ssn".to_string())
-                .await
-                .unwrap();
-            storage
-                .delete_application("cleanup-app".to_string())
-                .await
-                .unwrap();
+            storage.delete_session(session.gid).await.unwrap();
+            storage.delete_application(registered).await.unwrap();
 
             assert_eq!(storage.list_sessions(None).unwrap().len(), 0);
         }
@@ -291,8 +348,16 @@ mod tests {
                 .register_application("enabled-app".to_string(), create_app_attr())
                 .await
                 .unwrap();
+            let registered = storage
+                .list_applications(None)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "enabled-app")
+                .unwrap()
+                .gid;
 
-            let result = storage.delete_application("enabled-app".to_string()).await;
+            let result = storage.delete_application(registered).await;
             assert!(matches!(result, Err(crate::FlameError::InvalidState(_))));
         }
     }
@@ -342,11 +407,16 @@ mod tests {
                 .register_application("disabled-app".to_string(), create_app_attr())
                 .await
                 .unwrap();
+            let disabled = storage
+                .list_applications(None)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|a| a.name == "disabled-app")
+                .unwrap()
+                .gid;
             storage
-                .update_application_state(
-                    "disabled-app".to_string(),
-                    crate::apis::ApplicationState::Disabled,
-                )
+                .update_application_state(disabled, crate::apis::ApplicationState::Disabled)
                 .await
                 .unwrap();
 

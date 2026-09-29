@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, watch, Notify};
 use tokio::time::Duration;
 
-use common::apis::{ExecutorID, SessionID, TaskID};
+use common::apis::{ExecutorID, SessionPath, TaskName};
 use common::FlameError;
 use stdng::{lock_ptr, MutexPtr};
 
@@ -45,17 +45,17 @@ impl WatchChannel {
 
 #[derive(Clone)]
 pub struct TaskNotifier {
-    channels: MutexPtr<HashMap<SessionID, broadcast::Sender<TaskID>>>,
+    channels: MutexPtr<HashMap<SessionPath, broadcast::Sender<TaskName>>>,
 }
 
 pub struct TaskSubscription {
-    receiver: Option<broadcast::Receiver<TaskID>>,
-    channels: MutexPtr<HashMap<SessionID, broadcast::Sender<TaskID>>>,
-    session_id: SessionID,
+    receiver: Option<broadcast::Receiver<TaskName>>,
+    channels: MutexPtr<HashMap<SessionPath, broadcast::Sender<TaskName>>>,
+    session: SessionPath,
 }
 
 impl TaskSubscription {
-    pub async fn recv(&mut self) -> Result<TaskID, broadcast::error::RecvError> {
+    pub async fn recv(&mut self) -> Result<TaskName, broadcast::error::RecvError> {
         self.receiver
             .as_mut()
             .expect("task subscription closed")
@@ -64,7 +64,7 @@ impl TaskSubscription {
     }
 
     #[cfg(test)]
-    pub fn try_recv(&mut self) -> Result<TaskID, broadcast::error::TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<TaskName, broadcast::error::TryRecvError> {
         self.receiver
             .as_mut()
             .expect("task subscription closed")
@@ -78,10 +78,10 @@ impl Drop for TaskSubscription {
         self.receiver.take();
         if let Ok(mut channels) = lock_ptr!(self.channels) {
             if channels
-                .get(&self.session_id)
+                .get(&self.session)
                 .is_some_and(|sender| sender.receiver_count() == 0)
             {
-                channels.remove(&self.session_id);
+                channels.remove(&self.session);
             }
         }
     }
@@ -94,30 +94,30 @@ impl TaskNotifier {
         }
     }
 
-    pub fn subscribe(&self, ssn_id: &SessionID) -> Result<TaskSubscription, FlameError> {
+    pub fn subscribe(&self, session: &SessionPath) -> Result<TaskSubscription, FlameError> {
         let mut channels = lock_ptr!(self.channels)?;
-        let sender = channels.entry(ssn_id.clone()).or_insert_with(|| {
+        let sender = channels.entry(session.clone()).or_insert_with(|| {
             let (sender, _) = broadcast::channel(SESSION_TASK_UPDATE_CAPACITY);
             sender
         });
         Ok(TaskSubscription {
             receiver: Some(sender.subscribe()),
             channels: self.channels.clone(),
-            session_id: ssn_id.clone(),
+            session: session.clone(),
         })
     }
 
-    pub fn notify(&self, ssn_id: &SessionID, task_id: TaskID) -> Result<(), FlameError> {
+    pub fn notify(&self, session: &SessionPath, task: TaskName) -> Result<(), FlameError> {
         let channels = lock_ptr!(self.channels)?;
-        if let Some(sender) = channels.get(ssn_id) {
-            let _ = sender.send(task_id);
+        if let Some(sender) = channels.get(session) {
+            let _ = sender.send(task);
         }
         Ok(())
     }
 
-    pub fn remove(&self, ssn_id: &SessionID) -> Result<(), FlameError> {
+    pub fn remove(&self, session: &SessionPath) -> Result<(), FlameError> {
         let mut channels = lock_ptr!(self.channels)?;
-        channels.remove(ssn_id);
+        channels.remove(session);
         Ok(())
     }
 }
@@ -272,7 +272,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn session_updates_include_task_ids_and_close_on_removal() {
+        async fn session_updates_include_tasks_and_close_on_removal() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
             let mut updates = notifier.subscribe(&session).unwrap();
@@ -306,8 +306,8 @@ mod tests {
         fn task_updates_without_subscribers_do_not_allocate_channels() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
-            for task_id in 1..=1000 {
-                notifier.notify(&session, task_id).unwrap();
+            for task in 1..=1000 {
+                notifier.notify(&session, task).unwrap();
             }
             assert!(lock_ptr!(notifier.channels).unwrap().is_empty());
         }

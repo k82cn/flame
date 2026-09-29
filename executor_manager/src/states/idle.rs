@@ -53,7 +53,7 @@ impl State for IdleState {
 
         tracing::debug!(
             "Try to bind to session <{}> which is one of application <{:?}>.",
-            &ssn.session_id.clone(),
+            &format!("{}/{}", ssn.workspace, ssn.session),
             &ssn.application.clone()
         );
 
@@ -85,7 +85,7 @@ impl State for IdleState {
         tracing::debug!(
             "Try to bind Executor <{}> to <{}>.",
             &self.executor.id.clone(),
-            &ssn.session_id.clone()
+            &format!("{}/{}", ssn.workspace, ssn.session)
         );
 
         let shim_ptr = match self.executor.shim_instance.clone() {
@@ -172,7 +172,7 @@ impl State for IdleState {
         tracing::debug!(
             "Executor <{}> was bound to <{}>.",
             &self.executor.id.clone(),
-            &ssn.session_id.clone()
+            &format!("{}/{}", ssn.workspace, ssn.session)
         );
 
         Ok(self.executor.clone())
@@ -190,7 +190,7 @@ impl IdleState {
         tracing::warn!(
             "Executor <{}> failed to bind session <{}>: {}",
             self.executor.id,
-            ssn.session_id,
+            format!("{}/{}", ssn.workspace, ssn.session),
             message
         );
         self.client

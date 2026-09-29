@@ -18,10 +18,12 @@ use stdng::{logs::TraceFn, trace_fn};
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::model::{ExecutorInfo, SnapShot, BOUND_EXECUTOR, IDLE_EXECUTOR, READY_SESSION};
+use crate::controller::snapshot::SnapShot;
+use crate::model::ExecutorInfo;
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::ctx::Context;
 use crate::scheduler::plugins::ssn_order_fn;
+use common::apis::{BOUND_EXECUTOR, IDLE_EXECUTOR, READY_SESSION};
 
 use common::FlameError;
 
@@ -77,11 +79,11 @@ impl Action for ShuffleAction {
                 tracing::debug!(
                     "Try to unbound Executor <{}> for session <{}>",
                     e.id,
-                    ssn.id.clone()
+                    ssn.session.clone()
                 );
 
-                let target_ssn = match e.ssn_id.clone() {
-                    Some(ssn_id) => Some(ss.get_session(&ssn_id)?),
+                let target_ssn = match e.session.clone() {
+                    Some(session) => Some(ss.get_session(&session)?),
                     None => None,
                 };
 
@@ -103,7 +105,7 @@ impl Action for ShuffleAction {
                 tracing::debug!(
                     "Executor <{}> was pipelined to session <{}>, remove it from bound list.",
                     exec.id,
-                    ssn.id.clone()
+                    ssn.session.clone()
                 );
 
                 bound_execs.remove(&exec.id);
@@ -208,10 +210,16 @@ mod tests {
             },
             ..Default::default()
         };
-        let storage = crate::storage::new_ptr(&config).await.unwrap();
+        let storage = common::storage::new_ptr(&config).await.unwrap();
         let controller = crate::controller::new_ptr(storage.clone());
         controller
-            .register_application("app".to_string(), ApplicationAttributes::default())
+            .register_application(
+                "app".to_string(),
+                ApplicationAttributes {
+                    id: "default/app".to_string(),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
         storage
@@ -224,7 +232,8 @@ mod tests {
             .unwrap();
         controller
             .create_session(SessionAttributes {
-                id: "session".to_string(),
+                workspace: "default".to_string(),
+                name: "session".to_string(),
                 application: "app".to_string(),
                 resreq: Some(ResourceRequirement::default()),
                 ..Default::default()
@@ -232,12 +241,12 @@ mod tests {
             .await
             .unwrap();
         let executor = controller
-            .create_executor("node".to_string(), "session".to_string())
+            .create_executor("node".to_string(), "default/session".to_string())
             .await
             .unwrap();
         controller.register_executor(&executor).await.unwrap();
         controller
-            .bind_session(executor.id.clone(), "session".to_string())
+            .bind_session(executor.id.clone(), "default/session".to_string())
             .await
             .unwrap();
         controller
@@ -252,7 +261,7 @@ mod tests {
             .await
             .unwrap();
         controller
-            .close_session("session".to_string())
+            .close_session("default/session".to_string())
             .await
             .unwrap();
         controller
@@ -261,7 +270,7 @@ mod tests {
             .unwrap();
 
         controller
-            .unregister_application("app".to_string())
+            .unregister_application("default/app".to_string())
             .await
             .unwrap();
         controller

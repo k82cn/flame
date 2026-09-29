@@ -76,6 +76,7 @@ impl ApplicationManifest {
             .unwrap_or(defaults.shim);
 
         Ok(ApplicationAttributes {
+            id: defaults.id,
             shim,
             image: self.spec.image.clone(),
             description: self.spec.description.clone(),

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use stdng::{lock_ptr, new_ptr, MutexPtr};
 
-use crate::apis::{Event, EventOwner, SessionID, TaskID};
+use crate::apis::{Event, EventOwner, SessionPath, TaskName};
 use crate::FlameError;
 
 use super::EventManager;
@@ -29,7 +29,7 @@ struct InMemoryEvent {
 }
 
 pub struct MemoryEventManager {
-    events: MutexPtr<HashMap<SessionID, HashMap<TaskID, Vec<InMemoryEvent>>>>,
+    events: MutexPtr<HashMap<SessionPath, HashMap<TaskName, Vec<InMemoryEvent>>>>,
 }
 
 impl MemoryEventManager {
@@ -48,11 +48,12 @@ impl Default for MemoryEventManager {
 
 impl EventManager for MemoryEventManager {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
+        let session = owner.session_path()?;
         let mut events = lock_ptr!(self.events)?;
         events
-            .entry(owner.session_id)
+            .entry(session)
             .or_default()
-            .entry(owner.task_id)
+            .entry(owner.task)
             .or_default()
             .push(InMemoryEvent {
                 code: event.code,
@@ -63,11 +64,12 @@ impl EventManager for MemoryEventManager {
     }
 
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
+        let session = owner.session_path()?;
         let events = lock_ptr!(self.events)?;
-        let Some(session_events) = events.get(&owner.session_id) else {
+        let Some(session_events) = events.get(&session) else {
             return Ok(vec![]);
         };
-        let Some(task_events) = session_events.get(&owner.task_id) else {
+        let Some(task_events) = session_events.get(&owner.task) else {
             return Ok(vec![]);
         };
 
@@ -84,9 +86,9 @@ impl EventManager for MemoryEventManager {
         Ok(event_list)
     }
 
-    fn remove_events(&self, session_id: SessionID) -> Result<(), FlameError> {
+    fn remove_events(&self, session_path: SessionPath) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
-        events.remove(&session_id);
+        events.remove(&session_path);
         Ok(())
     }
 

@@ -216,7 +216,7 @@ Flame session options:
 | Option | Default | Description |
 | --- | --- | --- |
 | `--app` | required | Flame application name used during deploy or register. |
-| `--session-id` | generated | Explicit Flame session id. |
+| `--session-name` | generated | Explicit Flame session name. |
 | `--min-instances` | `1` | Minimum service instances for the session. |
 | `--max-instances` | `1` | Maximum service instances for the session. |
 | `--resreq` | unset | Resource request such as `cpu=4,mem=16g,gpu=1`. |

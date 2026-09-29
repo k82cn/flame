@@ -13,12 +13,12 @@ limitations under the License.
 
 #[cfg(test)]
 mod tests {
-    use crate::apis::{
+    use common::apis::{
         ApplicationAttributes, Node, NodeState, ResourceRequirement, SessionAttributes,
         SessionState, TaskOptions, TaskState,
     };
-    use crate::ctx::{FlameCluster, FlameClusterContext};
-    use crate::storage;
+    use common::ctx::{FlameCluster, FlameClusterContext};
+    use common::storage;
     use stdng::lock_ptr;
 
     fn test_context() -> FlameClusterContext {
@@ -33,7 +33,8 @@ mod tests {
 
     fn create_session_attr(id: &str) -> SessionAttributes {
         SessionAttributes {
-            id: id.to_string(),
+            workspace: "default".to_string(),
+            name: id.rsplit('/').next().unwrap().to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -64,7 +65,9 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
 
             let sessions = lock_ptr!(snapshot.sessions).unwrap();
             let executors = lock_ptr!(snapshot.executors).unwrap();
@@ -85,7 +88,9 @@ mod tests {
                 storage.create_session(attr).await.unwrap();
             }
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
             let sessions = lock_ptr!(snapshot.sessions).unwrap();
 
             assert_eq!(sessions.len(), 3);
@@ -101,7 +106,9 @@ mod tests {
                 storage.register_node(&node).await.unwrap();
             }
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
             let nodes = lock_ptr!(snapshot.nodes).unwrap();
 
             assert_eq!(nodes.len(), 2);
@@ -120,12 +127,17 @@ mod tests {
 
             for _ in 0..2 {
                 storage
-                    .create_executor("exec-snap-node".to_string(), "exec-snap-ssn".to_string())
+                    .create_executor(
+                        "exec-snap-node".to_string(),
+                        "default/exec-snap-ssn".to_string(),
+                    )
                     .await
                     .unwrap();
             }
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
             let executors = lock_ptr!(snapshot.executors).unwrap();
 
             assert_eq!(executors.len(), 2);
@@ -146,7 +158,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
             let applications = lock_ptr!(snapshot.applications).unwrap();
 
             assert_eq!(applications.len(), 2);
@@ -160,11 +174,13 @@ mod tests {
             let attr = create_session_attr("state-snap-ssn");
             storage.create_session(attr).await.unwrap();
             storage
-                .close_session("state-snap-ssn".to_string())
+                .close_session("default/state-snap-ssn".to_string())
                 .await
                 .unwrap();
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
             let sessions = lock_ptr!(snapshot.sessions).unwrap();
 
             let ssn_info = sessions.values().next().unwrap();
@@ -183,7 +199,7 @@ mod tests {
             let pending_key = bytes::Bytes::from_static(b"pending");
             let pending = storage
                 .create_task(
-                    "task-index-ssn".to_string(),
+                    "default/task-index-ssn".to_string(),
                     None,
                     Some(TaskOptions {
                         affinity: [pending_key.clone()].into_iter().collect(),
@@ -193,7 +209,7 @@ mod tests {
                 .unwrap();
             let running = storage
                 .create_task(
-                    "task-index-ssn".to_string(),
+                    "default/task-index-ssn".to_string(),
                     None,
                     Some(TaskOptions {
                         affinity: [bytes::Bytes::from_static(b"running")]
@@ -204,30 +220,32 @@ mod tests {
                 .await
                 .unwrap();
             let finished = storage
-                .create_task("task-index-ssn".to_string(), None, None)
+                .create_task("default/task-index-ssn".to_string(), None, None)
                 .await
                 .unwrap();
             let session = storage
-                .get_session_ptr("task-index-ssn".to_string())
+                .get_session_ptr("default/task-index-ssn".to_string())
                 .unwrap();
-            let running_ptr = storage.get_task_ptr(running.gid()).unwrap();
+            let running_ptr = storage.get_task_ptr(running.gid().unwrap()).unwrap();
             storage
                 .update_task_state(session.clone(), running_ptr, TaskState::Running, None)
                 .await
                 .unwrap();
-            let finished_ptr = storage.get_task_ptr(finished.gid()).unwrap();
+            let finished_ptr = storage.get_task_ptr(finished.gid().unwrap()).unwrap();
             storage
                 .update_task_state(session, finished_ptr, TaskState::Succeed, None)
                 .await
                 .unwrap();
 
-            let snapshot = storage.snapshot().unwrap();
+            let snapshot = crate::controller::new_ptr(storage.clone())
+                .snapshot()
+                .unwrap();
             let sessions = lock_ptr!(snapshot.sessions).unwrap();
-            let session = sessions.get("task-index-ssn").unwrap();
+            let session = sessions.get("default/task-index-ssn").unwrap();
             let indexed = session.task_index.get(&TaskState::Pending).unwrap();
 
             assert_eq!(indexed.len(), 1);
-            let task = indexed.get(&pending.id).unwrap();
+            let task = indexed.get(&pending.number).unwrap();
             assert_eq!(task.state, TaskState::Pending);
             assert_eq!(task.affinity, [pending_key].into_iter().collect());
             assert_eq!(

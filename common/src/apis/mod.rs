@@ -14,12 +14,14 @@ limitations under the License.
 mod executor;
 mod filters;
 mod from_rpc;
+mod path;
 mod session;
 mod to_rpc;
 mod types;
 
 pub use executor::{Executor, ExecutorPtr};
 pub use filters::*;
+pub use path::*;
 pub use types::*;
 
 #[cfg(test)]

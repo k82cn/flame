@@ -165,6 +165,18 @@ class Session:
             raise FlameError(FlameErrorCode.INVALID_STATE, "session is closed")
         return self._session.id
 
+    @property
+    def name(self) -> str:
+        if self._session is None:
+            raise FlameError(FlameErrorCode.INVALID_STATE, "session is closed")
+        return self._session.name
+
+    @property
+    def workspace(self) -> str:
+        if self._session is None:
+            raise FlameError(FlameErrorCode.INVALID_STATE, "session is closed")
+        return self._session.workspace
+
     def run_code(self, code: str, input: Optional[bytes] = None) -> SessionOutput:
         self._ensure_open()
         payload = _encode_script(self._options.language, self._options.runtime, code, input)
@@ -208,15 +220,16 @@ class Session:
 
 def open_session(
     *,
-    ssn_id: Optional[str] = None,
+    session: Optional[str] = None,
+    workspace: str = "default",
     language: str = "python",
     runtime: Optional[str] = None,
     min_instances: int = 0,
     max_instances: Optional[int] = None,
     resreq: Optional[ResourceRequirement] = None,
 ) -> Session:
-    """Create an agent session, or reopen one when ``ssn_id`` is provided."""
-    if ssn_id is None:
+    """Create an agent session, or reopen one by workspace and name."""
+    if session is None:
         normalized_options = _normalize_options(
             _SessionOptions(
                 language=language,
@@ -233,21 +246,22 @@ def open_session(
         )
         core_session = _create_core_session(
             _FLMEXEC_APP,
+            workspace=workspace,
             common_data=_encode_options(normalized_options),
             min_instances=normalized_options.min_instances,
             max_instances=normalized_options.max_instances,
             resreq=normalized_options.resreq,
         )
     else:
-        if not isinstance(ssn_id, str) or not ssn_id:
-            raise FlameError(FlameErrorCode.INVALID_ARGUMENT, "ssn_id must be a non-empty string")
-        core_session = _open_core_session(ssn_id)
+        if not isinstance(session, str) or not session:
+            raise FlameError(FlameErrorCode.INVALID_ARGUMENT, "session must be a non-empty string")
+        core_session = _open_core_session(session, workspace=workspace)
         normalized_options = None
 
     if core_session.application != _FLMEXEC_APP:
         raise FlameError(
             FlameErrorCode.INVALID_ARGUMENT,
-            f"session {core_session.id!r} is not an agent session",
+            f"session {core_session.name!r} is not an agent session",
         )
     if normalized_options is None:
         normalized_options = _decode_options(core_session.common_data())

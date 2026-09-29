@@ -18,8 +18,10 @@ use std::collections::{HashMap, HashSet};
 use common::apis::ExecutorState;
 use common::FlameError;
 
-use crate::model::{ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr, SnapShot, ALL_EXECUTOR};
+use crate::controller::snapshot::SnapShot;
+use crate::model::{ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr};
 use crate::scheduler::plugins::{Plugin, PluginPtr, PluginsOptions};
+use common::apis::ALL_EXECUTOR;
 
 pub struct MinMaxPlugin {
     max_executors: u32,

@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS executors (
 
     shim                INTEGER NOT NULL DEFAULT 0,
     
-    task_id             INTEGER,
-    ssn_id              TEXT,
+    task                INTEGER,
+    session             TEXT,
     
     creation_time       INTEGER NOT NULL,
     state               INTEGER NOT NULL DEFAULT 0,
@@ -47,4 +47,4 @@ CREATE INDEX IF NOT EXISTS idx_executors_node ON executors(node);
 CREATE INDEX IF NOT EXISTS idx_executors_state ON executors(state);
 
 -- Index for efficient executor lookups by session
-CREATE INDEX IF NOT EXISTS idx_executors_ssn_id ON executors(ssn_id);
+CREATE INDEX IF NOT EXISTS idx_executors_session ON executors(session);

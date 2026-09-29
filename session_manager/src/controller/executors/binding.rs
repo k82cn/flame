@@ -15,12 +15,12 @@ use chrono::Utc;
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use crate::controller::executors::States;
-use crate::model::ExecutorPtr;
-use crate::storage::StoragePtr;
+use common::apis::ExecutorPtr;
 use common::apis::{
     Event, EventOwner, ExecutorState, FlameResult, SessionPtr, Task, TaskPtr, TaskResult,
     BIND_RESULT_OK, SESSION_BIND_FAILED, SESSION_RETRY_LIMIT_REACHED,
 };
+use common::storage::StoragePtr;
 use common::FlameError;
 
 pub struct BindingState {
@@ -30,16 +30,16 @@ pub struct BindingState {
 
 impl BindingState {
     async fn bind_session_success(&self) -> Result<(), FlameError> {
-        let ssn_id = {
+        let session = {
             let e = lock_ptr!(self.executor)?;
-            e.ssn_id.clone().ok_or_else(|| {
+            e.session.clone().ok_or_else(|| {
                 FlameError::InvalidState(format!(
                     "Executor <{}> has no bound session on successful bind completion",
                     e.id
                 ))
             })?
         };
-        self.storage.get_session_ptr(ssn_id)?;
+        self.storage.get_session_ptr(session)?;
 
         let mut e = lock_ptr!(self.executor)?;
         e.set_state(ExecutorState::Bound);
@@ -55,21 +55,21 @@ impl BindingState {
 
         let mut e = lock_ptr!(self.executor)?;
         e.set_state(ExecutorState::Unbinding);
-        e.ssn_id = None;
-        e.task_id = None;
+        e.session = None;
+        e.task = None;
 
         Ok(())
     }
 
     async fn increment_session_retry_count(
         &self,
-        executor: &crate::model::Executor,
+        executor: &common::apis::Executor,
     ) -> Result<(), FlameError> {
-        let ssn_id = executor.ssn_id.clone().ok_or_else(|| {
+        let session = executor.session.clone().ok_or_else(|| {
             FlameError::InvalidState(format!("Executor <{}> has no bound session", executor.id))
         })?;
         let retry_limit = self.storage.session_retry_limits();
-        let ssn_ptr = self.storage.get_session_ptr(ssn_id.clone())?;
+        let ssn_ptr = self.storage.get_session_ptr(session.clone())?;
         let (retry_count, crossed_retry_limit) = {
             let mut ssn = lock_ptr!(ssn_ptr)?;
             let previous_retry_count = ssn.retry_count;
@@ -81,7 +81,7 @@ impl BindingState {
         };
 
         if crossed_retry_limit {
-            self.record_retry_limit_reached(&ssn_id, retry_count, retry_limit)
+            self.record_retry_limit_reached(&session, retry_count, retry_limit)
                 .await?;
         }
 
@@ -90,17 +90,17 @@ impl BindingState {
 
     async fn record_bind_failure(
         &self,
-        executor: &crate::model::Executor,
+        executor: &common::apis::Executor,
         result: &FlameResult,
     ) -> Result<(), FlameError> {
-        let ssn_id = executor.ssn_id.clone().ok_or_else(|| {
+        let session = executor.session.clone().ok_or_else(|| {
             FlameError::InvalidState(format!("Executor <{}> has no bound session", executor.id))
         })?;
         let detail = result.message.clone().unwrap_or_default();
 
         self.storage
             .record_event(
-                EventOwner::session(ssn_id),
+                EventOwner::from_session_path(&session)?,
                 Event {
                     code: SESSION_BIND_FAILED,
                     message: Some(format!(
@@ -118,13 +118,13 @@ impl BindingState {
 
     async fn record_retry_limit_reached(
         &self,
-        ssn_id: &str,
+        session: &str,
         retry_count: u32,
         retry_limit: u32,
     ) -> Result<(), FlameError> {
         self.storage
             .record_event(
-                EventOwner::session(ssn_id.to_string()),
+                EventOwner::from_session_path(session)?,
                 Event {
                     code: SESSION_RETRY_LIMIT_REACHED,
                     message: Some(format!(
@@ -161,8 +161,8 @@ impl States for BindingState {
             e.id
         );
         e.set_state(ExecutorState::Released);
-        e.ssn_id = None;
-        e.task_id = None;
+        e.session = None;
+        e.task = None;
 
         Ok(())
     }
@@ -170,13 +170,13 @@ impl States for BindingState {
     async fn bind_session(&self, ssn_ptr: SessionPtr) -> Result<(), FlameError> {
         trace_fn!("BindingState::bind_session");
 
-        let ssn_id = {
+        let session = {
             let ssn = lock_ptr!(ssn_ptr)?;
-            ssn.id.clone()
+            ssn.gid.clone()
         };
 
         let mut e = lock_ptr!(self.executor)?;
-        e.ssn_id = Some(ssn_id);
+        e.session = Some(session);
         e.set_state(ExecutorState::Binding);
 
         Ok(())
@@ -202,7 +202,7 @@ impl States for BindingState {
         tracing::debug!(
             "Executor <{}> unbinding from binding state, session=<{:?}>",
             e.id,
-            e.ssn_id
+            e.session
         );
         e.set_state(ExecutorState::Unbinding);
 
@@ -218,8 +218,8 @@ impl States for BindingState {
             e.id
         );
         e.set_state(ExecutorState::Idle);
-        e.ssn_id = None;
-        e.task_id = None;
+        e.session = None;
+        e.task = None;
 
         Ok(())
     }

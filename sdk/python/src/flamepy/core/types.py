@@ -23,9 +23,9 @@ from typing import Any, Dict, List, Optional, Set
 import yaml
 
 # Type aliases
-TaskID = str
-SessionID = str
-ApplicationID = str
+TaskName = str
+SessionName = str
+ApplicationName = str
 Message = bytes
 TaskInput = Message
 TaskOutput = Message
@@ -116,6 +116,14 @@ class Event:
 
 
 @dataclass
+class Workspace:
+    """A named application and session namespace."""
+
+    name: str
+    creation_time: datetime
+
+
+@dataclass
 class ResourceRequirement:
     """Resource requirements for a session."""
 
@@ -195,12 +203,13 @@ class SessionAttributes:
     """Attributes for creating a session."""
 
     application: str
-    id: Optional[str] = None
+    workspace: str = "default"
     common_data: Any = None
     min_instances: int = 0
     max_instances: Optional[int] = None
     batch_size: int = 1
     resreq: Optional[ResourceRequirement] = None
+    name: Optional[str] = None
 
 
 @dataclass
@@ -235,8 +244,10 @@ class ApplicationAttributes:
 class Task:
     """Represents a computing task."""
 
-    id: TaskID
-    session_id: SessionID
+    id: str
+    session: str
+    name: str
+    workspace: str
     state: TaskState
     creation_time: datetime
     input: Any = None
@@ -262,8 +273,9 @@ class Task:
 class Application:
     """Represents a distributed application."""
 
-    id: ApplicationID
+    id: str
     name: str
+    workspace: str
     state: ApplicationState
     creation_time: datetime
     shim: Optional[Shim] = None
@@ -323,9 +335,6 @@ class FlameClientTls:
         key_file: Path to the matching private key (PEM). Both identity files
                   must be set together.
 
-    Note:
-        To disable TLS for development, use http:// instead of https://
-        in the endpoint URL.
     """
 
     ca_file: Optional[str] = None
@@ -382,12 +391,12 @@ class FlameContext:
           endpoint: "https://flame-session-manager:8080"
           tls:
             ca_file: "/etc/flame/certs/ca.crt"
+            cert_file: "/etc/flame/certs/client.crt"
+            key_file: "/etc/flame/certs/client.key"
         cache:
           endpoint: "grpcs://flame-object-cache:9090"
           tls:
-            ca_file: "/etc/flame/certs/cache-ca.crt"
-            cert_file: "/etc/flame/certs/client.crt"
-            key_file: "/etc/flame/certs/client.key"
+            ca_file: "/etc/flame/certs/ca.crt"
         package:
           storage: "file:///var/lib/flame/packages"
     ```

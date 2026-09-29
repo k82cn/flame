@@ -17,6 +17,8 @@ import textwrap
 import flamepy
 import pytest
 
+from tests.utils import create_session_by_application_name
+
 NODEPS_RESULT_PREFIX = "FLMEXEC_APP_NODEPS_RESULT="
 NUMPY_RESULT_PREFIX = "FLMEXEC_APP_NUMPY_RESULT="
 
@@ -41,7 +43,7 @@ def check_flmexec_app_environment():
 
 
 def _invoke_flmexec_python(script: str, runtime: str | None = None) -> str:
-    session = flamepy.create_session("flmexec")
+    session = create_session_by_application_name("flmexec")
     try:
         request = {"language": "python", "runtime": runtime, "code": script, "input": None}
         raw_response = session.run(json.dumps(request).encode("utf-8"))

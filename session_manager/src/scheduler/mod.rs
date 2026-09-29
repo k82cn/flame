@@ -72,20 +72,21 @@ mod tests {
     use rand::Rng;
 
     use crate::controller;
-    use crate::model::{ALL_NODE, OPEN_SESSION};
+    use crate::model::ALL_NODE;
     use crate::scheduler::actions::{AllocateAction, DispatchAction};
     use crate::scheduler::ctx::Context;
     use crate::scheduler::plugins::{PluginManager, PluginsOptions};
     use crate::scheduler::ControllerPtr;
-    use crate::storage;
     use bytes::Bytes;
     use chrono::Duration;
     use chrono::Utc;
+    use common::apis::OPEN_SESSION;
     use common::apis::{
         Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement, Shim,
         TaskOptions,
     };
     use common::ctx::{FlameCluster, FlameClusterContext, FlameRecovery, FlameSessionRecovery};
+    use common::storage;
     use common::FlameError;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -94,6 +95,7 @@ mod tests {
 
     fn new_test_application() -> ApplicationAttributes {
         ApplicationAttributes {
+            id: "default/flmtest".to_string(),
             shim: Shim::Host,
             image: None,
             command: None,
@@ -199,10 +201,11 @@ mod tests {
                 .storage()
                 .register_node(&new_test_node("node_1".to_string())),
         )?;
-        let ssn_1_id = format!("ssn-1-{}", Utc::now().timestamp());
+        let ssn_1_id = format!("default/ssn-1-{}", Utc::now().timestamp());
         let ssn_1 =
             tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
-                id: ssn_1_id.clone(),
+                workspace: "default".to_string(),
+                name: ssn_1_id.rsplit('/').next().unwrap().to_string(),
                 application: "flmtest".to_string(),
                 common_data: None,
                 min_instances: 0,
@@ -217,7 +220,7 @@ mod tests {
             }))?;
 
         for _ in 0..task_num {
-            tokio_test::block_on(controller.create_task(ssn_1.id.clone(), None, None))?;
+            tokio_test::block_on(controller.create_task(ssn_1.gid.clone(), None, None))?;
         }
 
         for i in 0..10 {
@@ -240,19 +243,19 @@ mod tests {
 
             let ssn_list = snapshot.find_sessions(OPEN_SESSION)?;
             assert_eq!(ssn_list.len(), 1);
-            assert_eq!(ssn_list.values().next().unwrap().id, ssn_1.id.clone());
+            assert_eq!(ssn_list.values().next().unwrap().session, ssn_1.gid.clone());
 
             let node_list = snapshot.find_nodes(ALL_NODE)?;
             assert_eq!(node_list.len(), 1);
             assert_eq!(node_list.values().next().unwrap().name, "node_1");
 
-            let exec_list = controller.list_executors()?;
+            let exec_list = controller.list_executors(None)?;
             // The test does not run an executor manager, so a created executor
             // remains Void. Allocate pipelines that existing Void executor on
             // later cycles instead of creating duplicates before it becomes
             // Idle and Dispatch can bind it.
             assert_eq!(exec_list.len(), 1, "cycle {i}");
-            assert_eq!(exec_list[0].ssn_id, None);
+            assert_eq!(exec_list[0].session, None);
         }
 
         Ok(())
@@ -275,7 +278,8 @@ mod tests {
         for index in 0..2 {
             let session =
                 tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
-                    id: format!("limited-session-{index}"),
+                    workspace: "default".to_string(),
+                    name: format!("limited-session-{index}"),
                     application: "flmtest".to_string(),
                     resreq: Some(common::apis::ResourceRequirement {
                         cpu: 1,
@@ -284,7 +288,7 @@ mod tests {
                     }),
                     ..Default::default()
                 }))?;
-            tokio_test::block_on(controller.create_task(session.id, None, None))?;
+            tokio_test::block_on(controller.create_task(session.gid, None, None))?;
         }
 
         let options = PluginsOptions {
@@ -294,7 +298,7 @@ mod tests {
         let mut ctx = Context::new(controller.clone(), &options)?;
         tokio_test::block_on(AllocateAction::new_ptr().execute(&mut ctx))?;
 
-        let executors = controller.list_executors()?;
+        let executors = controller.list_executors(None)?;
         assert_eq!(executors.len(), 1);
         assert_eq!(executors[0].node, "node_1");
         Ok(())
@@ -339,11 +343,12 @@ mod tests {
                 .register_node(&new_test_node("node_1".to_string())),
         )?;
 
-        let mut session_ids = Vec::new();
+        let mut sessions = Vec::new();
         for task_count in task_counts {
-            let ssn_id = format!("reuse-idle-{}", Uuid::new_v4());
+            let session = format!("default/reuse-idle-{}", Uuid::new_v4());
             tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
-                id: ssn_id.clone(),
+                workspace: "default".to_string(),
+                name: session.rsplit('/').next().unwrap().to_string(),
                 application: "flmtest".to_string(),
                 common_data: None,
                 min_instances: 0,
@@ -357,15 +362,15 @@ mod tests {
                 }),
             }))?;
             for _ in 0..*task_count {
-                tokio_test::block_on(controller.create_task(ssn_id.clone(), None, None))?;
+                tokio_test::block_on(controller.create_task(session.clone(), None, None))?;
             }
-            session_ids.push(ssn_id);
+            sessions.push(session);
         }
 
         let executor_count = task_counts.iter().sum::<usize>();
         for _ in 0..executor_count {
             let executor = tokio_test::block_on(
-                controller.create_executor("node_1".to_string(), session_ids[0].clone()),
+                controller.create_executor("node_1".to_string(), sessions[0].clone()),
             )?;
             tokio_test::block_on(controller.register_executor(&executor))?;
         }
@@ -379,20 +384,20 @@ mod tests {
         let allocate = AllocateAction::new_ptr();
         tokio_test::block_on(allocate.execute(&mut ctx))?;
 
-        let executors = controller.list_executors()?;
+        let executors = controller.list_executors(None)?;
         assert_eq!(executors.len(), executor_count);
         assert!(executors.iter().all(|executor| {
             executor.state == common::apis::ExecutorState::Binding
                 && executor
-                    .ssn_id
+                    .session
                     .as_ref()
-                    .is_some_and(|session_id| session_ids.contains(session_id))
+                    .is_some_and(|session| sessions.contains(session))
         }));
-        for (session_id, task_count) in session_ids.iter().zip(task_counts) {
+        for (session, task_count) in sessions.iter().zip(task_counts) {
             assert_eq!(
                 executors
                     .iter()
-                    .filter(|executor| executor.ssn_id.as_ref() == Some(session_id))
+                    .filter(|executor| executor.session.as_ref() == Some(session))
                     .count(),
                 *task_count
             );
@@ -425,11 +430,12 @@ mod tests {
                 .register_node(&new_test_node("node_1".to_string())),
         )?;
 
-        let mut session_ids = Vec::new();
+        let mut sessions = Vec::new();
         for index in 0..2 {
             let session =
                 tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
-                    id: format!("das-session-{index}"),
+                    workspace: "default".to_string(),
+                    name: format!("das-session-{index}"),
                     application: "flmtest".to_string(),
                     resreq: Some(ResourceRequirement {
                         cpu: 1,
@@ -438,13 +444,13 @@ mod tests {
                     }),
                     ..Default::default()
                 }))?;
-            session_ids.push(session.id);
+            sessions.push(session.gid);
         }
 
         let mut executor_ids = Vec::new();
         for index in 0..2 {
             let executor = tokio_test::block_on(
-                controller.create_executor("node_1".to_string(), session_ids[0].clone()),
+                controller.create_executor("node_1".to_string(), sessions[0].clone()),
             )?;
             tokio_test::block_on(controller.register_executor(&executor))?;
             {
@@ -463,7 +469,7 @@ mod tests {
         };
         for index in 0..2 {
             tokio_test::block_on(controller.create_task(
-                session_ids[index].clone(),
+                sessions[index].clone(),
                 None,
                 Some(TaskOptions {
                     affinity: [Bytes::from(format!("key-{index}"))].into_iter().collect(),
@@ -473,7 +479,7 @@ mod tests {
             tokio_test::block_on(DispatchAction::new_ptr().execute(&mut ctx))?;
 
             let executor = controller.get_executor(executor_ids[index].clone())?;
-            assert_eq!(executor.ssn_id.as_ref(), Some(&session_ids[index]));
+            assert_eq!(executor.session.as_ref(), Some(&sessions[index]));
         }
 
         Ok(())
@@ -493,9 +499,10 @@ mod tests {
                 .register_node(&new_test_node("node_1".to_string())),
         )?;
 
-        let ssn_id = format!("not-ready-{}", Uuid::new_v4());
+        let session = format!("default/not-ready-{}", Uuid::new_v4());
         tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
-            id: ssn_id.clone(),
+            workspace: "default".to_string(),
+            name: session.rsplit('/').next().unwrap().to_string(),
             application: "flmtest".to_string(),
             common_data: None,
             min_instances: 0,
@@ -508,16 +515,17 @@ mod tests {
                 gpu: 0,
             }),
         }))?;
-        tokio_test::block_on(controller.create_task(ssn_id.clone(), None, None))?;
+        tokio_test::block_on(controller.create_task(session.clone(), None, None))?;
 
         {
-            let ssn_ptr = controller.storage().get_session_ptr(ssn_id.clone())?;
+            let ssn_ptr = controller.storage().get_session_ptr(session.clone())?;
             let mut ssn = stdng::lock_ptr!(ssn_ptr)?;
             ssn.retry_count = 1;
         }
 
-        let executor =
-            tokio_test::block_on(controller.create_executor("node_1".to_string(), ssn_id.clone()))?;
+        let executor = tokio_test::block_on(
+            controller.create_executor("node_1".to_string(), session.clone()),
+        )?;
         tokio_test::block_on(controller.register_executor(&executor))?;
 
         let options = PluginsOptions::default();
@@ -529,10 +537,10 @@ mod tests {
         let alloc = AllocateAction::new_ptr();
         tokio_test::block_on(alloc.execute(&mut ctx))?;
 
-        let executors = controller.list_executors()?;
+        let executors = controller.list_executors(None)?;
         assert_eq!(executors.len(), 1);
         assert_eq!(executors[0].state, common::apis::ExecutorState::Idle);
-        assert_eq!(executors[0].ssn_id, None);
+        assert_eq!(executors[0].session, None);
 
         Ok(())
     }

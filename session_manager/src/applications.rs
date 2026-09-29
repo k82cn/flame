@@ -30,9 +30,9 @@ use common::ctx::FlameClusterContext;
 use common::{FlameError, FLAME_HOME};
 
 use crate::controller::ControllerPtr;
-use crate::model::{ApplicationFilter, ExecutorFilter, SessionFilter};
-use crate::storage::StoragePtr;
 use crate::FlameThread;
+use common::apis::{ApplicationFilter, ExecutorFilter, SessionFilter};
+use common::storage::StoragePtr;
 
 const DEFAULT_FLAME_HOME: &str = "/usr/local/flame";
 const APPLICATION_MANAGER_INTERVAL: Duration = Duration::from_secs(1);
@@ -55,7 +55,7 @@ impl ApplicationManager {
         let applications = self.controller.list_applications(Some(&filter)).await?;
 
         for application in applications {
-            if let Err(error) = self.reconcile_application(&application.name).await {
+            if let Err(error) = self.reconcile_application(&application.gid).await {
                 tracing::warn!(
                     "Failed to reconcile disabled application <{}>: {}",
                     application.name,
@@ -66,8 +66,8 @@ impl ApplicationManager {
         Ok(())
     }
 
-    async fn reconcile_application(&self, name: &str) -> Result<(), FlameError> {
-        let application = match self.controller.get_application(name.to_string()).await {
+    async fn reconcile_application(&self, id: &str) -> Result<(), FlameError> {
+        let application = match self.controller.get_application(id.to_string()).await {
             Ok(application) => application,
             Err(FlameError::NotFound(_)) => return Ok(()),
             Err(error) => return Err(error),
@@ -76,16 +76,16 @@ impl ApplicationManager {
             return Ok(());
         }
         let closed_filter =
-            SessionFilter::by_application_state(application.name.clone(), SessionState::Closed);
+            SessionFilter::by_application_state(application.gid.clone(), SessionState::Closed);
         for session in self.storage.list_sessions(Some(&closed_filter))? {
-            match self.controller.delete_session(session.id).await {
+            match self.controller.delete_session(session.gid).await {
                 Ok(_) | Err(FlameError::NotFound(_)) => {}
                 Err(error) => return Err(error),
             }
         }
 
         let open_filter =
-            SessionFilter::by_application_state(application.name.clone(), SessionState::Open)
+            SessionFilter::by_application_state(application.gid.clone(), SessionState::Open)
                 .with_limit(1);
         let has_open_sessions = !self.storage.list_sessions(Some(&open_filter))?.is_empty();
         if has_open_sessions {
@@ -96,7 +96,7 @@ impl ApplicationManager {
             .storage
             .list_executors(Some(&ExecutorFilter::by_state(ExecutorState::Idle)))?
             .into_iter()
-            .filter(|executor| executor.application == application.name)
+            .filter(|executor| executor.application == application.gid)
             .map(|executor| executor.id)
             .collect::<Vec<_>>();
         for executor_id in idle_executors {
@@ -110,7 +110,7 @@ impl ApplicationManager {
             }
         }
 
-        self.storage.delete_application(application.name).await
+        self.storage.delete_application(application.gid).await
     }
 }
 
@@ -305,7 +305,7 @@ mod tests {
     async fn application_manager() -> (Arc<ApplicationManager>, ControllerPtr) {
         let mut context = FlameClusterContext::default();
         context.cluster.storage = "none".to_string();
-        let storage = crate::storage::new_ptr(&context).await.unwrap();
+        let storage = common::storage::new_ptr(&context).await.unwrap();
         let controller = crate::controller::new_ptr(storage.clone());
         (
             ApplicationManager::new(controller.clone(), storage),
@@ -317,43 +317,53 @@ mod tests {
     async fn manager_waits_for_open_sessions_before_removing_application() {
         let (manager, controller) = application_manager().await;
         controller
-            .register_application("draining-app".to_string(), ApplicationAttributes::default())
+            .register_application(
+                "draining-app".to_string(),
+                ApplicationAttributes {
+                    id: "default/draining-app".to_string(),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
         controller
             .create_session(SessionAttributes {
-                id: "closed-session".to_string(),
+                workspace: "default".to_string(),
+                name: "closed-session".to_string(),
                 application: "draining-app".to_string(),
                 ..SessionAttributes::default()
             })
             .await
             .unwrap();
         controller
-            .close_session("closed-session".to_string())
+            .close_session("default/closed-session".to_string())
             .await
             .unwrap();
         controller
             .create_session(SessionAttributes {
-                id: "open-session".to_string(),
+                workspace: "default".to_string(),
+                name: "open-session".to_string(),
                 application: "draining-app".to_string(),
                 ..SessionAttributes::default()
             })
             .await
             .unwrap();
         controller
-            .unregister_application("draining-app".to_string())
+            .unregister_application("default/draining-app".to_string())
             .await
             .unwrap();
 
         manager.reconcile_once().await.unwrap();
         assert!(matches!(
-            controller.get_session("closed-session".to_string()),
+            controller.get_session("default/closed-session".to_string()),
             Err(FlameError::NotFound(_))
         ));
-        assert!(controller.get_session("open-session".to_string()).is_ok());
+        assert!(controller
+            .get_session("default/open-session".to_string())
+            .is_ok());
         assert_eq!(
             controller
-                .get_application("draining-app".to_string())
+                .get_application("default/draining-app".to_string())
                 .await
                 .unwrap()
                 .state,
@@ -361,16 +371,18 @@ mod tests {
         );
 
         controller
-            .close_session("open-session".to_string())
+            .close_session("default/open-session".to_string())
             .await
             .unwrap();
         manager.reconcile_once().await.unwrap();
         assert!(matches!(
-            controller.get_session("open-session".to_string()),
+            controller.get_session("default/open-session".to_string()),
             Err(FlameError::NotFound(_))
         ));
         assert!(matches!(
-            controller.get_application("draining-app".to_string()).await,
+            controller
+                .get_application("default/draining-app".to_string())
+                .await,
             Err(FlameError::NotFound(_))
         ));
     }
@@ -379,7 +391,13 @@ mod tests {
     async fn manager_ignores_enabled_applications() {
         let (manager, controller) = application_manager().await;
         controller
-            .register_application("enabled-app".to_string(), ApplicationAttributes::default())
+            .register_application(
+                "enabled-app".to_string(),
+                ApplicationAttributes {
+                    id: "default/enabled-app".to_string(),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
 
@@ -387,7 +405,7 @@ mod tests {
 
         assert_eq!(
             controller
-                .get_application("enabled-app".to_string())
+                .get_application("default/enabled-app".to_string())
                 .await
                 .unwrap()
                 .state,
@@ -517,6 +535,7 @@ mod tests {
         let updates = Arc::new(Mutex::new(Vec::new()));
         let captured_updates = updates.clone();
         let attributes = ApplicationAttributes {
+            id: String::new(),
             command: Some("configured-command".into()),
             ..ApplicationAttributes::default()
         };
@@ -549,6 +568,7 @@ mod tests {
     #[test]
     fn attribute_comparison_ignores_runtime_metadata() {
         let attributes = ApplicationAttributes {
+            id: String::new(),
             shim: common::apis::Shim::Cri,
             image: Some("registry.example/flmrt:test".into()),
             command: Some("/usr/local/flame/bin/flmping-service".into()),

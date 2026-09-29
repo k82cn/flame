@@ -19,9 +19,13 @@ use flame_rs::apis::{FlameContext, FlameError};
 
 use crate::utils::client_application_attributes;
 
-pub async fn run(ctx: &FlameContext, application: &Option<String>) -> Result<(), FlameError> {
+pub async fn run(
+    ctx: &FlameContext,
+    application: &Option<String>,
+    workspace: &str,
+) -> Result<(), FlameError> {
     match application {
-        Some(application) => update_application(ctx, application).await?,
+        Some(application) => update_application(ctx, application, workspace).await?,
         None => {
             return Err(FlameError::InvalidConfig(
                 "application is required".to_string(),
@@ -32,7 +36,11 @@ pub async fn run(ctx: &FlameContext, application: &Option<String>) -> Result<(),
     Ok(())
 }
 
-async fn update_application(ctx: &FlameContext, application: &str) -> Result<(), FlameError> {
+async fn update_application(
+    ctx: &FlameContext,
+    application: &str,
+    workspace: &str,
+) -> Result<(), FlameError> {
     if !Path::new(&application).is_file() {
         return Err(FlameError::InvalidConfig(format!(
             "<{application}> is not a file"
@@ -61,7 +69,8 @@ async fn update_application(ctx: &FlameContext, application: &str) -> Result<(),
     )
     .await?;
 
-    conn.update_application(app.metadata.name, app_attr).await?;
+    conn.update_application(workspace, &app.metadata.name, app_attr)
+        .await?;
 
     Ok(())
 }

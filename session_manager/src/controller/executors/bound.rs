@@ -13,12 +13,12 @@ limitations under the License.
 
 use stdng::{lock_ptr, logs::TraceFn, trace_fn};
 
-use crate::model::ExecutorPtr;
+use common::apis::ExecutorPtr;
 use common::apis::{ExecutorState, FlameResult, SessionPtr, Task, TaskPtr, TaskResult, TaskState};
 use common::FlameError;
 
 use crate::controller::executors::States;
-use crate::storage::StoragePtr;
+use common::storage::StoragePtr;
 
 pub struct BoundState {
     pub storage: StoragePtr,
@@ -79,9 +79,9 @@ impl States for BoundState {
     ) -> Result<Option<Task>, FlameError> {
         trace_fn!("BoundState::launch_task");
 
-        let (ssn_id, task_id) = {
+        let (session, task) = {
             let task = lock_ptr!(task_ptr)?;
-            (task.ssn_id.clone(), task.id)
+            (task.session.clone(), task.number)
         };
 
         let host = {
@@ -89,7 +89,7 @@ impl States for BoundState {
             e.node.clone()
         };
 
-        tracing::debug!("Launching task <{}/{}> on host <{}>", ssn_id, task_id, host);
+        tracing::debug!("Launching task <{}/{}> on host <{}>", session, task, host);
 
         let msg = format!("Running task on host <{}>.", host);
         self.storage
@@ -98,8 +98,8 @@ impl States for BoundState {
 
         {
             let mut e = lock_ptr!(self.executor)?;
-            e.task_id = Some(task_id);
-            e.ssn_id = Some(ssn_id);
+            e.task = Some(task);
+            e.session = Some(session);
         };
 
         let task = lock_ptr!(task_ptr)?;
@@ -120,7 +120,7 @@ impl States for BoundState {
 
         {
             let mut e = lock_ptr!(self.executor)?;
-            e.task_id = None;
+            e.task = None;
         };
 
         Ok(())

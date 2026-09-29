@@ -5,8 +5,22 @@ package flame.v1;
 option go_package = "github.com/flame-sh/flame/sdk/go/rpc/v1";
 
 message Metadata {
+  // Persistent UUID for debugging application, session, and task resources.
+  // Node and executor retain their existing ID semantics.
   string id = 1;
+  // User-chosen final path segment.
   string name = 2;
+  // Owning workspace for application, session, and task resources.
+  string workspace = 3;
+}
+
+message Workspace {
+  string name = 1;
+  int64 creation_time = 2;
+}
+
+message WorkspaceList {
+  repeated Workspace workspaces = 1;
 }
 
 enum SessionState {
@@ -30,6 +44,7 @@ message SessionStatus {
 }
 
 message SessionSpec {
+  // Parent application name in this resource's workspace.
   string application = 2;
   // Field number 3 (slots) reserved — removed in slots-cleanup refactor; do not reuse.
   reserved 3;
@@ -46,6 +61,8 @@ message Session {
   Metadata metadata = 1;
   SessionSpec spec = 2;
   SessionStatus status = 3;
+  reserved 4;
+  reserved 5;
 }
 
 enum TaskState {
@@ -65,11 +82,13 @@ message TaskStatus {
 }
 
 message TaskSpec {
-  string session_id = 2;
+  // Parent session name in this resource's workspace.
+  string session = 2;
 
   optional bytes input = 3;
   optional bytes output = 4;
   repeated bytes affinity = 5;
+  string workspace = 6;
 }
 
 // Volatile, executor-local data advertised by a service for affinity routing.
@@ -127,12 +146,16 @@ message ApplicationSpec {
   optional ApplicationSchema schema = 11;
   optional string url = 12;
   optional string installer = 13;
+  reserved 14;
 }
 
 message Application {
   Metadata metadata = 1;
   ApplicationSpec spec = 2;
   ApplicationStatus status = 3;
+  reserved 4;
+  reserved 5;
+  reserved 6;
 }
 
 message ExecutorSpec {
@@ -142,7 +165,8 @@ message ExecutorSpec {
   reserved 3;
   reserved "slots";
   Shim shim = 4;  // Supported shim type reported by executor
-  string application = 5;
+  string application = 5;  // Application name in workspace.
+  string workspace = 6;
 }
 
 /* 
@@ -167,7 +191,8 @@ enum ExecutorState {
 
 message ExecutorStatus {
   ExecutorState state = 1;
-  optional string session_id = 2;
+  optional string session = 2;
+  string workspace = 3;
 }
 
 message Executor {

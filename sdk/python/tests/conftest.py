@@ -38,11 +38,11 @@ def sample_session_attrs():
 def sample_task():
     from flamepy.core.types import Task, TaskState
 
-    return Task(id="task-1", session_id="sess-1", state=TaskState.PENDING, creation_time=datetime.now(timezone.utc))
+    return Task(id="task-uuid", session="sess-1", name="1", workspace="default", state=TaskState.PENDING, creation_time=datetime.now(timezone.utc))
 
 
 @pytest.fixture
 def sample_application():
     from flamepy.core.types import Application, ApplicationState
 
-    return Application(id="app-1", name="test-app", state=ApplicationState.ENABLED, creation_time=datetime.now(timezone.utc))
+    return Application(id="app-uuid", name="test-app", workspace="default", state=ApplicationState.ENABLED, creation_time=datetime.now(timezone.utc))

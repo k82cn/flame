@@ -13,7 +13,7 @@ limitations under the License.
 
 import flamepy
 
-from tests.utils import wait_for_application_deleted
+from tests.utils import unregister_application_by_name, wait_for_application_deleted
 
 
 def test_register_application():
@@ -23,10 +23,27 @@ def test_register_application():
     )
 
     app = flamepy.get_application("flmtestapp")
+    assert app.workspace == "default"
     assert app.name == "flmtestapp"
     assert app.state == flamepy.ApplicationState.ENABLED
 
-    flamepy.unregister_application("flmtestapp")
+    unregister_application_by_name("flmtestapp")
+
+
+def test_register_application_in_workspace():
+    if not any(workspace.name == "e2e" for workspace in flamepy.list_workspaces()):
+        flamepy.create_workspace("e2e")
+
+    app = flamepy.register_application(
+        "flmtestapp-workspace",
+        flamepy.ApplicationAttributes(),
+        workspace="e2e",
+    )
+
+    assert app.workspace == "e2e"
+    assert flamepy.get_application(app.name, workspace=app.workspace).name == "flmtestapp-workspace"
+
+    flamepy.unregister_application(app.name, workspace=app.workspace)
 
 
 def test_list_application():
@@ -59,7 +76,7 @@ def test_application_with_url():
     # Note: description field persistence is a separate pre-existing issue
 
     # Clean up
-    flamepy.unregister_application("flmtestapp-url")
+    unregister_application_by_name("flmtestapp-url")
 
 
 def test_application_without_url():
@@ -80,7 +97,7 @@ def test_application_without_url():
     # Note: description field persistence is a separate pre-existing issue
 
     # Clean up
-    flamepy.unregister_application("flmtestapp-no-url")
+    unregister_application_by_name("flmtestapp-no-url")
 
 
 def test_register_application_no_shim():
@@ -114,7 +131,7 @@ def test_register_application_no_shim():
     assert app.shim == flamepy.Shim.HOST, f"Default shim should be HOST, got {app.shim}"
 
     # Clean up
-    flamepy.unregister_application(app_name)
+    unregister_application_by_name(app_name)
     wait_for_application_deleted(app_name)
 
     # Verify cleanup

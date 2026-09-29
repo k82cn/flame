@@ -102,7 +102,8 @@ class TraceFn:
 class ApplicationContext:
     """Context for an application."""
 
-    name: str
+    application: str
+    workspace: str = ""
     image: Optional[str] = None
     command: Optional[str] = None
     working_directory: Optional[str] = None
@@ -115,8 +116,9 @@ class SessionContext:
 
     _common_data: Optional[bytes]
 
-    session_id: str
-    application: ApplicationContext
+    session: str
+    workspace: str
+    application: str
 
     def common_data(self) -> Optional[bytes]:
         """Get the common data as bytes."""
@@ -127,8 +129,10 @@ class SessionContext:
 class TaskContext:
     """Context for a task."""
 
-    task_id: str
-    session_id: str
+    task: str
+    session: str
+    workspace: str
+    application: str
     input: Optional[bytes]  # Task input as bytes in core API
 
 

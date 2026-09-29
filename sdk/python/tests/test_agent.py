@@ -18,8 +18,10 @@ from flamepy.core.types import SessionAttributes
 
 
 class FakeSession:
-    def __init__(self, session_id="ssn-1", application="flmexec", common_data=None):
-        self.id = session_id
+    def __init__(self, session="ssn-1", application="flmexec", common_data=None):
+        self.id = "00000000-0000-4000-8000-000000000001"
+        self.name = session
+        self.workspace = "default"
         self.application = application
         self._common_data = common_data
         self.closed = False
@@ -78,7 +80,7 @@ def test_private_session_options_are_frozen():
 def test_open_without_id_creates_normalized_session():
     created = {}
 
-    def fake_create_session(application, common_data=None, min_instances=0, max_instances=None, resreq=None):
+    def fake_create_session(application, common_data=None, min_instances=0, max_instances=None, resreq=None, workspace="default"):
         created["application"] = application
         created["common_data"] = common_data
         created["min_instances"] = min_instances
@@ -92,7 +94,7 @@ def test_open_without_id_creates_normalized_session():
     assert created["application"] == "flmexec"
     assert created["min_instances"] == 1
     assert agent_session.attr.language == "python"
-    assert agent_session.id == "ssn-1"
+    assert agent_session.name == "ssn-1"
     stored = json.loads(created["common_data"].decode("utf-8"))
     assert stored["language"] == "python"
     assert stored["runtime"] is None
@@ -205,12 +207,12 @@ def test_submit_code_completion_is_not_blocked_by_user_callbacks(frontend_server
 
 def test_open_restores_options():
     options = _SessionOptions(language="python", runtime="3.12", min_instances=1)
-    session = FakeSession(session_id="ssn-open", common_data=_encode_options(options))
+    session = FakeSession(session="ssn-open", common_data=_encode_options(options))
 
     with patch("flamepy.agent.session._open_core_session", return_value=session):
-        agent_session = open_session(ssn_id="ssn-open")
+        agent_session = open_session(session="ssn-open")
 
-    assert agent_session.id == "ssn-open"
+    assert agent_session.name == "ssn-open"
     assert agent_session.attr.language == "python"
     assert agent_session.attr.runtime == "3.12"
     assert agent_session.attr.min_instances == 1
@@ -221,9 +223,9 @@ def test_open_by_id_ignores_creation_options():
     core_session = FakeSession(common_data=_encode_options(options))
 
     with patch("flamepy.agent.session._open_core_session", return_value=core_session) as core_open:
-        agent_session = open_session(ssn_id="ssn-1", language="unsupported", runtime="ignored")
+        agent_session = open_session(session="ssn-1", language="unsupported", runtime="ignored")
 
-    core_open.assert_called_once_with("ssn-1")
+    core_open.assert_called_once_with("ssn-1", workspace="default")
     assert agent_session.attr == options
 
 
@@ -232,7 +234,7 @@ def test_open_rejects_non_flmexec_session():
 
     with patch("flamepy.agent.session._open_core_session", return_value=session):
         with pytest.raises(FlameError) as exc:
-            open_session(ssn_id="other")
+            open_session(session="other")
     assert exc.value.code == FlameErrorCode.INVALID_ARGUMENT
 
 
@@ -241,13 +243,13 @@ def test_open_rejects_invalid_common_data():
 
     with patch("flamepy.agent.session._open_core_session", return_value=session):
         with pytest.raises(FlameError) as exc:
-            open_session(ssn_id="ssn-1")
+            open_session(session="ssn-1")
     assert exc.value.code == FlameErrorCode.INVALID_ARGUMENT
 
 
 def test_open_rejects_invalid_input_type():
     with pytest.raises(FlameError) as exc:
-        open_session(ssn_id=123)
+        open_session(session=123)
     assert exc.value.code == FlameErrorCode.INVALID_ARGUMENT
 
 
@@ -270,7 +272,7 @@ def test_context_manager_closes_session():
 
     with patch("flamepy.agent.session._create_core_session", return_value=core_session):
         with open_session(language="python") as agent_session:
-            assert agent_session.id == "ssn-1"
+            assert agent_session.name == "ssn-1"
         with pytest.raises(FlameError) as exc:
             agent_session.run_code("print(1)")
     assert core_session.closed is True

@@ -863,7 +863,6 @@ dependencies = [
  "nvml-wrapper",
  "pprof",
  "prost 0.14.3",
- "rand 0.9.4",
  "rpc",
  "rustix 1.1.4",
  "serde",
@@ -1790,6 +1789,7 @@ dependencies = [
  "stdng",
  "strum",
  "strum_macros",
+ "tempfile",
  "thiserror 2.0.18",
  "time",
  "tokio",
@@ -1825,7 +1825,6 @@ dependencies = [
  "chrono",
  "clap",
  "common",
- "crc32fast",
  "futures",
  "jsonschema",
  "prost 0.14.3",
@@ -1834,7 +1833,6 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "sqlx",
  "stdng",
  "strum",
  "strum_macros",
@@ -4912,6 +4910,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6156,6 +6160,7 @@ dependencies = [
  "getrandom 0.4.2",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

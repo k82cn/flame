@@ -38,7 +38,8 @@ mod tests {
 
         for i in 0..5 {
             let attr = SessionAttributes {
-                id: format!("ssn-{}", i),
+                name: format!("ssn-{}", i),
+                workspace: "default".to_string(),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -51,7 +52,10 @@ mod tests {
         }
 
         for i in 0..3 {
-            storage.close_session(format!("ssn-{}", i)).await.unwrap();
+            storage
+                .close_session(format!("default/ssn-{}", i))
+                .await
+                .unwrap();
         }
 
         let sessions = storage.list_sessions(None).unwrap();
@@ -65,7 +69,8 @@ mod tests {
 
         for i in 0..3 {
             let attr = SessionAttributes {
-                id: format!("ssn-{}", i),
+                name: format!("ssn-{}", i),
+                workspace: "default".to_string(),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -80,13 +85,16 @@ mod tests {
         let sessions_before = storage.list_sessions(None).unwrap();
         assert_eq!(sessions_before.len(), 3);
 
-        storage.close_session("ssn-0".to_string()).await.unwrap();
+        storage
+            .close_session("default/ssn-0".to_string())
+            .await
+            .unwrap();
 
         let sessions_after = storage.list_sessions(None).unwrap();
         assert_eq!(sessions_after.len(), 2);
 
-        let session_ids: Vec<_> = sessions_after.iter().map(|s| s.id.as_str()).collect();
-        assert!(!session_ids.contains(&"ssn-0"));
+        let sessions: Vec<_> = sessions_after.iter().map(|s| s.gid.as_str()).collect();
+        assert!(!sessions.contains(&"default/ssn-0"));
     }
 
     #[tokio::test]
@@ -96,7 +104,8 @@ mod tests {
 
         for i in 0..3 {
             let attr = SessionAttributes {
-                id: format!("ssn-{}", i),
+                name: format!("ssn-{}", i),
+                workspace: "default".to_string(),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -108,7 +117,10 @@ mod tests {
             storage.create_session(attr).await.unwrap();
         }
 
-        storage.close_session("ssn-0".to_string()).await.unwrap();
+        storage
+            .close_session("default/ssn-0".to_string())
+            .await
+            .unwrap();
 
         let sessions = storage.list_sessions(None).unwrap();
         assert_eq!(sessions.len(), 3);
@@ -121,7 +133,8 @@ mod tests {
 
         for i in 0..3 {
             let attr = SessionAttributes {
-                id: format!("ssn-{}", i),
+                name: format!("ssn-{}", i),
+                workspace: "default".to_string(),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -133,7 +146,10 @@ mod tests {
             storage.create_session(attr).await.unwrap();
         }
 
-        storage.close_session("ssn-1".to_string()).await.unwrap();
+        storage
+            .close_session("default/ssn-1".to_string())
+            .await
+            .unwrap();
 
         let sessions = storage.list_sessions(None).unwrap();
         assert_eq!(sessions.len(), 2);

@@ -14,8 +14,8 @@ limitations under the License.
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
 use crate::controller::executors::States;
-use crate::model::ExecutorPtr;
-use crate::storage::StoragePtr;
+use common::apis::ExecutorPtr;
+use common::storage::StoragePtr;
 
 use common::apis::{ExecutorState, FlameResult, SessionPtr, Task, TaskPtr, TaskResult};
 use common::FlameError;
@@ -36,13 +36,13 @@ impl States for IdleState {
     async fn bind_session(&self, ssn_ptr: SessionPtr) -> Result<(), FlameError> {
         trace_fn!("IdleState::bind_session");
 
-        let ssn_id = {
+        let session = {
             let ssn = lock_ptr!(ssn_ptr)?;
-            ssn.id.clone()
+            ssn.gid.clone()
         };
 
         let mut e = lock_ptr!(self.executor)?;
-        e.ssn_id = Some(ssn_id);
+        e.session = Some(session);
         e.set_state(ExecutorState::Binding);
 
         Ok(())

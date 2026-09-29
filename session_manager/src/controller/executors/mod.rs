@@ -17,9 +17,9 @@ use crate::controller::executors::{
     binding::BindingState, bound::BoundState, idle::IdleState, releasing::ReleasingState,
     unbinding::UnbindingState, void::VoidState,
 };
-use crate::storage::StoragePtr;
+use common::storage::StoragePtr;
 
-use crate::model::ExecutorPtr;
+use common::apis::ExecutorPtr;
 use common::apis::{ExecutorState, FlameResult, SessionPtr, Task, TaskPtr, TaskResult};
 use common::FlameError;
 use stdng::{lock_ptr, new_ptr, MutexPtr};
@@ -89,8 +89,8 @@ pub trait States: Send + Sync + 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Executor;
     use chrono::Utc;
+    use common::apis::Executor;
     use common::apis::{ApplicationAttributes, ResourceRequirement, SessionAttributes, Shim};
     use common::ctx::{FlameCluster, FlameClusterContext, FlameExecutors, FlameLimits};
 
@@ -101,8 +101,8 @@ mod tests {
             resreq: ResourceRequirement::default(),
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             attributes: Default::default(),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
@@ -148,25 +148,26 @@ mod tests {
             cache: None,
         };
 
-        crate::storage::new_ptr(&ctx).await.unwrap()
+        common::storage::new_ptr(&ctx).await.unwrap()
     }
 
     fn unique_test_id(prefix: &str) -> String {
         format!(
-            "{}-{}-{:?}",
+            "{}-{}",
             prefix,
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
-            std::thread::current().id()
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
         )
     }
 
     async fn create_stored_test_session(storage: &StoragePtr) -> (String, SessionPtr) {
-        let ssn_id = unique_test_id("ssn");
         let app_name = unique_test_id("app");
+        let ssn_name = unique_test_id("ssn");
+        let session = format!("default/{ssn_name}");
         storage
             .register_application(
                 app_name.clone(),
                 ApplicationAttributes {
+                    id: String::new(),
                     shim: Shim::default(),
                     ..Default::default()
                 },
@@ -175,14 +176,15 @@ mod tests {
             .unwrap();
         storage
             .create_session(SessionAttributes {
-                id: ssn_id.clone(),
-                application: app_name,
+                workspace: "default".to_string(),
+                name: session.rsplit('/').next().unwrap().to_string(),
+                application: app_name.to_string(),
                 ..Default::default()
             })
             .await
             .unwrap();
-        let ssn_ptr = storage.get_session_ptr(ssn_id.clone()).unwrap();
-        (ssn_id, ssn_ptr)
+        let ssn_ptr = storage.get_session_ptr(session.clone()).unwrap();
+        (session, ssn_ptr)
     }
 
     mod void_state_tests {
@@ -337,6 +339,7 @@ mod tests {
 
             let ssn = common::apis::Session {
                 id: "ssn-1".to_string(),
+                gid: "ssn-1".to_string(),
                 ..Default::default()
             };
             let ssn_ptr = new_ptr(ssn);
@@ -347,7 +350,7 @@ mod tests {
             assert_eq!(get_state(&exe_ptr).unwrap(), ExecutorState::Binding);
 
             let exe = lock_ptr!(exe_ptr).unwrap();
-            assert_eq!(exe.ssn_id, Some("ssn-1".to_string()));
+            assert_eq!(exe.session, Some("ssn-1".to_string()));
         }
 
         #[tokio::test]
@@ -432,12 +435,12 @@ mod tests {
         async fn test_bind_session_completed_transitions_to_bound() {
             let exe_ptr = create_test_executor("exe-1", ExecutorState::Binding);
             let storage = create_mock_storage().await;
-            let (ssn_id, ssn_ptr) = create_stored_test_session(&storage).await;
+            let (session, ssn_ptr) = create_stored_test_session(&storage).await;
             let application = lock_ptr!(ssn_ptr).unwrap().application.clone();
             {
                 let mut exe = lock_ptr!(exe_ptr).unwrap();
                 exe.application = application.clone();
-                exe.ssn_id = Some(ssn_id);
+                exe.session = Some(session);
             }
 
             let state = BindingState {
@@ -474,13 +477,13 @@ mod tests {
         async fn test_failed_bind_session_completed_transitions_to_unbinding() {
             let exe_ptr = create_test_executor("exe-1", ExecutorState::Binding);
             let storage = create_mock_storage().await;
-            let (ssn_id, ssn_ptr) = create_stored_test_session(&storage).await;
+            let (session, ssn_ptr) = create_stored_test_session(&storage).await;
             let application = lock_ptr!(ssn_ptr).unwrap().application.clone();
             {
                 let mut exe = lock_ptr!(exe_ptr).unwrap();
                 exe.application = application.clone();
-                exe.ssn_id = Some(ssn_id.clone());
-                exe.task_id = Some(1);
+                exe.session = Some(session.clone());
+                exe.task = Some(1);
             }
 
             let state = BindingState {
@@ -499,10 +502,10 @@ mod tests {
             let exe = lock_ptr!(exe_ptr).unwrap();
             assert_eq!(exe.state, ExecutorState::Unbinding);
             assert_eq!(exe.application, application);
-            assert_eq!(exe.ssn_id, None);
-            assert_eq!(exe.task_id, None);
+            assert_eq!(exe.session, None);
+            assert_eq!(exe.task, None);
 
-            let session = storage.get_session(ssn_id).unwrap();
+            let session = storage.get_session(session).unwrap();
             assert_eq!(session.retry_count, 1);
             assert_eq!(
                 session
@@ -569,8 +572,8 @@ mod tests {
             let exe_ptr = create_test_executor("exe-1", ExecutorState::Binding);
             {
                 let mut exe = lock_ptr!(exe_ptr).unwrap();
-                exe.ssn_id = Some("ssn-1".to_string());
-                exe.task_id = Some(1);
+                exe.session = Some("ssn-1".to_string());
+                exe.task = Some(1);
             }
             let state = BindingState {
                 storage: create_mock_storage().await,
@@ -582,8 +585,8 @@ mod tests {
             assert!(result.is_ok());
             let exe = lock_ptr!(exe_ptr).unwrap();
             assert_eq!(exe.state, ExecutorState::Released);
-            assert_eq!(exe.ssn_id, None);
-            assert_eq!(exe.task_id, None);
+            assert_eq!(exe.session, None);
+            assert_eq!(exe.task, None);
         }
 
         #[tokio::test]
@@ -734,8 +737,8 @@ mod tests {
             {
                 let mut exe = lock_ptr!(exe_ptr).unwrap();
                 exe.application = "test-app".to_string();
-                exe.ssn_id = Some("ssn-1".to_string());
-                exe.task_id = Some(1);
+                exe.session = Some("ssn-1".to_string());
+                exe.task = Some(1);
                 exe.attributes = [Bytes::from_static(b"retained")].into_iter().collect();
                 exe.latest_updated_timestamp = Utc::now() - chrono::Duration::minutes(10);
             }
@@ -756,8 +759,8 @@ mod tests {
                 exe.attributes,
                 [Bytes::from_static(b"retained")].into_iter().collect()
             );
-            assert!(exe.ssn_id.is_none());
-            assert!(exe.task_id.is_none());
+            assert!(exe.session.is_none());
+            assert!(exe.task.is_none());
             assert!(exe.latest_updated_timestamp > Utc::now() - chrono::Duration::minutes(1));
         }
 

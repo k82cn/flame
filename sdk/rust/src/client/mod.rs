@@ -31,51 +31,60 @@ use url::Url;
 
 use self::rpc::frontend_client::FrontendClient as FlameFrontendClient;
 use self::rpc::{
-    ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest, Environment,
-    GetApplicationRequest, GetNodeRequest, GetSessionRequest, GetTaskRequest,
-    ListApplicationsRequest, ListExecutorsRequest, ListNodesRequest, ListSessionsRequest,
-    ListTasksRequest, OpenSessionRequest, RegisterApplicationRequest, SessionSpec, TaskSpec,
-    UnregisterApplicationRequest, UpdateApplicationRequest, WatchTaskRequest,
+    ApplicationSpec, CloseSessionRequest, CreateSessionRequest, CreateTaskRequest,
+    CreateWorkspaceRequest, Environment, GetApplicationRequest, GetNodeRequest, GetSessionRequest,
+    GetTaskRequest, ListApplicationsRequest, ListExecutorsRequest, ListNodesRequest,
+    ListSessionsRequest, ListTasksRequest, ListWorkspacesRequest, OpenSessionRequest,
+    RegisterApplicationRequest, SessionSpec, TaskSpec, UnregisterApplicationRequest,
+    UpdateApplicationRequest, WatchTaskRequest,
 };
 use crate::apis::flame::v1 as rpc;
 use crate::apis::FlameClientTls;
 use crate::apis::{
-    ApplicationID, ApplicationState, CommonData, ExecutorState, FlameError, SessionID,
-    SessionState, Shim, TaskID, TaskInput, TaskOutput, TaskState,
+    ApplicationState, CommonData, ExecutorState, FlameError, SessionState, Shim, TaskInput,
+    TaskName, TaskOutput, TaskState,
 };
 use crate::message::{self, FromTaskOutput, IntoCommonData, IntoTaskInput};
 
 type FlameClient = FlameFrontendClient<Channel>;
+pub const DEFAULT_WORKSPACE: &str = "default";
+
+fn resource_path(workspace: &str, name: &str) -> Result<String, FlameError> {
+    for segment in [workspace, name] {
+        if segment.is_empty()
+            || matches!(segment, "." | ".." | "*")
+            || segment.contains(['/', '\\'])
+        {
+            return Err(FlameError::InvalidConfig(format!(
+                "invalid workspace or resource name <{segment}>"
+            )));
+        }
+    }
+    Ok(format!("{workspace}/{name}"))
+}
 type TaskHandleInner<O> =
     Pin<Box<dyn Future<Output = Result<Option<O>, FlameError>> + Send + 'static>>;
 type TaskFutureInner<O> =
     Pin<Box<dyn Future<Output = Result<TaskResult<O>, FlameError>> + Send + 'static>>;
 
-/// Connect to a Flame service without TLS (plaintext).
-///
-/// Use `connect_with_tls` for TLS-enabled connections.
+/// Connect to a plaintext Flame frontend.
 pub async fn connect(addr: &str) -> Result<Connection, FlameError> {
     connect_with_tls(addr, None).await
 }
 
-/// Connect to a Flame service with optional TLS configuration.
-///
-/// # Arguments
-/// * `addr` - The endpoint URL (use https:// for TLS, http:// for plaintext)
-/// * `tls_config` - Optional TLS configuration for secure connections
-///
-/// # TLS Behavior
-/// - If `addr` starts with `https://` and `tls_config` is `Some`, use provided TLS config
-/// - If `addr` starts with `https://` and `tls_config` is `None`, use default TLS config (system CA)
-/// - If `addr` starts with `http://`, TLS is not used regardless of `tls_config`
+/// Connect to a Flame frontend, using a client certificate for HTTPS.
 pub async fn connect_with_tls(
     addr: &str,
     tls_config: Option<&FlameClientTls>,
 ) -> Result<Connection, FlameError> {
+    if !addr.starts_with("https://") && !addr.starts_with("http://") {
+        return Err(FlameError::InvalidConfig(
+            "Flame frontend requires an http:// or https:// endpoint".into(),
+        ));
+    }
     let mut channel_builder = Endpoint::from_shared(addr.to_string())
         .map_err(|_| FlameError::InvalidConfig(format!("invalid address <{addr}>")))?;
 
-    // Apply TLS if endpoint uses https://
     if addr.starts_with("https://") {
         // Extract domain name from URL for TLS verification
         let url = Url::parse(addr)
@@ -87,7 +96,6 @@ pub async fn connect_with_tls(
         let client_tls_config = if let Some(tls) = tls_config {
             tls.client_tls_config(domain)?
         } else {
-            // Use default TLS config (system CA bundle)
             tonic::transport::ClientTlsConfig::new()
                 .domain_name(domain)
                 .with_native_roots()
@@ -106,6 +114,7 @@ pub async fn connect_with_tls(
     Ok(Connection {
         channel,
         watch_managers: Arc::default(),
+        cache_context: None,
     })
 }
 
@@ -117,15 +126,37 @@ pub struct Event {
     pub creation_time: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Workspace {
+    pub name: String,
+    #[serde(with = "serde_utc")]
+    pub creation_time: DateTime<Utc>,
+}
+
+impl TryFrom<rpc::Workspace> for Workspace {
+    type Error = FlameError;
+
+    fn try_from(workspace: rpc::Workspace) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: workspace.name,
+            creation_time: DateTime::from_timestamp_millis(workspace.creation_time).ok_or_else(
+                || FlameError::InvalidConfig("invalid workspace creation time".into()),
+            )?,
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct Connection {
     pub(crate) channel: Channel,
-    watch_managers: Arc<Mutex<HashMap<SessionID, Arc<WatchManager>>>>,
+    watch_managers: Arc<Mutex<HashMap<String, Arc<WatchManager>>>>,
+    pub(crate) cache_context: Option<crate::apis::FlameContext>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionAttributes {
-    pub id: SessionID,
+    pub name: String,
+    pub workspace: String,
     pub application: String,
     #[serde(with = "serde_message")]
     pub common_data: Option<CommonData>,
@@ -145,7 +176,8 @@ fn default_batch_size() -> u32 {
 
 #[derive(Clone, Debug)]
 pub struct SessionOptions {
-    pub id: Option<SessionID>,
+    pub name: Option<String>,
+    pub workspace: String,
     pub application: String,
     common_data: Option<CommonData>,
     pub min_instances: u32,
@@ -167,7 +199,8 @@ pub type TaskOption = TaskOptions;
 impl SessionOptions {
     pub fn new(application: impl Into<String>) -> Self {
         Self {
-            id: None,
+            name: None,
+            workspace: DEFAULT_WORKSPACE.to_string(),
             application: application.into(),
             common_data: None,
             min_instances: 0,
@@ -178,8 +211,13 @@ impl SessionOptions {
         }
     }
 
-    pub fn id(mut self, id: impl Into<SessionID>) -> Self {
-        self.id = Some(id.into());
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn workspace(mut self, workspace: impl Into<String>) -> Self {
+        self.workspace = workspace.into();
         self
     }
 
@@ -237,12 +275,21 @@ impl From<String> for SessionOptions {
 
 impl From<SessionOptions> for SessionAttributes {
     fn from(options: SessionOptions) -> Self {
-        let id = options
-            .id
-            .unwrap_or_else(|| format!("{}-{}", options.application, stdng::rand::short_name()));
+        let name = options.name.unwrap_or_else(|| {
+            format!(
+                "{}-{}",
+                options
+                    .application
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&options.application),
+                stdng::rand::short_name()
+            )
+        });
 
         Self {
-            id,
+            name,
+            workspace: options.workspace,
             application: options.application,
             common_data: options.common_data,
             min_instances: options.min_instances,
@@ -463,7 +510,9 @@ pub struct ApplicationAttributes {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Application {
-    pub name: ApplicationID,
+    pub id: String,
+    pub name: String,
+    pub workspace: String,
 
     pub attributes: ApplicationAttributes,
 
@@ -475,9 +524,10 @@ pub struct Application {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Executor {
     pub id: String,
+    pub workspace: String,
     pub application: String,
     pub state: ExecutorState,
-    pub session_id: Option<String>,
+    pub session: Option<String>,
     pub node: String,
 }
 
@@ -507,7 +557,10 @@ pub struct Session {
     #[serde(skip)]
     connection: Option<Connection>,
 
-    pub id: SessionID,
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub workspace: String,
     pub application: String,
     #[serde(with = "serde_message")]
     pub common_data: Option<CommonData>,
@@ -542,23 +595,26 @@ struct WatchState {
     // Keep the stream and task registrations under one lock so register,
     // finish, and close update the same watch lifecycle atomically.
     stream: Option<WatchStream>,
-    task_watcher: HashMap<TaskID, watch::Sender<Option<Result<Task, FlameError>>>>,
+    task_watcher: HashMap<TaskName, watch::Sender<Option<Result<Task, FlameError>>>>,
 }
 
 impl WatchManager {
     async fn register(
         self: &Arc<Self>,
         client: FlameClient,
-        session_id: SessionID,
-        task_id: TaskID,
+        session: String,
+        task: TaskName,
     ) -> Result<watch::Receiver<Option<Result<Task, FlameError>>>, FlameError> {
+        let task_number = task
+            .parse::<i64>()
+            .map_err(|_| FlameError::InvalidConfig(format!("invalid task number <{task}>")))?;
         let (requests, receiver) = {
             let mut state = self.state.lock().await;
-            let receiver = if let Some(waiter) = state.task_watcher.get(&task_id) {
+            let receiver = if let Some(waiter) = state.task_watcher.get(&task) {
                 waiter.subscribe()
             } else {
                 let (reply, receiver) = watch::channel(None);
-                state.task_watcher.insert(task_id.clone(), reply);
+                state.task_watcher.insert(task.clone(), reply);
                 receiver
             };
             let requests = match state.stream.as_ref() {
@@ -581,8 +637,17 @@ impl WatchManager {
         };
         if requests
             .send(WatchTaskRequest {
-                session_id,
-                task_id,
+                workspace: session
+                    .split_once('/')
+                    .map(|(workspace, _)| workspace)
+                    .unwrap_or_default()
+                    .to_string(),
+                session: session
+                    .split_once('/')
+                    .map(|(_, name)| name)
+                    .unwrap_or_default()
+                    .to_string(),
+                task: task_number,
             })
             .await
             .is_err()
@@ -604,10 +669,10 @@ impl WatchManager {
     async fn deliver(&self, task: Task) {
         let mut state = self.state.lock().await;
         if task.is_completed() {
-            if let Some(reply) = state.task_watcher.remove(&task.id) {
+            if let Some(reply) = state.task_watcher.remove(&task.name) {
                 reply.send_replace(Some(Ok(task)));
             }
-        } else if let Some(reply) = state.task_watcher.get(&task.id) {
+        } else if let Some(reply) = state.task_watcher.get(&task.name) {
             reply.send_replace(Some(Ok(task)));
         }
     }
@@ -659,8 +724,10 @@ async fn watch_task_stream(
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Task {
-    pub id: TaskID,
-    pub ssn_id: SessionID,
+    pub id: String,
+    pub session: String,
+    pub name: String,
+    pub workspace: String,
 
     pub state: TaskState,
 
@@ -682,19 +749,19 @@ pub trait TaskInformer: Send + Sync + 'static {
 }
 
 pub struct TaskHandle<O> {
-    task_id: TaskID,
+    task: TaskName,
     future: TaskHandleInner<O>,
 }
 
 pub struct TaskFuture<O> {
-    task_id: TaskID,
+    task: TaskName,
     future: TaskFutureInner<O>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TaskResult<O> {
-    pub task_id: TaskID,
-    pub session_id: SessionID,
+    pub task: TaskName,
+    pub session: String,
     pub state: TaskState,
     pub output: Option<O>,
     pub error_code: Option<i32>,
@@ -738,6 +805,7 @@ where
     O: FromTaskOutput,
 {
     pub fn from_task(task: Task) -> Result<Self, FlameError> {
+        let name = task.name.clone();
         let is_succeed = task.is_succeed();
         let (error_code, error_message) = if is_succeed {
             (None, None)
@@ -751,8 +819,8 @@ where
         };
 
         Ok(Self {
-            task_id: task.id,
-            session_id: task.ssn_id,
+            task: name,
+            session: task.session,
             state: task.state,
             output,
             error_code,
@@ -762,13 +830,13 @@ where
 }
 
 impl Connection {
-    fn watch_manager(&self, session_id: &SessionID) -> Arc<WatchManager> {
+    fn watch_manager(&self, session: &str) -> Arc<WatchManager> {
         let mut managers = self
             .watch_managers
             .lock()
             .expect("watch manager lock poisoned");
         managers
-            .entry(session_id.clone())
+            .entry(session.to_owned())
             .or_insert_with(|| Arc::new(WatchManager::default()))
             .clone()
     }
@@ -794,9 +862,11 @@ impl Connection {
 
     pub async fn create_session(&self, attrs: &SessionAttributes) -> Result<Session, FlameError> {
         trace_fn!("Connection::create_session");
+        resource_path(&attrs.workspace, &attrs.application)?;
 
         let create_ssn_req = CreateSessionRequest {
-            session_id: attrs.id.clone(),
+            name: attrs.name.clone(),
+            workspace: attrs.workspace.clone(),
             session: Some(SessionSpec {
                 application: attrs.application.clone(),
                 common_data: attrs.common_data.clone().map(CommonData::into),
@@ -815,11 +885,20 @@ impl Connection {
     }
 
     pub async fn list_sessions(&self) -> Result<Vec<Session>, FlameError> {
+        self.list_sessions_in_workspace(DEFAULT_WORKSPACE).await
+    }
+
+    pub async fn list_sessions_in_workspace(
+        &self,
+        workspace: &str,
+    ) -> Result<Vec<Session>, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
         let ssn_list = client
             .list_sessions(ListSessionsRequest {
                 application: None,
                 state: None,
+                name: None,
+                workspace: workspace.to_string(),
             })
             .await?;
 
@@ -831,11 +910,12 @@ impl Connection {
             .collect::<Result<Vec<Session>, FlameError>>()
     }
 
-    pub async fn get_session(&self, id: &SessionID) -> Result<Session, FlameError> {
+    pub async fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
         let ssn = client
             .get_session(GetSessionRequest {
-                session_id: id.to_string(),
+                session: name.to_string(),
+                workspace: workspace.to_string(),
             })
             .await?;
 
@@ -845,22 +925,34 @@ impl Connection {
 
     pub async fn open_session(
         &self,
-        id: &SessionID,
+        workspace: &str,
+        name: &str,
         spec: Option<&SessionAttributes>,
     ) -> Result<Session, FlameError> {
-        let session_spec = spec.map(|attrs| SessionSpec {
-            application: attrs.application.clone(),
-            common_data: attrs.common_data.clone().map(CommonData::into),
-            min_instances: attrs.min_instances,
-            max_instances: attrs.max_instances,
-            batch_size: 1,
-            priority: attrs.priority,
-            resreq: attrs.resreq.as_ref().map(rpc::ResourceRequirement::from),
-        });
+        resource_path(workspace, name)?;
+        let session_spec = spec
+            .map(|attrs| -> Result<SessionSpec, FlameError> {
+                if attrs.workspace != workspace {
+                    return Err(FlameError::InvalidConfig(
+                        "session workspace does not match options workspace".to_string(),
+                    ));
+                }
+                Ok(SessionSpec {
+                    application: attrs.application.clone(),
+                    common_data: attrs.common_data.clone().map(CommonData::into),
+                    min_instances: attrs.min_instances,
+                    max_instances: attrs.max_instances,
+                    batch_size: 1,
+                    priority: attrs.priority,
+                    resreq: attrs.resreq.as_ref().map(rpc::ResourceRequirement::from),
+                })
+            })
+            .transpose()?;
 
         let open_ssn_req = OpenSessionRequest {
-            session_id: id.clone(),
-            session: session_spec,
+            session: name.to_string(),
+            workspace: workspace.to_string(),
+            spec: session_spec,
         };
 
         let mut client = FlameClient::new(self.channel.clone());
@@ -871,31 +963,34 @@ impl Connection {
 
     pub async fn open_or_create_session_with(
         &self,
-        id: impl Into<SessionID>,
+        workspace: &str,
+        name: &str,
         options: impl Into<SessionOptions>,
     ) -> Result<Session, FlameError> {
-        let id = id.into();
         let mut options = options.into();
 
-        if let Some(option_id) = &options.id {
-            if option_id != &id {
+        if let Some(option_name) = &options.name {
+            if option_name != name {
                 return Err(FlameError::InvalidConfig(format!(
-                    "session id <{}> does not match options id <{}>",
-                    id, option_id
+                    "session name <{}> does not match options name <{}>",
+                    name, option_name
                 )));
             }
         }
 
-        options.id = Some(id.clone());
+        options.workspace = workspace.to_string();
+        options.name = Some(name.to_string());
         let attrs = options.into_session_attributes()?;
-        self.open_session(&id, Some(&attrs)).await
+        self.open_session(workspace, name, Some(&attrs)).await
     }
 
-    pub async fn close_session(&self, id: &str) -> Result<(), FlameError> {
+    pub async fn close_session(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
+        let path = resource_path(workspace, name)?;
         let mut client = FlameClient::new(self.channel.clone());
         client
             .close_session(CloseSessionRequest {
-                session_id: id.to_string(),
+                session: name.to_string(),
+                workspace: workspace.to_string(),
             })
             .await?;
 
@@ -903,7 +998,7 @@ impl Connection {
             .watch_managers
             .lock()
             .expect("watch manager lock poisoned")
-            .remove(id);
+            .remove(&path);
         if let Some(manager) = manager {
             manager.close().await;
         }
@@ -915,36 +1010,67 @@ impl Connection {
         &self,
         name: String,
         app: ApplicationAttributes,
-    ) -> Result<(), FlameError> {
+    ) -> Result<Application, FlameError> {
+        self.register_application_in_workspace(DEFAULT_WORKSPACE, name, app)
+            .await
+    }
+
+    pub async fn register_application_in_workspace(
+        &self,
+        workspace: &str,
+        name: String,
+        app: ApplicationAttributes,
+    ) -> Result<Application, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
 
         let req = RegisterApplicationRequest {
             name,
             application: Some(ApplicationSpec::from(app)),
+            workspace: workspace.to_string(),
         };
 
         let res = client
             .register_application(Request::new(req))
             .await?
             .into_inner();
+        Application::try_from(&res)
+    }
 
-        if res.return_code < 0 {
-            Err(FlameError::Network(res.message.unwrap_or_default()))
-        } else {
-            Ok(())
-        }
+    pub async fn create_workspace(&self, name: &str) -> Result<Workspace, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        let workspace = client
+            .create_workspace(CreateWorkspaceRequest {
+                name: name.to_string(),
+            })
+            .await?
+            .into_inner();
+        Workspace::try_from(workspace)
+    }
+
+    pub async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        client
+            .list_workspaces(ListWorkspacesRequest {})
+            .await?
+            .into_inner()
+            .workspaces
+            .into_iter()
+            .map(Workspace::try_from)
+            .collect()
     }
 
     pub async fn update_application(
         &self,
-        name: String,
+        workspace: &str,
+        name: &str,
         app: ApplicationAttributes,
     ) -> Result<(), FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
 
         let req = UpdateApplicationRequest {
-            name,
-            application: Some(ApplicationSpec::from(app)),
+            application: name.to_string(),
+            workspace: workspace.to_string(),
+            spec: Some(ApplicationSpec::from(app)),
         };
 
         let res = client
@@ -959,10 +1085,17 @@ impl Connection {
         }
     }
 
-    pub async fn unregister_application(&self, name: String) -> Result<(), FlameError> {
+    pub async fn unregister_application(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<(), FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
 
-        let req = UnregisterApplicationRequest { name };
+        let req = UnregisterApplicationRequest {
+            application: name.to_string(),
+            workspace: workspace.to_string(),
+        };
 
         let res = client
             .unregister_application(Request::new(req))
@@ -977,9 +1110,20 @@ impl Connection {
     }
 
     pub async fn list_applications(&self) -> Result<Vec<Application>, FlameError> {
+        self.list_applications_in_workspace(DEFAULT_WORKSPACE).await
+    }
+
+    pub async fn list_applications_in_workspace(
+        &self,
+        workspace: &str,
+    ) -> Result<Vec<Application>, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
         let app_list = client
-            .list_applications(ListApplicationsRequest { state: None })
+            .list_applications(ListApplicationsRequest {
+                state: None,
+                name: None,
+                workspace: Some(workspace.to_string()),
+            })
             .await?;
 
         app_list
@@ -990,19 +1134,92 @@ impl Connection {
             .collect::<Result<Vec<Application>, FlameError>>()
     }
 
-    pub async fn get_application(&self, name: &str) -> Result<Application, FlameError> {
+    pub async fn get_application(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<Application, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
         let app = client
             .get_application(GetApplicationRequest {
-                name: name.to_string(),
+                application: name.to_string(),
+                workspace: workspace.to_string(),
             })
             .await?;
         Application::try_from(&app.into_inner())
     }
 
-    pub async fn list_executors(&self) -> Result<Vec<Executor>, FlameError> {
+    pub async fn get_application_by_name(
+        &self,
+        name: &str,
+    ) -> Result<Option<Application>, FlameError> {
+        self.get_application_by_name_in_workspace(DEFAULT_WORKSPACE, name)
+            .await
+    }
+
+    pub async fn get_application_by_name_in_workspace(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<Option<Application>, FlameError> {
         let mut client = FlameClient::new(self.channel.clone());
-        let executor_list = client.list_executors(ListExecutorsRequest {}).await?;
+        let response = client
+            .list_applications(ListApplicationsRequest {
+                state: None,
+                name: Some(name.to_string()),
+                workspace: Some(workspace.to_string()),
+            })
+            .await?
+            .into_inner();
+        let mut matches = response
+            .applications
+            .iter()
+            .filter(|app| {
+                app.metadata
+                    .as_ref()
+                    .is_some_and(|metadata| metadata.name == name)
+            })
+            .map(Application::try_from);
+        let first = matches.next().transpose()?;
+        if matches.next().is_some() {
+            return Err(FlameError::InvalidConfig(format!(
+                "application name {name:?} is ambiguous"
+            )));
+        }
+        Ok(first)
+    }
+
+    pub async fn list_executors(&self) -> Result<Vec<Executor>, FlameError> {
+        self.list_executors_in_workspace(DEFAULT_WORKSPACE).await
+    }
+
+    pub async fn list_executors_in_workspace(
+        &self,
+        workspace: &str,
+    ) -> Result<Vec<Executor>, FlameError> {
+        self.list_executors_filtered(workspace, None).await
+    }
+
+    pub async fn list_executors_for_application(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<Vec<Executor>, FlameError> {
+        self.list_executors_filtered(workspace, Some(name)).await
+    }
+
+    async fn list_executors_filtered(
+        &self,
+        workspace: &str,
+        application: Option<&str>,
+    ) -> Result<Vec<Executor>, FlameError> {
+        let mut client = FlameClient::new(self.channel.clone());
+        let executor_list = client
+            .list_executors(ListExecutorsRequest {
+                application: application.map(str::to_string),
+                workspace: workspace.to_string(),
+            })
+            .await?;
         let inner = executor_list.into_inner();
         inner
             .executors
@@ -1038,9 +1255,13 @@ impl Connection {
 }
 
 impl Session {
+    fn path(&self) -> String {
+        format!("{}/{}", self.workspace, self.name)
+    }
+
     async fn register_task_watch(
         &self,
-        task_id: TaskID,
+        task: TaskName,
     ) -> Result<watch::Receiver<Option<Result<Task, FlameError>>>, FlameError> {
         let client = self
             .client
@@ -1051,8 +1272,8 @@ impl Session {
             .as_ref()
             .ok_or_else(|| FlameError::Internal("no flame connection".to_string()))?;
         connection
-            .watch_manager(&self.id)
-            .register(client, self.id.clone(), task_id)
+            .watch_manager(&self.path())
+            .register(client, self.path(), task)
             .await
     }
 
@@ -1098,8 +1319,8 @@ impl Session {
         let task = self
             .create_task_with_options(input.into_task_input()?, option)
             .await?;
-        let task_id = task.id;
-        let mut receiver = self.register_task_watch(task_id.clone()).await?;
+        let task = task.name.clone();
+        let mut receiver = self.register_task_watch(task.clone()).await?;
 
         let future = Box::pin(async move {
             while let Some(update) = next_watch_update(&mut receiver).await {
@@ -1111,7 +1332,7 @@ impl Session {
             Err(FlameError::Network("task watch stopped".to_string()))
         });
 
-        Ok(TaskFuture { task_id, future })
+        Ok(TaskFuture { task, future })
     }
 
     pub fn common_data<T>(&self) -> Result<Option<T>, FlameError>
@@ -1139,7 +1360,8 @@ impl Session {
 
         let create_task_req = CreateTaskRequest {
             task: Some(TaskSpec {
-                session_id: self.id.clone(),
+                session: self.name.clone(),
+                workspace: self.workspace.clone(),
                 input: input.map(|input| input.to_vec()),
                 output: None,
                 affinity: option.affinity.into_iter().collect(),
@@ -1152,7 +1374,7 @@ impl Session {
         Task::try_from(&inner)
     }
 
-    pub async fn get_task(&self, id: &TaskID) -> Result<Task, FlameError> {
+    pub async fn get_task(&self, task: &TaskName) -> Result<Task, FlameError> {
         trace_fn!("Session::get_task");
         let mut client = self
             .client
@@ -1160,8 +1382,11 @@ impl Session {
             .ok_or(FlameError::Internal("no flame client".to_string()))?;
 
         let get_task_req = GetTaskRequest {
-            session_id: self.id.clone(),
-            task_id: id.clone(),
+            session: self.name.clone(),
+            workspace: self.workspace.clone(),
+            task: task
+                .parse::<i64>()
+                .map_err(|_| FlameError::InvalidConfig(format!("invalid task number <{task}>")))?,
         };
         let task = client.get_task(get_task_req).await?;
 
@@ -1178,7 +1403,8 @@ impl Session {
             .ok_or(FlameError::Internal("no flame client".to_string()))?;
         let task_stream = client
             .list_tasks(Request::new(ListTasksRequest {
-                session_id: self.id.to_string(),
+                session: self.name.clone(),
+                workspace: self.workspace.clone(),
             }))
             .await?;
 
@@ -1201,7 +1427,7 @@ impl Session {
     ) -> Result<(), FlameError> {
         trace_fn!("Session::run_task");
         let task = self.create_task(input).await?;
-        let registration = self.register_task_watch(task.id).await;
+        let registration = self.register_task_watch(task.name.clone()).await;
         let mut updates = match registration {
             Ok(updates) => updates,
             Err(error) => {
@@ -1249,17 +1475,17 @@ impl Session {
 
     pub async fn watch_task(
         &self,
-        session_id: SessionID,
-        task_id: TaskID,
+        session: String,
+        task: TaskName,
         informer_ptr: TaskInformerPtr,
     ) -> Result<(), FlameError> {
         trace_fn!("Session::watch_task");
-        if session_id != self.id {
+        if session != self.path() {
             return Err(FlameError::InvalidConfig(
                 "task watch session does not match this session".to_string(),
             ));
         }
-        let registration = self.register_task_watch(task_id).await;
+        let registration = self.register_task_watch(task).await;
         let mut updates = match registration {
             Ok(updates) => updates,
             Err(error) => {
@@ -1292,14 +1518,14 @@ impl Session {
         self.connection
             .as_ref()
             .ok_or_else(|| FlameError::Internal("no flame connection".to_string()))?
-            .close_session(&self.id)
+            .close_session(&self.workspace, &self.name)
             .await
     }
 }
 
 impl<O> TaskHandle<O> {
-    pub fn id(&self) -> &TaskID {
-        &self.task_id
+    pub fn task(&self) -> &TaskName {
+        &self.task
     }
 }
 
@@ -1318,7 +1544,7 @@ where
     O: Send + 'static,
 {
     fn from(task_future: TaskFuture<O>) -> Self {
-        let task_id = task_future.id().clone();
+        let task = task_future.task().clone();
         let future = Box::pin(async move {
             let result = task_future.await?;
             if result.is_succeed() {
@@ -1328,13 +1554,13 @@ where
             }
         });
 
-        Self { task_id, future }
+        Self { task, future }
     }
 }
 
 impl<O> TaskFuture<O> {
-    pub fn id(&self) -> &TaskID {
-        &self.task_id
+    pub fn task(&self) -> &TaskName {
+        &self.task
     }
 }
 
@@ -1377,7 +1603,7 @@ fn task_result_error<O>(result: &TaskResult<O>) -> FlameError {
 
     FlameError::Internal(format!(
         "task <{}> in session <{}> finished with state <{}>{}",
-        result.task_id, result.session_id, result.state, details
+        result.task, result.session, result.state, details
     ))
 }
 
@@ -1406,7 +1632,9 @@ impl TryFrom<&rpc::Task> for Task {
 
         Ok(Task {
             id: metadata.id,
-            ssn_id: spec.session_id.clone(),
+            session: spec.session,
+            name: metadata.name,
+            workspace: metadata.workspace,
             input: spec.input.map(TaskInput::from),
             output: spec.output.map(TaskOutput::from),
             affinity: spec.affinity.into_iter().collect(),
@@ -1446,7 +1674,14 @@ impl TryFrom<&rpc::Session> for Session {
             client: None,
             connection: None,
             id: metadata.id,
-            application: spec.application,
+            name: metadata.name,
+            workspace: metadata.workspace,
+            application: spec
+                .application
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string(),
             common_data: spec.common_data.map(CommonData::from),
             creation_time,
             state: SessionState::try_from(status.state).unwrap_or(SessionState::default()),
@@ -1501,7 +1736,9 @@ impl TryFrom<&rpc::Application> for Application {
             .ok_or_else(|| FlameError::Internal("invalid timestamp".to_string()))?;
 
         Ok(Self {
+            id: metadata.id,
             name: metadata.name,
+            workspace: metadata.workspace,
             attributes: ApplicationAttributes::from(spec),
             state: ApplicationState::from(status.state()),
             creation_time,
@@ -1528,7 +1765,7 @@ impl From<ApplicationAttributes> for ApplicationSpec {
             max_instances: app.max_instances,
             delay_release: app.delay_release.map(|s| s.num_seconds()),
             schema: app.schema.clone().map(rpc::ApplicationSchema::from),
-            url: app.url.clone(),
+            url: app.url,
             installer: app.installer.clone(),
         }
     }
@@ -1555,7 +1792,7 @@ impl From<ApplicationSpec> for ApplicationAttributes {
             max_instances: app.max_instances,
             delay_release: app.delay_release.map(Duration::seconds),
             schema: app.schema.clone().map(ApplicationSchema::from),
-            url: app.url.clone(),
+            url: app.url,
             installer: app.installer.clone(),
         }
     }
@@ -1603,8 +1840,9 @@ impl TryFrom<&rpc::Executor> for Executor {
 
         Ok(Executor {
             id: metadata.id,
+            workspace: spec.workspace,
             application: spec.application,
-            session_id: status.session_id,
+            session: status.session,
             node: spec.node,
             state,
         })
@@ -1740,7 +1978,9 @@ mod tests {
     fn test_task(id: &str, state: TaskState) -> Task {
         Task {
             id: id.to_string(),
-            ssn_id: "ssn-1".to_string(),
+            session: "ssn-1".to_string(),
+            name: id.rsplit('/').next().unwrap_or(id).to_string(),
+            workspace: "default".to_string(),
             state,
             input: None,
             output: None,
@@ -1755,6 +1995,7 @@ mod tests {
         let connection = Connection {
             channel: channel.clone(),
             watch_managers: Arc::default(),
+            cache_context: None,
         };
         let response = rpc::Session {
             metadata: Some(rpc::Metadata {
@@ -1778,17 +2019,21 @@ mod tests {
             .attach_session(&response, FlameClient::new(channel))
             .unwrap();
         assert!(connection.watch_managers.lock().unwrap().is_empty());
-        let first_manager = first.connection.as_ref().unwrap().watch_manager(&first.id);
+        let first_manager = first
+            .connection
+            .as_ref()
+            .unwrap()
+            .watch_manager(&first.path());
         let second_manager = second
             .connection
             .as_ref()
             .unwrap()
-            .watch_manager(&second.id);
+            .watch_manager(&second.path());
         assert!(Arc::ptr_eq(&first_manager, &second_manager));
         assert!(second.client.is_some());
         assert!(!Arc::ptr_eq(
             &first_manager,
-            &connection.watch_manager(&"ssn-2".to_string())
+            &connection.watch_manager("ssn-2")
         ));
     }
 
@@ -1797,11 +2042,12 @@ mod tests {
         let connection = Connection {
             channel: Endpoint::from_static("http://127.0.0.1:0").connect_lazy(),
             watch_managers: Arc::default(),
+            cache_context: None,
         };
         let managers = (0..16)
             .map(|_| {
                 let connection = connection.clone();
-                std::thread::spawn(move || connection.watch_manager(&"ssn-1".to_string()))
+                std::thread::spawn(move || connection.watch_manager("ssn-1"))
             })
             .map(|thread| thread.join().unwrap())
             .collect::<Vec<_>>();
@@ -1815,8 +2061,9 @@ mod tests {
         let connection = Connection {
             channel: Endpoint::from_static("http://127.0.0.1:0").connect_lazy(),
             watch_managers: Arc::default(),
+            cache_context: None,
         };
-        let live = connection.watch_manager(&"ssn-1".to_string());
+        let live = connection.watch_manager("ssn-1");
         let weak = Arc::downgrade(&live);
         drop(live);
         assert_eq!(connection.watch_managers.lock().unwrap().len(), 1);
@@ -1848,8 +2095,11 @@ mod tests {
         let connection = Connection {
             channel: channel.clone(),
             watch_managers: Arc::default(),
+            cache_context: None,
         };
         let session = Session {
+            name: "ssn-1".to_string(),
+            workspace: "default".to_string(),
             client: Some(FlameClient::new(channel)),
             connection: Some(connection.clone()),
             id: "ssn-1".to_string(),
@@ -1870,7 +2120,7 @@ mod tests {
         drop(request_rx);
         let stream = tokio::spawn(std::future::pending::<()>());
         connection
-            .watch_manager(&session.id)
+            .watch_manager(&session.path())
             .state
             .lock()
             .await
@@ -1882,7 +2132,7 @@ mod tests {
         let informer: TaskInformerPtr = Arc::new(Mutex::new(ErrorRecorder(errors.clone())));
 
         assert!(session
-            .watch_task("ssn-1".to_string(), "task-1".to_string(), informer)
+            .watch_task("default/ssn-1".to_string(), "1".to_string(), informer)
             .await
             .is_err());
         assert_eq!(errors.lock().unwrap().len(), 1);
@@ -1896,13 +2146,11 @@ mod tests {
         let (second_tx, mut second_rx) = watch::channel(None);
         {
             let mut state = manager.state.lock().await;
-            state.task_watcher.insert("first".to_string(), first_tx);
-            state.task_watcher.insert("second".to_string(), second_tx);
+            state.task_watcher.insert("1".to_string(), first_tx);
+            state.task_watcher.insert("2".to_string(), second_tx);
         }
 
-        manager
-            .deliver(test_task("first", TaskState::Running))
-            .await;
+        manager.deliver(test_task("1", TaskState::Running)).await;
         assert_eq!(
             next_watch_update(&mut first_rx)
                 .await
@@ -1911,14 +2159,12 @@ mod tests {
                 .state,
             TaskState::Running
         );
-        manager
-            .deliver(test_task("second", TaskState::Succeed))
-            .await;
+        manager.deliver(test_task("2", TaskState::Succeed)).await;
         assert_eq!(
             next_watch_update(&mut second_rx).await.unwrap().unwrap().id,
-            "second"
+            "2"
         );
-        manager.deliver(test_task("first", TaskState::Failed)).await;
+        manager.deliver(test_task("1", TaskState::Failed)).await;
         assert_eq!(
             next_watch_update(&mut first_rx)
                 .await
@@ -1940,18 +2186,16 @@ mod tests {
         });
         let client = FlameClient::new(Endpoint::from_static("http://127.0.0.1:0").connect_lazy());
         let mut first = manager
-            .register(client.clone(), "ssn-1".to_string(), "task-1".to_string())
+            .register(client.clone(), "default/ssn-1".to_string(), "1".to_string())
             .await
             .unwrap();
-        manager
-            .deliver(test_task("task-1", TaskState::Running))
-            .await;
+        manager.deliver(test_task("1", TaskState::Running)).await;
         let mut second = manager
-            .register(client, "ssn-1".to_string(), "task-1".to_string())
+            .register(client, "default/ssn-1".to_string(), "1".to_string())
             .await
             .unwrap();
-        assert_eq!(request_rx.try_recv().unwrap().task_id, "task-1");
-        assert_eq!(request_rx.try_recv().unwrap().task_id, "task-1");
+        assert_eq!(request_rx.try_recv().unwrap().task, 1);
+        assert_eq!(request_rx.try_recv().unwrap().task, 1);
         assert!(request_rx.try_recv().is_err());
         assert!(tokio::time::timeout(
             std::time::Duration::from_millis(20),
@@ -1962,17 +2206,13 @@ mod tests {
 
         // A later frontend snapshot, rather than the locally cached Running
         // state, is delivered to the second waiter.
-        manager
-            .deliver(test_task("task-1", TaskState::Pending))
-            .await;
+        manager.deliver(test_task("1", TaskState::Pending)).await;
         assert_eq!(
             next_watch_update(&mut second).await.unwrap().unwrap().state,
             TaskState::Pending
         );
 
-        manager
-            .deliver(test_task("task-1", TaskState::Succeed))
-            .await;
+        manager.deliver(test_task("1", TaskState::Succeed)).await;
         assert_eq!(
             next_watch_update(&mut first).await.unwrap().unwrap().state,
             TaskState::Succeed
@@ -1993,16 +2233,12 @@ mod tests {
             .lock()
             .await
             .task_watcher
-            .insert("first".to_string(), reply);
+            .insert("1".to_string(), reply);
 
         for _ in 0..1000 {
-            manager
-                .deliver(test_task("first", TaskState::Running))
-                .await;
+            manager.deliver(test_task("1", TaskState::Running)).await;
         }
-        manager
-            .deliver(test_task("first", TaskState::Succeed))
-            .await;
+        manager.deliver(test_task("1", TaskState::Succeed)).await;
         assert_eq!(
             next_watch_update(&mut receiver)
                 .await
@@ -2024,15 +2260,11 @@ mod tests {
             .lock()
             .await
             .task_watcher
-            .insert("first".to_string(), reply);
+            .insert("1".to_string(), reply);
         drop(receiver);
-        manager
-            .deliver(test_task("first", TaskState::Running))
-            .await;
+        manager.deliver(test_task("1", TaskState::Running)).await;
         assert_eq!(manager.state.lock().await.task_watcher.len(), 1);
-        manager
-            .deliver(test_task("first", TaskState::Succeed))
-            .await;
+        manager.deliver(test_task("1", TaskState::Succeed)).await;
         assert!(manager.state.lock().await.task_watcher.is_empty());
     }
 
@@ -2048,7 +2280,7 @@ mod tests {
                 requests,
                 task: watch.abort_handle(),
             });
-            state.task_watcher.insert("first".to_string(), reply);
+            state.task_watcher.insert("1".to_string(), reply);
         }
         manager.close().await;
         assert!(next_watch_update(&mut receiver).await.unwrap().is_err());
@@ -2065,7 +2297,7 @@ mod tests {
             .lock()
             .await
             .task_watcher
-            .insert("first".to_string(), reply);
+            .insert("1".to_string(), reply);
 
         manager
             .finish(FlameError::Network("watch stream disconnected".to_string()))
@@ -2085,8 +2317,11 @@ mod tests {
         let connection = Connection {
             channel: channel.clone(),
             watch_managers: Arc::default(),
+            cache_context: None,
         };
         let session = Session {
+            name: "ssn-1".to_string(),
+            workspace: "default".to_string(),
             client: Some(FlameClient::new(channel)),
             connection: Some(connection.clone()),
             id: "ssn-1".to_string(),
@@ -2104,13 +2339,13 @@ mod tests {
             resreq: None,
         };
         let (reply, mut receiver) = watch::channel(None);
-        let manager = connection.watch_manager(&session.id);
+        let manager = connection.watch_manager(&session.path());
         manager
             .state
             .lock()
             .await
             .task_watcher
-            .insert("first".to_string(), reply);
+            .insert("1".to_string(), reply);
 
         assert!(
             tokio::time::timeout(std::time::Duration::from_secs(3), session.close())
@@ -2119,9 +2354,7 @@ mod tests {
                 .is_err()
         );
         assert_eq!(manager.state.lock().await.task_watcher.len(), 1);
-        manager
-            .deliver(test_task("first", TaskState::Succeed))
-            .await;
+        manager.deliver(test_task("1", TaskState::Succeed)).await;
         assert_eq!(
             next_watch_update(&mut receiver)
                 .await
@@ -2142,7 +2375,7 @@ mod tests {
             .into_session_attributes()
             .unwrap();
 
-        assert!(attrs.id.starts_with("model-app-"));
+        assert!(attrs.name.starts_with("model-app-"));
         assert_eq!(attrs.application, "model-app");
         assert_eq!(attrs.min_instances, 1);
         assert_eq!(attrs.batch_size, 1);
@@ -2183,13 +2416,13 @@ mod tests {
         };
 
         let attrs = SessionOptions::new("model-app")
-            .id("ssn-1")
+            .name("ssn-1")
             .common_data(&common_data)
             .unwrap()
             .into_session_attributes()
             .unwrap();
 
-        assert_eq!(attrs.id, "ssn-1");
+        assert_eq!(attrs.name, "ssn-1");
         let decoded = TestCommonData::decode(&attrs.common_data.unwrap()).unwrap();
         assert_eq!(decoded, common_data);
     }
@@ -2199,17 +2432,17 @@ mod tests {
         let payload = TestCommonData {
             value: "done".to_string(),
         };
-        let mut task = test_task("task-1", TaskState::Succeed);
+        let mut task = test_task("1", TaskState::Succeed);
         task.output = Some(payload.encode().unwrap());
         let task_future = TaskFuture {
-            task_id: "task-1".to_string(),
+            task: "1".to_string(),
             future: Box::pin(async move { TaskResult::<TestCommonData>::from_task(task) }),
         };
 
-        assert_eq!(task_future.id(), "task-1");
+        assert_eq!(task_future.task(), "1");
         let result = task_future.await.unwrap();
-        assert_eq!(result.task_id, "task-1");
-        assert_eq!(result.session_id, "ssn-1");
+        assert_eq!(result.task, "1");
+        assert_eq!(result.session, "ssn-1");
         assert!(result.is_succeed());
         assert_eq!(result.output.unwrap().value, "done");
         assert_eq!(result.error_code, None);
@@ -2221,43 +2454,43 @@ mod tests {
         let payload = TestCommonData {
             value: "done".to_string(),
         };
-        let mut task = test_task("task-1", TaskState::Succeed);
+        let mut task = test_task("1", TaskState::Succeed);
         task.output = Some(payload.encode().unwrap());
         let task_future = TaskFuture {
-            task_id: "task-1".to_string(),
+            task: "1".to_string(),
             future: Box::pin(async move { TaskResult::<TestCommonData>::from_task(task) }),
         };
 
         let handle = TaskHandle::from(task_future);
 
-        assert_eq!(handle.id(), "task-1");
+        assert_eq!(handle.task(), "1");
         let output = handle.await.unwrap().unwrap();
         assert_eq!(output.value, "done");
     }
 
     #[tokio::test]
     async fn task_handle_await_returns_error_for_failed_task() {
-        let mut task = test_task("task-2", TaskState::Failed);
+        let mut task = test_task("2", TaskState::Failed);
         task.events.push(Event {
             code: 42,
             message: Some("remote failure".to_string()),
             creation_time: Utc.with_ymd_and_hms(2026, 5, 8, 10, 0, 0).unwrap(),
         });
         let task_future = TaskFuture {
-            task_id: "task-2".to_string(),
+            task: "2".to_string(),
             future: Box::pin(async move { TaskResult::<TestCommonData>::from_task(task) }),
         };
 
         let err = TaskHandle::from(task_future).await.unwrap_err();
 
-        assert!(err.to_string().contains("task <task-2>"));
+        assert!(err.to_string().contains("task <2>"));
         assert!(err.to_string().contains("code <42>"));
         assert!(err.to_string().contains("remote failure"));
     }
 
     #[test]
     fn task_result_records_failed_task_error_details() {
-        let mut task = test_task("task-2", TaskState::Failed);
+        let mut task = test_task("2", TaskState::Failed);
         task.events.push(Event {
             code: 42,
             message: Some("remote failure".to_string()),
@@ -2266,8 +2499,8 @@ mod tests {
 
         let result = TaskResult::<TestCommonData>::from_task(task).unwrap();
 
-        assert_eq!(result.task_id, "task-2");
-        assert_eq!(result.session_id, "ssn-1");
+        assert_eq!(result.task, "2");
+        assert_eq!(result.session, "ssn-1");
         assert!(result.is_failed());
         assert!(result.output.is_none());
         assert_eq!(result.error_code, Some(42));
@@ -2292,6 +2525,7 @@ mod tests {
             metadata: Some(rpc::Metadata {
                 id: "ssn-1".to_string(),
                 name: String::new(),
+                workspace: "default".to_string(),
             }),
             spec: Some(rpc::SessionSpec {
                 application: "app".to_string(),
@@ -2326,6 +2560,7 @@ mod tests {
             metadata: Some(rpc::Metadata {
                 id: "ssn-1".to_string(),
                 name: String::new(),
+                workspace: "default".to_string(),
             }),
             spec: Some(rpc::SessionSpec {
                 application: "app".to_string(),
@@ -2381,16 +2616,19 @@ mod tests {
             metadata: Some(rpc::Metadata {
                 id: "executor-1".to_string(),
                 name: String::new(),
+                workspace: "default".to_string(),
             }),
             spec: Some(rpc::ExecutorSpec {
                 node: "node-1".to_string(),
                 resreq: Some(rpc::ResourceRequirement::default()),
                 shim: rpc::Shim::Host as i32,
                 application: "app-1".to_string(),
+                workspace: "default".to_string(),
             }),
             status: Some(rpc::ExecutorStatus {
                 state: rpc::ExecutorState::ExecutorIdle as i32,
-                session_id: None,
+                session: None,
+                workspace: "default".to_string(),
             }),
         };
 
@@ -2409,6 +2647,7 @@ mod tests {
             metadata: Some(rpc::Metadata {
                 id: "ssn-1".to_string(),
                 name: String::new(),
+                workspace: "default".to_string(),
             }),
             spec: Some(rpc::SessionSpec {
                 application: "app".to_string(),
@@ -2454,6 +2693,7 @@ mod tests {
             metadata: Some(rpc::Metadata {
                 id: String::new(),
                 name: "app-1".to_string(),
+                workspace: "default".to_string(),
             }),
             spec: Some(rpc::ApplicationSpec {
                 shim: rpc::Shim::Host as i32,

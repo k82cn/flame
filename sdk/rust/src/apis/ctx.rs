@@ -369,11 +369,36 @@ mod tests {
 
     #[test]
     fn client_identity_loads_pem_files() {
-        let cert_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/docker/certs");
+        let cert_dir = tempfile::tempdir().unwrap();
+        for name in ["ca.crt", "server.crt", "server.key"] {
+            fs::write(
+                cert_dir.path().join(name),
+                b"-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n",
+            )
+            .unwrap();
+        }
         let tls = FlameClientTls {
-            ca_file: Some(cert_dir.join("ca.crt").to_string_lossy().into_owned()),
-            cert_file: Some(cert_dir.join("server.crt").to_string_lossy().into_owned()),
-            key_file: Some(cert_dir.join("server.key").to_string_lossy().into_owned()),
+            ca_file: Some(
+                cert_dir
+                    .path()
+                    .join("ca.crt")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            cert_file: Some(
+                cert_dir
+                    .path()
+                    .join("server.crt")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            key_file: Some(
+                cert_dir
+                    .path()
+                    .join("server.key")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
         };
         tls.client_tls_config("gateway.example.com").unwrap();
     }

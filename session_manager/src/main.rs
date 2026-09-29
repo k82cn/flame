@@ -15,16 +15,17 @@ use clap::Parser;
 use futures::future::select_all;
 
 use common::ctx::FlameClusterContext;
+use common::storage;
 use common::FlameError;
 
 mod apiserver;
 mod applications;
+mod connection;
 mod controller;
 mod model;
 mod notify;
 mod provider;
 mod scheduler;
-use common::storage;
 
 #[derive(Parser)]
 #[command(name = "flame-session-manager")]
@@ -67,35 +68,27 @@ async fn main() -> Result<(), FlameError> {
     // reconciled or any request-serving task starts.
     application_manager.reconcile_once().await?;
 
-    // Application manifests are authoritative for the names they define. Apps
-    // absent from the directory are left untouched.
-    applications::reconcile(
-        configured_applications,
-        {
-            let controller = controller.clone();
-            move |name, attributes| {
-                let controller = controller.clone();
-                async move { controller.register_application(name, attributes).await }
-            }
-        },
-        {
-            let controller = controller.clone();
-            move |name, attributes| {
-                let controller = controller.clone();
-                async move {
-                    let current = controller.get_application(name.clone()).await?;
-                    if current.state == common::apis::ApplicationState::Disabled {
-                        return Ok(());
-                    }
-                    if applications::matches_attributes(&current, &attributes) {
-                        return Ok(());
-                    }
-                    controller.update_application(name, attributes).await
+    // Configured applications live in the default workspace.
+    for configured in configured_applications {
+        let id = common::apis::application_path(common::apis::DEFAULT_WORKSPACE, &configured.name)?;
+        let mut attributes = configured.attributes;
+        attributes.id = id.clone();
+        match controller.get_application(id.clone()).await {
+            Ok(current) => {
+                if current.state == common::apis::ApplicationState::Enabled
+                    && !applications::matches_attributes(&current, &attributes)
+                {
+                    controller.update_application(id, attributes).await?;
                 }
             }
-        },
-    )
-    .await?;
+            Err(FlameError::NotFound(_)) => {
+                controller
+                    .register_application(configured.name, attributes)
+                    .await?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
 
     // Start application lifecycle reconciliation.
     {

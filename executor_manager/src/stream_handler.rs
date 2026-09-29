@@ -399,6 +399,7 @@ mod tests {
         // Test that Executor can be created with expected fields
         let executor = Executor {
             id: "test-exec".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             node: "test-node".to_string(),
             resreq: ResourceRequirement::default(),
@@ -411,13 +412,16 @@ mod tests {
         };
 
         assert_eq!(executor.id, "test-exec");
+        assert_eq!(executor.workspace, "default");
         assert_eq!(executor.application, "test-app");
         assert_eq!(executor.node, "test-node");
         assert_eq!(executor.state, ExecutorState::Idle);
 
         let rpc_executor = proto::Executor::from(&executor);
+        assert_eq!(rpc_executor.spec.as_ref().unwrap().workspace, "default");
         assert_eq!(rpc_executor.spec.as_ref().unwrap().application, "test-app");
         let restored = Executor::try_from(&rpc_executor).unwrap();
+        assert_eq!(restored.workspace, "default");
         assert_eq!(restored.application, "test-app");
     }
 }

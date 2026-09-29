@@ -11,6 +11,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// The storage engines retain some operations used only by tests or optional backends.
+#![allow(unused)]
+
 mod data;
 mod object;
 
@@ -20,6 +23,18 @@ pub use object::Filter;
 pub use object::Object;
 pub use object::ObjectId;
 pub use object::ObjectStorage;
+/*
+Copyright 2023 The Flame Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 use chrono::Utc;
 use std::collections::HashMap;
@@ -30,15 +45,18 @@ use uuid::Uuid;
 use stdng::{lock_ptr, trace_fn, MutexPtr};
 
 use crate::apis::{
-    Application, ApplicationAttributes, ApplicationID, ApplicationPtr, ApplicationState, Event,
-    EventOwner, ExecutorID, ExecutorState, Node, NodePtr, Session, SessionAttributes, SessionID,
-    SessionPtr, SessionState, Shim, Task, TaskGID, TaskID, TaskInput, TaskOptions, TaskPtr,
-    TaskResult, TaskState,
+    Application, ApplicationAttributes, ApplicationPath, ApplicationPtr, ApplicationState,
+    CommonData, Event, EventOwner, ExecutorID, ExecutorState, Node, NodePtr, Session,
+    SessionAttributes, SessionPath, SessionPtr, SessionState, Shim, Task, TaskGID, TaskInput,
+    TaskName, TaskOptions, TaskOutput, TaskPtr, TaskResult, TaskState, Workspace,
+    DEFAULT_WORKSPACE,
 };
 use crate::ctx::FlameClusterContext;
 use crate::FlameError;
 
-use crate::apis::{ApplicationFilter, Executor, ExecutorFilter, ExecutorPtr, SessionFilter};
+use crate::apis::{
+    ApplicationFilter, Executor, ExecutorFilter, ExecutorPtr, SessionFilter, SessionPredicate,
+};
 
 use crate::events::{EventManagerPtr, FsEventManager, MemoryEventManager};
 use crate::storage::engine::EnginePtr;
@@ -47,7 +65,8 @@ mod engine;
 
 pub type StoragePtr = Arc<Storage>;
 
-/// Domain records used by the controller to build its scheduler snapshot.
+/// Copies the records currently held by storage. The controller builds its
+/// scheduling snapshot from these domain records.
 pub struct StorageSnapshot {
     pub applications: Vec<Application>,
     pub sessions: Vec<Session>,
@@ -59,7 +78,7 @@ pub struct StorageSnapshot {
 pub struct Storage {
     context: FlameClusterContext,
     engine: EnginePtr,
-    sessions: MutexPtr<HashMap<SessionID, SessionPtr>>,
+    sessions: MutexPtr<HashMap<SessionPath, SessionPtr>>,
     executors: MutexPtr<HashMap<ExecutorID, ExecutorPtr>>,
     nodes: MutexPtr<HashMap<String, NodePtr>>,
     applications: MutexPtr<HashMap<String, ApplicationPtr>>,
@@ -75,9 +94,15 @@ pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameEr
         Arc::new(FsEventManager::new(&events_path)?)
     };
 
+    let engine = engine::connect(&config.cluster.storage).await?;
+    match engine.create_workspace(DEFAULT_WORKSPACE.to_string()).await {
+        Ok(_) | Err(FlameError::AlreadyExist(_)) => {}
+        Err(error) => return Err(error),
+    }
+
     Ok(Arc::new(Storage {
         context: config.clone(),
-        engine: engine::connect(&config.cluster.storage).await?,
+        engine,
         sessions: stdng::new_ptr(HashMap::new()),
         executors: stdng::new_ptr(HashMap::new()),
         nodes: stdng::new_ptr(HashMap::new()),
@@ -87,7 +112,7 @@ pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameEr
     }))
 }
 
-fn derive_events_path(_storage_url: &str) -> String {
+fn derive_events_path(storage_url: &str) -> String {
     if let Ok(test_dir) = std::env::var("FLAME_TEST_DIR") {
         return std::path::Path::new(&test_dir)
             .join("events")
@@ -95,10 +120,24 @@ fn derive_events_path(_storage_url: &str) -> String {
             .to_string();
     }
 
+    if storage_url.starts_with("sqlite://") {
+        if let Ok(root) = engine::SqliteEngine::storage_root(storage_url) {
+            return root.to_string_lossy().to_string();
+        }
+    }
+
     "events".to_string()
 }
 
 impl Storage {
+    pub async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
+        self.engine.create_workspace(name).await
+    }
+
+    pub async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError> {
+        self.engine.list_workspaces().await
+    }
+
     pub fn session_retry_limits(&self) -> u32 {
         self.context.cluster.recovery.session.retry_limits
     }
@@ -131,11 +170,11 @@ impl Storage {
     pub async fn load_data(&self) -> Result<(), FlameError> {
         let ssn_list = self.engine.find_sessions().await?;
         for ssn in ssn_list {
-            let task_list = self.engine.find_tasks(ssn.id.clone()).await?;
+            let task_list = self.engine.find_tasks(ssn.gid.clone()).await?;
             let mut ssn = ssn.clone();
             for task in task_list {
                 let task = match task.state {
-                    TaskState::Running => self.engine.retry_task(task.gid()).await?,
+                    TaskState::Running => self.engine.retry_task(task.gid()?).await?,
                     _ => task,
                 };
 
@@ -143,13 +182,13 @@ impl Storage {
             }
 
             let mut ssn_map = lock_ptr!(self.sessions)?;
-            ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.into()));
+            ssn_map.insert(ssn.gid.clone(), SessionPtr::new(ssn.into()));
         }
 
         let app_list = self.engine.find_applications(None).await?;
         for app in app_list {
             let mut app_map = lock_ptr!(self.applications)?;
-            app_map.insert(app.name.clone(), ApplicationPtr::new(app.into()));
+            app_map.insert(app.gid.clone(), ApplicationPtr::new(app.into()));
         }
 
         let node_list = self.engine.find_nodes().await?;
@@ -171,7 +210,7 @@ impl Storage {
                 );
                 let mut recovered = executor.clone();
                 recovered.set_state(ExecutorState::Idle);
-                recovered.ssn_id = None;
+                recovered.session = None;
                 self.engine.update_executor(&recovered).await?;
                 recovered
             } else {
@@ -195,7 +234,7 @@ impl Storage {
         // Loop until we're within the limit
         while ssn_map.len() >= max {
             // Collect all closed sessions with their completion times
-            let mut closed_sessions: Vec<(SessionID, chrono::DateTime<Utc>)> = ssn_map
+            let mut closed_sessions: Vec<(SessionPath, chrono::DateTime<Utc>)> = ssn_map
                 .iter()
                 .filter_map(|(id, ssn_ptr)| {
                     let ssn = lock_ptr!(ssn_ptr).ok()?;
@@ -223,11 +262,11 @@ impl Storage {
             closed_sessions.sort_by_key(|a| a.1);
 
             // Evict the oldest closed session
-            if let Some((ssn_id, _)) = closed_sessions.first() {
-                ssn_map.remove(ssn_id);
+            if let Some((session, _)) = closed_sessions.first() {
+                ssn_map.remove(session);
                 tracing::debug!(
                     "Evicted closed session <{}> from cache (limit: {}, current: {})",
-                    ssn_id,
+                    session,
                     max,
                     ssn_map.len()
                 );
@@ -361,8 +400,8 @@ impl Storage {
                     resreq: exec.resreq.clone(),
                     shim: exec.shim,
                     application: exec.application.clone(),
-                    task_id: exec.task_id,
-                    ssn_id: exec.ssn_id.clone(),
+                    task: exec.task,
+                    session: exec.session.clone(),
                     attributes: exec.attributes.clone(),
                     creation_time: exec.creation_time,
                     latest_updated_timestamp: exec.latest_updated_timestamp,
@@ -396,31 +435,28 @@ impl Storage {
 
         for executor in executors {
             // If executor has a running task, retry it
-            if let (Some(task_id), Some(ref ssn_id)) = (executor.task_id, &executor.ssn_id) {
-                let gid = TaskGID {
-                    ssn_id: ssn_id.clone(),
-                    task_id,
-                };
+            if let (Some(task), Some(ref session)) = (executor.task, &executor.session) {
+                let gid = TaskGID::from_session_path(session, task)?;
                 match self.engine.retry_task(gid.clone()).await {
-                    Ok(task) => {
+                    Ok(retried_task) => {
                         // Update the in-memory session with the retried task
-                        if let Ok(ssn_ptr) = self.get_session_ptr(ssn_id.clone()) {
+                        if let Ok(ssn_ptr) = self.get_session_ptr(session.clone()) {
                             if let Ok(mut ssn) = lock_ptr!(ssn_ptr) {
-                                let _ = ssn.update_task(&task);
+                                let _ = ssn.update_task(&retried_task);
                             }
                         }
                         tracing::info!(
                             "Retried task {} for session {} due to executor {} cleanup",
-                            task_id,
-                            ssn_id,
+                            task,
+                            session,
                             executor.id
                         );
                     }
                     Err(e) => {
                         tracing::warn!(
                             "Failed to retry task {} for session {}: {}",
-                            task_id,
-                            ssn_id,
+                            task,
+                            session,
                             e
                         );
                     }
@@ -446,7 +482,7 @@ impl Storage {
 
         {
             let mut ssn_map = lock_ptr!(self.sessions)?;
-            ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+            ssn_map.insert(ssn.gid.clone(), SessionPtr::new(ssn.clone().into()));
         }
 
         self.evict_sessions()?;
@@ -454,7 +490,7 @@ impl Storage {
         Ok(ssn)
     }
 
-    pub async fn close_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    pub async fn close_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         trace_fn!("Storage::close_session");
 
         let ssn_ptr = {
@@ -528,17 +564,17 @@ impl Storage {
         Ok(result_ssn)
     }
 
-    pub fn get_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    pub fn get_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         let ssn_ptr = self.get_session_ptr(id)?;
         let ssn = lock_ptr!(ssn_ptr)?;
         let mut ssn = ssn.clone();
         ssn.events = self
             .event_manager
-            .find_events(EventOwner::session(ssn.id.clone()))?;
+            .find_events(EventOwner::from_session_path(&ssn.gid)?)?;
         Ok(ssn)
     }
 
-    pub fn get_session_ptr(&self, id: SessionID) -> Result<SessionPtr, FlameError> {
+    pub fn get_session_ptr(&self, id: SessionPath) -> Result<SessionPtr, FlameError> {
         let ssn_map = lock_ptr!(self.sessions)?;
 
         ssn_map
@@ -549,7 +585,7 @@ impl Storage {
 
     pub async fn open_session(
         &self,
-        id: SessionID,
+        id: SessionPath,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         trace_fn!("Storage::open_session");
@@ -581,7 +617,7 @@ impl Storage {
 
         {
             let mut ssn_map = lock_ptr!(self.sessions)?;
-            ssn_map.insert(ssn.id.clone(), SessionPtr::new(ssn.clone().into()));
+            ssn_map.insert(ssn.gid.clone(), SessionPtr::new(ssn.clone().into()));
         }
 
         self.evict_sessions()?;
@@ -590,21 +626,20 @@ impl Storage {
     }
 
     pub fn get_task_ptr(&self, gid: TaskGID) -> Result<TaskPtr, FlameError> {
+        let session = gid.session_path()?;
         let ssn_map = lock_ptr!(self.sessions)?;
-        let ssn_ptr = ssn_map
-            .get(&gid.ssn_id)
-            .ok_or(FlameError::NotFound(gid.ssn_id.to_string()))?;
+        let ssn_ptr = ssn_map.get(&session).ok_or(FlameError::NotFound(session))?;
 
         let ssn = lock_ptr!(ssn_ptr)?;
         let task_ptr = ssn
             .tasks
-            .get(&gid.task_id)
+            .get(&gid.task)
             .ok_or(FlameError::NotFound(gid.to_string()))?;
 
         Ok(task_ptr.clone())
     }
 
-    pub async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError> {
+    pub async fn delete_session(&self, id: SessionPath) -> Result<Session, FlameError> {
         let cached = {
             let ssn_map = lock_ptr!(self.sessions)?;
             ssn_map.get(&id).cloned()
@@ -648,20 +683,20 @@ impl Storage {
             let mut ssn = ssn.clone();
             ssn.events = self
                 .event_manager
-                .find_events(EventOwner::session(ssn.id.clone()))?;
+                .find_events(EventOwner::from_session_path(&ssn.gid)?)?;
             let matches = filter.is_none_or(|filter| {
                 filter
                     .application
                     .as_ref()
                     .is_none_or(|application| ssn.application == *application)
                     && filter.state.is_none_or(|state| ssn.status.state == state)
-                    && filter.ids.as_ref().is_none_or(|ids| ids.contains(&ssn.id))
+                    && filter.ids.as_ref().is_none_or(|ids| ids.contains(&ssn.gid))
             });
             if !matches {
                 continue;
             }
-            if let Some(predicate) = filter.and_then(|filter| filter.predicate) {
-                if !predicate.matches(ssn.retry_count, self.session_retry_limits()) {
+            if let Some(SessionPredicate::Ready) = filter.and_then(|filter| filter.predicate) {
+                if !ssn.is_ready(self.session_retry_limits()) {
                     continue;
                 }
             }
@@ -680,7 +715,7 @@ impl Storage {
     /// Lists executors with optional filtering.
     ///
     /// # Arguments
-    /// * `filter` - Filter criteria (state, node, and/or executor IDs).
+    /// * `filter` - Filter criteria (state, node, executor IDs, and/or application IDs).
     ///   - `None` filter means return all executors
     ///   - For each field in filter:
     ///     - `None` = ignore this field (match all)
@@ -720,6 +755,12 @@ impl Storage {
                     }
                 }
 
+                if let Some(ref applications) = filter.applications {
+                    if !applications.contains(&exe.application) {
+                        return None;
+                    }
+                }
+
                 // Filter by ids if specified
                 // Some([]) matches nothing, Some([a,b]) matches a or b, None matches all
                 if let Some(ref ids) = filter.ids {
@@ -737,22 +778,22 @@ impl Storage {
 
     pub async fn create_task(
         &self,
-        ssn_id: SessionID,
+        session: SessionPath,
         task_input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
         trace_fn!("Storage::create_task");
         let task = self
             .engine
-            .create_task(ssn_id.clone(), task_input, options)
+            .create_task(session.clone(), task_input, options)
             .await?;
 
-        let ssn = self.get_session_ptr(ssn_id.clone())?;
+        let ssn = self.get_session_ptr(session.clone())?;
         let mut ssn = lock_ptr!(ssn)?;
         ssn.update_task(&task)?;
 
         self.event_manager.record_event(
-            EventOwner::from(&task),
+            EventOwner::try_from(&task)?,
             Event {
                 code: task.state.into(),
                 message: Some(format!("Task was created with state <{:?}>", task.state)),
@@ -763,11 +804,11 @@ impl Storage {
         Ok(task)
     }
 
-    pub fn get_task(&self, ssn_id: SessionID, id: TaskID) -> Result<Task, FlameError> {
-        let mut task = self.get_task_metadata(ssn_id, id)?;
+    pub fn get_task(&self, session: SessionPath, id: TaskName) -> Result<Task, FlameError> {
+        let mut task = self.get_task_metadata(session, id)?;
         let events = self
             .event_manager
-            .find_events(EventOwner::from(task.gid()))?;
+            .find_events(EventOwner::from(task.gid()?))?;
         task.events = events;
 
         Ok(task)
@@ -776,21 +817,22 @@ impl Storage {
     /// Clone the current task state without loading historical events from disk.
     /// Nonterminal watch updates need current state without serializing
     /// unrelated sessions behind event storage I/O.
-    pub fn get_task_metadata(&self, ssn_id: SessionID, id: TaskID) -> Result<Task, FlameError> {
-        let task_ptr = self.get_task_ptr(TaskGID {
-            ssn_id,
-            task_id: id,
-        })?;
+    pub fn get_task_metadata(
+        &self,
+        session: SessionPath,
+        id: TaskName,
+    ) -> Result<Task, FlameError> {
+        let task_ptr = self.get_task_ptr(TaskGID::from_session_path(&session, id)?)?;
         let mut task = lock_ptr!(task_ptr)?.clone();
         task.events.clear();
         Ok(task)
     }
 
-    pub fn list_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError> {
+    pub fn list_tasks(&self, session: SessionPath) -> Result<Vec<Task>, FlameError> {
         let ssn_map = lock_ptr!(self.sessions)?;
         let ssn = ssn_map
-            .get(&ssn_id)
-            .ok_or(FlameError::NotFound(ssn_id.to_string()))?;
+            .get(&session)
+            .ok_or(FlameError::NotFound(session.to_string()))?;
 
         let ssn = lock_ptr!(ssn)?;
         let task_list = ssn
@@ -805,7 +847,7 @@ impl Storage {
         Ok(task_list)
     }
 
-    pub async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError> {
+    pub async fn get_application(&self, id: ApplicationPath) -> Result<Application, FlameError> {
         self.engine.get_application(id).await
     }
 
@@ -820,14 +862,14 @@ impl Storage {
         // just lock the sessions to avoid cache mismatch.
         let _unused = lock_ptr!(self.sessions)?;
 
-        app_map.insert(app.name.clone(), stdng::new_ptr(app.clone()));
+        app_map.insert(app.gid.clone(), stdng::new_ptr(app.clone()));
 
         Ok(())
     }
 
     pub async fn update_application_state(
         &self,
-        name: ApplicationID,
+        name: ApplicationPath,
         state: ApplicationState,
     ) -> Result<Application, FlameError> {
         let app = self
@@ -840,7 +882,7 @@ impl Storage {
         Ok(app)
     }
 
-    pub async fn delete_application(&self, name: ApplicationID) -> Result<(), FlameError> {
+    pub async fn delete_application(&self, name: ApplicationPath) -> Result<(), FlameError> {
         self.engine.delete_application(name.clone()).await?;
 
         let mut app_map = lock_ptr!(self.applications)?;
@@ -857,7 +899,7 @@ impl Storage {
         let app = self.engine.update_application(name.clone(), attr).await?;
 
         let mut app_map = lock_ptr!(self.applications)?;
-        app_map.insert(name.clone(), stdng::new_ptr(app.clone()));
+        app_map.insert(app.gid.clone(), stdng::new_ptr(app.clone()));
 
         Ok(())
     }
@@ -869,7 +911,10 @@ impl Storage {
         self.engine.find_applications(filter).await
     }
 
-    pub async fn session_application(&self, id: SessionID) -> Result<ApplicationID, FlameError> {
+    pub async fn session_application(
+        &self,
+        id: SessionPath,
+    ) -> Result<ApplicationPath, FlameError> {
         let cached = {
             let ssn_map = lock_ptr!(self.sessions)?;
             ssn_map.get(&id).cloned()
@@ -893,16 +938,7 @@ impl Storage {
         message: Option<String>,
     ) -> Result<(), FlameError> {
         trace_fn!("Storage::update_task_state");
-        let gid = TaskGID {
-            ssn_id: {
-                let ssn_ptr = lock_ptr!(ssn)?;
-                ssn_ptr.id.clone()
-            },
-            task_id: {
-                let task_ptr = lock_ptr!(task)?;
-                task_ptr.id
-            },
-        };
+        let gid = TaskGID::from_session_path(&lock_ptr!(ssn)?.gid, lock_ptr!(task)?.number)?;
 
         let updated_task = match self
             .engine
@@ -931,7 +967,7 @@ impl Storage {
         ssn_ptr.update_task(&updated_task)?;
 
         self.event_manager.record_event(
-            EventOwner::from(updated_task.gid()),
+            EventOwner::from(updated_task.gid()?),
             Event {
                 code: task_state.into(),
                 message: Some(format!("Task state was updated to <{:?}>", task_state)),
@@ -949,16 +985,7 @@ impl Storage {
         task_result: TaskResult,
     ) -> Result<(), FlameError> {
         trace_fn!("Storage::update_task_result");
-        let gid = TaskGID {
-            ssn_id: {
-                let ssn_ptr = lock_ptr!(ssn)?;
-                ssn_ptr.id.clone()
-            },
-            task_id: {
-                let task_ptr = lock_ptr!(task)?;
-                task_ptr.id
-            },
-        };
+        let gid = TaskGID::from_session_path(&lock_ptr!(ssn)?.gid, lock_ptr!(task)?.number)?;
 
         let task_state = task_result.state;
         let task_message = task_result.message.clone();
@@ -1000,7 +1027,7 @@ impl Storage {
         };
 
         self.event_manager.record_event(
-            EventOwner::from(updated_task.gid()),
+            EventOwner::from(updated_task.gid()?),
             Event {
                 code: updated_task.state.into(),
                 message: Some(event_message),
@@ -1014,17 +1041,17 @@ impl Storage {
     pub async fn create_executor(
         &self,
         node_name: String,
-        ssn_id: SessionID,
+        session: SessionPath,
     ) -> Result<Executor, FlameError> {
         trace_fn!("Storage::create_executor");
-        let ssn = self.get_session_ptr(ssn_id.clone())?;
+        let ssn = self.get_session_ptr(session.clone())?;
 
         let (application, resreq) = {
             let ssn = lock_ptr!(ssn)?;
             let resreq = ssn.resreq.clone().ok_or_else(|| {
                 FlameError::InvalidState(format!(
                     "session <{}> has no resreq; resolve_session_resreq must populate it",
-                    ssn_id
+                    session
                 ))
             })?;
             (ssn.application.clone(), resreq)
@@ -1050,8 +1077,8 @@ impl Storage {
             resreq,
             shim,
             application,
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             attributes: Default::default(),
             creation_time: now,
             latest_updated_timestamp: now,
@@ -1084,8 +1111,8 @@ impl Storage {
         if let Some(exe_ptr) = exe_map.get(&executor.id) {
             let mut exe = lock_ptr!(exe_ptr)?;
             exe.state = executor.state;
-            exe.task_id = executor.task_id;
-            exe.ssn_id = executor.ssn_id.clone();
+            exe.task = executor.task;
+            exe.session = executor.session.clone();
             exe.latest_updated_timestamp = executor.latest_updated_timestamp;
         }
 

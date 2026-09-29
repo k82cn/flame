@@ -188,12 +188,13 @@ struct BenchmarkStatistics {
 /// Run tasks for a single session
 async fn run_session(
     conn: &flame::client::Connection,
-    session_id: String,
+    session: String,
     tasks_per_session: usize,
     metrics: Arc<BenchmarkMetrics>,
 ) -> Result<(), FlameError> {
     let ssn_attr = SessionAttributes {
-        id: session_id,
+        name: session,
+        workspace: "default".to_string(),
         application: FLAME_APP.to_string(),
         common_data: None,
         min_instances: 0,
@@ -286,12 +287,13 @@ async fn run_benchmark(
     for session_index in 0..session_count {
         let conn = conn.clone();
         let metrics = metrics.clone();
-        let session_id = format!(
+        let session = format!(
             "benchmark-{sample_id}-{session_count}x{tasks_per_session}-ssn-{session_index}"
         );
-        let handle = tokio::spawn(async move {
-            run_session(&conn, session_id, tasks_per_session, metrics).await
-        });
+        let handle =
+            tokio::spawn(
+                async move { run_session(&conn, session, tasks_per_session, metrics).await },
+            );
         session_handles.push(handle);
     }
 

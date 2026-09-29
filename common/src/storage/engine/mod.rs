@@ -16,9 +16,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::apis::{
-    Application, ApplicationAttributes, ApplicationID, ApplicationState, ExecutorID, ExecutorState,
-    Node, Session, SessionAttributes, SessionID, Task, TaskGID, TaskInput, TaskOptions, TaskResult,
-    TaskState,
+    Application, ApplicationAttributes, ApplicationPath, ApplicationState, CommonData, Event,
+    ExecutorID, ExecutorState, Node, Session, SessionAttributes, SessionPath, Task, TaskGID,
+    TaskInput, TaskOptions, TaskOutput, TaskResult, TaskState, Workspace,
 };
 use crate::apis::{ApplicationFilter, Executor};
 use crate::FlameError;
@@ -28,13 +28,15 @@ mod none;
 mod sqlite;
 pub mod types;
 
-#[cfg(test)]
 pub use sqlite::SqliteEngine;
 
 pub type EnginePtr = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + 'static {
+    async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError>;
+    async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError>;
+
     // Application operations
     async fn register_application(
         &self,
@@ -43,36 +45,36 @@ pub trait Engine: Send + Sync + 'static {
     ) -> Result<Application, FlameError>;
     async fn update_application_state(
         &self,
-        id: ApplicationID,
+        id: ApplicationPath,
         state: ApplicationState,
     ) -> Result<Application, FlameError>;
-    async fn delete_application(&self, id: ApplicationID) -> Result<(), FlameError>;
+    async fn delete_application(&self, id: ApplicationPath) -> Result<(), FlameError>;
     async fn update_application(
         &self,
         id: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError>;
-    async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError>;
+    async fn get_application(&self, id: ApplicationPath) -> Result<Application, FlameError>;
     async fn find_applications(
         &self,
         filter: Option<&ApplicationFilter>,
     ) -> Result<Vec<Application>, FlameError>;
     // Session operations
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError>;
-    async fn get_session(&self, id: SessionID) -> Result<Session, FlameError>;
+    async fn get_session(&self, id: SessionPath) -> Result<Session, FlameError>;
     async fn open_session(
         &self,
-        id: SessionID,
+        id: SessionPath,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError>;
-    async fn close_session(&self, id: SessionID) -> Result<Session, FlameError>;
-    async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError>;
+    async fn close_session(&self, id: SessionPath) -> Result<Session, FlameError>;
+    async fn delete_session(&self, id: SessionPath) -> Result<Session, FlameError>;
     async fn find_sessions(&self) -> Result<Vec<Session>, FlameError>;
 
     // Task operations
     async fn create_task(
         &self,
-        ssn_id: SessionID,
+        session: SessionPath,
         task_input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError>;
@@ -95,7 +97,7 @@ pub trait Engine: Send + Sync + 'static {
         task_result: TaskResult,
     ) -> Result<Task, FlameError>;
 
-    async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError>;
+    async fn find_tasks(&self, session: SessionPath) -> Result<Vec<Task>, FlameError>;
 
     // Node operations
     async fn create_node(&self, node: &Node) -> Result<Node, FlameError>;

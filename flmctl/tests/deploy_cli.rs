@@ -40,7 +40,7 @@ fn deploy_dry_run_executable_file_through_cli() {
     );
 
     let object_key = json_string(&json, "/object_key");
-    assert_content_addressed_package_key(object_key, "demo-app");
+    assert_content_addressed_package_key(object_key, json_string(&json, "/id"), "demo-app");
     assert_eq!(
         json_string(&json, "/url"),
         format!("{}/{}", CACHE_ENDPOINT, object_key)
@@ -53,6 +53,39 @@ fn deploy_dry_run_executable_file_through_cli() {
     assert_eq!(
         json_string(&json, "/application/spec/url"),
         json_string(&json, "/url")
+    );
+}
+
+#[test]
+fn deploy_uses_workspace_application_path_for_package_key() {
+    let temp = TempDir::new().unwrap();
+    let config = write_config(temp.path());
+    let binary = temp.path().join("service");
+    fs::write(&binary, b"#!/bin/sh\nexec echo service\n").unwrap();
+    make_executable(&binary);
+    let application = "team/demo-app";
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flmctl"))
+        .arg("--config")
+        .arg(config)
+        .arg("deploy")
+        .arg("--workspace")
+        .arg("team")
+        .arg("--name")
+        .arg("demo-app")
+        .arg("--application")
+        .arg(binary)
+        .arg("--dry-run")
+        .arg("-o")
+        .arg("json")
+        .output()
+        .unwrap();
+    let json = assert_success(output);
+    assert_eq!(json_string(&json, "/id"), application);
+    assert_content_addressed_package_key(
+        json_string(&json, "/object_key"),
+        application,
+        "demo-app",
     );
 }
 
@@ -73,7 +106,11 @@ fn deploy_dry_run_python_directory_through_cli() {
     assert_eq!(json_string(&json, "/input_kind"), "directory");
     assert_eq!(json_string(&json, "/installer"), "python");
     assert_eq!(json_string(&json, "/command"), "demo-app");
-    assert_content_addressed_package_key(json_string(&json, "/object_key"), "demo-app");
+    assert_content_addressed_package_key(
+        json_string(&json, "/object_key"),
+        json_string(&json, "/id"),
+        "demo-app",
+    );
     assert_eq!(
         json_string(&json, "/application/spec/url"),
         json_string(&json, "/url")
@@ -96,7 +133,11 @@ fn deploy_dry_run_python_file_through_cli() {
         json.pointer("/arguments/0").and_then(Value::as_str),
         Some("main.py")
     );
-    assert_content_addressed_package_key(json_string(&json, "/object_key"), "demo-app");
+    assert_content_addressed_package_key(
+        json_string(&json, "/object_key"),
+        json_string(&json, "/id"),
+        "demo-app",
+    );
 }
 
 #[test]
@@ -416,8 +457,9 @@ fn json_string<'a>(json: &'a Value, pointer: &str) -> &'a str {
         .unwrap_or_else(|| panic!("missing string at {} in {}", pointer, json))
 }
 
-fn assert_content_addressed_package_key(key: &str, app_name: &str) {
-    let prefix = format!("{}/pkg/{}-", app_name, app_name);
+fn assert_content_addressed_package_key(key: &str, application: &str, app_name: &str) {
+    let workspace = application.split('/').next().unwrap();
+    let prefix = format!("{}/pkg/{}-", workspace, app_name);
     assert!(
         key.starts_with(&prefix),
         "object key {} should start with {}",
@@ -432,7 +474,7 @@ fn assert_content_addressed_package_key(key: &str, app_name: &str) {
     assert_eq!(
         key.split('/').count(),
         3,
-        "object key {} should have <app>/<session>/<object> shape",
+        "object key {} should have <workspace>/<session>/<object> shape",
         key
     );
 

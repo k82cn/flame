@@ -73,7 +73,10 @@ pub async fn connect_with_context(
     context: apis::FlameContext,
 ) -> Result<Connection, apis::FlameError> {
     let current = context.get_current_context()?;
-    client::connect_with_tls(&current.cluster.endpoint, current.cluster.tls.as_ref()).await
+    let mut connection =
+        client::connect_with_tls(&current.cluster.endpoint, current.cluster.tls.as_ref()).await?;
+    connection.cache_context = Some(context);
+    Ok(connection)
 }
 
 pub async fn connect_with_config(path: Option<String>) -> Result<Connection, apis::FlameError> {
@@ -87,17 +90,17 @@ pub async fn create_session(
     connect().await?.create_session_with(options).await
 }
 
-pub async fn open_session(id: impl Into<apis::SessionID>) -> Result<Session, apis::FlameError> {
-    let id = id.into();
-    connect().await?.open_session(&id, None).await
+pub async fn open_session(workspace: &str, name: &str) -> Result<Session, apis::FlameError> {
+    connect().await?.open_session(workspace, name, None).await
 }
 
 pub async fn open_or_create_session(
-    id: impl Into<apis::SessionID>,
+    workspace: &str,
+    name: &str,
     options: impl Into<SessionOptions>,
 ) -> Result<Session, apis::FlameError> {
     connect()
         .await?
-        .open_or_create_session_with(id, options)
+        .open_or_create_session_with(workspace, name, options)
         .await
 }

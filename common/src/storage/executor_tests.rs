@@ -34,7 +34,8 @@ mod tests {
 
     fn create_session_attr(id: &str) -> SessionAttributes {
         SessionAttributes {
-            id: id.to_string(),
+            name: id.rsplit('/').next().unwrap().to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -61,19 +62,22 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("exec-create-ssn");
+            let attr = create_session_attr("default/exec-create-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("exec-node");
             storage.register_node(&node).await.unwrap();
 
             let executor = storage
-                .create_executor("exec-node".to_string(), "exec-create-ssn".to_string())
+                .create_executor(
+                    "exec-node".to_string(),
+                    "default/exec-create-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
             assert_eq!(executor.node, "exec-node");
-            assert_eq!(executor.application, "test-app");
+            assert_eq!(executor.application, "default/test-app");
             assert_eq!(executor.state, ExecutorState::Void);
         }
 
@@ -82,18 +86,24 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("multi-exec-ssn");
+            let attr = create_session_attr("default/multi-exec-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("multi-exec-node");
             storage.register_node(&node).await.unwrap();
 
             let exec1 = storage
-                .create_executor("multi-exec-node".to_string(), "multi-exec-ssn".to_string())
+                .create_executor(
+                    "multi-exec-node".to_string(),
+                    "default/multi-exec-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             let exec2 = storage
-                .create_executor("multi-exec-node".to_string(), "multi-exec-ssn".to_string())
+                .create_executor(
+                    "multi-exec-node".to_string(),
+                    "default/multi-exec-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
@@ -108,6 +118,7 @@ mod tests {
                 .register_application(
                     "test-app".to_string(),
                     ApplicationAttributes {
+                        id: "default/test-app".to_string(),
                         shim: Shim::Cri,
                         ..Default::default()
                     },
@@ -115,12 +126,12 @@ mod tests {
                 .await
                 .unwrap();
             storage
-                .create_session(create_session_attr("cri-exec-ssn"))
+                .create_session(create_session_attr("default/cri-exec-ssn"))
                 .await
                 .unwrap();
 
             let executor = storage
-                .create_executor("cri-node".to_string(), "cri-exec-ssn".to_string())
+                .create_executor("cri-node".to_string(), "default/cri-exec-ssn".to_string())
                 .await
                 .unwrap();
 
@@ -147,14 +158,17 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("get-exec-ssn");
+            let attr = create_session_attr("default/get-exec-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("get-exec-node");
             storage.register_node(&node).await.unwrap();
 
             let created_exec = storage
-                .create_executor("get-exec-node".to_string(), "get-exec-ssn".to_string())
+                .create_executor(
+                    "get-exec-node".to_string(),
+                    "default/get-exec-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
@@ -182,7 +196,7 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("update-exec-ssn");
+            let attr = create_session_attr("default/update-exec-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("update-exec-node");
@@ -191,7 +205,7 @@ mod tests {
             let mut executor = storage
                 .create_executor(
                     "update-exec-node".to_string(),
-                    "update-exec-ssn".to_string(),
+                    "default/update-exec-ssn".to_string(),
                 )
                 .await
                 .unwrap();
@@ -209,25 +223,28 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("bind-exec-ssn");
+            let attr = create_session_attr("default/bind-exec-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("bind-exec-node");
             storage.register_node(&node).await.unwrap();
 
             let mut executor = storage
-                .create_executor("bind-exec-node".to_string(), "bind-exec-ssn".to_string())
+                .create_executor(
+                    "bind-exec-node".to_string(),
+                    "default/bind-exec-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
             executor.state = ExecutorState::Binding;
-            executor.ssn_id = Some("bind-exec-ssn".to_string());
+            executor.session = Some("default/bind-exec-ssn".to_string());
             storage.update_executor(&executor).await.unwrap();
 
             let exec_ptr = storage.get_executor_ptr(executor.id.clone()).unwrap();
             let exec = lock_ptr!(exec_ptr).unwrap();
             assert_eq!(exec.state, ExecutorState::Binding);
-            assert_eq!(exec.ssn_id, Some("bind-exec-ssn".to_string()));
+            assert_eq!(exec.session, Some("default/bind-exec-ssn".to_string()));
         }
     }
 
@@ -239,14 +256,17 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("del-exec-ssn");
+            let attr = create_session_attr("default/del-exec-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("del-exec-node");
             storage.register_node(&node).await.unwrap();
 
             let executor = storage
-                .create_executor("del-exec-node".to_string(), "del-exec-ssn".to_string())
+                .create_executor(
+                    "del-exec-node".to_string(),
+                    "default/del-exec-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
@@ -261,14 +281,17 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("del-list-ssn");
+            let attr = create_session_attr("default/del-list-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("del-list-node");
             storage.register_node(&node).await.unwrap();
 
             let executor = storage
-                .create_executor("del-list-node".to_string(), "del-list-ssn".to_string())
+                .create_executor(
+                    "del-list-node".to_string(),
+                    "default/del-list-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
@@ -288,18 +311,24 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("bulk-del-ssn");
+            let attr = create_session_attr("default/bulk-del-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("bulk-del-node");
             storage.register_node(&node).await.unwrap();
 
             let exec1 = storage
-                .create_executor("bulk-del-node".to_string(), "bulk-del-ssn".to_string())
+                .create_executor(
+                    "bulk-del-node".to_string(),
+                    "default/bulk-del-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             let exec2 = storage
-                .create_executor("bulk-del-node".to_string(), "bulk-del-ssn".to_string())
+                .create_executor(
+                    "bulk-del-node".to_string(),
+                    "default/bulk-del-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
@@ -315,6 +344,47 @@ mod tests {
         use super::*;
 
         #[tokio::test]
+        async fn filters_by_parent_application() {
+            let storage = storage::new_ptr(&test_context()).await.unwrap();
+            let first = create_session_attr("default/app-filter-first");
+            let first_app = first.application_gid().unwrap();
+            let mut second = create_session_attr("default/app-filter-second");
+            second.application = "00000000-0000-4000-8000-000000000032".to_string();
+            storage.create_session(first).await.unwrap();
+            storage.create_session(second).await.unwrap();
+            storage
+                .register_node(&create_test_node("app-filter-node"))
+                .await
+                .unwrap();
+            storage
+                .create_executor(
+                    "app-filter-node".to_string(),
+                    "default/app-filter-first".to_string(),
+                )
+                .await
+                .unwrap();
+            storage
+                .create_executor(
+                    "app-filter-node".to_string(),
+                    "default/app-filter-second".to_string(),
+                )
+                .await
+                .unwrap();
+
+            let filtered = storage
+                .list_executors(Some(&ExecutorFilter::by_applications(vec![
+                    first_app.clone()
+                ])))
+                .unwrap();
+            assert_eq!(filtered.len(), 1);
+            assert_eq!(filtered[0].application, first_app);
+            assert!(storage
+                .list_executors(Some(&ExecutorFilter::by_applications(Vec::new())))
+                .unwrap()
+                .is_empty());
+        }
+
+        #[tokio::test]
         async fn returns_empty_list_when_no_executors() {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
@@ -328,7 +398,7 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("list-exec-ssn");
+            let attr = create_session_attr("default/list-exec-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("list-exec-node");
@@ -336,7 +406,10 @@ mod tests {
 
             for _ in 0..3 {
                 storage
-                    .create_executor("list-exec-node".to_string(), "list-exec-ssn".to_string())
+                    .create_executor(
+                        "list-exec-node".to_string(),
+                        "default/list-exec-ssn".to_string(),
+                    )
                     .await
                     .unwrap();
             }
@@ -350,7 +423,7 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("filter-state-ssn");
+            let attr = create_session_attr("default/filter-state-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("filter-state-node");
@@ -359,7 +432,7 @@ mod tests {
             let mut exec1 = storage
                 .create_executor(
                     "filter-state-node".to_string(),
-                    "filter-state-ssn".to_string(),
+                    "default/filter-state-ssn".to_string(),
                 )
                 .await
                 .unwrap();
@@ -369,7 +442,7 @@ mod tests {
             storage
                 .create_executor(
                     "filter-state-node".to_string(),
-                    "filter-state-ssn".to_string(),
+                    "default/filter-state-ssn".to_string(),
                 )
                 .await
                 .unwrap();
@@ -378,6 +451,7 @@ mod tests {
                 state: Some(ExecutorState::Idle),
                 node: None,
                 ids: None,
+                applications: None,
             };
             let filtered = storage.list_executors(Some(&filter)).unwrap();
             assert_eq!(filtered.len(), 1);
@@ -389,7 +463,7 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("filter-node-ssn");
+            let attr = create_session_attr("default/filter-node-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node1 = create_test_node("node-1");
@@ -398,15 +472,15 @@ mod tests {
             storage.register_node(&node2).await.unwrap();
 
             storage
-                .create_executor("node-1".to_string(), "filter-node-ssn".to_string())
+                .create_executor("node-1".to_string(), "default/filter-node-ssn".to_string())
                 .await
                 .unwrap();
             storage
-                .create_executor("node-1".to_string(), "filter-node-ssn".to_string())
+                .create_executor("node-1".to_string(), "default/filter-node-ssn".to_string())
                 .await
                 .unwrap();
             storage
-                .create_executor("node-2".to_string(), "filter-node-ssn".to_string())
+                .create_executor("node-2".to_string(), "default/filter-node-ssn".to_string())
                 .await
                 .unwrap();
 
@@ -414,6 +488,7 @@ mod tests {
                 state: None,
                 node: Some("node-1".to_string()),
                 ids: None,
+                applications: None,
             };
             let filtered = storage.list_executors(Some(&filter)).unwrap();
             assert_eq!(filtered.len(), 2);
@@ -425,22 +500,31 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("filter-ids-ssn");
+            let attr = create_session_attr("default/filter-ids-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node = create_test_node("filter-ids-node");
             storage.register_node(&node).await.unwrap();
 
             let exec1 = storage
-                .create_executor("filter-ids-node".to_string(), "filter-ids-ssn".to_string())
+                .create_executor(
+                    "filter-ids-node".to_string(),
+                    "default/filter-ids-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             let exec2 = storage
-                .create_executor("filter-ids-node".to_string(), "filter-ids-ssn".to_string())
+                .create_executor(
+                    "filter-ids-node".to_string(),
+                    "default/filter-ids-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             storage
-                .create_executor("filter-ids-node".to_string(), "filter-ids-ssn".to_string())
+                .create_executor(
+                    "filter-ids-node".to_string(),
+                    "default/filter-ids-ssn".to_string(),
+                )
                 .await
                 .unwrap();
 
@@ -448,6 +532,7 @@ mod tests {
                 state: None,
                 node: None,
                 ids: Some(vec![exec1.id.clone(), exec2.id.clone()]),
+                applications: None,
             };
             let filtered = storage.list_executors(Some(&filter)).unwrap();
             assert_eq!(filtered.len(), 2);
@@ -462,7 +547,7 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("multi-filter-ssn");
+            let attr = create_session_attr("default/multi-filter-ssn");
             storage.create_session(attr).await.unwrap();
 
             let node1 = create_test_node("mf-node-1");
@@ -471,21 +556,30 @@ mod tests {
             storage.register_node(&node2).await.unwrap();
 
             let mut exec1 = storage
-                .create_executor("mf-node-1".to_string(), "multi-filter-ssn".to_string())
+                .create_executor(
+                    "mf-node-1".to_string(),
+                    "default/multi-filter-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             exec1.state = ExecutorState::Idle;
             storage.update_executor(&exec1).await.unwrap();
 
             let mut exec2 = storage
-                .create_executor("mf-node-1".to_string(), "multi-filter-ssn".to_string())
+                .create_executor(
+                    "mf-node-1".to_string(),
+                    "default/multi-filter-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             exec2.state = ExecutorState::Binding;
             storage.update_executor(&exec2).await.unwrap();
 
             let mut exec3 = storage
-                .create_executor("mf-node-2".to_string(), "multi-filter-ssn".to_string())
+                .create_executor(
+                    "mf-node-2".to_string(),
+                    "default/multi-filter-ssn".to_string(),
+                )
                 .await
                 .unwrap();
             exec3.state = ExecutorState::Idle;
@@ -495,6 +589,7 @@ mod tests {
                 state: Some(ExecutorState::Idle),
                 node: Some("mf-node-1".to_string()),
                 ids: None,
+                applications: None,
             };
             let filtered = storage.list_executors(Some(&filter)).unwrap();
             assert_eq!(filtered.len(), 1);

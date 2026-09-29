@@ -24,7 +24,7 @@ use std::sync::Arc;
 use crate::controller::nodes::{
     not_ready::NotReadyState, ready::ReadyState, unknown::UnknownState,
 };
-use crate::storage::StoragePtr;
+use common::storage::StoragePtr;
 
 use common::apis::{Node, NodePtr, NodeState};
 use common::FlameError;
@@ -139,7 +139,7 @@ mod tests {
             cache: None,
         };
 
-        crate::storage::new_ptr(&ctx).await.unwrap()
+        common::storage::new_ptr(&ctx).await.unwrap()
     }
 
     // ========================================================================

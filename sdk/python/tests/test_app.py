@@ -25,6 +25,13 @@ from flamepy.app.types import ServiceContext, ServiceRequest, ServiceResponse
 from flamepy.core import ValueRef
 from flamepy.core.types import ApplicationState, FlameError, FlameErrorCode, Shim
 
+
+def _mock_session(name, id="uuid", workspace="default"):
+    session = MagicMock(id=id, workspace=workspace)
+    session.name = name
+    return session
+
+
 # App Storage Tests
 
 
@@ -105,24 +112,28 @@ def test_app_application_inherits_template_shim(monkeypatch, tmp_path):
         installer=None,
     )
     storage = MagicMock()
+    storage.package_secret = "package-token"
     registered = MagicMock()
+    updated = MagicMock()
 
     monkeypatch.setattr("flamepy.app.client.FlameContext", lambda: context)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.get_application",
+        "flamepy.app.client.core_client.get_application_by_name",
         MagicMock(side_effect=[None, template]),
     )
     monkeypatch.setattr("flamepy.app.client.create_storage_backend", lambda *args, **kwargs: storage)
     monkeypatch.setattr(Runtime, "_create_package", lambda self: str(tmp_path / "app.tar.gz"))
     monkeypatch.setattr(Runtime, "_upload_package", lambda self: "grpc://cache/app.tar.gz")
     monkeypatch.setattr("flamepy.app.client.core_client.register_application", registered)
+    monkeypatch.setattr("flamepy.app.client.core_client.update_application", updated)
     open_session = MagicMock()
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session)
     runtime = Runtime("generated-app")
 
     attributes = registered.call_args.args[1]
     assert attributes.shim == Shim.CRI
     assert attributes.labels is None
+    assert updated.call_args.args[1].url == "grpc://cache/app.tar.gz"
     assert runtime._state is _RuntimeState.ACTIVE
     assert isinstance(runtime._application_owner, _RuntimeApplicationOwner)
     open_session.assert_not_called()
@@ -136,8 +147,8 @@ def test_runtime_reuses_existing_application_with_noop_owner(monkeypatch):
 
     monkeypatch.setattr("flamepy.app.client.FlameContext", lambda: context)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.get_application",
-        MagicMock(return_value=SimpleNamespace(state=ApplicationState.ENABLED, labels=["external"], url=None)),
+        "flamepy.app.client.core_client.get_application_by_name",
+        MagicMock(return_value=SimpleNamespace(id="00000000-0000-4000-8000-000000000001", name="existing-app", workspace="default", state=ApplicationState.ENABLED, labels=["external"], url=None)),
     )
     monkeypatch.setattr(
         "flamepy.app.client.core_client.register_application",
@@ -147,7 +158,7 @@ def test_runtime_reuses_existing_application_with_noop_owner(monkeypatch):
         "flamepy.app.client.core_client.unregister_application",
         unregister_application,
     )
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session)
 
     runtime = Runtime("existing-app")
 
@@ -168,7 +179,7 @@ def test_runtime_rejects_existing_disabled_application(monkeypatch):
 
     monkeypatch.setattr("flamepy.app.client.FlameContext", lambda: context)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.get_application",
+        "flamepy.app.client.core_client.get_application_by_name",
         MagicMock(return_value=SimpleNamespace(state=ApplicationState.DISABLED)),
     )
     monkeypatch.setattr(
@@ -208,7 +219,7 @@ def test_registration_race_cleans_only_attempt_package(monkeypatch, tmp_path):
     storage.upload.return_value = f"file://{losing_package}"
     monkeypatch.setattr("flamepy.app.client.FlameContext", lambda: context)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.get_application",
+        "flamepy.app.client.core_client.get_application_by_name",
         MagicMock(side_effect=[None, template]),
     )
     monkeypatch.setattr(
@@ -221,7 +232,7 @@ def test_registration_race_cleans_only_attempt_package(monkeypatch, tmp_path):
     with pytest.raises(FlameError, match="application already exists"):
         Runtime("racing-app")
 
-    storage.delete.assert_called_once_with("loser.tar.gz")
+    storage.delete.assert_not_called()
 
 
 class TestCacheStorage:
@@ -281,6 +292,9 @@ class TestCacheStorage:
         dest_file = tmp_path / "downloaded.tar.gz"
 
         def mock_download_object(ref, dest_path):
+            from flamepy.core.cache import ObjectRef
+
+            assert isinstance(ref, ObjectRef)
             assert ref.key == "myapp/pkg/myapp-1.0.0.tar.gz"
             with open(dest_path, "wb") as f:
                 f.write(b"downloaded content")
@@ -468,6 +482,8 @@ def test_module_service_decorator_is_supported_after_init(monkeypatch):
 
     runtime = MagicMock()
     runtime._name = "shared-app"
+    runtime._application = "shared-app"
+    runtime._workspace = "default"
     runtime.service.return_value = lambda execution_object: execution_object
     monkeypatch.setattr(app_client, "_Runtime", lambda name, **kwargs: runtime)
     monkeypatch.setattr(app_client, "_runtime", None)
@@ -488,6 +504,8 @@ def test_decorated_function_runs_locally_until_remote_is_called(monkeypatch):
 
     runtime = object.__new__(Runtime)
     runtime._name = "local-function-app"
+    runtime._application = "local-function-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -496,9 +514,9 @@ def test_decorated_function_runs_locally_until_remote_is_called(monkeypatch):
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(encode=MagicMock(return_value=b"context")),
     )
-    sessions = [MagicMock(id="first"), MagicMock(id="second"), MagicMock(id="third")]
+    sessions = [_mock_session("first", id="uuid"), _mock_session("second", id="uuid"), _mock_session("third", id="uuid")]
     open_session = MagicMock(side_effect=sessions)
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session)
 
     @app.service()
     def echo(value, shared=None):
@@ -527,7 +545,7 @@ def test_decorated_function_runs_locally_until_remote_is_called(monkeypatch):
     assert isinstance(first, ServiceInstance)
     assert isinstance(second, ServiceInstance)
     assert first is not second
-    assert [service._session.id for service in runtime._services] == ["first", "second"]
+    assert [service._session.name for service in runtime._services] == ["first", "second"]
     first.close()
     sessions[0].close.assert_called_once_with()
     sessions[1].close.assert_not_called()
@@ -548,6 +566,8 @@ def test_decorated_function_runs_locally_until_remote_is_called(monkeypatch):
 def test_concurrent_function_remote_calls_share_one_session(monkeypatch):
     runtime = object.__new__(Runtime)
     runtime._name = "concurrent-shared-app"
+    runtime._application = "concurrent-shared-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -556,8 +576,8 @@ def test_concurrent_function_remote_calls_share_one_session(monkeypatch):
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(encode=MagicMock(return_value=b"context")),
     )
-    open_session = MagicMock(return_value=MagicMock(id="shared-session"))
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
+    open_session = MagicMock(return_value=_mock_session("shared-session", id="uuid"))
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session)
 
     definition = runtime.service()(lambda index: index)
     barrier = threading.Barrier(8)
@@ -580,6 +600,8 @@ def test_remote_api_opens_expected_number_of_sessions(monkeypatch):
 
     runtime = object.__new__(Runtime)
     runtime._name = "session-count-app"
+    runtime._application = "session-count-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -588,9 +610,9 @@ def test_remote_api_opens_expected_number_of_sessions(monkeypatch):
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(encode=MagicMock(return_value=b"context")),
     )
-    sessions = [MagicMock(id=f"session-{index}") for index in range(5)]
+    sessions = [_mock_session(f"session-{index}", id=f"uuid-{index}") for index in range(5)]
     open_session = MagicMock(side_effect=sessions)
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session)
 
     @app.service()
     def echo(value):
@@ -620,7 +642,7 @@ def test_remote_api_opens_expected_number_of_sessions(monkeypatch):
     assert open_session.call_count == 5
     assert first_class._session is sessions[3]
     assert second_class._session is sessions[4]
-    assert [service._session.id for service in runtime._services] == [session.id for session in sessions]
+    assert [service._session.name for service in runtime._services] == [session.name for session in sessions]
 
     for service in runtime._services:
         service.close()
@@ -636,6 +658,25 @@ def test_module_put_uses_the_active_runtime(monkeypatch):
 
     assert app.put({"weights": [1, 2]}) == "object-ref"
     runtime.put.assert_called_once_with({"weights": [1, 2]})
+
+
+def test_runtime_put_uses_invocation_session_prefix(monkeypatch):
+    from flamepy.app import _context
+    from flamepy.core.service import SessionContext
+
+    runtime = object.__new__(app_client._Runtime)
+    runtime._application = "app-id"
+    runtime._workspace = "default"
+    put_object = MagicMock(return_value="object-ref")
+    monkeypatch.setattr("flamepy.core.cache.put_object", put_object)
+
+    runtime.put({"bootstrap": True})
+    put_object.assert_called_with("default/shared", {"bootstrap": True})
+
+    bound = SessionContext(None, "session-id", "default", "app-id")
+    with _context._bind_invocation_context(bound):
+        runtime.put({"session": True})
+    put_object.assert_called_with("default/session-id", {"session": True})
 
 
 def test_service_module_execution_object_is_pickled_by_value(monkeypatch):
@@ -654,7 +695,7 @@ def test_service_module_execution_object_is_pickled_by_value(monkeypatch):
         return MagicMock(key="context", version=1, encode=MagicMock(return_value=b"context"))
 
     monkeypatch.setattr("flamepy.app.client._core_put_object", put_context)
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", MagicMock(return_value=MagicMock(id="session")))
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", MagicMock(return_value=_mock_session("session", id="uuid")))
 
     ServiceInstance("shared-app", service_module.calculate)
     monkeypatch.delitem(sys.modules, module_name)
@@ -672,14 +713,16 @@ def test_service_proxy_captured_by_service_reopens_existing_session(monkeypatch)
         serialized_contexts.append(serialized)
         return MagicMock(key="context", version=1, encode=MagicMock(return_value=b"context"))
 
-    fn_a_session = MagicMock(id="fn-a-session")
-    fn_b_session = MagicMock(id="fn-b-session")
-    reopened_fn_a_session = MagicMock(id="fn-a-session")
+    fn_a_session = _mock_session("fn-a-session", id="uuid")
+    fn_b_session = _mock_session("fn-b-session", id="uuid")
+    reopened_fn_a_session = _mock_session("fn-a-session", id="uuid")
     nested_future = Future()
     nested_future.set_result(b"result")
     reopened_fn_a_session.submit.return_value = nested_future
-    open_session = MagicMock(side_effect=[fn_a_session, fn_b_session, reopened_fn_a_session])
+    create_session = MagicMock(side_effect=[fn_a_session, fn_b_session])
+    open_session = MagicMock(return_value=reopened_fn_a_session)
     monkeypatch.setattr("flamepy.app.client._core_put_object", put_context)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", create_session)
     monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
 
     def fn_a(value):
@@ -695,7 +738,7 @@ def test_service_proxy_captured_by_service_reopens_existing_session(monkeypatch)
     result = restored_context.execution_object(3)
 
     assert isinstance(result, ObjectFuture)
-    open_session.assert_called_with(session_id="fn-a-session")
+    open_session.assert_called_with(name="fn-a-session", workspace="default")
     reopened_fn_a_session.submit.assert_called_once()
     captured_proxy = restored_context.execution_object.__closure__[0].cell_contents
     assert isinstance(captured_proxy._session_owner, _NoopSessionOwner)
@@ -712,6 +755,8 @@ def test_runtime_closes_sessions_when_reusing_an_existing_application(monkeypatc
 
     runtime = object.__new__(Runtime)
     runtime._name = "existing-app"
+    runtime._application = "existing-app"
+    runtime._workspace = "default"
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
     application_owner = _NoopApplicationOwner()
@@ -746,17 +791,17 @@ def test_recursive_service_declaration_reuses_context_without_init(monkeypatch):
     import flamepy.app as app
     from flamepy import FlameError
     from flamepy.app._context import _bind_invocation_context
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     monkeypatch.setattr(app_client, "_runtime", None)
     put_context = MagicMock()
     monkeypatch.setattr("flamepy.app.client._core_put_object", put_context)
-    session = MagicMock(id="recursive-session")
+    session = _mock_session("recursive-session", id="uuid")
     pending = MagicMock(spec=Future)
     session.submit.return_value = pending
     open_session = MagicMock(return_value=session)
     monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
-    session_context = SessionContext(None, "recursive-session", ApplicationContext("recursive-app"))
+    session_context = SessionContext(None, "recursive-session", "default", "recursive-app")
 
     with _bind_invocation_context(session_context):
 
@@ -778,7 +823,7 @@ def test_recursive_service_declaration_reuses_context_without_init(monkeypatch):
     assert recursive_service._session_context is session_context
     assert "_session_context" not in recursive_service._execution_object.__dict__
     put_context.assert_not_called()
-    open_session.assert_called_once_with(session_id="recursive-session")
+    open_session.assert_called_once_with(name="recursive-session", workspace="default")
     recursive_service.invoke()
     session.submit.assert_called_once()
     recursive_service.close()
@@ -791,14 +836,14 @@ def test_recursive_service_declaration_reuses_context_without_init(monkeypatch):
 def test_recursive_service_declaration_prefers_invocation_context(monkeypatch):
     import flamepy.app as app
     from flamepy.app._context import _bind_invocation_context
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     runtime = MagicMock()
     monkeypatch.setattr(app_client, "_runtime", runtime)
-    session = MagicMock(id="recursive-session")
+    session = _mock_session("recursive-session", id="uuid")
     open_session = MagicMock(return_value=session)
     monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
-    session_context = SessionContext(None, "recursive-session", ApplicationContext("recursive-app"))
+    session_context = SessionContext(None, "recursive-session", "default", "recursive-app")
 
     with _bind_invocation_context(session_context):
 
@@ -810,7 +855,7 @@ def test_recursive_service_declaration_prefers_invocation_context(monkeypatch):
         recursive_service = RecursiveService.remote()
 
     runtime.service.assert_not_called()
-    open_session.assert_called_once_with(session_id="recursive-session")
+    open_session.assert_called_once_with(name="recursive-session", workspace="default")
     assert recursive_service._session_context is session_context
     recursive_service.close()
     session.close.assert_not_called()
@@ -828,12 +873,12 @@ def test_recursive_service_declaration_rejects_session_options(monkeypatch, opti
     import flamepy.app as app
     from flamepy import FlameError
     from flamepy.app._context import _bind_invocation_context
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     monkeypatch.setattr(app_client, "_runtime", None)
     open_session = MagicMock()
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
-    session_context = SessionContext(None, "recursive-session", ApplicationContext("recursive-app"))
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session)
+    session_context = SessionContext(None, "recursive-session", "default", "recursive-app")
 
     with _bind_invocation_context(session_context):
         with pytest.raises(FlameError, match="Nested services reuse the current session"):
@@ -848,14 +893,14 @@ def test_recursive_service_declaration_rejects_session_options(monkeypatch, opti
 def test_recursive_service_declaration_requires_existing_session(monkeypatch):
     import flamepy.app as app
     from flamepy.app._context import _bind_invocation_context
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     monkeypatch.setattr(app_client, "_runtime", None)
     put_context = MagicMock()
     monkeypatch.setattr("flamepy.app.client._core_put_object", put_context)
     open_session = MagicMock(side_effect=RuntimeError("missing session"))
     monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
-    session_context = SessionContext(None, "missing-session", ApplicationContext("recursive-app"))
+    session_context = SessionContext(None, "missing-session", "default", "recursive-app")
 
     with _bind_invocation_context(session_context):
         with pytest.raises(RuntimeError, match="missing session"):
@@ -867,7 +912,7 @@ def test_recursive_service_declaration_requires_existing_session(monkeypatch):
             recursive_service.remote()
 
     put_context.assert_not_called()
-    open_session.assert_called_once_with(session_id="missing-session")
+    open_session.assert_called_once_with(name="missing-session", workspace="default")
 
 
 def test_objectfuture_ref_returns_inline_valueref():
@@ -926,7 +971,7 @@ def test_objectfuture_get_cached_none_and_chains_reference_without_client_fetch(
 
     service = object.__new__(ServiceInstance)
     service._app = "app"
-    service._session = MagicMock(id="session")
+    service._session = _mock_session("session", id="uuid")
     service._submit = MagicMock(return_value=Future())
     service._create_function_wrapper()
     with patch("flamepy.app.client.get_object") as get_object:
@@ -950,7 +995,7 @@ def test_app_task_input_rejects_more_than_128_kib():
 
     instance = object.__new__(ServiceInstance)
     instance._app = "app"
-    instance._session = MagicMock(id="session")
+    instance._session = _mock_session("session", id="uuid")
     assert instance._task_input(b"x" * INLINE_PAYLOAD_LIMIT) == b"x" * INLINE_PAYLOAD_LIMIT
     with pytest.raises(ValueError, match="App task input exceeds"):
         instance._task_input(b"x" * (INLINE_PAYLOAD_LIMIT + 1))
@@ -1099,6 +1144,8 @@ def test_app_package_applies_root_and_nested_ignore_files(tmp_path, monkeypatch)
 
     app = object.__new__(Runtime)
     app._name = "test-run"
+    app._application = "test-run"
+    app._workspace = "default"
     app._dependencies = None
     app._context = SimpleNamespace(package=None)
 
@@ -1117,6 +1164,8 @@ def test_app_package_generates_metadata_when_project_file_is_ignored(tmp_path, m
 
     app = object.__new__(Runtime)
     app._name = "test-run"
+    app._application = "test-run"
+    app._workspace = "default"
     app._dependencies = None
     app._context = SimpleNamespace(package=None)
 
@@ -1134,6 +1183,8 @@ def test_app_package_generates_metadata_without_dependencies(tmp_path, monkeypat
 
     app = object.__new__(Runtime)
     app._name = "test-run"
+    app._application = "test-run"
+    app._workspace = "default"
     app._dependencies = None
     app._context = SimpleNamespace(package=None)
 
@@ -1163,6 +1214,8 @@ def test_app_package_generates_dependency_metadata_in_archive(tmp_path, monkeypa
 
     app = object.__new__(Runtime)
     app._name = "test-run"
+    app._application = "test-run"
+    app._workspace = "default"
     app._dependencies = ["pandas>=2", "numpy"]
     app._context = SimpleNamespace(package=None)
 
@@ -1196,6 +1249,8 @@ def test_app_package_skips_generated_metadata_for_legacy_projects(tmp_path, monk
 
     app = object.__new__(Runtime)
     app._name = "test-run"
+    app._application = "test-run"
+    app._workspace = "default"
     app._dependencies = ["numpy"]
     app._context = SimpleNamespace(package=None)
 
@@ -1492,42 +1547,42 @@ def test_app_service_rejects_method_name_collisions():
         ServiceInstance("test-app", ServiceWithClose, constructor_args=())
 
 
-def test_app_service_instance_generates_session_id(monkeypatch):
+def test_app_service_instance_generates_session_name(monkeypatch):
     from flamepy.app import ServiceInstance
 
-    session = MagicMock(id="generated")
+    session = _mock_session("generated", id="uuid")
     open_session_mock = MagicMock(return_value=session)
     monkeypatch.setattr(
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(key="context", version=1, encode=MagicMock(return_value=b"context")),
     )
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session_mock)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session_mock)
 
     instance = ServiceInstance("pi-example", lambda: None)
 
-    spec = open_session_mock.call_args.kwargs["spec"]
-    assert spec.id.startswith("pi-example-")
+    spec = open_session_mock.call_args.args[0]
+    assert spec.name.startswith("pi-example-")
     assert isinstance(instance._session_owner, _ServiceSessionOwner)
 
 
 def test_app_service_instance_ignores_execution_object_session_context(monkeypatch):
     from flamepy.app import ServiceInstance
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     def service():
         return None
 
-    service._session_context = SessionContext(None, "recursive-session", ApplicationContext("pi-example"))
-    open_session_mock = MagicMock(return_value=MagicMock(id="recursive-session"))
+    service._session_context = SessionContext(None, "recursive-session", "default", "pi-example")
+    open_session_mock = MagicMock(return_value=_mock_session("recursive-session", id="uuid"))
     monkeypatch.setattr(
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(key="context", version=1, encode=MagicMock(return_value=b"context")),
     )
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session_mock)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session_mock)
 
     instance = ServiceInstance("pi-example", service)
 
-    assert open_session_mock.call_args.kwargs["session_id"].startswith("pi-example-")
+    assert open_session_mock.call_args.args[0].name.startswith("pi-example-")
     assert isinstance(instance._session_owner, _ServiceSessionOwner)
     instance.close()
     instance._session.close.assert_called_once_with()
@@ -1535,20 +1590,22 @@ def test_app_service_instance_ignores_execution_object_session_context(monkeypat
 
 def test_runtime_service_owns_session_despite_execution_object_attribute(monkeypatch):
     from flamepy.app.client import _Runtime
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     class RecursiveService:
-        _session_context = SessionContext(None, "recursive-session", ApplicationContext("pi-example"))
+        _session_context = SessionContext(None, "recursive-session", "default", "pi-example")
 
-    session = MagicMock(id="recursive-session")
+    session = _mock_session("recursive-session", id="uuid")
     monkeypatch.setattr(
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(key="context", version=1, encode=MagicMock(return_value=b"context")),
     )
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", MagicMock(return_value=session))
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", MagicMock(return_value=session))
 
     runtime = object.__new__(_Runtime)
     runtime._name = "pi-example"
+    runtime._application = "pi-example"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1635,6 +1692,8 @@ def test_app_service_passes_public_options(monkeypatch):
 
     app = object.__new__(Runtime)
     app._name = "test-app-service-options"
+    app._application = "test-app-service-options"
+    app._workspace = "default"
     app._services = []
     app._state = _RuntimeState.ACTIVE
     app._lifecycle_lock = threading.RLock()
@@ -1651,7 +1710,7 @@ def test_app_service_passes_public_options(monkeypatch):
 
     assert calls == [
         (
-            "test-app-service-options",
+            "default/test-app-service-options",
             sample_func,
             False,
             2,
@@ -1675,14 +1734,14 @@ def test_decorated_class_creates_session_only_when_constructed(monkeypatch):
             encode=MagicMock(return_value=b"context"),
         )
 
-    session = MagicMock(id="worker-session")
+    session = _mock_session("worker-session", id="uuid")
     monkeypatch.setattr(
         "flamepy.app.client._core_put_object",
         put_context,
     )
     open_session = MagicMock(return_value=session)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
+        "flamepy.app.client.core_client.create_session",
         open_session,
     )
 
@@ -1699,6 +1758,8 @@ def test_decorated_class_creates_session_only_when_constructed(monkeypatch):
 
     runtime = object.__new__(Runtime)
     runtime._name = "dual-class-app"
+    runtime._application = "dual-class-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1746,6 +1807,8 @@ def test_decorated_class_has_no_class_level_remote_methods(monkeypatch):
 
     runtime = object.__new__(Runtime)
     runtime._name = "no-class-level-service-app"
+    runtime._application = "no-class-level-service-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1768,6 +1831,8 @@ def test_decorated_class_factory_rejects_calls_after_runtime_is_inactive(
 
     runtime = object.__new__(Runtime)
     runtime._name = "inactive-class-service-app"
+    runtime._application = "inactive-class-service-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1799,8 +1864,8 @@ def test_decorated_class_carries_constructor_arguments_without_local_constructio
         put_context,
     )
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
-        MagicMock(return_value=MagicMock(id="worker-session")),
+        "flamepy.app.client.core_client.create_session",
+        MagicMock(return_value=_mock_session("worker-session", id="uuid")),
     )
 
     class Worker:
@@ -1817,6 +1882,8 @@ def test_decorated_class_carries_constructor_arguments_without_local_constructio
 
     runtime = object.__new__(Runtime)
     runtime._name = "invalid-instance-app"
+    runtime._application = "invalid-instance-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1838,7 +1905,7 @@ def test_decorated_class_carries_constructor_arguments_without_local_constructio
 def test_decorated_class_preserves_resources_and_runtime_closes_all_instances(
     monkeypatch,
 ):
-    sessions = [MagicMock(id="first-session"), MagicMock(id="second-session")]
+    sessions = [_mock_session("first-session", id="uuid"), _mock_session("second-session", id="uuid")]
     open_session = MagicMock(side_effect=sessions)
     monkeypatch.setattr(
         "flamepy.app.client._core_put_object",
@@ -1849,7 +1916,7 @@ def test_decorated_class_preserves_resources_and_runtime_closes_all_instances(
         ),
     )
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
+        "flamepy.app.client.core_client.create_session",
         open_session,
     )
 
@@ -1859,6 +1926,8 @@ def test_decorated_class_preserves_resources_and_runtime_closes_all_instances(
 
     runtime = object.__new__(Runtime)
     runtime._name = "class-lifecycle-app"
+    runtime._application = "class-lifecycle-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1874,7 +1943,7 @@ def test_decorated_class_preserves_resources_and_runtime_closes_all_instances(
     second_worker = worker_factory.remote()
 
     assert runtime._services == [first_worker, second_worker]
-    requirements = [call.kwargs["spec"].resreq for call in open_session.call_args_list]
+    requirements = [call.args[0].resreq for call in open_session.call_args_list]
     assert [(item.cpu, item.memory) for item in requirements] == [
         (2, 1024**3),
         (2, 1024**3),
@@ -1910,17 +1979,19 @@ def test_decorated_class_instance_is_pickled_by_defining_module(monkeypatch):
 
     monkeypatch.setattr("flamepy.app.client._core_put_object", put_context)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
+        "flamepy.app.client.core_client.create_session",
         MagicMock(
             side_effect=[
-                MagicMock(id="class-session"),
-                MagicMock(id="instance-session"),
+                _mock_session("class-session", id="uuid"),
+                _mock_session("instance-session", id="uuid"),
             ]
         ),
     )
 
     runtime = object.__new__(Runtime)
     runtime._name = "pickled-class-app"
+    runtime._application = "pickled-class-app"
+    runtime._workspace = "default"
     runtime._services = []
     runtime._state = _RuntimeState.ACTIVE
     runtime._lifecycle_lock = threading.RLock()
@@ -1949,6 +2020,8 @@ def test_app_service_rejects_object_instances():
 
     app = object.__new__(Runtime)
     app._name = "test-app-invalid-defaults"
+    app._application = "test-app-invalid-defaults"
+    app._workspace = "default"
     app._services = []
     app._state = _RuntimeState.ACTIVE
 
@@ -1984,16 +2057,16 @@ def test_app_service_rejects_positional_execution_object():
 def test_app_service_instance_parses_resource_string(monkeypatch):
     from flamepy.app import ServiceInstance
 
-    open_session_mock = MagicMock(return_value=MagicMock(id="generated"))
+    open_session_mock = MagicMock(return_value=_mock_session("generated", id="uuid"))
     monkeypatch.setattr(
         "flamepy.app.client._core_put_object",
         lambda *args, **kwargs: MagicMock(key="context", version=1, encode=MagicMock(return_value=b"context")),
     )
-    monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session_mock)
+    monkeypatch.setattr("flamepy.app.client.core_client.create_session", open_session_mock)
 
     ServiceInstance("resource-app", lambda: None, resreq="cpu=2,mem=1g,gpu=1")
 
-    requirement = open_session_mock.call_args.kwargs["spec"].resreq
+    requirement = open_session_mock.call_args.args[0].resreq
     assert (requirement.cpu, requirement.memory, requirement.gpu) == (2, 1024**3, 1)
 
 
@@ -2027,8 +2100,8 @@ def test_app_service_instance_serializes_partial_from_defining_module(monkeypatc
         lambda key, value: serialized_contexts.append(value) or MagicMock(encode=MagicMock(return_value=b"context")),
     )
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
-        MagicMock(return_value=MagicMock(id="partial-session")),
+        "flamepy.app.client.core_client.create_session",
+        MagicMock(return_value=_mock_session("partial-session", id="uuid")),
     )
 
     ServiceInstance("partial-app", execution_object)
@@ -2086,8 +2159,8 @@ def test_app_service_serializes_by_value_under_process_wide_lock(monkeypatch):
         lambda *args: MagicMock(encode=MagicMock(return_value=b"context-ref")),
     )
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
-        lambda **kwargs: MagicMock(id=kwargs["session_id"]),
+        "flamepy.app.client.core_client.create_session",
+        lambda spec: _mock_session(f"{spec.name}", id="uuid"),
     )
 
     def declare_service():
@@ -2132,13 +2205,13 @@ async def test_runpy_resolves_object_ref_to_cached_none():
 async def test_runpy_binds_session_context_and_publishes_invocation_attributes():
     import flamepy.app as app
     from flamepy.app.runpy import FlameRunpyService
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         def run(self):
             app.publish_attributes({b"b"})
             app.publish_attributes({b"c"})
-            return app.session_context().session_id
+            return app.session_context().session
 
     svc = FlameRunpyService()
 
@@ -2146,7 +2219,7 @@ async def test_runpy_binds_session_context_and_publishes_invocation_attributes()
         return ServiceContext(Worker, constructor_args=())
 
     svc._load_app_context = load_context
-    session = SessionContext(None, "session", ApplicationContext("app"))
+    session = SessionContext(None, "session", "default", "app")
 
     await svc.on_session_enter(session)
     assert list(svc._take_attributes().attr) == []
@@ -2154,7 +2227,7 @@ async def test_runpy_binds_session_context_and_publishes_invocation_attributes()
     request = ServiceRequest(method="run")
     object_ref = SimpleNamespace(encode=lambda: b"result-ref")
     with patch("flamepy.app.runpy.aio_core.put_object", return_value=object_ref) as put:
-        result = await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(request)))
+        result = await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(request)))
 
     assert cloudpickle.loads(result) == ServiceResponse(ValueRef("session"))
     put.assert_not_called()
@@ -2168,7 +2241,7 @@ async def test_runpy_keeps_concurrent_invocation_attributes_with_their_response(
     import flamepy.app as app
     from flamepy.app.runpy import FlameRunpyService
     from flamepy.core.aio.service import FlameInstanceServicer
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
     from flamepy.proto import shim_pb2
 
     invocation_barrier = threading.Barrier(2, timeout=5)
@@ -2185,14 +2258,16 @@ async def test_runpy_keeps_concurrent_invocation_attributes_with_their_response(
         return ServiceContext(Worker, constructor_args=())
 
     svc._load_app_context = load_context
-    await svc.on_session_enter(SessionContext(None, "session", ApplicationContext("app")))
+    await svc.on_session_enter(SessionContext(None, "session", "default", "app"))
     servicer = FlameInstanceServicer(svc)
 
     async def invoke(index):
         attribute = f"invocation-{index}".encode()
         request = shim_pb2.TaskContext(
-            task_id=f"task-{index}",
-            session_id="session",
+            task=str(index + 1),
+            session="session",
+            workspace="default",
+            application="app",
             input=cloudpickle.dumps(ServiceRequest(method="run", args=(attribute,))),
         )
         return await servicer.OnTaskInvoke(request, MagicMock())
@@ -2212,7 +2287,7 @@ async def test_runpy_binds_recursive_service_to_current_session(monkeypatch):
     import flamepy.app as app
     from flamepy import FlameError
     from flamepy.app.runpy import FlameRunpyService
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     captured = {}
 
@@ -2226,12 +2301,12 @@ async def test_runpy_binds_recursive_service_to_current_session(monkeypatch):
             recursive_proxy = RecursiveProxy.remote()
             captured["proxy"] = recursive_proxy
             captured["execution_object"] = recursive_proxy._execution_object
-            return recursive_proxy._session.id
+            return recursive_proxy._session.name
 
     monkeypatch.setattr(app_client, "_runtime", None)
     put_context = MagicMock()
     monkeypatch.setattr("flamepy.app.client._core_put_object", put_context)
-    borrowed_session = MagicMock(id="recursive-session")
+    borrowed_session = _mock_session("recursive-session", id="uuid")
     open_session = MagicMock(return_value=borrowed_session)
     monkeypatch.setattr("flamepy.app.client.core_client.open_session", open_session)
 
@@ -2241,19 +2316,19 @@ async def test_runpy_binds_recursive_service_to_current_session(monkeypatch):
         return ServiceContext(Worker, constructor_args=())
 
     svc._load_app_context = load_context
-    session_context = SessionContext(None, "recursive-session", ApplicationContext("recursive-app"))
+    session_context = SessionContext(None, "recursive-session", "default", "recursive-app")
     await svc.on_session_enter(session_context)
 
     request = ServiceRequest(method="run")
     result_ref = SimpleNamespace(encode=lambda: b"result-ref")
     with patch("flamepy.app.runpy.aio_core.put_object", return_value=result_ref):
-        result = await svc.on_task_invoke(TaskContext("task", "recursive-session", cloudpickle.dumps(request)))
+        result = await svc.on_task_invoke(TaskContext(str(1), "recursive-session", "default", "recursive-app", cloudpickle.dumps(request)))
 
     assert cloudpickle.loads(result) == ServiceResponse(ValueRef("recursive-session"))
     assert captured["proxy"]._session_context is session_context
     assert "_session_context" not in captured["execution_object"].__dict__
     put_context.assert_not_called()
-    open_session.assert_called_once_with(session_id="recursive-session")
+    open_session.assert_called_once_with(name="recursive-session", workspace="default")
     with pytest.raises(RuntimeError, match="not running in a Flame invocation"):
         app.session_context()
 
@@ -2272,7 +2347,7 @@ async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch)
     import flamepy.app as app
     from flamepy import FlameError
     from flamepy.app.runpy import FlameRunpyService
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         def run(self):
@@ -2284,8 +2359,8 @@ async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch)
 
     monkeypatch.setattr(app_client, "_runtime", None)
     monkeypatch.setattr(
-        "flamepy.app.client.core_client.open_session",
-        MagicMock(return_value=MagicMock(id="recursive-session")),
+        "flamepy.app.client.core_client.create_session",
+        MagicMock(return_value=_mock_session("recursive-session", id="uuid")),
     )
 
     svc = FlameRunpyService()
@@ -2294,11 +2369,11 @@ async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch)
         return ServiceContext(Worker, constructor_args=())
 
     svc._load_app_context = load_context
-    await svc.on_session_enter(SessionContext(None, "recursive-session", ApplicationContext("recursive-app")))
+    await svc.on_session_enter(SessionContext(None, "recursive-session", "default", "recursive-app"))
     request = ServiceRequest(method="run")
 
     with pytest.raises(RuntimeError, match="service failed"):
-        await svc.on_task_invoke(TaskContext("task", "recursive-session", cloudpickle.dumps(request)))
+        await svc.on_task_invoke(TaskContext(str(1), "recursive-session", "default", "recursive-app", cloudpickle.dumps(request)))
 
     with pytest.raises(RuntimeError, match="not running in a Flame invocation"):
         app.session_context()
@@ -2313,13 +2388,13 @@ async def test_runpy_resets_recursive_session_context_after_failure(monkeypatch)
 async def test_app_runtime_helpers_are_invocation_scoped():
     import flamepy.app as app
     from flamepy.app.runpy import FlameRunpyService
-    from flamepy.core.service import ApplicationContext, SessionContext, TaskContext
+    from flamepy.core.service import SessionContext, TaskContext
 
     class Worker:
         def run(self):
             app.publish_attributes({b"initial"})
             app.publish_attributes({b"initial", b"next"})
-            return app.session_context().session_id
+            return app.session_context().session
 
         def invalid(self):
             app.publish_attributes({"invalid"})
@@ -2335,27 +2410,27 @@ async def test_app_runtime_helpers_are_invocation_scoped():
         return ServiceContext(Worker, constructor_args=())
 
     svc._load_app_context = load_context
-    session = SessionContext(None, "session", ApplicationContext("app"))
+    session = SessionContext(None, "session", "default", "app")
     await svc.on_session_enter(session)
 
     result_ref = SimpleNamespace(encode=lambda: b"result-ref")
     with patch("flamepy.app.runpy.aio_core.put_object", return_value=result_ref):
-        result = await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(method="run"))))
+        result = await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(method="run"))))
     assert cloudpickle.loads(result) == ServiceResponse(ValueRef("session"))
     assert set(svc._take_attributes().attr) == {b"initial", b"next"}
 
     with pytest.raises(TypeError, match="must contain bytes"):
-        await svc.on_task_invoke(TaskContext("task", "session", cloudpickle.dumps(ServiceRequest(method="invalid"))))
+        await svc.on_task_invoke(TaskContext(str(1), "session", "default", "app", cloudpickle.dumps(ServiceRequest(method="invalid"))))
     assert list(svc._take_attributes().attr) == []
 
 
 def test_app_service_validates_combined_publication_limit():
     import flamepy.app as app
     from flamepy.app._context import _bind_invocation_context
-    from flamepy.core.service import ApplicationContext, SessionContext
+    from flamepy.core.service import SessionContext
 
     attributes = {index.to_bytes(2, "big") for index in range(1_024)}
-    session = SessionContext(None, "session", ApplicationContext("app"))
+    session = SessionContext(None, "session", "default", "app")
 
     with _bind_invocation_context(session) as invocation_context:
         app.publish_attributes(attributes)
@@ -2729,6 +2804,8 @@ def test_unregister_failure_preserves_cache_and_package_artifacts(monkeypatch):
     """Artifacts remain available while the application is still registered."""
     runtime = object.__new__(Runtime)
     runtime._name = "unregister-failure-app"
+    runtime._application = "unregister-failure-app"
+    runtime._workspace = "default"
     runtime._cleanup_package_artifacts = MagicMock()
     delete_objects = MagicMock()
     monkeypatch.setattr(
@@ -2748,6 +2825,8 @@ def test_unregister_leaves_registered_package_cleanup_to_object_cache(monkeypatc
     """Successful teardown does not delete the remotely registered package."""
     runtime = object.__new__(Runtime)
     runtime._name = "draining-app"
+    runtime._application = "draining-app"
+    runtime._workspace = "default"
     runtime._cleanup_local_package = MagicMock()
     runtime._cleanup_storage = MagicMock()
     unregister = MagicMock()

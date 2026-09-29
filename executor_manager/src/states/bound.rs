@@ -52,8 +52,8 @@ impl State for BoundState {
                         Err(e) => {
                             tracing::error!(
                                 "Task <{}/{}> failed during shim invocation on executor <{}>: {}",
-                                task_ctx.session_id,
-                                task_ctx.task_id,
+                                format!("{}/{}", task_ctx.workspace, task_ctx.session),
+                                task_ctx.task,
                                 self.executor.id,
                                 e
                             );
@@ -82,11 +82,15 @@ impl State for BoundState {
                     )
                     .await?;
 
-                let (ssn_id, task_id) = {
+                let (workspace, session, task) = {
                     let task = &self.executor.task.clone().unwrap();
-                    (task.session_id.clone(), task.task_id.clone())
+                    (
+                        task.workspace.clone(),
+                        task.session.clone(),
+                        task.task.clone(),
+                    )
                 };
-                tracing::debug!("Complete task <{ssn_id}/{task_id}>");
+                tracing::debug!("Complete task <{workspace}/{session}/{task}>");
             }
             None => {
                 self.executor.state = ExecutorState::Unbinding;

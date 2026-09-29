@@ -432,6 +432,7 @@ mod tests {
     fn test_executor() -> Executor {
         Executor {
             id: "executor-1".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             resreq: ResourceRequirement::default(),
             node: "node-1".to_string(),
@@ -460,6 +461,7 @@ mod tests {
         let site_packages = temp.path().join("lib/python3.12/site-packages");
         fs::create_dir_all(&site_packages).unwrap();
         let app = ApplicationContext {
+            workspace: "default".to_string(),
             name: "flmrun".to_string(),
             shim: ShimType::Host,
             image: None,
@@ -488,6 +490,7 @@ mod tests {
     #[tokio::test]
     async fn create_service_installs_before_runtime_creation() {
         let app = ApplicationContext {
+            workspace: "default".to_string(),
             name: "test-app".to_string(),
             shim: ShimType::Host,
             image: None,

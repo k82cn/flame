@@ -32,7 +32,8 @@ mod tests {
 
     fn create_session_attr(id: &str) -> SessionAttributes {
         SessionAttributes {
-            id: id.to_string(),
+            name: id.rsplit('/').next().unwrap().to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             common_data: None,
             min_instances: 1,
@@ -51,11 +52,11 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("test-ssn-1");
+            let attr = create_session_attr("default/test-ssn-1");
             let ssn = storage.create_session(attr).await.unwrap();
 
-            assert_eq!(ssn.id, "test-ssn-1");
-            assert_eq!(ssn.application, "test-app");
+            assert_eq!(ssn.gid, "default/test-ssn-1");
+            assert_eq!(ssn.application, "default/test-app");
             assert_eq!(ssn.status.state, SessionState::Open);
         }
 
@@ -64,7 +65,7 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let mut attr = create_session_attr("test-ssn-resreq");
+            let mut attr = create_session_attr("default/test-ssn-resreq");
             attr.resreq = Some(ResourceRequirement {
                 cpu: 4,
                 memory: 8 * 1024 * 1024 * 1024,
@@ -83,7 +84,7 @@ mod tests {
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
             for i in 0..5 {
-                let attr = create_session_attr(&format!("ssn-{}", i));
+                let attr = create_session_attr(&format!("default/ssn-{}", i));
                 storage.create_session(attr).await.unwrap();
             }
 
@@ -100,11 +101,13 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("get-test-ssn");
+            let attr = create_session_attr("default/get-test-ssn");
             storage.create_session(attr).await.unwrap();
 
-            let ssn = storage.get_session("get-test-ssn".to_string()).unwrap();
-            assert_eq!(ssn.id, "get-test-ssn");
+            let ssn = storage
+                .get_session("default/get-test-ssn".to_string())
+                .unwrap();
+            assert_eq!(ssn.gid, "default/get-test-ssn");
         }
 
         #[tokio::test]
@@ -121,12 +124,14 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("ptr-test-ssn");
+            let attr = create_session_attr("default/ptr-test-ssn");
             storage.create_session(attr).await.unwrap();
 
-            let ssn_ptr = storage.get_session_ptr("ptr-test-ssn".to_string()).unwrap();
+            let ssn_ptr = storage
+                .get_session_ptr("default/ptr-test-ssn".to_string())
+                .unwrap();
             let ssn = stdng::lock_ptr!(ssn_ptr).unwrap();
-            assert_eq!(ssn.id, "ptr-test-ssn");
+            assert_eq!(ssn.gid, "default/ptr-test-ssn");
         }
 
         #[tokio::test]
@@ -134,11 +139,11 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("event-test-ssn");
+            let attr = create_session_attr("default/event-test-ssn");
             storage.create_session(attr).await.unwrap();
             storage
                 .record_event(
-                    EventOwner::session("event-test-ssn".to_string()),
+                    EventOwner::from_session_path("default/event-test-ssn").unwrap(),
                     Event {
                         code: 1001,
                         message: Some("bind failed".to_string()),
@@ -148,7 +153,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            let ssn = storage.get_session("event-test-ssn".to_string()).unwrap();
+            let ssn = storage
+                .get_session("default/event-test-ssn".to_string())
+                .unwrap();
 
             assert_eq!(ssn.events.len(), 1);
             assert_eq!(ssn.events[0].code, 1001);
@@ -164,13 +171,13 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("open-new-ssn");
+            let attr = create_session_attr("default/open-new-ssn");
             let ssn = storage
-                .open_session("open-new-ssn".to_string(), Some(attr))
+                .open_session("default/open-new-ssn".to_string(), Some(attr))
                 .await
                 .unwrap();
 
-            assert_eq!(ssn.id, "open-new-ssn");
+            assert_eq!(ssn.gid, "default/open-new-ssn");
             assert_eq!(ssn.status.state, SessionState::Open);
         }
 
@@ -179,15 +186,15 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("existing-ssn");
+            let attr = create_session_attr("default/existing-ssn");
             storage.create_session(attr.clone()).await.unwrap();
 
             let ssn = storage
-                .open_session("existing-ssn".to_string(), Some(attr))
+                .open_session("default/existing-ssn".to_string(), Some(attr))
                 .await
                 .unwrap();
 
-            assert_eq!(ssn.id, "existing-ssn");
+            assert_eq!(ssn.gid, "default/existing-ssn");
             assert_eq!(ssn.status.state, SessionState::Open);
         }
     }
@@ -200,11 +207,11 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("close-test-ssn");
+            let attr = create_session_attr("default/close-test-ssn");
             storage.create_session(attr).await.unwrap();
 
             let ssn = storage
-                .close_session("close-test-ssn".to_string())
+                .close_session("default/close-test-ssn".to_string())
                 .await
                 .unwrap();
 
@@ -226,14 +233,16 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("verify-close-ssn");
+            let attr = create_session_attr("default/verify-close-ssn");
             storage.create_session(attr).await.unwrap();
             storage
-                .close_session("verify-close-ssn".to_string())
+                .close_session("default/verify-close-ssn".to_string())
                 .await
                 .unwrap();
 
-            let ssn = storage.get_session("verify-close-ssn".to_string()).unwrap();
+            let ssn = storage
+                .get_session("default/verify-close-ssn".to_string())
+                .unwrap();
             assert_eq!(ssn.status.state, SessionState::Closed);
         }
 
@@ -242,20 +251,20 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("close-cancel-pending-ssn");
+            let attr = create_session_attr("default/close-cancel-pending-ssn");
             storage.create_session(attr).await.unwrap();
             let task = storage
-                .create_task("close-cancel-pending-ssn".to_string(), None, None)
+                .create_task("default/close-cancel-pending-ssn".to_string(), None, None)
                 .await
                 .unwrap();
 
             storage
-                .close_session("close-cancel-pending-ssn".to_string())
+                .close_session("default/close-cancel-pending-ssn".to_string())
                 .await
                 .unwrap();
 
             let task = storage
-                .get_task("close-cancel-pending-ssn".to_string(), task.id)
+                .get_task("default/close-cancel-pending-ssn".to_string(), task.number)
                 .unwrap();
             assert_eq!(task.state, TaskState::Cancelled);
             assert!(task.completion_time.is_some());
@@ -266,26 +275,28 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("close-running-ssn");
+            let attr = create_session_attr("default/close-running-ssn");
             storage.create_session(attr).await.unwrap();
             let task = storage
-                .create_task("close-running-ssn".to_string(), None, None)
+                .create_task("default/close-running-ssn".to_string(), None, None)
                 .await
                 .unwrap();
             let ssn_ptr = storage
-                .get_session_ptr("close-running-ssn".to_string())
+                .get_session_ptr("default/close-running-ssn".to_string())
                 .unwrap();
-            let task_ptr = storage.get_task_ptr(task.gid()).unwrap();
+            let task_ptr = storage.get_task_ptr(task.gid().unwrap()).unwrap();
             storage
                 .update_task_state(ssn_ptr, task_ptr, TaskState::Running, None)
                 .await
                 .unwrap();
 
-            let result = storage.close_session("close-running-ssn".to_string()).await;
+            let result = storage
+                .close_session("default/close-running-ssn".to_string())
+                .await;
             assert!(result.is_err());
 
             let ssn = storage
-                .get_session("close-running-ssn".to_string())
+                .get_session("default/close-running-ssn".to_string())
                 .unwrap();
             assert_eq!(ssn.status.state, SessionState::Open);
         }
@@ -299,16 +310,16 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("delete-test-ssn");
+            let attr = create_session_attr("default/delete-test-ssn");
             storage.create_session(attr).await.unwrap();
 
             let deleted = storage
-                .delete_session("delete-test-ssn".to_string())
+                .delete_session("default/delete-test-ssn".to_string())
                 .await
                 .unwrap();
-            assert_eq!(deleted.id, "delete-test-ssn");
+            assert_eq!(deleted.gid, "default/delete-test-ssn");
 
-            let result = storage.get_session("delete-test-ssn".to_string());
+            let result = storage.get_session("default/delete-test-ssn".to_string());
             assert!(result.is_err());
         }
 
@@ -326,13 +337,13 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("list-delete-ssn");
+            let attr = create_session_attr("default/list-delete-ssn");
             storage.create_session(attr).await.unwrap();
 
             assert_eq!(storage.list_sessions(None).unwrap().len(), 1);
 
             storage
-                .delete_session("list-delete-ssn".to_string())
+                .delete_session("default/list-delete-ssn".to_string())
                 .await
                 .unwrap();
 
@@ -358,17 +369,17 @@ mod tests {
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
             for i in 0..3 {
-                let attr = create_session_attr(&format!("list-ssn-{}", i));
+                let attr = create_session_attr(&format!("default/list-ssn-{}", i));
                 storage.create_session(attr).await.unwrap();
             }
 
             let sessions = storage.list_sessions(None).unwrap();
             assert_eq!(sessions.len(), 3);
 
-            let ids: Vec<_> = sessions.iter().map(|s| s.id.as_str()).collect();
-            assert!(ids.contains(&"list-ssn-0"));
-            assert!(ids.contains(&"list-ssn-1"));
-            assert!(ids.contains(&"list-ssn-2"));
+            let ids: Vec<_> = sessions.iter().map(|s| s.gid.as_str()).collect();
+            assert!(ids.contains(&"default/list-ssn-0"));
+            assert!(ids.contains(&"default/list-ssn-1"));
+            assert!(ids.contains(&"default/list-ssn-2"));
         }
 
         #[tokio::test]
@@ -376,13 +387,13 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr1 = create_session_attr("open-ssn");
+            let attr1 = create_session_attr("default/open-ssn");
             storage.create_session(attr1).await.unwrap();
 
-            let attr2 = create_session_attr("closed-ssn");
+            let attr2 = create_session_attr("default/closed-ssn");
             storage.create_session(attr2).await.unwrap();
             storage
-                .close_session("closed-ssn".to_string())
+                .close_session("default/closed-ssn".to_string())
                 .await
                 .unwrap();
 
@@ -407,11 +418,11 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("list-event-ssn");
+            let attr = create_session_attr("default/list-event-ssn");
             storage.create_session(attr).await.unwrap();
             storage
                 .record_event(
-                    EventOwner::session("list-event-ssn".to_string()),
+                    EventOwner::from_session_path("default/list-event-ssn").unwrap(),
                     Event {
                         code: 1002,
                         message: Some("retry limit reached".to_string()),
@@ -424,7 +435,7 @@ mod tests {
             let sessions = storage.list_sessions(None).unwrap();
             let session = sessions
                 .iter()
-                .find(|session| session.id == "list-event-ssn")
+                .find(|session| session.gid == "default/list-event-ssn")
                 .expect("session should be listed");
 
             assert_eq!(session.events.len(), 1);

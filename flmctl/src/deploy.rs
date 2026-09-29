@@ -35,6 +35,10 @@ use crate::utils::format_duration;
 
 #[derive(Debug, Clone, Args)]
 pub struct Options {
+    /// Workspace name. Defaults to `default`.
+    #[arg(long)]
+    pub workspace: Option<String>,
+
     /// Application name. Defaults to metadata.name in the directory profile.
     #[arg(long)]
     pub name: Option<String>,
@@ -109,6 +113,8 @@ pub struct Options {
 }
 
 struct DeployPlan {
+    application: String,
+    workspace: String,
     app_name: String,
     cache_endpoint: String,
     prepared: PreparedApplication,
@@ -119,6 +125,7 @@ struct DeployPlan {
 
 #[derive(Debug, Clone, Serialize)]
 struct DeployResult {
+    id: String,
     name: String,
     input_kind: String,
     installer: String,
@@ -182,7 +189,7 @@ struct RenderedSchema {
 
 pub async fn run(ctx: &FlameContext, options: &Options) -> Result<(), FlameError> {
     let plan = build_plan(ctx, options)?;
-    let object_key = plan.prepared.object_key(&plan.app_name);
+    let object_key = plan.prepared.object_key(&plan.workspace, &plan.app_name);
     let (uploaded_key, package_endpoint) = if plan.dry_run {
         (object_key, plan.cache_endpoint.clone())
     } else {
@@ -204,6 +211,7 @@ pub async fn run(ctx: &FlameContext, options: &Options) -> Result<(), FlameError
     attributes.url = Some(url.clone());
 
     let result = DeployResult {
+        id: plan.application.clone(),
         name: plan.app_name.clone(),
         input_kind: plan.prepared.kind.to_string(),
         installer: attributes.installer.clone().unwrap_or_default(),
@@ -223,7 +231,7 @@ pub async fn run(ctx: &FlameContext, options: &Options) -> Result<(), FlameError
             current_ctx.cluster.tls.as_ref(),
         )
         .await?;
-        conn.register_application(plan.app_name.clone(), attributes)
+        conn.register_application_in_workspace(&plan.workspace, plan.app_name.clone(), attributes)
             .await?;
     }
 
@@ -232,6 +240,8 @@ pub async fn run(ctx: &FlameContext, options: &Options) -> Result<(), FlameError
 }
 
 fn build_plan(ctx: &FlameContext, options: &Options) -> Result<DeployPlan, FlameError> {
+    let workspace = options.workspace.as_deref().unwrap_or("default");
+    validate_name(workspace)?;
     let profile = load_profile(&options.application)?;
     let app_name = options
         .name
@@ -239,6 +249,7 @@ fn build_plan(ctx: &FlameContext, options: &Options) -> Result<DeployPlan, Flame
         .or_else(|| profile.as_ref().map(|profile| profile.metadata.name.clone()))
         .ok_or_else(|| FlameError::InvalidConfig("application name required; pass --name or add metadata.name to flame.yaml or flm.yaml".to_string()))?;
     validate_name(&app_name)?;
+    let application = format!("{workspace}/{app_name}");
     let current_ctx = ctx.get_current_context()?;
     let cache_config = current_ctx
         .cache
@@ -255,6 +266,8 @@ fn build_plan(ctx: &FlameContext, options: &Options) -> Result<DeployPlan, Flame
     let attributes = build_attributes(options, profile.as_ref(), &detected)?;
 
     Ok(DeployPlan {
+        application,
+        workspace: workspace.to_string(),
         app_name,
         cache_endpoint,
         prepared,
@@ -518,6 +531,7 @@ fn print_result(output: &str, result: &DeployResult) -> Result<(), FlameError> {
             } else {
                 println!("Application <{}> deployed.", result.name);
             }
+            println!("ID: {}", result.id);
             println!("Input Kind: {}", result.input_kind);
             println!("Installer: {}", result.installer);
             println!("Command: {}", result.command);
@@ -614,6 +628,7 @@ mod tests {
     #[test]
     fn explicit_options_override_detection() {
         let options = Options {
+            workspace: None,
             name: Some("demo".to_string()),
             application: PathBuf::from("."),
             dry_run: true,
@@ -641,22 +656,23 @@ mod tests {
     }
 
     #[test]
-    fn binary_package_url_uses_three_part_content_addressed_object_key() {
+    fn binary_package_url_uses_workspace_content_addressed_object_key() {
         let temp = tempfile::TempDir::new().unwrap();
         let bin = temp.path().join("service");
         std::fs::write(&bin, b"#!/bin/sh\n").unwrap();
         make_executable(&bin);
 
         let prepared = prepare_application(&bin).unwrap();
-        let object_key = prepared.object_key("demo");
+        let workspace = "default";
+        let object_key = prepared.object_key(workspace, "demo");
         assert_eq!(
             object_key,
-            format!("demo/pkg/demo-{}.tar.gz", &prepared.sha256[..16])
+            format!("{workspace}/pkg/demo-{}.tar.gz", &prepared.sha256[..16])
         );
         assert_eq!(
             object_url("grpc://cache:9090", &object_key),
             format!(
-                "grpc://cache:9090/demo/pkg/demo-{}.tar.gz",
+                "grpc://cache:9090/{workspace}/pkg/demo-{}.tar.gz",
                 &prepared.sha256[..16]
             )
         );

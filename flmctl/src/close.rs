@@ -16,7 +16,7 @@ use std::error::Error;
 use flame_rs as flame;
 use flame_rs::apis::FlameContext;
 
-pub async fn run(ctx: &FlameContext, session_id: &str) -> Result<(), Box<dyn Error>> {
+pub async fn run(ctx: &FlameContext, workspace: &str, session: &str) -> Result<(), Box<dyn Error>> {
     let current_ctx = ctx.get_current_context()?;
     let conn = flame::client::connect_with_tls(
         &current_ctx.cluster.endpoint,
@@ -24,9 +24,9 @@ pub async fn run(ctx: &FlameContext, session_id: &str) -> Result<(), Box<dyn Err
     )
     .await?;
 
-    conn.close_session(session_id).await?;
+    conn.close_session(workspace, session).await?;
 
-    println!("Session <{}> was closed.", session_id);
+    println!("Session <{}> was closed.", session);
 
     Ok(())
 }

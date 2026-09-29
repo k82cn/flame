@@ -109,6 +109,7 @@ mod tests {
         let shim: ShimPtr = Arc::new(Mutex::new(TestShim));
         let executor = Executor {
             id: "executor-1".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             resreq: ResourceRequirement::default(),
             node: "node-1".to_string(),

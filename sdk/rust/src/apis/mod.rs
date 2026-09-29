@@ -36,9 +36,9 @@ pub use ctx::FlameContext;
 pub use ctx::FlameContextEntry;
 pub use ctx::FlamePackage;
 
-pub type TaskID = String;
-pub type SessionID = String;
-pub type ApplicationID = String;
+pub type TaskName = String;
+pub type SessionName = String;
+pub type ApplicationName = String;
 
 type Message = Bytes;
 pub type TaskInput = Message;

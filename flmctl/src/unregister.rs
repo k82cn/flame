@@ -16,14 +16,18 @@ use std::error::Error;
 use flame_rs::apis::FlameContext;
 use flame_rs::client;
 
-pub async fn run(ctx: &FlameContext, application: &str) -> Result<(), Box<dyn Error>> {
+pub async fn run(
+    ctx: &FlameContext,
+    workspace: &str,
+    application: &str,
+) -> Result<(), Box<dyn Error>> {
     let current_ctx = ctx.get_current_context()?;
     let conn = client::connect_with_tls(
         &current_ctx.cluster.endpoint,
         current_ctx.cluster.tls.as_ref(),
     )
     .await?;
-    conn.unregister_application(application.to_owned()).await?;
+    conn.unregister_application(workspace, application).await?;
 
     Ok(())
 }

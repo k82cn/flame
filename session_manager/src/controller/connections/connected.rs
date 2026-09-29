@@ -24,8 +24,9 @@ limitations under the License.
 use common::FlameError;
 use stdng::lock_ptr;
 
+use crate::connection::{ConnectionState, NodeConnectionPtr};
 use crate::controller::connections::ConnectionStates;
-use crate::model::{ConnectionState, Executor, NodeConnectionPtr};
+use common::apis::Executor;
 
 /// State handler for connections in Connected state.
 pub struct ConnectedState {

@@ -34,8 +34,11 @@ cache:
     interval: 60s
 ```
 
-Stale application-data garbage collection is always enabled. The `gc` section
+Stale session-data garbage collection is always enabled. The `gc` section
 only overrides its 60-second default interval.
+The cache uses `workspace/session/object` keys. GC checks the complete session
+list before deleting data for a removed or recreated session. The `pkg`,
+`bootstrap`, and `shared` session names are retained as workspace data.
 
 ### Client Configuration (`flame.yaml`)
 
@@ -114,7 +117,7 @@ from flamepy.core.cache import (
 )
 
 # Put an object (returns ObjectRef with version=1)
-ref = put_object("app/session", my_data)
+ref = put_object("default/session", my_data)
 print(f"Stored at: {ref.key}, version: {ref.version}")
 
 # The SDK uses ZSTD for arrays, tables, data frames, and tensors regardless
@@ -169,8 +172,8 @@ Client                              Server
 
 ```
 /var/lib/flame/cache/
-└── app_name/
-    └── session_id/
+└── workspace/
+    └── session_name/
         ├── object1.bin          # Opaque base payload with cache header
         ├── object1.deltas/
         │   ├── 0.bin            # Opaque patch

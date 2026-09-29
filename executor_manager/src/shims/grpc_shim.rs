@@ -267,6 +267,7 @@ mod tests {
 
     fn create_test_work_dir(executor_id: &str, temp: &tempfile::TempDir) -> ExecutorWorkDir {
         let app = ApplicationContext {
+            workspace: "default".to_string(),
             name: "test-app".to_string(),
             shim: ShimType::Host,
             image: None,
@@ -332,8 +333,10 @@ mod tests {
         let mut shim = GrpcShim::new(&work_dir).unwrap();
 
         let ctx = SessionContext {
-            session_id: "test-session".to_string(),
+            session: "test-session".to_string(),
+            workspace: "default".to_string(),
             application: ApplicationContext {
+                workspace: "default".to_string(),
                 name: "test-app".to_string(),
                 shim: ShimType::Host,
                 image: None,
@@ -365,8 +368,10 @@ mod tests {
         let mut shim = GrpcShim::new(&work_dir).unwrap();
 
         let ctx = TaskContext {
-            task_id: "test-task".to_string(),
-            session_id: "test-session".to_string(),
+            task: "1".to_string(),
+            session: "test-session".to_string(),
+            application: "test-app".to_string(),
+            workspace: "default".to_string(),
             input: None,
         };
 

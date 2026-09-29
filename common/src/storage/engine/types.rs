@@ -20,7 +20,7 @@ use crate::apis::{
     Application, ApplicationSchema, ApplicationState, ExecutorState, Node, NodeInfo, NodeState,
     ResourceRequirement, Session, SessionStatus, Shim, Task,
 };
-use crate::apis::{ApplicationID, Event, ExecutorID, SessionID, TaskID};
+use crate::apis::{ApplicationPath, Event, ExecutorID, SessionPath, TaskName};
 use crate::FlameError;
 use bytes::Bytes;
 
@@ -42,9 +42,10 @@ pub struct AppSchemaDao {
     pub common_data: Option<String>,
 }
 
-#[derive(Clone, FromRow, Debug)]
+#[derive(Clone, FromRow)]
 pub struct ApplicationDao {
-    pub name: ApplicationID,
+    pub id: String,
+    pub name: String,
     pub version: u32,
     pub shim: i32,
     pub image: Option<String>,
@@ -63,9 +64,20 @@ pub struct ApplicationDao {
     pub state: i32,
 }
 
-#[derive(Clone, FromRow, Debug)]
+impl std::fmt::Debug for ApplicationDao {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApplicationDao")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, FromRow)]
 pub struct SessionDao {
-    pub id: SessionID,
+    pub id: String,
+    pub name: String,
     pub application: String,
     pub version: u32,
 
@@ -84,10 +96,20 @@ pub struct SessionDao {
     pub resreq_gpu: Option<i64>,
 }
 
+impl std::fmt::Debug for SessionDao {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionDao")
+            .field("id", &self.id)
+            .field("application", &self.application)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, FromRow, Debug)]
 pub struct TaskDao {
-    pub id: TaskID,
-    pub ssn_id: SessionID,
+    pub id: String,
+    pub number: TaskName,
+    pub session: SessionPath,
     pub version: u32,
     pub input: Option<Vec<u8>>,
     pub output: Option<Vec<u8>>,
@@ -131,8 +153,8 @@ pub struct ExecutorDao {
 
     pub shim: i32,
 
-    pub task_id: Option<TaskID>,
-    pub ssn_id: Option<SessionID>,
+    pub task: Option<TaskName>,
+    pub session: Option<SessionPath>,
 
     pub creation_time: i64,
     pub state: i32,
@@ -153,6 +175,8 @@ impl TryFrom<&SessionDao> for Session {
 
         Ok(Self {
             id: ssn.id.clone(),
+            gid: ssn.name.clone(),
+            name: ssn.name.clone(),
             application: ssn.application.clone(),
             version: ssn.version,
             common_data: ssn.common_data.clone().map(Bytes::from),
@@ -194,8 +218,9 @@ impl TryFrom<&TaskDao> for Task {
 
     fn try_from(task: &TaskDao) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: task.id,
-            ssn_id: task.ssn_id.clone(),
+            id: task.id.clone(),
+            number: task.number,
+            session: task.session.clone(),
             version: task.version,
             input: task.input.clone().map(Bytes::from),
             output: task.output.clone().map(Bytes::from),
@@ -239,6 +264,8 @@ impl TryFrom<&ApplicationDao> for Application {
 
     fn try_from(app: &ApplicationDao) -> Result<Self, Self::Error> {
         Ok(Self {
+            id: app.id.clone(),
+            gid: app.name.clone(),
             name: app.name.clone(),
             version: app.version,
             state: ApplicationState::try_from(app.state)?,
@@ -380,8 +407,8 @@ impl TryFrom<&ExecutorDao> for Executor {
             },
             shim: Shim::try_from(dao.shim).unwrap_or_default(),
             application: dao.application.clone(),
-            task_id: dao.task_id,
-            ssn_id: dao.ssn_id.clone(),
+            task: dao.task,
+            session: dao.session.clone(),
             attributes: HashSet::new(),
             creation_time: DateTime::<Utc>::from_timestamp(dao.creation_time, 0)
                 .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
@@ -409,8 +436,8 @@ impl From<&Executor> for ExecutorDao {
             resreq_memory: exec.resreq.memory as i64,
             resreq_gpu: exec.resreq.gpu as i64,
             shim: i32::from(exec.shim),
-            task_id: exec.task_id,
-            ssn_id: exec.ssn_id.clone(),
+            task: exec.task,
+            session: exec.session.clone(),
             creation_time: exec.creation_time.timestamp(),
             state: i32::from(exec.state),
         }

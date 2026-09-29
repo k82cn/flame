@@ -17,19 +17,42 @@ message EmptyRequest {}
 
 ### Metadata
 
-Common metadata for all Flame objects.
+Common metadata for Flame resources. For applications, sessions, and tasks,
+`id` is a persistent UUID used for diagnostics; callers identify the resource
+by `workspace` and `name`. Node and executor IDs retain their existing
+semantics. A task `name` is its server-assigned number represented as a string.
 
 ```protobuf
 message Metadata {
   string id = 1;
   string name = 2;
+  string workspace = 3;
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | Unique identifier |
-| `name` | string | Human-readable name |
+| `id` | string | Persistent UUID for application, session, and task diagnostics |
+| `name` | string | Resource name; server-assigned numeric string for tasks |
+| `workspace` | string | Owning workspace for applications, sessions, and tasks |
+
+### Workspace
+
+A workspace is an explicit resource. Its name is the user-facing identifier;
+it does not have a `Metadata` message.
+
+```protobuf
+message Workspace {
+  string name = 1;
+  int64 creation_time = 2;
+}
+
+message WorkspaceList {
+  repeated Workspace workspaces = 1;
+}
+```
+
+`creation_time` is a Unix timestamp in milliseconds.
 
 ### Result
 
@@ -102,7 +125,7 @@ message SessionSpec {
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `application` | string | Name of the application to run |
+| `application` | string | Parent application name in this resource's workspace |
 | `common_data` | bytes | Data shared across all tasks (optional) |
 | `min_instances` | uint32 | Minimum executor instances (default: 0) |
 | `max_instances` | uint32 | Maximum executor instances (optional, unlimited if not set) |
@@ -184,17 +207,21 @@ Task specification.
 
 ```protobuf
 message TaskSpec {
-  string session_id = 2;
+  string session = 2;
   optional bytes input = 3;
   optional bytes output = 4;
+  repeated bytes affinity = 5;
+  string workspace = 6;
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `session_id` | string | Parent session ID |
+| `session` | string | Parent session name |
+| `workspace` | string | Owning workspace |
 | `input` | bytes | Task input data (optional) |
 | `output` | bytes | Task output data (optional, set on completion) |
+| `affinity` | bytes[] | Executor locality keys (optional) |
 
 ### TaskStatus
 
@@ -391,6 +418,7 @@ message ExecutorSpec {
   reserved "slots";
   Shim shim = 4;
   string application = 5;
+  string workspace = 6;
 }
 ```
 
@@ -399,7 +427,8 @@ message ExecutorSpec {
 | `node` | string | Node hosting this executor |
 | `resreq` | ResourceRequirement | Resource requirements (cpu, memory, gpu) |
 | `shim` | Shim | Supported shim type |
-| `application` | string | Application owning the executor's retained service instance |
+| `application` | string | Application name owning the retained service instance |
+| `workspace` | string | Owning workspace |
 
 ### ExecutorAttributes
 
@@ -423,14 +452,16 @@ Current executor state.
 ```protobuf
 message ExecutorStatus {
   ExecutorState state = 1;
-  optional string session_id = 2;
+  optional string session = 2;
+  string workspace = 3;
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `state` | ExecutorState | Current state |
-| `session_id` | string | Bound session ID (optional) |
+| `session` | string | Bound session name (optional) |
+| `workspace` | string | Owning workspace |
 
 ### ExecutorState
 

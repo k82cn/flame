@@ -258,8 +258,9 @@ impl ApplicationManager {
         let python_version = python_runtime
             .as_ref()
             .map(|runtime| runtime.version.clone());
+        let app_gid = common::apis::application_path(&app.workspace, &app.name)?;
         let install_key = InstallKey::new(
-            &app.name,
+            &app_gid,
             &installer_type,
             app.url.as_ref(),
             python_version.as_ref(),
@@ -283,7 +284,7 @@ impl ApplicationManager {
             apps.entry(install_key.clone())
                 .or_insert_with(|| {
                     Arc::new(RwLock::new(AppInstaller::new(
-                        &app.name,
+                        &app_gid,
                         installer_type.clone(),
                     )))
                 })
@@ -307,7 +308,7 @@ impl ApplicationManager {
         let release_path = self
             .flame_home
             .join("data/apps")
-            .join(&app.name)
+            .join(&app_gid)
             .join("releases")
             .join(install_key.release_id());
         let package_path = self.download_package(url, &release_path).await?;
@@ -323,7 +324,7 @@ impl ApplicationManager {
         );
 
         let env_vars = match installer
-            .install(&app.name, &src_path, &self.flame_home, &app.environments)
+            .install(&app_gid, &src_path, &self.flame_home, &app.environments)
             .await
         {
             Ok(vars) => vars,
@@ -346,10 +347,10 @@ impl ApplicationManager {
         Ok(installed.installation())
     }
 
-    pub fn is_installed(&self, app_name: &str) -> bool {
+    pub fn is_installed(&self, app_id: &str) -> bool {
         if let Ok(apps) = lock_ptr!(self.apps) {
             for (key, installed) in apps.iter() {
-                if key.app_name == app_name {
+                if key.app_name == app_id {
                     if let Ok(installed) = installed.try_read() {
                         if installed.state == InstallState::Installed {
                             return true;
@@ -498,6 +499,15 @@ mod tests {
     }
 
     #[test]
+    fn release_id_distinguishes_workspaces() {
+        let alice = InstallKey::new("alice/demo", &InstallerType::Binary, None, None);
+        let bob = InstallKey::new("bob/demo", &InstallerType::Binary, None, None);
+
+        assert_ne!(alice, bob);
+        assert_ne!(alice.release_id(), bob.release_id());
+    }
+
+    #[test]
     fn installation_preserves_runtime_mounts() {
         let mut installed = AppInstaller::new("demo", InstallerType::Python);
         installed.env_vars = HashMap::from([(
@@ -545,6 +555,7 @@ mod tests {
     async fn image_only_application_skips_installation() {
         let manager = ApplicationManager::new().unwrap();
         let app = ApplicationContext {
+            workspace: "default".to_string(),
             name: "image-only".to_string(),
             shim: Shim::Cri,
             image: Some("example/image:latest".to_string()),
@@ -565,6 +576,7 @@ mod tests {
     async fn url_less_host_installer_is_a_no_op() {
         let manager = ApplicationManager::new().unwrap();
         let app = ApplicationContext {
+            workspace: "default".to_string(),
             name: "flmrun".to_string(),
             shim: Shim::Host,
             image: None,

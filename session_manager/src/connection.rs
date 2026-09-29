@@ -81,7 +81,7 @@ use stdng::MutexPtr;
 
 use common::FlameError;
 
-use super::Executor;
+use common::apis::Executor;
 
 /// Default timeout before shutting down a disconnected node (30 seconds)
 pub const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 30;

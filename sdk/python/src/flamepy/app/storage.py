@@ -321,7 +321,7 @@ class CacheStorage(StorageBackend):
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "app_name is required for upload")
 
         try:
-            key = f"{self._app_name}/pkg/{filename}"
+            key = f"{self._app_name.split('/', 1)[0]}/pkg/{filename}"
             ref = upload_object(key, local_path, endpoint=self._endpoint)
             # Preserve the server-returned owning-cache endpoint so consumers
             # such as executor-manager do not receive this external client's
@@ -343,7 +343,7 @@ class CacheStorage(StorageBackend):
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "app_name is required for download")
 
         try:
-            key = f"{self._app_name}/pkg/{filename}"
+            key = f"{self._app_name.split('/', 1)[0]}/pkg/{filename}"
             ref = ObjectRef(endpoint=self._endpoint, key=key, version=0)
             download_object(ref, local_path)
             logger.debug(f"Downloaded package from cache: {key} -> {local_path}")
@@ -357,7 +357,7 @@ class CacheStorage(StorageBackend):
             return
 
         try:
-            key = str(ObjectKey(app_name=self._app_name, session_id="pkg", object_id=filename))
+            key = str(ObjectKey(workspace=self._app_name.split("/", 1)[0], session="pkg", object_id=filename))
             delete_objects(key)
             logger.debug(f"Deleted package from cache: {key}")
         except Exception as e:

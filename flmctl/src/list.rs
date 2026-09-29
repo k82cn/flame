@@ -30,6 +30,7 @@ pub async fn run(
     executor: bool,
     node: bool,
     output_format: &str,
+    workspace: &str,
 ) -> Result<(), Box<dyn Error>> {
     let current_ctx = ctx.get_current_context()?;
     let conn = flame::client::connect_with_tls(
@@ -38,9 +39,9 @@ pub async fn run(
     )
     .await?;
     match (application, session, executor, node) {
-        (true, _, _, _) => list_applications(conn, output_format).await,
-        (_, true, _, _) => list_sessions(conn, output_format).await,
-        (_, _, true, _) => list_executors(conn, output_format).await,
+        (true, _, _, _) => list_applications(conn, output_format, workspace).await,
+        (_, true, _, _) => list_sessions(conn, output_format, workspace).await,
+        (_, _, true, _) => list_executors(conn, output_format, workspace).await,
         (_, _, _, true) => list_nodes(conn, output_format).await,
         _ => Err(Box::new(FlameError::InvalidConfig(
             "unsupported parameters".to_string(),
@@ -52,8 +53,12 @@ fn format_json<T: Serialize>(items: &[T]) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(items)
 }
 
-async fn list_applications(conn: Connection, output_format: &str) -> Result<(), Box<dyn Error>> {
-    let app_list = conn.list_applications().await?;
+async fn list_applications(
+    conn: Connection,
+    output_format: &str,
+    workspace: &str,
+) -> Result<(), Box<dyn Error>> {
+    let app_list = conn.list_applications_in_workspace(workspace).await?;
     if output_format == "json" {
         println!("{}", format_json(&app_list)?);
         return Ok(());
@@ -83,15 +88,21 @@ async fn list_applications(conn: Connection, output_format: &str) -> Result<(), 
     Ok(())
 }
 
-async fn list_sessions(conn: Connection, output_format: &str) -> Result<(), Box<dyn Error>> {
+async fn list_sessions(
+    conn: Connection,
+    output_format: &str,
+    workspace: &str,
+) -> Result<(), Box<dyn Error>> {
     let mut ssn_list = conn.list_sessions().await?;
+    ssn_list.retain(|session| session.workspace == workspace);
     if output_format == "json" {
         println!("{}", format_json(&ssn_list)?);
         return Ok(());
     }
     let mut table = Table::new();
     table.load_preset(NOTHING).set_header(vec![
-        "ID",
+        "Name",
+        "Workspace",
         "State",
         "App",
         "Resources",
@@ -105,9 +116,7 @@ async fn list_sessions(conn: Connection, output_format: &str) -> Result<(), Box<
 
     ssn_list.sort_by(|l, r| {
         if l.state == r.state {
-            let lid: u32 = l.id.trim().parse().unwrap_or(0);
-            let rid: u32 = r.id.trim().parse().unwrap_or(0);
-            lid.cmp(&rid)
+            l.creation_time.cmp(&r.creation_time)
         } else if l.state == SessionState::Open {
             Ordering::Less
         } else {
@@ -117,7 +126,8 @@ async fn list_sessions(conn: Connection, output_format: &str) -> Result<(), Box<
 
     for ssn in &ssn_list {
         table.add_row(vec![
-            ssn.id.to_string(),
+            ssn.name.clone(),
+            ssn.workspace.clone(),
             ssn.state.to_string(),
             ssn.application.to_string(),
             format_resreq(&ssn.resreq),
@@ -135,8 +145,12 @@ async fn list_sessions(conn: Connection, output_format: &str) -> Result<(), Box<
     Ok(())
 }
 
-async fn list_executors(conn: Connection, output_format: &str) -> Result<(), Box<dyn Error>> {
-    let executor_list = conn.list_executors().await?;
+async fn list_executors(
+    conn: Connection,
+    output_format: &str,
+    workspace: &str,
+) -> Result<(), Box<dyn Error>> {
+    let executor_list = conn.list_executors_in_workspace(workspace).await?;
     if output_format == "json" {
         println!("{}", format_json(&executor_list)?);
         return Ok(());
@@ -150,16 +164,22 @@ async fn list_executors(conn: Connection, output_format: &str) -> Result<(), Box
 
 fn executor_table(executors: &[Executor]) -> Table {
     let mut table = Table::new();
-    table
-        .load_preset(NOTHING)
-        .set_header(vec!["ID", "State", "App", "Session", "Node"]);
+    table.load_preset(NOTHING).set_header(vec![
+        "ID",
+        "Workspace",
+        "State",
+        "App",
+        "Session",
+        "Node",
+    ]);
 
     for executor in executors {
         table.add_row(vec![
             executor.id.to_string(),
+            executor.workspace.to_string(),
             executor.state.to_string(),
             executor.application.to_string(),
-            executor.session_id.clone().unwrap_or("-".to_string()),
+            executor.session.clone().unwrap_or("-".to_string()),
             executor.node.to_string(),
         ]);
     }
@@ -210,14 +230,16 @@ mod tests {
     fn executor_table_shows_application() {
         let table = executor_table(&[Executor {
             id: "executor-1".to_string(),
+            workspace: "default".to_string(),
             application: "app-1".to_string(),
             state: ExecutorState::Idle,
-            session_id: None,
+            session: None,
             node: "node-1".to_string(),
         }])
         .to_string();
 
         assert!(table.contains("App"));
+        assert!(table.contains("Workspace"));
         assert!(table.contains("app-1"));
     }
 
@@ -225,9 +247,10 @@ mod tests {
     fn executor_json_is_an_array_with_state() {
         let json = format_json(&[Executor {
             id: "executor-1".to_string(),
+            workspace: "default".to_string(),
             application: "app-1".to_string(),
             state: ExecutorState::Idle,
-            session_id: None,
+            session: None,
             node: "node-1".to_string(),
         }])
         .unwrap();

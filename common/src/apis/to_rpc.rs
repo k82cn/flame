@@ -15,6 +15,15 @@ use rpc::flame::v1 as rpc;
 
 use super::types::*;
 
+impl From<&Workspace> for rpc::Workspace {
+    fn from(workspace: &Workspace) -> Self {
+        Self {
+            name: workspace.name.clone(),
+            creation_time: workspace.creation_time.timestamp_millis(),
+        }
+    }
+}
+
 impl From<ResourceRequirement> for rpc::ResourceRequirement {
     fn from(req: ResourceRequirement) -> Self {
         Self {
@@ -69,6 +78,7 @@ impl From<Node> for rpc::Node {
             metadata: Some(rpc::Metadata {
                 id: node.name.clone(),
                 name: node.name.clone(),
+                workspace: String::new(),
             }),
             spec: Some(rpc::NodeSpec {
                 hostname: node.name.clone(),
@@ -106,8 +116,10 @@ impl From<FlameResult> for rpc::Result {
 impl From<TaskContext> for rpc::TaskContext {
     fn from(ctx: TaskContext) -> Self {
         Self {
-            task_id: ctx.task_id.clone(),
-            session_id: ctx.session_id.clone(),
+            task: ctx.task,
+            session: ctx.session,
+            workspace: ctx.workspace.clone(),
+            application: ctx.application,
             input: ctx.input.map(|d| d.into()),
         }
     }
@@ -116,8 +128,11 @@ impl From<TaskContext> for rpc::TaskContext {
 impl From<SessionContext> for rpc::SessionContext {
     fn from(ctx: SessionContext) -> Self {
         Self {
-            session_id: ctx.session_id.clone(),
-            application: Some(ctx.application.into()),
+            session: ctx.session.clone(),
+            workspace: ctx.workspace.clone(),
+            application: ctx.application.name.clone(),
+            image: ctx.application.image.clone(),
+            command: ctx.application.command.clone(),
             common_data: ctx.common_data.map(|d| d.into()),
         }
     }
@@ -126,7 +141,8 @@ impl From<SessionContext> for rpc::SessionContext {
 impl From<ApplicationContext> for rpc::ApplicationContext {
     fn from(ctx: ApplicationContext) -> Self {
         Self {
-            name: ctx.name.clone(),
+            workspace: ctx.workspace.clone(),
+            application: ctx.name.clone(),
             shim: rpc::Shim::from(ctx.shim).into(),
             image: ctx.image.clone(),
             command: ctx.command.clone(),
@@ -145,13 +161,16 @@ impl From<Task> for rpc::Task {
 
 impl From<&Task> for rpc::Task {
     fn from(task: &Task) -> Self {
+        let (workspace, session) = task.session.split_once('/').unwrap_or(("", &task.session));
         let metadata = Some(rpc::Metadata {
-            id: task.id.to_string(),
-            name: task.id.to_string(),
+            id: task.id.clone(),
+            name: task.number.to_string(),
+            workspace: workspace.to_string(),
         });
 
         let spec = Some(rpc::TaskSpec {
-            session_id: task.ssn_id.to_string(),
+            workspace: workspace.to_string(),
+            session: session.to_string(),
             input: task.input.clone().map(TaskInput::into),
             output: task.output.clone().map(TaskOutput::into),
             affinity: task.affinity.iter().map(|key| key.to_vec()).collect(),
@@ -201,8 +220,9 @@ impl From<&Session> for rpc::Session {
 
         rpc::Session {
             metadata: Some(rpc::Metadata {
-                id: ssn.id.to_string(),
-                name: ssn.id.to_string(),
+                id: ssn.id.clone(),
+                name: ssn.name.clone(),
+                workspace: ssn.gid.split('/').next().unwrap_or_default().to_string(),
             }),
             spec: Some(rpc::SessionSpec {
                 application: ssn.application.clone(),
@@ -257,8 +277,9 @@ impl From<&Application> for rpc::Application {
             installer: app.installer.clone(),
         });
         let metadata = Some(rpc::Metadata {
-            id: app.name.clone(),
+            id: app.id.clone(),
             name: app.name.clone(),
+            workspace: app.gid.split('/').next().unwrap_or_default().to_string(),
         });
 
         let status = Some(rpc::ApplicationStatus {
@@ -358,32 +379,50 @@ impl From<ExecutorState> for i32 {
     }
 }
 
-impl From<&Task> for EventOwner {
-    fn from(task: &Task) -> Self {
-        Self {
-            task_id: task.id,
-            session_id: task.ssn_id.clone(),
-        }
+impl TryFrom<&Task> for EventOwner {
+    type Error = crate::FlameError;
+
+    fn try_from(task: &Task) -> Result<Self, Self::Error> {
+        Ok(Self::from(&task.gid()?))
     }
 }
 
 impl From<&TaskGID> for EventOwner {
     fn from(gid: &TaskGID) -> Self {
         Self {
-            task_id: gid.task_id,
-            session_id: gid.ssn_id.clone(),
+            workspace: gid.workspace.clone(),
+            session: gid.session.clone(),
+            task: gid.task,
         }
-    }
-}
-
-impl From<Task> for EventOwner {
-    fn from(task: Task) -> Self {
-        Self::from(&task)
     }
 }
 
 impl From<TaskGID> for EventOwner {
     fn from(gid: TaskGID) -> Self {
         Self::from(&gid)
+    }
+}
+
+#[cfg(test)]
+mod task_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn task_rpc_uses_resource_names() {
+        let task = Task {
+            id: "debug-uuid".to_string(),
+            number: 7,
+            session: "alice/run".to_string(),
+            ..Task::default()
+        };
+
+        let rpc: rpc::Task = (&task).into();
+        let metadata = rpc.metadata.unwrap();
+        let spec = rpc.spec.unwrap();
+        assert_eq!(metadata.id, "debug-uuid");
+        assert_eq!(metadata.name, "7");
+        assert_eq!(metadata.workspace, "alice");
+        assert_eq!(spec.workspace, "alice");
+        assert_eq!(spec.session, "run");
     }
 }

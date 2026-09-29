@@ -12,10 +12,10 @@ limitations under the License.
 */
 
 use crate::controller::executors::States;
-use crate::storage::StoragePtr;
+use common::storage::StoragePtr;
 use stdng::{lock_ptr, logs::TraceFn, trace_fn, MutexPtr};
 
-use crate::model::ExecutorPtr;
+use common::apis::ExecutorPtr;
 use common::apis::{ExecutorState, FlameResult, SessionPtr, Task, TaskPtr, TaskResult};
 use common::FlameError;
 

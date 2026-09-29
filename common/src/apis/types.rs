@@ -20,20 +20,24 @@ use chrono::{DateTime, Duration, Utc};
 use rustix::system;
 use stdng::MutexPtr;
 
+use super::path::DEFAULT_WORKSPACE;
+
 pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
 pub const DEFAULT_DELAY_RELEASE: Duration = Duration::seconds(60);
 pub const BIND_RESULT_OK: i32 = 0;
 pub const BIND_RESULT_SHIM_CREATE_FAILED: i32 = 11;
 pub const BIND_RESULT_ON_SESSION_ENTER_FAILED: i32 = 12;
 pub const BIND_RESULT_UNKNOWN_FAILED: i32 = 19;
-pub const SESSION_EVENT_TASK_ID: i64 = 0;
+pub const SESSION_EVENT_TASK_NAME: i64 = 0;
 pub const SESSION_BIND_FAILED: i32 = 1001;
 pub const SESSION_RETRY_LIMIT_REACHED: i32 = 1002;
 
-pub type SessionID = String;
-pub type TaskID = i64;
+/// Canonical workspace/application/session path.
+pub type SessionPath = String;
+pub type TaskName = i64;
 pub type ExecutorID = String;
-pub type ApplicationID = String;
+pub type ApplicationPath = String;
+pub type WorkspaceName = String;
 pub type TaskPtr = MutexPtr<Task>;
 pub type SessionPtr = MutexPtr<Session>;
 pub type NodePtr = MutexPtr<Node>;
@@ -46,16 +50,27 @@ pub type CommonData = Message;
 
 #[derive(Clone, Debug)]
 pub struct EventOwner {
-    pub task_id: TaskID,
-    pub session_id: SessionID,
+    pub workspace: String,
+    pub session: String,
+    pub task: TaskName,
 }
 
 impl EventOwner {
-    pub fn session(session_id: SessionID) -> Self {
+    pub fn from_session_path(path: &str) -> Result<Self, crate::FlameError> {
+        let (workspace, session) = crate::apis::parse_session_path(path)?;
+        Ok(Self::session(workspace, session))
+    }
+
+    pub fn session(workspace: impl Into<String>, session: impl Into<String>) -> Self {
         Self {
-            session_id,
-            task_id: SESSION_EVENT_TASK_ID,
+            workspace: workspace.into(),
+            session: session.into(),
+            task: SESSION_EVENT_TASK_NAME,
         }
+    }
+
+    pub fn session_path(&self) -> Result<SessionPath, crate::FlameError> {
+        crate::apis::session_path(&self.workspace, &self.session)
     }
 }
 
@@ -86,6 +101,12 @@ pub enum ApplicationState {
     Disabled = 1,
 }
 
+#[derive(Clone, Debug)]
+pub struct Workspace {
+    pub name: WorkspaceName,
+    pub creation_time: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Default, Copy, PartialEq, Eq, Hash)]
 pub enum Shim {
     #[default]
@@ -103,6 +124,8 @@ pub struct ApplicationSchema {
 
 #[derive(Clone, Debug, Default)]
 pub struct Application {
+    pub id: String,
+    pub gid: ApplicationPath,
     pub name: String,
     pub version: u32,
     pub state: ApplicationState,
@@ -124,6 +147,7 @@ pub struct Application {
 
 #[derive(Clone, Debug)]
 pub struct ApplicationAttributes {
+    pub id: ApplicationPath,
     pub shim: Shim,
     pub image: Option<String>,
     pub description: Option<String>,
@@ -142,6 +166,7 @@ pub struct ApplicationAttributes {
 impl Default for ApplicationAttributes {
     fn default() -> Self {
         Self {
+            id: String::new(),
             shim: Shim::Host,
             image: None,
             description: None,
@@ -196,7 +221,8 @@ pub fn validate_application_name(name: &str) -> Result<(), crate::FlameError> {
 
 #[derive(Clone, Debug)]
 pub struct SessionAttributes {
-    pub id: SessionID,
+    pub workspace: String,
+    pub name: String,
     pub application: String,
     pub common_data: Option<CommonData>,
     pub min_instances: u32,
@@ -209,7 +235,8 @@ pub struct SessionAttributes {
 impl Default for SessionAttributes {
     fn default() -> Self {
         Self {
-            id: String::new(),
+            workspace: DEFAULT_WORKSPACE.to_string(),
+            name: String::new(),
             application: String::new(),
             common_data: None,
             min_instances: 0,
@@ -235,12 +262,14 @@ pub struct SessionStatus {
 
 #[derive(Debug, Default, Clone)]
 pub struct Session {
-    pub id: SessionID,
-    pub application: String,
+    pub id: String,
+    pub gid: SessionPath,
+    pub name: String,
+    pub application: ApplicationPath,
     pub version: u32,
     pub common_data: Option<CommonData>,
-    pub tasks: HashMap<TaskID, TaskPtr>,
-    pub tasks_index: HashMap<TaskState, BTreeMap<TaskID, TaskPtr>>,
+    pub tasks: HashMap<TaskName, TaskPtr>,
+    pub tasks_index: HashMap<TaskState, BTreeMap<TaskName, TaskPtr>>,
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
     pub events: Vec<Event>,
@@ -271,14 +300,36 @@ impl TaskState {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct TaskGID {
-    pub ssn_id: SessionID,
-    pub task_id: TaskID,
+    pub workspace: String,
+    pub session: String,
+    pub task: TaskName,
+}
+
+impl TaskGID {
+    pub fn from_session_path(session: &str, task: TaskName) -> Result<Self, crate::FlameError> {
+        let (workspace, session) = crate::apis::parse_session_path(session)?;
+        if task <= 0 {
+            return Err(crate::FlameError::InvalidConfig(format!(
+                "invalid task name <{task}>"
+            )));
+        }
+        Ok(Self {
+            workspace: workspace.to_string(),
+            session: session.to_string(),
+            task,
+        })
+    }
+
+    pub fn session_path(&self) -> Result<SessionPath, crate::FlameError> {
+        crate::apis::session_path(&self.workspace, &self.session)
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Task {
-    pub id: TaskID,
-    pub ssn_id: SessionID,
+    pub id: String,
+    pub number: TaskName,
+    pub session: SessionPath,
     pub version: u32,
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
@@ -299,8 +350,9 @@ pub struct TaskOptions {
 impl Default for Task {
     fn default() -> Self {
         Self {
-            id: 0,
-            ssn_id: String::new(),
+            id: String::new(),
+            number: 0,
+            session: String::new(),
             version: 0,
             input: None,
             output: None,
@@ -318,11 +370,8 @@ impl Task {
         self.state.is_terminal()
     }
 
-    pub fn gid(&self) -> TaskGID {
-        TaskGID {
-            ssn_id: self.ssn_id.clone(),
-            task_id: self.id,
-        }
+    pub fn gid(&self) -> Result<TaskGID, crate::FlameError> {
+        TaskGID::from_session_path(&self.session, self.number)
     }
 }
 
@@ -341,20 +390,24 @@ pub enum ExecutorState {
 
 #[derive(Clone, Debug)]
 pub struct TaskContext {
-    pub task_id: String,
-    pub session_id: String,
+    pub workspace: String,
+    pub application: String,
+    pub session: String,
+    pub task: String,
     pub input: Option<TaskInput>,
 }
 
 #[derive(Clone, Debug)]
 pub struct SessionContext {
-    pub session_id: String,
+    pub session: String,
+    pub workspace: String,
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ApplicationContext {
+    pub workspace: String,
     pub name: String,
     pub shim: Shim,
     pub image: Option<String>,
@@ -664,13 +717,38 @@ impl ResourceRequirement {
 
 impl fmt::Display for TaskGID {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}/{}", self.ssn_id, self.task_id)
+        write!(f, "{}/{}/{}", self.workspace, self.session, self.task)
+    }
+}
+
+impl std::str::FromStr for TaskGID {
+    type Err = crate::FlameError;
+
+    fn from_str(gid: &str) -> Result<Self, Self::Err> {
+        let (session, task) = gid.rsplit_once('/').ok_or_else(|| {
+            crate::FlameError::InvalidConfig("task GID must be ws/session/task".into())
+        })?;
+        let task_name = task
+            .parse::<TaskName>()
+            .map_err(|_| crate::FlameError::InvalidConfig(format!("invalid task ID <{task}>")))?;
+        Self::from_session_path(session, task_name)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_gid_uses_workspace_session_and_numeric_task_name() {
+        let gid: TaskGID = "alice/run/42".parse().unwrap();
+        assert_eq!(gid.workspace, "alice");
+        assert_eq!(gid.session, "run");
+        assert_eq!(gid.task, 42);
+        assert_eq!(gid.session_path().unwrap(), "alice/run");
+        assert_eq!(gid.to_string(), "alice/run/42");
+        assert!("alice/run/0".parse::<TaskGID>().is_err());
+    }
 
     fn rr(cpu: u64, memory: u64, gpu: i32) -> ResourceRequirement {
         ResourceRequirement { cpu, memory, gpu }

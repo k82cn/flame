@@ -18,18 +18,17 @@ limitations under the License.
 
 use std::collections::HashMap;
 
-use crate::model::{
-    AppInfoPtr, ExecutorInfoPtr, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot,
-    ALL_APPLICATION,
-};
+use crate::controller::snapshot::SnapShot;
+use crate::model::{AppInfoPtr, ExecutorInfoPtr, NodeInfoPtr, SessionInfo, SessionInfoPtr};
 use crate::scheduler::plugins::{Plugin, PluginPtr};
-use common::apis::{SessionID, Shim};
+use common::apis::ALL_APPLICATION;
+use common::apis::{SessionPath, Shim};
 use common::FlameError;
 
 /// Shim selection plugin that filters executors based on shim compatibility.
 pub struct ShimPlugin {
     /// Map from session ID to the required shim type
-    ssn_shim_map: HashMap<SessionID, Shim>,
+    ssn_shim_map: HashMap<SessionPath, Shim>,
 }
 
 impl ShimPlugin {
@@ -56,20 +55,20 @@ impl Plugin for ShimPlugin {
         let sessions = ss.find_sessions(None)?;
         for ssn in sessions.values() {
             if let Some(app) = apps.get(&ssn.application) {
-                self.ssn_shim_map.insert(ssn.id.clone(), app.shim);
+                self.ssn_shim_map.insert(ssn.session.clone(), app.shim);
                 tracing::debug!(
                     "ShimPlugin: Session <{}> requires shim {:?} (app: {})",
-                    ssn.id,
+                    ssn.session,
                     app.shim,
                     ssn.application
                 );
             } else {
                 // Default to Host if application not found
-                self.ssn_shim_map.insert(ssn.id.clone(), Shim::Host);
+                self.ssn_shim_map.insert(ssn.session.clone(), Shim::Host);
                 tracing::warn!(
                     "ShimPlugin: Application <{}> not found for session <{}>, defaulting to Host shim",
                     ssn.application,
-                    ssn.id
+                    ssn.session
                 );
             }
         }
@@ -87,7 +86,7 @@ impl Plugin for ShimPlugin {
     /// Returns `Some(true)` if the executor's shim matches the session's required shim,
     /// `Some(false)` if they don't match, or `None` if the session is not found.
     fn is_available(&self, exec: &ExecutorInfoPtr, ssn: &SessionInfoPtr) -> Option<bool> {
-        let required_shim = self.ssn_shim_map.get(&ssn.id)?;
+        let required_shim = self.ssn_shim_map.get(&ssn.session)?;
         let executor_shim = exec.shim;
 
         let is_compatible = executor_shim == *required_shim;
@@ -97,7 +96,7 @@ impl Plugin for ShimPlugin {
                 "ShimPlugin: Executor <{}> (shim={:?}) NOT compatible with session <{}> (requires {:?})",
                 exec.id,
                 executor_shim,
-                ssn.id,
+                ssn.session,
                 required_shim
             );
         }
@@ -133,7 +132,7 @@ mod tests {
 
     fn create_session_info(id: &str, app: &str) -> SessionInfoPtr {
         Arc::new(SessionInfo {
-            id: id.to_string(),
+            session: id.to_string(),
             application: app.to_string(),
             tasks_status: [(TaskState::Pending, 1)].into_iter().collect(),
             state: SessionState::Open,

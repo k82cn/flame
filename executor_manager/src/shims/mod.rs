@@ -58,7 +58,7 @@ pub struct TaskInvokeResponse {
 /// Represents the executor's working directory with cleanup management.
 /// Directory structure:
 ///   top_dir/                     - Process working directory, stdout/stderr logs
-///   top_dir/work/<app_name>/     - App-specific directory for tmp, cache
+///   top_dir/work/<workspace>/<app_name>/ - App-specific directory for tmp, cache
 ///   /var/flame/executors/<executor_id>.sock - Socket for gRPC communication
 /// Cleanup:
 ///   - top_dir: cleaned up only if auto-generated
@@ -67,7 +67,7 @@ pub struct TaskInvokeResponse {
 pub struct ExecutorWorkDir {
     /// Top-level working directory (process runs here).
     top_dir: PathBuf,
-    /// Application working directory: top_dir/work/<app-name> (for logs, tmp, cache).
+    /// Application working directory: top_dir/work/<workspace>/<app-name>.
     app_dir: PathBuf,
     /// Socket path: /var/flame/executors/<executor_id>.sock
     socket: PathBuf,
@@ -97,7 +97,8 @@ impl ExecutorWorkDir {
         };
 
         let work_dir = top_dir.join("work");
-        let app_dir = work_dir.join(&app.name);
+        let app_gid = common::apis::application_path(&app.workspace, &app.name)?;
+        let app_dir = work_dir.join(app_gid);
         let socket_dir = get_socket_dir();
         let socket = socket_dir.join(format!("{}.sock", executor_id));
 
@@ -279,6 +280,7 @@ mod tests {
         context.cluster.executors.shim = shim;
         Executor {
             id: "executor-1".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             resreq: ResourceRequirement::default(),
             node: "node-1".to_string(),
@@ -311,6 +313,7 @@ mod tests {
 
     fn create_test_app(name: &str, working_directory: Option<String>) -> ApplicationContext {
         ApplicationContext {
+            workspace: "default".to_string(),
             name: name.to_string(),
             shim: common::apis::Shim::Host,
             image: None,
@@ -366,11 +369,31 @@ mod tests {
         let work_dir = ExecutorWorkDir::new(&app, executor_id).unwrap();
 
         assert_eq!(work_dir.process_dir(), custom_dir.as_path());
-        assert_eq!(work_dir.app_dir(), custom_dir.join("work").join("test-app"));
+        assert_eq!(work_dir.app_dir(), custom_dir.join("work/default/test-app"));
         assert_eq!(
             work_dir.socket(),
             socket_dir.join("exec-456.sock").as_path()
         );
+    }
+
+    #[test]
+    fn test_executor_work_dir_separates_workspaces() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let temp = tempdir().unwrap();
+        setup_test_env(&temp);
+        let custom_dir = temp.path().join("custom-workdir");
+        std::fs::create_dir_all(&custom_dir).unwrap();
+
+        let mut alice = create_test_app("same-app", Some(custom_dir.to_string_lossy().to_string()));
+        alice.workspace = "alice".to_string();
+        let mut bob = alice.clone();
+        bob.workspace = "bob".to_string();
+
+        let alice_dir = ExecutorWorkDir::new(&alice, "exec-alice").unwrap();
+        let bob_dir = ExecutorWorkDir::new(&bob, "exec-bob").unwrap();
+        assert_ne!(alice_dir.app_dir(), bob_dir.app_dir());
+        assert!(alice_dir.app_dir().exists());
+        assert!(bob_dir.app_dir().exists());
     }
 
     #[test]

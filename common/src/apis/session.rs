@@ -13,6 +13,7 @@ limitations under the License.
 
 use stdng::lock_ptr;
 
+use super::path::{application_path, session_path};
 use super::types::*;
 use crate::FlameError;
 
@@ -28,13 +29,13 @@ impl Session {
     pub fn update_task(&mut self, task: &Task) -> Result<(), FlameError> {
         let task_ptr = TaskPtr::new(task.clone().into());
 
-        let old_task_ptr = self.tasks.get(&task.id);
+        let old_task_ptr = self.tasks.get(&task.number);
         if let Some(old_task_ptr) = old_task_ptr {
             let old_task = lock_ptr!(old_task_ptr)?;
             if old_task.version >= task.version {
                 tracing::debug!(
-                    "Update task: <{task_id}> with an old version (old={old_version}, new={new_version}), ignore it.",
-                    task_id = task.id,
+                    "Update task: <{task_name}> with an old version (old={old_version}, new={new_version}), ignore it.",
+                    task_name = task.number,
                     old_version = old_task.version,
                     new_version = task.version
                 );
@@ -44,26 +45,26 @@ impl Session {
 
         tracing::debug!(
             "Updating task <{}> from state {:?} to {:?} (version {})",
-            task.id,
+            task.number,
             self.tasks
-                .get(&task.id)
+                .get(&task.number)
                 .and_then(|t| lock_ptr!(t).ok())
                 .map(|t| t.state),
             task.state,
             task.version
         );
 
-        self.tasks.insert(task.id, task_ptr.clone());
+        self.tasks.insert(task.number, task_ptr.clone());
         self.tasks_index.entry(task.state).or_default();
 
         for state in self.tasks_index.values_mut() {
-            state.remove(&task.id);
+            state.remove(&task.number);
         }
 
         self.tasks_index
             .get_mut(&task.state)
             .unwrap()
-            .insert(task.id, task_ptr);
+            .insert(task.number, task_ptr);
 
         let pending_count = self
             .tasks_index
@@ -88,12 +89,25 @@ impl Session {
     /// Remove the oldest pending task.
     pub fn pop_pending_task(&mut self) -> Option<TaskPtr> {
         let pending_tasks = self.tasks_index.get_mut(&TaskState::Pending)?;
-        let task_id = *pending_tasks.keys().next()?;
-        pending_tasks.remove(&task_id)
+        let task_name = *pending_tasks.keys().next()?;
+        pending_tasks.remove(&task_name)
     }
 
     pub fn validate_spec(&self, attr: &SessionAttributes) -> Result<(), FlameError> {
-        if self.application != attr.application {
+        if self.name != attr.name {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: name differs (expected '{}', got '{}')",
+                self.gid, self.name, attr.name
+            )));
+        }
+        if self.gid.contains('/') && self.gid != attr.gid()? {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}> spec mismatch: workspace differs",
+                self.gid
+            )));
+        }
+        let application = attr.application_gid()?;
+        if self.application != attr.application && self.application != application {
             return Err(FlameError::InvalidConfig(format!(
                 "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
                 self.id, self.application, attr.application
@@ -127,6 +141,16 @@ impl Session {
     }
 }
 
+impl SessionAttributes {
+    pub fn gid(&self) -> Result<SessionPath, FlameError> {
+        session_path(&self.workspace, &self.name)
+    }
+
+    pub fn application_gid(&self) -> Result<ApplicationPath, FlameError> {
+        application_path(&self.workspace, &self.application)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,7 +180,7 @@ mod tests {
         let mut session = Session::default();
         session
             .update_task(&Task {
-                id: 1,
+                number: 1,
                 version: 1,
                 affinity: HashSet::from([bytes::Bytes::from_static(b"cold")]),
                 ..Default::default()
@@ -164,7 +188,7 @@ mod tests {
             .unwrap();
         session
             .update_task(&Task {
-                id: 2,
+                number: 2,
                 version: 1,
                 affinity: HashSet::from([bytes::Bytes::from_static(b"warm")]),
                 ..Default::default()
@@ -172,6 +196,6 @@ mod tests {
             .unwrap();
 
         let task = session.pop_pending_task().unwrap();
-        assert_eq!(lock_ptr!(task).unwrap().id, 1);
+        assert_eq!(lock_ptr!(task).unwrap().number, 1);
     }
 }

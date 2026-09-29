@@ -666,6 +666,7 @@ mod tests {
     fn test_executor() -> Executor {
         Executor {
             id: "executor-1".to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             resreq: ResourceRequirement::default(),
             node: "node-1".to_string(),
@@ -680,6 +681,7 @@ mod tests {
 
     fn test_app() -> ApplicationContext {
         ApplicationContext {
+            workspace: "default".to_string(),
             name: "test-app".to_string(),
             shim: ShimType::Cri,
             image: Some("example/image:latest".to_string()),

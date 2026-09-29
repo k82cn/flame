@@ -25,6 +25,7 @@ use crate::utils::{format_memory, format_optional_duration, format_resreq};
 pub async fn run(
     ctx: &FlameContext,
     output_format: &Option<String>,
+    workspace: &str,
     application: &Option<String>,
     session: &Option<String>,
     task: &Option<String>,
@@ -38,11 +39,13 @@ pub async fn run(
     .await?;
     match (application, session, task, node) {
         (Some(application), None, None, None) => {
-            view_application(conn, output_format, application).await
+            view_application(conn, output_format, workspace, application).await
         }
-        (None, Some(session), None, None) => view_session(conn, output_format, session).await,
+        (None, Some(session), None, None) => {
+            view_session(conn, output_format, workspace, session).await
+        }
         (None, Some(session), Some(task), None) => {
-            view_task(conn, output_format, session, task).await
+            view_task(conn, output_format, workspace, session, task).await
         }
         (None, None, None, Some(node)) => view_node(conn, output_format, node).await,
         _ => Err(Box::new(FlameError::InvalidConfig(
@@ -54,18 +57,20 @@ pub async fn run(
 async fn view_task(
     conn: client::Connection,
     output_format: &Option<String>,
-    ssn_id: &String,
-    task_id: &String,
+    workspace: &str,
+    session: &str,
+    task: &String,
 ) -> Result<(), Box<dyn Error>> {
-    let session = conn.get_session(ssn_id).await?;
-    let task = session.get_task(task_id).await?;
+    let session = conn.get_session(workspace, session).await?;
+    let task = session.get_task(task).await?;
     if output_format.as_deref() == Some("json") {
         println!("{}", serde_json::to_string_pretty(&task)?);
         return Ok(());
     }
 
-    println!("{:<15}{}", "Task:", task.id);
-    println!("{:<15}{}", "Session:", session.id);
+    println!("{:<15}{}", "Task:", task.name);
+    println!("{:<15}{}", "Session:", session.name);
+    println!("{:<15}{}", "Workspace:", session.workspace);
     println!("{:<15}{}", "Application:", session.application);
     println!("{:<15}{}", "State:", task.state);
     println!("{:<15}", "Events:");
@@ -77,9 +82,10 @@ async fn view_task(
 async fn view_session(
     conn: client::Connection,
     output_format: &Option<String>,
-    ssn_id: &String,
+    workspace: &str,
+    session: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let mut session = conn.get_session(ssn_id).await?;
+    let mut session = conn.get_session(workspace, session).await?;
 
     match output_format {
         Some(format) if format.as_str() == "json" => {
@@ -99,7 +105,8 @@ fn view_session_table(session: &client::Session) -> Result<(), Box<dyn Error>> {
     let mut table = Table::new();
     table.load_preset(NOTHING);
 
-    table.add_row(vec!["Session:", &session.id.to_string()]);
+    table.add_row(vec!["Session:", &session.name]);
+    table.add_row(vec!["Workspace:", &session.workspace]);
     table.add_row(vec!["Application:", &session.application.to_string()]);
     table.add_row(vec!["State:", &session.state.to_string()]);
     table.add_row(vec!["Resources:", &format_resreq(&session.resreq)]);
@@ -148,9 +155,10 @@ fn view_session_json(session: &client::Session) -> Result<(), Box<dyn Error>> {
 async fn view_application(
     conn: client::Connection,
     output_format: &Option<String>,
+    workspace: &str,
     application: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let application = conn.get_application(application).await?;
+    let application = conn.get_application(workspace, application).await?;
     if output_format.as_deref() == Some("json") {
         println!("{}", serde_json::to_string_pretty(&application)?);
         return Ok(());

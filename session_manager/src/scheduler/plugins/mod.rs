@@ -18,7 +18,8 @@ use std::sync::Arc;
 use stdng::collections;
 use stdng::{lock_ptr, new_ptr, MutexPtr};
 
-use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot};
+use crate::controller::snapshot::SnapShot;
+use crate::model::{ExecutorInfoPtr, NodeInfo, NodeInfoPtr, SessionInfo, SessionInfoPtr};
 use crate::scheduler::plugins::das::DasPlugin;
 use crate::scheduler::plugins::drf::DRFPlugin;
 use crate::scheduler::plugins::minmax::MinMaxPlugin;
@@ -301,7 +302,7 @@ impl PluginManager {
                         "Plugin '{}' rejected executor <{}> for session <{}>: is_available=false",
                         name,
                         exec.id,
-                        ssn.id
+                        ssn.session
                     );
                     return Ok(false);
                 }
@@ -314,7 +315,7 @@ impl PluginManager {
                         "Plugin '{}' has no opinion on executor <{}> for session <{}>, defaulting to available",
                         name,
                         exec.id,
-                        ssn.id
+                        ssn.session
                     );
                 }
             }
@@ -451,7 +452,7 @@ impl PluginManager {
                     tracing::warn!(
                         "Error checking availability of executor <{}> for session <{}>: {}",
                         exec.id,
-                        ssn.id,
+                        ssn.session,
                         e
                     );
                     // Continue checking other executors
@@ -462,7 +463,7 @@ impl PluginManager {
         if available.is_empty() && !executors.is_empty() {
             tracing::debug!(
                 "No available executors for session <{}>: {} executors checked, {} rejected by plugins",
-                ssn.id,
+                ssn.session,
                 executors.len(),
                 rejected_count
             );
@@ -523,8 +524,8 @@ mod tests {
             },
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
             state: ExecutorState::Idle,

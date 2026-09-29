@@ -85,8 +85,8 @@ mod tests {
             },
             shim: Shim::Host,
             application: "volatile-app".to_string(),
-            task_id: None,
-            ssn_id: Some("incomplete-session".to_string()),
+            task: None,
+            session: Some("incomplete-session".to_string()),
             attributes: HashSet::from([Bytes::from_static(b"volatile-key")]),
             creation_time: Utc::now(),
             latest_updated_timestamp: stale_timestamp,
@@ -104,8 +104,8 @@ mod tests {
             },
             shim: Shim::Host,
             application: "volatile-app".to_string(),
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             attributes: HashSet::from([Bytes::from_static(b"volatile-key")]),
             creation_time: Utc::now(),
             latest_updated_timestamp: stale_timestamp,
@@ -122,7 +122,7 @@ mod tests {
 
         let binding_exec = executors.iter().find(|e| e.id == "binding-exec").unwrap();
         assert_eq!(binding_exec.state, ExecutorState::Idle);
-        assert_eq!(binding_exec.ssn_id, None);
+        assert_eq!(binding_exec.session, None);
         assert_eq!(binding_exec.application, "volatile-app");
         assert!(binding_exec.attributes.is_empty());
         assert!(binding_exec.latest_updated_timestamp > stale_timestamp);
@@ -137,7 +137,7 @@ mod tests {
         assert!(db_executor.is_some());
         let db_executor = db_executor.unwrap();
         assert_eq!(db_executor.state, ExecutorState::Idle);
-        assert_eq!(db_executor.ssn_id, None);
+        assert_eq!(db_executor.session, None);
         assert_eq!(db_executor.application, "volatile-app");
 
         Ok(())
@@ -185,8 +185,8 @@ mod tests {
                 },
                 shim: Shim::Host,
                 application: "state-app".to_string(),
-                task_id: None,
-                ssn_id: None,
+                task: None,
+                session: None,
                 attributes: Default::default(),
                 creation_time: Utc::now(),
                 latest_updated_timestamp: Utc::now(),
@@ -225,7 +225,8 @@ mod tests {
             .await?;
         storage
             .create_session(SessionAttributes {
-                id: "affinity-session".to_string(),
+                name: "affinity-session".to_string(),
+                workspace: "default".to_string(),
                 application: "affinity-app".to_string(),
                 ..Default::default()
             })
@@ -234,7 +235,7 @@ mod tests {
         for _ in 0..2 {
             storage
                 .create_task(
-                    "affinity-session".to_string(),
+                    "default/affinity-session".to_string(),
                     None,
                     Some(TaskOptions {
                         affinity: [shared.clone()].into_iter().collect(),
@@ -246,7 +247,7 @@ mod tests {
 
         let recovered = crate::storage::new_ptr(&ctx).await?;
         recovered.load_data().await?;
-        let session = recovered.get_session_ptr("affinity-session".to_string())?;
+        let session = recovered.get_session_ptr("default/affinity-session".to_string())?;
         let session = lock_ptr!(session)?;
         let pending = session
             .tasks_index

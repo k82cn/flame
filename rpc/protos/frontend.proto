@@ -11,7 +11,10 @@ option go_package = "github.com/flame-sh/flame/sdk/go/rpc/v1";
  * e.g. create connection/session/task and so on.
  */
 service Frontend {
-  rpc RegisterApplication(RegisterApplicationRequest) returns (Result) {}
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (Workspace) {}
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (WorkspaceList) {}
+
+  rpc RegisterApplication(RegisterApplicationRequest) returns (Application) {}
   rpc UnregisterApplication(UnregisterApplicationRequest) returns (Result) {}
   rpc UpdateApplication(UpdateApplicationRequest) returns (Result) {}
 
@@ -38,32 +41,46 @@ service Frontend {
   rpc GetTask (GetTaskRequest) returns (Task) {}
   rpc WatchTasks (stream WatchTaskRequest) returns (stream Task) {}
   rpc ListTasks (ListTasksRequest) returns (stream Task) {}
+
 }
 
 message RegisterApplicationRequest {
   string name = 1;
   ApplicationSpec application = 2;
+  string workspace = 3;  // Empty selects the default workspace.
 }
 
-message UnregisterApplicationRequest {
+message CreateWorkspaceRequest {
   string name = 1;
+}
+
+message ListWorkspacesRequest {}
+
+message UnregisterApplicationRequest {
+  string application = 1;
+  string workspace = 2;
 }
 
 message UpdateApplicationRequest {
-  string name = 1;
-  ApplicationSpec application = 2;
+  string application = 1;
+  ApplicationSpec spec = 2;
+  string workspace = 3;
 }
 
 message GetApplicationRequest {
-  string name = 1;
+  string application = 1;
+  string workspace = 2;
 }
 
 message ListApplicationsRequest {
   optional ApplicationState state = 1;
+  optional string name = 2;
+  optional string workspace = 3;
 }
 
 message ListExecutorsRequest {
-  
+  optional string application = 1;
+  string workspace = 2;
 }
 
 // ListNodesRequest is the request for listing all registered nodes.
@@ -82,29 +99,36 @@ message GetNodeResponse {
 }
 
 message CreateSessionRequest {
-  string session_id = 1;
+  string name = 1;
   SessionSpec session = 2;
+  string workspace = 3;
 }
 
 message DeleteSessionRequest {
-  string session_id = 1;
+  string session = 1;
+  string workspace = 2;
 }
 
 message OpenSessionRequest {
-  string session_id = 1;
-  optional SessionSpec session = 2;
+  string session = 1;
+  optional SessionSpec spec = 2;
+  string workspace = 3;
 }
 
 message CloseSessionRequest {
-  string session_id = 1;
+  string session = 1;
+  string workspace = 2;
 }
 message GetSessionRequest {
-  string session_id = 1;
+  string session = 1;
+  string workspace = 2;
 }
 
 message ListSessionsRequest {
   optional string application = 1;
   optional SessionState state = 2;
+  optional string name = 3;
+  string workspace = 4;
 }
 
 message CreateTaskRequest {
@@ -112,15 +136,18 @@ message CreateTaskRequest {
 }
 
 message GetTaskRequest {
-  string task_id = 1;
-  string session_id = 2;
+  int64 task = 1;
+  string session = 2;
+  string workspace = 3;
 }
 
 message WatchTaskRequest {
-  string task_id = 1;
-  string session_id = 2;
+  int64 task = 1;
+  string session = 2;
+  string workspace = 3;
 }
 
 message ListTasksRequest {
-  string session_id = 1;
+  string session = 1;
+  string workspace = 2;
 }

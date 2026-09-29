@@ -69,13 +69,38 @@ def random_string(size=16) -> str:
     return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))
 
 
+def get_application_by_name(name: str):
+    """Resolve a name in the default workspace or a canonical app ID."""
+    workspace, app_name = name.split("/", 1) if "/" in name else ("default", name)
+    return flamepy.get_application(app_name, workspace=workspace)
+
+
+def application(name: str) -> str:
+    application = get_application_by_name(name)
+    if application is None:
+        raise LookupError(f"Application '{name}' was not found")
+    return f"{application.workspace}/{application.name}"
+
+
+def unregister_application_by_name(name: str) -> None:
+    application = get_application_by_name(name)
+    if application is not None:
+        flamepy.unregister_application(application.name, workspace=application.workspace)
+
+
+def create_session_by_application_name(application: str, *args, **kwargs):
+    """Create a session using the resolved application ID."""
+    app = get_application_by_name(application)
+    return flamepy.create_session(app.name, *args, workspace=app.workspace, **kwargs)
+
+
 def wait_for_application_deleted(name: str, timeout: float = 10.0) -> None:
     """Wait for FSM to physically remove a disabled application."""
     deadline = time.monotonic() + timeout
-    application = flamepy.get_application(name)
+    application = get_application_by_name(name)
     while application is not None and time.monotonic() < deadline:
         time.sleep(0.1)
-        application = flamepy.get_application(name)
+        application = get_application_by_name(name)
 
     if application is not None:
         pytest.fail(f"Application '{name}' was not deleted within {timeout} seconds; last state: {application.state}")

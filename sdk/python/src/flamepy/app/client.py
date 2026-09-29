@@ -242,7 +242,7 @@ class ServiceInstance:
             _validate_service_class(execution_object)
         resource_requirement = ResourceRequirement.from_string(resreq) if resreq is not None else None
 
-        session_id = short_name(app)
+        session = short_name(app)
 
         # Create an app session.
         # For RL module: serialize ServiceContext with cloudpickle, put in cache to get ObjectRef,
@@ -251,7 +251,7 @@ class ServiceInstance:
             execution_object=execution_object,
             constructor_args=constructor_args,
             constructor_kwargs=constructor_kwargs or {},
-            service_id=session_id,
+            service_id=session,
             autoscale=autoscale,
             warmup=warmup,
         )
@@ -271,8 +271,10 @@ class ServiceInstance:
             finally:
                 if register_by_value:
                     cloudpickle.unregister_pickle_by_value(execution_module)
-        # Put in cache with <app>/<session_id> key prefix
-        key_prefix = f"{app}/{session_id}"
+        # ServiceContext is needed in CreateSession.common_data before the
+        # session exists, so store it under the workspace bootstrap scope.
+        workspace = app.split("/", 1)[0]
+        key_prefix = f"{workspace}/bootstrap"
         logger.debug(f"[ServiceInstance] Putting ServiceContext in cache: key_prefix={key_prefix}, autoscale={app_context.autoscale}")
         object_ref = _core_put_object(key_prefix, serialized_ctx)
         logger.debug(f"[ServiceInstance] ServiceContext cached: key={object_ref.key}, version={object_ref.version}")
@@ -280,23 +282,24 @@ class ServiceInstance:
         common_data_bytes = object_ref.encode()
 
         session_spec = SessionAttributes(
-            id=session_id,
-            application=app,
+            name=session,
+            application=app.rsplit("/", 1)[-1],
+            workspace=app.split("/", 1)[0],
             common_data=common_data_bytes,
             min_instances=app_context.min_instances,
             max_instances=app_context.max_instances,
             batch_size=1,
             resreq=resource_requirement,
         )
-        logger.info(f"[ServiceInstance] Opening session: session_id={session_id}, app={app}")
+        logger.info(f"[ServiceInstance] Creating session: name={session}, app={app}")
         try:
-            self._session = core_client.open_session(session_id=session_id, spec=session_spec)
+            self._session = core_client.create_session(session_spec)
         except Exception as e:
             logger.error(f"[ServiceInstance] Failed to open session: {type(e).__name__}: {e}", exc_info=True)
             raise
         self._session_owner: _SessionOwner = _ServiceSessionOwner(self._session)
 
-        logger.info(f"[ServiceInstance] Session opened: id={self._session.id}")
+        logger.info(f"[ServiceInstance] Session opened: workspace={self._session.workspace}, session={self._session.name}")
 
         # Generate wrapper methods for all public methods of the execution object
         self._generate_wrappers()
@@ -328,7 +331,7 @@ class ServiceInstance:
             _restore_service_instance,
             (
                 self._app,
-                self._session.id,
+                f"{self._session.workspace}/{self._session.name}",
                 self._function_wrapper is not None,
                 tuple(self._method_names),
             ),
@@ -404,7 +407,7 @@ class ServiceInstance:
 
             # For RL module: serialize ServiceRequest with cloudpickle, then call core API
             request_bytes = cloudpickle.dumps(request, protocol=cloudpickle.DEFAULT_PROTOCOL)
-            logger.info(f"[ServiceInstance] Submitting task: method={method_name}, session={self._session.id}")
+            logger.info(f"[ServiceInstance] Submitting task: method={method_name}, workspace={self._session.workspace}, session={self._session.name}")
             # Submit task and return ObjectFuture
             future = self._submit(request_bytes, option)
             return ObjectFuture(future)
@@ -515,7 +518,7 @@ class ServiceInstance:
 
 def _restore_service_instance(
     app: str,
-    session_id: str,
+    session: str,
     is_callable: bool,
     method_names: tuple[str, ...],
 ) -> ServiceInstance:
@@ -531,7 +534,8 @@ def _restore_service_instance(
     instance._submissions_in_flight = 0
     instance._state = _ServiceState.OPEN
     instance._session_context = None
-    instance._session = core_client.open_session(session_id=session_id)
+    workspace, name = session.split("/", 1)
+    instance._session = core_client.open_session(name=name, workspace=workspace)
     instance._session_owner = _NoopSessionOwner()
     if is_callable:
         instance._create_function_wrapper()
@@ -546,7 +550,7 @@ def _nested_service_instance(
 ) -> ServiceInstance:
     """Create a proxy for an existing executor-bound session."""
     instance = object.__new__(ServiceInstance)
-    instance._app = session_context.application.name
+    instance._app = session_context.application
     instance._execution_object = execution_object
     instance._function_wrapper = None
     instance._method_names = []
@@ -556,7 +560,7 @@ def _nested_service_instance(
     instance._submissions_in_flight = 0
     instance._state = _ServiceState.OPEN
     instance._session_context = session_context
-    instance._session = core_client.open_session(session_id=session_context.session_id)
+    instance._session = core_client.open_session(name=session_context.session, workspace=session_context.workspace)
     instance._session_owner = _NoopSessionOwner()
     instance._generate_wrappers()
     return instance
@@ -756,6 +760,8 @@ class _Runtime:
                            If omitted, the executor uses the latest installed Flame Python SDK.
         """
         self._name = name
+        self._application: Optional[str] = None
+        self._workspace = "default"
         self._services: List[ServiceInstance] = []
         self._package_path: Optional[str] = None
         self._package_filename: Optional[str] = None
@@ -797,7 +803,7 @@ class _Runtime:
 
             logger.debug(f"Starting app runtime '{self._name}'")
 
-            application = core_client.get_application(self._name)
+            application = core_client.get_application_by_name(self._name)
             if application is not None:
                 if application.state == ApplicationState.DISABLED:
                     raise FlameError(
@@ -810,6 +816,8 @@ class _Runtime:
                         f"Application '{self._name}' already exists. Set fail_if_exists=False to skip registration.",
                     )
                 logger.debug(f"Application '{self._name}' already exists, reusing registration")
+                self._application = application.name
+                self._workspace = application.workspace
                 self._application_owner = _NoopApplicationOwner()
             else:
                 self._application_owner = _RuntimeApplicationOwner(self)
@@ -820,33 +828,34 @@ class _Runtime:
     def _register_application(self) -> None:
         """Package, upload, and register an application owned by this runtime."""
 
+        self._application = self._name
+        self._workspace = "default"
+
         # Initialize storage backend (uses cache.endpoint if package.storage not set)
         storage_base = self._context.package.storage if self._context.package else None
         if storage_base is None and self._context.cache is None:
             raise FlameError(FlameErrorCode.INVALID_CONFIG, "Storage not configured. Please set 'cache.endpoint' or 'package.storage' in flame.yaml.")
-        self._storage_backend = create_storage_backend(storage_base, app_name=self._name)
+        self._storage_backend = create_storage_backend(storage_base, app_name=f"{self._workspace}/{self._application}")
         logger.debug(f"Initialized storage backend: {type(self._storage_backend).__name__}")
 
         # Step 1: Package the current working directory
         self._package_path = self._create_package()
         logger.debug(f"Created package: {self._package_path}")
 
-        # Step 2: Upload the package to storage
-        storage_url = self._upload_package()
-        logger.debug(f"Uploaded package to: {storage_url}")
-
-        # Step 3: Retrieve the application template
+        # Resolve the template before creating a remotely visible application.
         # Use configured template if available, otherwise default to flmrun
         template_name = self._context.app
 
         try:
-            template_app = core_client.get_application(template_name)
+            template_app = core_client.get_application_by_name(template_name)
+            if template_app is None:
+                raise FlameError(FlameErrorCode.NOT_FOUND, f"Application template '{template_name}' was not found")
             logger.debug(f"Retrieved application template: {template_name}")
         except Exception as e:
             self._cleanup_package_artifacts()
             raise FlameError(FlameErrorCode.INTERNAL, f"Failed to get application template '{template_name}': {str(e)}")
 
-        # Register the new application
+        registered = False
         try:
             working_directory = None
             if template_app.working_directory is not None and template_app.working_directory != "":
@@ -870,18 +879,29 @@ class _Runtime:
                 max_instances=template_app.max_instances,
                 delay_release=template_app.delay_release,
                 schema=template_app.schema,
-                url=storage_url,
+                url=None,
                 installer=template_app.installer,
             )
 
             core_client.register_application(self._name, app_attrs)
+            registered = True
+            storage_url = self._upload_package()
+            app_attrs.url = storage_url
+            core_client.update_application(self._name, app_attrs)
             logger.debug(f"Registered application '{self._name}' with working directory: {working_directory}")
-        except FlameError:
-            self._cleanup_package_artifacts()
-            raise
         except Exception as e:
             self._cleanup_package_artifacts()
-            raise FlameError(FlameErrorCode.INTERNAL, f"Failed to register application: {str(e)}")
+            if registered:
+                try:
+                    core_client.unregister_application(self._name)
+                except Exception as unregister_error:
+                    raise FlameError(
+                        FlameErrorCode.INTERNAL,
+                        f"Failed to deploy application and remove staged registration: {unregister_error}",
+                    ) from e
+            if isinstance(e, FlameError):
+                raise
+            raise FlameError(FlameErrorCode.INTERNAL, f"Failed to deploy application: {str(e)}") from e
 
     def __enter__(self) -> "_Runtime":
         """Enter the context manager and set up the application environment.
@@ -1025,7 +1045,7 @@ class _Runtime:
                 )
 
             app_service = ServiceInstance(
-                self._name,
+                f"{self._workspace}/{self._application}",
                 execution_object,
                 autoscale=autoscale,
                 warmup=warmup,
@@ -1107,7 +1127,7 @@ class _Runtime:
         return ObjectFutureIterator(futures)
 
     def put(self, obj: Any) -> ObjectRef:
-        """Put an object into the cache with <app_name>/shared key prefix.
+        """Put an object into the current session, or bootstrap before binding.
 
         Args:
             obj: The object to cache (will be pickled)
@@ -1117,7 +1137,12 @@ class _Runtime:
         """
         from flamepy.core.cache import ObjectKey, put_object
 
-        object_key = ObjectKey.for_shared(self._name)
+        try:
+            bound = _context.session_context()
+        except RuntimeError:
+            bound = None
+        workspace = self._workspace
+        object_key = ObjectKey(workspace=bound.workspace, session=bound.session) if bound is not None else ObjectKey.for_shared(workspace)
         return put_object(object_key.to_prefix(), obj)
 
     def _create_package(self) -> str:
@@ -1394,7 +1419,7 @@ def service(
                 if not inspect.isclass(execution_object) and not _is_function(execution_object):
                     raise TypeError("app.service() supports a function or class only")
                 return ServiceDefinition(
-                    session_context.application.name,
+                    session_context.application,
                     execution_object,
                     autoscale=autoscale,
                     warmup=warmup,
@@ -1446,7 +1471,7 @@ def select(futures: List[ObjectFuture]) -> ObjectFutureIterator:
 
 
 def put(obj: Any) -> ObjectRef:
-    """Store an object under the active application's shared cache prefix."""
+    """Store an object under the current session, or bootstrap before binding."""
     return _require_runtime().put(obj)
 
 

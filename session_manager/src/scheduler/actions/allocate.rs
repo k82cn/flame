@@ -16,10 +16,11 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{ALL_NODE, READY_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR};
+use crate::model::ALL_NODE;
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::Context;
+use common::apis::{READY_SESSION, UNBINDING_EXECUTOR, VOID_EXECUTOR};
 
 use common::FlameError;
 
@@ -79,7 +80,7 @@ impl Action for AllocateAction {
             if !is_underused {
                 tracing::debug!(
                     "Session <{}> is NOT underused (pending={:?}, running={:?}), skipping allocation",
-                    ssn.id,
+                    ssn.session,
                     ssn.tasks_status.get(&common::apis::TaskState::Pending),
                     ssn.tasks_status.get(&common::apis::TaskState::Running)
                 );
@@ -92,7 +93,7 @@ impl Action for AllocateAction {
 
             tracing::debug!(
                 "Session <{}> IS underused (pending={:?}, running={:?}), attempting allocation",
-                ssn.id,
+                ssn.session,
                 ssn.tasks_status.get(&common::apis::TaskState::Pending),
                 ssn.tasks_status.get(&common::apis::TaskState::Running)
             );
@@ -101,12 +102,12 @@ impl Action for AllocateAction {
                 let all_executors = ss.find_executors(None)?;
                 let current_count = all_executors
                     .values()
-                    .filter(|e| e.ssn_id.as_ref() == Some(&ssn.id))
+                    .filter(|e| e.session.as_ref() == Some(&ssn.session))
                     .count();
                 if current_count >= max_instances as usize {
                     tracing::debug!(
                         "Session <{}> has reached max_instances limit: {} >= {}",
-                        ssn.id,
+                        ssn.session,
                         current_count,
                         max_instances
                     );
@@ -133,7 +134,7 @@ impl Action for AllocateAction {
                 .find(|node| ctx.is_allocatable(node, &ssn).unwrap_or(false))
             {
                 ctx.allocate_executor(node, &ssn).await?;
-                tracing::debug!("Allocated executor for session <{}>", ssn.id);
+                tracing::debug!("Allocated executor for session <{}>", ssn.session);
             }
         }
 
