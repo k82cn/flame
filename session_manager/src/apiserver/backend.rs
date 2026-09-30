@@ -384,7 +384,11 @@ impl Backend for Flame {
             .get_application(ssn.application.clone())
             .await?;
         let application = Some(rpc::Application::from(&app));
-        let session = Some(rpc::Session::from(&ssn));
+        let mut session = rpc::Session::from(&ssn);
+        if let Some(spec) = session.spec.as_mut() {
+            spec.tokens = ssn.tokens.clone();
+        }
+        let session = Some(session);
 
         tracing::debug!(
             "Bind executor <{}> to Session <{}:{}>",

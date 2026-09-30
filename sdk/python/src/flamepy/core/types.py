@@ -197,6 +197,7 @@ class SessionAttributes:
     application: str
     id: Optional[str] = None
     common_data: Any = None
+    tokens: Dict[str, str] = field(default_factory=dict, repr=False)
     min_instances: int = 0
     max_instances: Optional[int] = None
     batch_size: int = 1

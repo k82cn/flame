@@ -116,11 +116,22 @@ impl Publisher {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SessionContext {
     pub session_id: String,
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
+    pub tokens: std::collections::HashMap<String, String>,
+}
+
+impl std::fmt::Debug for SessionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionContext")
+            .field("session_id", &self.session_id)
+            .field("application", &self.application)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl SessionContext {
@@ -133,6 +144,7 @@ impl SessionContext {
             session_id,
             application,
             common_data,
+            tokens: std::collections::HashMap::new(),
         }
     }
 }
@@ -357,11 +369,13 @@ impl TryFrom<rpc::SessionContext> for SessionContext {
                 FlameError::InvalidConfig("session context missing application".to_string())
             })?;
 
-        Ok(SessionContext::new(
+        let mut session = SessionContext::new(
             ctx.session_id.clone(),
             application,
             ctx.common_data.map(|data| data.into()),
-        ))
+        );
+        session.tokens = ctx.tokens;
+        Ok(session)
     }
 }
 
@@ -385,9 +399,45 @@ mod tests {
             session_id: "ssn-1".to_string(),
             application: None,
             common_data: None,
+            tokens: Default::default(),
         };
 
         assert!(SessionContext::try_from(ctx).is_err());
+    }
+
+    #[test]
+    fn session_context_receives_tokens() {
+        let ctx = rpc::SessionContext {
+            session_id: "ssn-1".to_string(),
+            application: Some(rpc::ApplicationContext {
+                name: "app".to_string(),
+                ..Default::default()
+            }),
+            common_data: None,
+            tokens: [("service".into(), "credential".into())].into(),
+        };
+
+        let session = SessionContext::try_from(ctx).unwrap();
+        assert_eq!(
+            session.tokens.get("service").map(String::as_str),
+            Some("credential")
+        );
+    }
+
+    #[test]
+    fn session_context_debug_redacts_token() {
+        let mut ctx = SessionContext::new(
+            "ssn-1".to_string(),
+            ApplicationContext {
+                name: "app".to_string(),
+                image: None,
+                command: None,
+            },
+            None,
+        );
+        ctx.tokens
+            .insert("example_service".to_string(), "secret-token".to_string());
+        assert!(!format!("{ctx:?}").contains("secret-token"));
     }
 
     #[cfg(unix)]
@@ -551,6 +601,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
@@ -573,6 +624,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
@@ -655,6 +707,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
@@ -681,6 +734,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
