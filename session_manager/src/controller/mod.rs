@@ -1229,6 +1229,7 @@ mod tests {
             id: id.to_string(),
             application: "test-app".to_string(),
             common_data: None,
+            tokens: Default::default(),
             min_instances: 0,
             max_instances: None,
             batch_size: 1,

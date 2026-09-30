@@ -41,6 +41,7 @@ pub async fn run(
         id: format!("{app}-{}", stdng::rand::short_name()),
         application: app.to_owned(),
         common_data: None,
+        tokens: Default::default(),
         min_instances: 0,
         max_instances: None,
         batch_size: 1,

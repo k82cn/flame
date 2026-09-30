@@ -194,16 +194,27 @@ pub fn validate_application_name(name: &str) -> Result<(), crate::FlameError> {
     Ok(())
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SessionAttributes {
     pub id: SessionID,
     pub application: String,
     pub common_data: Option<CommonData>,
+    pub tokens: HashMap<String, String>,
     pub min_instances: u32,
     pub max_instances: Option<u32>,
     pub batch_size: u32,
     pub priority: u32,
     pub resreq: Option<ResourceRequirement>,
+}
+
+impl std::fmt::Debug for SessionAttributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionAttributes")
+            .field("id", &self.id)
+            .field("application", &self.application)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for SessionAttributes {
@@ -212,6 +223,7 @@ impl Default for SessionAttributes {
             id: String::new(),
             application: String::new(),
             common_data: None,
+            tokens: HashMap::new(),
             min_instances: 0,
             max_instances: None,
             batch_size: 1,
@@ -233,12 +245,13 @@ pub struct SessionStatus {
     pub state: SessionState,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct Session {
     pub id: SessionID,
     pub application: String,
     pub version: u32,
     pub common_data: Option<CommonData>,
+    pub tokens: HashMap<String, String>,
     pub tasks: HashMap<TaskID, TaskPtr>,
     pub tasks_index: HashMap<TaskState, BTreeMap<TaskID, TaskPtr>>,
     pub creation_time: DateTime<Utc>,
@@ -251,6 +264,17 @@ pub struct Session {
     pub priority: u32,
     pub resreq: Option<ResourceRequirement>,
     pub retry_count: u32,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("id", &self.id)
+            .field("application", &self.application)
+            .field("status", &self.status)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, strum_macros::Display)]
@@ -346,11 +370,22 @@ pub struct TaskContext {
     pub input: Option<TaskInput>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SessionContext {
     pub session_id: String,
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
+    pub tokens: HashMap<String, String>,
+}
+
+impl std::fmt::Debug for SessionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionContext")
+            .field("session_id", &self.session_id)
+            .field("application", &self.application)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug)]

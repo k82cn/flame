@@ -123,12 +123,14 @@ pub struct Connection {
     watch_managers: Arc<Mutex<HashMap<SessionID, Arc<WatchManager>>>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SessionAttributes {
     pub id: SessionID,
     pub application: String,
     #[serde(with = "serde_message")]
     pub common_data: Option<CommonData>,
+    #[serde(default)]
+    pub tokens: HashMap<String, String>,
     pub min_instances: u32,
     pub max_instances: Option<u32>,
     #[serde(default = "default_batch_size")]
@@ -139,20 +141,41 @@ pub struct SessionAttributes {
     pub resreq: Option<ResourceRequirement>,
 }
 
+impl std::fmt::Debug for SessionAttributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionAttributes")
+            .field("id", &self.id)
+            .field("application", &self.application)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
+}
+
 fn default_batch_size() -> u32 {
     1
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SessionOptions {
     pub id: Option<SessionID>,
     pub application: String,
     common_data: Option<CommonData>,
+    tokens: HashMap<String, String>,
     pub min_instances: u32,
     pub max_instances: Option<u32>,
     pub batch_size: u32,
     pub priority: u32,
     pub resreq: Option<ResourceRequirement>,
+}
+
+impl std::fmt::Debug for SessionOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionOptions")
+            .field("id", &self.id)
+            .field("application", &self.application)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 /// Opaque application-defined locality keys for one task.
@@ -170,6 +193,7 @@ impl SessionOptions {
             id: None,
             application: application.into(),
             common_data: None,
+            tokens: HashMap::new(),
             min_instances: 0,
             max_instances: None,
             batch_size: 1,
@@ -186,6 +210,11 @@ impl SessionOptions {
     pub fn common_data(mut self, data: impl IntoCommonData) -> Result<Self, FlameError> {
         self.common_data = Some(data.into_common_data()?);
         Ok(self)
+    }
+
+    pub fn token(mut self, service: impl Into<String>, token: impl Into<String>) -> Self {
+        self.tokens.insert(service.into(), token.into());
+        self
     }
 
     pub fn min_instances(mut self, value: u32) -> Self {
@@ -245,6 +274,7 @@ impl From<SessionOptions> for SessionAttributes {
             id,
             application: options.application,
             common_data: options.common_data,
+            tokens: options.tokens,
             min_instances: options.min_instances,
             max_instances: options.max_instances,
             batch_size: 1,
@@ -800,6 +830,7 @@ impl Connection {
             session: Some(SessionSpec {
                 application: attrs.application.clone(),
                 common_data: attrs.common_data.clone().map(CommonData::into),
+                tokens: attrs.tokens.clone(),
                 min_instances: attrs.min_instances,
                 max_instances: attrs.max_instances,
                 batch_size: 1,
@@ -851,6 +882,7 @@ impl Connection {
         let session_spec = spec.map(|attrs| SessionSpec {
             application: attrs.application.clone(),
             common_data: attrs.common_data.clone().map(CommonData::into),
+            tokens: attrs.tokens.clone(),
             min_instances: attrs.min_instances,
             max_instances: attrs.max_instances,
             batch_size: 1,
@@ -2301,6 +2333,7 @@ mod tests {
                 batch_size: 1,
                 priority: 0,
                 resreq: None,
+                tokens: Default::default(),
             }),
             status: Some(rpc::SessionStatus {
                 state: rpc::SessionState::Open as i32,
@@ -2335,6 +2368,7 @@ mod tests {
                 batch_size: 1,
                 priority: 0,
                 resreq: None,
+                tokens: Default::default(),
             }),
             status: Some(rpc::SessionStatus {
                 state: rpc::SessionState::Open as i32,
@@ -2422,6 +2456,7 @@ mod tests {
                     memory: 32 * 1024 * 1024 * 1024,
                     gpu: 1,
                 }),
+                tokens: Default::default(),
             }),
             status: Some(rpc::SessionStatus {
                 state: rpc::SessionState::Open as i32,

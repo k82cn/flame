@@ -145,6 +145,7 @@ class FlameInstanceServicer(InstanceServicer):
                 _common_data=request.common_data if request.HasField("common_data") else None,
                 session_id=request.session_id,
                 application=app_context,
+                tokens=dict(request.tokens),
             )
             async with self._binding_lock:
                 _, attributes = await self._binding_hook("on_session_enter", session_context)

@@ -32,6 +32,7 @@ mod tests {
 
     fn create_session_attr(id: &str) -> SessionAttributes {
         SessionAttributes {
+            tokens: Default::default(),
             id: id.to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -51,11 +52,16 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let attr = create_session_attr("test-ssn-1");
+            let mut attr = create_session_attr("test-ssn-1");
+            attr.tokens.insert("service".into(), "credential".into());
             let ssn = storage.create_session(attr).await.unwrap();
 
             assert_eq!(ssn.id, "test-ssn-1");
             assert_eq!(ssn.application, "test-app");
+            assert_eq!(
+                ssn.tokens.get("service").map(String::as_str),
+                Some("credential")
+            );
             assert_eq!(ssn.status.state, SessionState::Open);
         }
 

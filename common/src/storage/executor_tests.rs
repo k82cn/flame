@@ -34,6 +34,7 @@ mod tests {
 
     fn create_session_attr(id: &str) -> SessionAttributes {
         SessionAttributes {
+            tokens: Default::default(),
             id: id.to_string(),
             application: "test-app".to_string(),
             common_data: None,

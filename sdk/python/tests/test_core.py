@@ -30,6 +30,13 @@ from flamepy.core.types import (
 )
 
 
+def test_session_spec_carries_tokens():
+    from flamepy.core.aio.client import _session_spec
+
+    spec = _session_spec(SessionAttributes(application="app", tokens={"service": "credential"}))
+    assert dict(spec.tokens) == {"service": "credential"}
+
+
 def test_sync_frontend_api_parity(frontend_server):
     endpoint, service, server_loop = frontend_server
     connection = client.connect(endpoint)

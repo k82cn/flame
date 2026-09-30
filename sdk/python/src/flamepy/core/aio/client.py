@@ -149,6 +149,7 @@ def _session_spec(attrs: SessionAttributes) -> SessionSpec:
     spec = SessionSpec(
         application=attrs.application,
         common_data=attrs.common_data,
+        tokens=attrs.tokens,
         min_instances=attrs.min_instances,
         max_instances=attrs.max_instances,
         batch_size=1,
