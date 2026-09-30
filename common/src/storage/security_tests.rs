@@ -10,7 +10,7 @@ use crate::ctx::{FlameCluster, FlameClusterContext};
 use super::{engine, new_ptr};
 
 #[tokio::test]
-async fn role_survives_storage_reopen() {
+async fn role_and_session_token_survive_storage_reopen() {
     let directory = tempfile::tempdir().unwrap();
     let urls = [
         format!("sqlite://{}", directory.path().join("flame.db").display()),
@@ -31,10 +31,32 @@ async fn role_survives_storage_reopen() {
             )]),
         };
         storage.set_role(&role).unwrap();
+        storage
+            .register_application("example-app".to_string(), ApplicationAttributes::default())
+            .await
+            .unwrap();
+        let tokens = HashMap::from([("flame_cache".to_string(), "secret-token".to_string())]);
+        storage
+            .create_session(SessionAttributes {
+                id: "example-session".to_string(),
+                application: "example-app".to_string(),
+                tokens: tokens.clone(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         drop(storage);
 
         let reopened = engine::connect(&url).await.unwrap();
         assert_eq!(reopened.find_roles().unwrap(), vec![role]);
+        assert_eq!(
+            reopened
+                .get_session("example-session".to_string())
+                .await
+                .unwrap()
+                .tokens,
+            tokens
+        );
     }
 }
 
@@ -121,7 +143,7 @@ async fn sqlite_memory_roles_support_sync_calls() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn session_files_have_private_unix_modes() {
+async fn session_token_files_have_private_unix_modes() {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
@@ -144,6 +166,7 @@ async fn session_files_have_private_unix_modes() {
         .create_session(SessionAttributes {
             id: "session".into(),
             application: "app".into(),
+            tokens: HashMap::from([("flame_cache".into(), "secret".into())]),
             ..Default::default()
         })
         .await
@@ -166,6 +189,7 @@ async fn session_files_have_private_unix_modes() {
         .create_session(SessionAttributes {
             id: "session".into(),
             application: "app".into(),
+            tokens: HashMap::from([("flame_cache".into(), "secret".into())]),
             ..Default::default()
         })
         .await

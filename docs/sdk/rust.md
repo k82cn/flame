@@ -249,6 +249,18 @@ delete `<app>/pkg/...` objects.
 Package reads and all bootstrap operations require the system cache mTLS
 identity. The object signature and user delegation token are separate credentials.
 
+For a secure session, put the signed app token in
+`SessionOptions::new(app).token("flame_cache", token)` before creation. The
+executor receives it in `SessionContext.tokens`, accessible through
+`SessionContext::cache_app_token()`; ordinary session responses redact it.
+Use `flame_rs::object` helpers with the `_with_app_token` suffix for cache
+data reads and writes, such as `put_object_with_app_token()` and
+`get_object_with_app_token()`. The signed token carries the tenant username
+and covers normal session keys across applications; it may also write or
+delete `<app>/pkg/...` objects.
+Package reads and all bootstrap operations require the system cache mTLS
+identity. `ObjectRef` does not carry a credential.
+
 The typed helpers use the `raw` data type. For caller-defined encodings, use
 `put_object_bytes()`, `update_object_bytes()`, or `patch_object_bytes()` with
 the encoded bytes and a data type such as `raw.zstd`. `get_object_bytes()`

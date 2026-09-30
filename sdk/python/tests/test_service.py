@@ -341,6 +341,7 @@ def test_flame_service_abstract_minimal_implementation():
             self.session_id = "sess-123"
             self.application = MockAppCtx()
             self.common_data = b"C"
+            self.tokens = {}
 
         def HasField(self, field):  # noqa: N802
             if field == "common_data":
@@ -402,6 +403,7 @@ def test_on_session_enter_exception_path_returns_error():  # noqa: N802
             self.session_id = "sess-1"
             self.application = MockAppCtx()
             self.common_data = None
+            self.tokens = {}
 
         def HasField(self, field):  # noqa: N802
             return False
@@ -474,6 +476,7 @@ def test_service_preserves_empty_optional_bytes():  # noqa: N802
         session_id = "sess"
         application = MockAppCtx()
         common_data = b""
+        tokens = {}
 
         def HasField(self, field):  # noqa: N802
             return field == "common_data"

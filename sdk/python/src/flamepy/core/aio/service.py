@@ -20,6 +20,7 @@ from typing import Optional
 
 import grpc
 
+from flamepy.core.cache import _active_app_token
 from flamepy.core.service import (
     FLAME_INSTANCE_ENDPOINT,
     ApplicationContext,
@@ -69,6 +70,7 @@ class FlameInstanceServicer(InstanceServicer):
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="flame-shim")
         self._max_inflight = max_inflight
         self._binding_lock = asyncio.Lock()
+        self._cache_token: Optional[str] = None
         self._active_tasks = 0
         self._hook_calls: set[asyncio.Task] = set()
 
@@ -83,40 +85,44 @@ class FlameInstanceServicer(InstanceServicer):
         # their worker threads while making server shutdown itself bounded.
         self._executor.shutdown(wait=False, cancel_futures=True)
 
-    async def _hook(self, name, *args):
+    async def _hook(self, name, *args, app_token: Optional[str] = None):
         method = getattr(self._service, name)
-        if isinstance(self._service, FlameService):
-            token = _active_response_publisher.set(_Publisher())
-            try:
+        cache_context = _active_app_token.set(app_token)
+        try:
+            if isinstance(self._service, FlameService):
+                token = _active_response_publisher.set(_Publisher())
                 try:
-                    result = await method(*args)
-                except Exception as exc:
-                    raise _HookError(exc, self._service._take_attributes()) from exc
-                return result, self._service._take_attributes()
-            finally:
-                _active_response_publisher.reset(token)
+                    try:
+                        result = await method(*args)
+                    except Exception as exc:
+                        raise _HookError(exc, self._service._take_attributes()) from exc
+                    return result, self._service._take_attributes()
+                finally:
+                    _active_response_publisher.reset(token)
 
-        # The synchronous hook and its attribute handoff must run in the same
-        # copied context. Taking attributes on this loop loses ContextVar state.
-        def call():
-            token = _active_response_publisher.set(_Publisher())
-            try:
+            # The synchronous hook and its attribute handoff must run in the
+            # same copied context so cache credentials stay with this binding.
+            def call():
+                token = _active_response_publisher.set(_Publisher())
                 try:
-                    result = method(*args)
-                except Exception as exc:
-                    raise _HookError(exc, self._service._take_attributes()) from exc
-                return result, self._service._take_attributes()
-            finally:
-                _active_response_publisher.reset(token)
+                    try:
+                        result = method(*args)
+                    except Exception as exc:
+                        raise _HookError(exc, self._service._take_attributes()) from exc
+                    return result, self._service._take_attributes()
+                finally:
+                    _active_response_publisher.reset(token)
 
-        context = contextvars.copy_context()
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, context.run, call)
+            context = contextvars.copy_context()
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self._executor, context.run, call)
+        finally:
+            _active_app_token.reset(cache_context)
 
-    async def _binding_hook(self, name, *args):
+    async def _binding_hook(self, name, *args, app_token: Optional[str] = None):
         # Once a hook starts, RPC cancellation cannot interrupt it safely: a
         # worker thread (or user coroutine) may still mutate the binding.
-        work = asyncio.create_task(self._hook(name, *args))
+        work = asyncio.create_task(self._hook(name, *args, app_token=app_token))
         self._hook_calls.add(work)
         work.add_done_callback(self._hook_calls.discard)
         try:
@@ -145,9 +151,12 @@ class FlameInstanceServicer(InstanceServicer):
                 _common_data=request.common_data if request.HasField("common_data") else None,
                 session_id=request.session_id,
                 application=app_context,
+                tokens=dict(request.tokens),
             )
             async with self._binding_lock:
-                _, attributes = await self._binding_hook("on_session_enter", session_context)
+                app_token = session_context.tokens.get("flame_cache")
+                _, attributes = await self._binding_hook("on_session_enter", session_context, app_token=app_token)
+                self._cache_token = app_token
             return OnSessionEnterResponse(result=Result(return_code=0), attributes=attributes)
         except Exception as exc:
             logger.exception("OnSessionEnter failed")
@@ -162,7 +171,7 @@ class FlameInstanceServicer(InstanceServicer):
         if self._active_tasks >= self._max_inflight:
             return OnTaskInvokeResponse(task_result=TaskResultProto(return_code=-1, message="too many concurrent task invocations"))
         self._active_tasks += 1
-        coroutine = self._invoke_task(task_context)
+        coroutine = self._invoke_task(task_context, self._cache_token)
         try:
             work = asyncio.create_task(coroutine)
         except Exception:
@@ -173,9 +182,9 @@ class FlameInstanceServicer(InstanceServicer):
         work.add_done_callback(self._hook_calls.discard)
         return await asyncio.shield(work)
 
-    async def _invoke_task(self, task_context: TaskContext):
+    async def _invoke_task(self, task_context: TaskContext, app_token: Optional[str]):
         try:
-            output, attributes = await self._hook("on_task_invoke", task_context)
+            output, attributes = await self._hook("on_task_invoke", task_context, app_token=app_token)
             task_result = TaskResultProto(return_code=0)
             if output is not None:
                 task_result.output = output
@@ -195,7 +204,8 @@ class FlameInstanceServicer(InstanceServicer):
     async def OnSessionLeave(self, request, context):  # noqa: N802
         try:
             async with self._binding_lock:
-                await self._binding_hook("on_session_leave")
+                await self._binding_hook("on_session_leave", app_token=self._cache_token)
+                self._cache_token = None
             return Result(return_code=0)
         except Exception as exc:
             logger.exception("OnSessionLeave failed")

@@ -258,6 +258,7 @@ impl Engine for NoneEngine {
             id: attr.id,
             application: attr.application,
             common_data: attr.common_data,
+            tokens: attr.tokens,
             min_instances: attr.min_instances,
             max_instances: attr.max_instances,
             batch_size: 1,
@@ -432,6 +433,7 @@ mod tests {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -470,6 +472,7 @@ mod tests {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -505,6 +508,7 @@ mod tests {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr1 = SessionAttributes {
+            tokens: Default::default(),
             id: "session-1".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -517,6 +521,7 @@ mod tests {
         engine.create_session(attr1).await.unwrap();
 
         let attr2 = SessionAttributes {
+            tokens: Default::default(),
             id: "session-2".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -552,6 +557,7 @@ mod tests {
         let engine = NoneEngine::new_ptr("none").await.unwrap();
 
         let attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,

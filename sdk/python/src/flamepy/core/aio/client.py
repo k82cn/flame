@@ -154,6 +154,7 @@ def _session_spec(attrs: SessionAttributes) -> SessionSpec:
     spec = SessionSpec(
         application=attrs.application,
         common_data=attrs.common_data,
+        tokens=attrs.tokens or {},
         min_instances=attrs.min_instances,
         max_instances=attrs.max_instances,
         batch_size=1,
@@ -313,7 +314,8 @@ class Connection:
         return list(response.nodes)
 
     async def create_session(self, attrs: SessionAttributes) -> "Session":
-        response = await self._rpc("CreateSession", CreateSessionRequest(session_id=attrs.id or short_name(attrs.application), session=_session_spec(attrs)), "failed to create session")
+        session_spec = await self._session_spec_with_cache_token(attrs)
+        response = await self._rpc("CreateSession", CreateSessionRequest(session_id=attrs.id or short_name(attrs.application), session=session_spec), "failed to create session")
         return _session_from_proto(self, response)
 
     async def list_sessions(self) -> List["Session"]:
@@ -321,8 +323,20 @@ class Connection:
         return [_session_from_proto(self, item) for item in response.sessions]
 
     async def open_session(self, session_id: SessionID, spec: Optional[SessionAttributes] = None) -> "Session":
-        response = await self._rpc("OpenSession", OpenSessionRequest(session_id=session_id, session=_session_spec(spec) if spec is not None else None), "failed to open session")
+        session_spec = await self._session_spec_with_cache_token(spec) if spec is not None else None
+        response = await self._rpc("OpenSession", OpenSessionRequest(session_id=session_id, session=session_spec), "failed to open session")
         return _session_from_proto(self, response)
+
+    async def _session_spec_with_cache_token(self, attrs: SessionAttributes) -> SessionSpec:
+        spec = _session_spec(attrs)
+        if self.addr.startswith("https://") and "flame_cache" not in spec.tokens:
+            from flamepy.core.aio.cache import cached_app_token
+
+            app_token = await cached_app_token(attrs.application)
+            if not app_token:
+                raise ValueError("secure session requires a cache app token")
+            spec.tokens["flame_cache"] = app_token
+        return spec
 
     async def get_session(self, session_id: SessionID) -> "Session":
         response = await self._rpc("GetSession", GetSessionRequest(session_id=session_id), "failed to get session")

@@ -129,6 +129,8 @@ struct SessionMetadata {
     pub priority: u32,
     pub common_data_len: u64,
     #[serde(default)]
+    pub tokens: HashMap<String, String>,
+    #[serde(default)]
     pub resreq_cpu: Option<u64>,
     #[serde(default)]
     pub resreq_memory: Option<u64>,
@@ -895,6 +897,7 @@ impl FilesystemEngine {
             application: meta.application.clone(),
             version: meta.version,
             common_data,
+            tokens: meta.tokens.clone(),
             tasks: std::collections::HashMap::new(),
             tasks_index: std::collections::HashMap::new(),
             creation_time: DateTime::from_timestamp(meta.creation_time, 0)
@@ -1212,6 +1215,7 @@ impl Engine for FilesystemEngine {
             batch_size: 1,
             priority: attr.priority,
             common_data_len,
+            tokens: attr.tokens,
             resreq_cpu: attr.resreq.as_ref().map(|r| r.cpu),
             resreq_memory: attr.resreq.as_ref().map(|r| r.memory),
             resreq_gpu: attr.resreq.as_ref().map(|r| r.gpu),
@@ -2125,6 +2129,7 @@ mod tests {
 
         // Create session
         let ssn_attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: Some(Bytes::from("test data")),
@@ -2191,6 +2196,7 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -2329,6 +2335,7 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -2373,6 +2380,7 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,
@@ -2439,6 +2447,7 @@ mod tests {
             .unwrap();
 
         let ssn_attr = SessionAttributes {
+            tokens: Default::default(),
             id: "test-session".to_string(),
             application: "test-app".to_string(),
             common_data: None,

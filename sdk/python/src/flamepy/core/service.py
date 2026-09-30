@@ -17,8 +17,8 @@ import sys
 import threading
 from abc import abstractmethod
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import FrozenSet, Iterable, Optional
+from dataclasses import dataclass, field
+from typing import Dict, FrozenSet, Iterable, Optional
 
 # Handle typing.override compatibility for Python < 3.12
 if sys.version_info >= (3, 12):
@@ -117,6 +117,7 @@ class SessionContext:
 
     session_id: str
     application: ApplicationContext
+    tokens: Dict[str, str] = field(default_factory=dict, repr=False)
 
     def common_data(self) -> Optional[bytes]:
         """Get the common data as bytes."""

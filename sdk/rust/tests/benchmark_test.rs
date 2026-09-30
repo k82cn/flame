@@ -201,6 +201,7 @@ async fn run_session(
         batch_size: 1,
         priority: 0,
         resreq: None,
+        tokens: Default::default(),
     };
 
     let ssn = conn.create_session(&ssn_attr).await?;

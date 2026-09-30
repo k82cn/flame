@@ -71,6 +71,7 @@ pub struct SessionDao {
     pub version: u32,
 
     pub common_data: Option<Vec<u8>>,
+    pub tokens: String,
     pub creation_time: i64,
     pub completion_time: Option<i64>,
 
@@ -157,6 +158,8 @@ impl TryFrom<&SessionDao> for Session {
             application: ssn.application.clone(),
             version: ssn.version,
             common_data: ssn.common_data.clone().map(Bytes::from),
+            tokens: serde_json::from_str(&ssn.tokens)
+                .map_err(|e| FlameError::Storage(format!("invalid session tokens: {e}")))?,
             creation_time: DateTime::<Utc>::from_timestamp(ssn.creation_time, 0)
                 .ok_or(FlameError::Storage("invalid creation time".to_string()))?,
             completion_time: ssn

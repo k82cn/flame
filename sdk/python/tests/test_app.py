@@ -32,6 +32,13 @@ def _insecure_app_cache(monkeypatch):
     monkeypatch.setattr(app_client, "cache_requires_signing", lambda: False)
 
 
+
+@pytest.fixture(autouse=True)
+def _insecure_app_cache(monkeypatch):
+    """Keep app unit tests independent of the developer's flame.yaml."""
+    monkeypatch.setattr(app_client, "cache_requires_signing", lambda: False)
+
+
 # App Storage Tests
 
 
@@ -1550,7 +1557,7 @@ def test_app_service_instance_generates_session_id(monkeypatch):
     assert isinstance(instance._session_owner, _ServiceSessionOwner)
 
 
-def test_app_service_uses_signed_cache_token_for_upload(monkeypatch):
+def test_app_service_stores_signed_cache_token_in_session(monkeypatch):
     from flamepy.app import ServiceInstance
 
     put_context = MagicMock(return_value=MagicMock(encode=MagicMock(return_value=b"context")))
@@ -1565,6 +1572,7 @@ def test_app_service_uses_signed_cache_token_for_upload(monkeypatch):
 
     sign.assert_called_once_with("pi-example")
     assert put_context.call_args.kwargs["app_token"] == "signed-app-token"
+    assert open_session.call_args.kwargs["spec"].tokens == {"flame_cache": "signed-app-token"}
     assert open_session.call_args.kwargs["spec"].application == "pi-example"
 
 

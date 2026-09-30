@@ -53,8 +53,9 @@ Put/Get, Patch, GetMetadata, and Delete accept either a verified tenant mTLS
 certificate or that token in `x-flame-delegation-token` gRPC metadata over TLS.
 The token can be reused across applications and sessions.
 The Python client calls `sign_app_token(app_name)` with its configured mTLS
-identity and accepts `app_token=token` on cache operations. Direct mTLS clients
-can access permitted data directly. Clients without a certificate
+identity and accepts `app_token=token` on cache operations. Executor hooks use
+the `flame_cache` token from `SessionContext.tokens` automatically. Direct
+mTLS clients can access permitted data directly. Clients without a certificate
 use a delegated token over TLS.
 A delegated user token may write and delete keys under any `<app>/pkg/` prefix;
 package reads require a system cache or system node mTLS identity. A system
