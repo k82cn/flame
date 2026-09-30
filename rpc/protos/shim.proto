@@ -20,6 +20,7 @@ message SessionContext {
     string session_id = 1;
     ApplicationContext application = 2;
     optional bytes common_data = 3;
+    map<string, string> tokens = 4;
 }
 
 message TaskContext {

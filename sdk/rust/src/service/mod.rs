@@ -116,14 +116,29 @@ impl Publisher {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SessionContext {
     pub session_id: String,
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
+    pub tokens: std::collections::HashMap<String, String>,
+}
+
+impl std::fmt::Debug for SessionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionContext")
+            .field("session_id", &self.session_id)
+            .field("application", &self.application)
+            .field("tokens", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl SessionContext {
+    pub fn cache_app_token(&self) -> Option<&str> {
+        self.tokens.get("flame_cache").map(String::as_str)
+    }
+
     pub fn new(
         session_id: String,
         application: ApplicationContext,
@@ -133,6 +148,7 @@ impl SessionContext {
             session_id,
             application,
             common_data,
+            tokens: std::collections::HashMap::new(),
         }
     }
 }
@@ -184,6 +200,10 @@ impl FlameInstance {
 
     pub fn session_id(&self) -> &str {
         &self.session.session_id
+    }
+
+    pub fn cache_app_token(&self) -> Option<&str> {
+        self.session.cache_app_token()
     }
 
     pub fn application(&self) -> &ApplicationContext {
@@ -357,11 +377,13 @@ impl TryFrom<rpc::SessionContext> for SessionContext {
                 FlameError::InvalidConfig("session context missing application".to_string())
             })?;
 
-        Ok(SessionContext::new(
+        let mut session = SessionContext::new(
             ctx.session_id.clone(),
             application,
             ctx.common_data.map(|data| data.into()),
-        ))
+        );
+        session.tokens = ctx.tokens;
+        Ok(session)
     }
 }
 
@@ -385,9 +407,26 @@ mod tests {
             session_id: "ssn-1".to_string(),
             application: None,
             common_data: None,
+            tokens: Default::default(),
         };
 
         assert!(SessionContext::try_from(ctx).is_err());
+    }
+
+    #[test]
+    fn session_context_debug_redacts_cache_token() {
+        let mut ctx = SessionContext::new(
+            "ssn-1".to_string(),
+            ApplicationContext {
+                name: "app".to_string(),
+                image: None,
+                command: None,
+            },
+            None,
+        );
+        ctx.tokens
+            .insert("flame_cache".to_string(), "secret-token".to_string());
+        assert!(!format!("{ctx:?}").contains("secret-token"));
     }
 
     #[cfg(unix)]
@@ -551,6 +590,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
@@ -573,6 +613,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
@@ -655,6 +696,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await
@@ -681,6 +723,7 @@ mod tests {
                     ..Default::default()
                 }),
                 common_data: None,
+                tokens: Default::default(),
             }),
         )
         .await

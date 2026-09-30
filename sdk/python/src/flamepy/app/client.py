@@ -295,6 +295,7 @@ class ServiceInstance:
             id=session_id,
             application=app,
             common_data=common_data_bytes,
+            tokens={"flame_cache": cache_token} if cache_token is not None else None,
             min_instances=app_context.min_instances,
             max_instances=app_context.max_instances,
             batch_size=1,
@@ -569,7 +570,7 @@ def _nested_service_instance(
     instance._submissions_in_flight = 0
     instance._state = _ServiceState.OPEN
     instance._session_context = session_context
-    instance._cache_token = None
+    instance._cache_token = session_context.tokens.get("flame_cache")
     instance._session = core_client.open_session(session_id=session_context.session_id)
     instance._session_owner = _NoopSessionOwner()
     instance._generate_wrappers()

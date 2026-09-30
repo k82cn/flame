@@ -20,7 +20,7 @@ existing plaintext `http://` and `grpc://` flows.
 
 This rollout does not migrate existing storage. The `common::storage`
 interface and engines retain application names and session IDs as their
-resource keys; the new SQLite migration stores Roles.
+resource keys; the new SQLite migration stores Roles and session tokens.
 
 ## Identity and transport
 
@@ -127,12 +127,26 @@ conditional reads. Object version is not part of the signature.
 The cache derives its Ed25519 token signing key from `security.tls.key_file`
 using HKDF with a dedicated domain. Every cache replica must use the same TLS
 private key so each can verify tokens signed by another. Rotating that key
-invalidates existing tokens;
+invalidates existing tokens, including those held by running executors;
 renewing the certificate with the same private key preserves them. Deleting a
 session does not revoke an identity token
 because it may serve other sessions and applications. Tokens are bearer credentials:
 keep them out of URLs, command lines, and logs. `signed_at` is recorded but
 does not enforce expiry or revocation in this version.
+
+## Token delivery to an executor
+
+The application calls cache `Delegate(app)` using its tenant mTLS credentials
+before it creates a session, then sets
+`SessionSpec.tokens["flame_cache"]` to the returned token. The Python App
+flow does this when it prepares its session. Lower-level clients can provide
+the token in their session attributes. The session manager persists tokens
+with the session and redacts them from ordinary `Session` responses, including
+`GetSession` and list results. Only the backend `BindExecutor` response to
+the assigned system node includes the session tokens. The executor manager
+passes them into the app-facing `SessionContext.tokens` and keeps the service
+instance alive across session bindings. The workload uses the identity token on
+its cache RPCs without receiving the node's private key.
 
 The executor manager downloads cache-backed application packages with its
 system node mTLS identity and the package key signature. The application stores
@@ -154,7 +168,10 @@ cache `Delegate(app)` for package upload and cleanup, then sends that token on
    verify the certificate alone permits the same data requests. Verify package upload,
    patch, and cleanup, but deny package reads and every bootstrap operation
    without the system cache identity. Check that cache List also requires it.
-4. Test signing-key rotation, cache replica key sharing, and session deletion.
+4. Create a session with `tokens["flame_cache"]`; verify tokens survive
+   storage reload, appear in the assigned executor's `SessionContext`, and
+   never appear in frontend `Session` responses or logs.
+5. Test signing-key rotation, cache replica key sharing, and session deletion.
    Rotation invalidates old tokens; session deletion alone does not.
 
 ## References

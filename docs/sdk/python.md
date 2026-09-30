@@ -309,18 +309,27 @@ In secure deployments, sign the globally unique application name once and
 pass its token when working with cache keys under `<app>/<session>`:
 
 ```python
-from flamepy.core import sign_app_token
+from flamepy.core import ConnectionInstance, SessionAttributes, sign_app_token
 from flamepy.core.cache import put_object
 
 token = sign_app_token("my-app")
+session = ConnectionInstance.instance().create_session(
+    SessionAttributes(
+        id="shared",
+        application="my-app",
+        tokens={"flame_cache": token},
+    )
+)
 ref = put_object("my-app/shared", {"temperature": 0.8}, app_token=token)
 ```
 
 The Python App flow signs its application before storing session data and
-uses the token for its own cache calls. Cache `List` uses the cache system
-identity. `ObjectRef` contains
-the endpoint, key, version, and signature for that exact key. The cache checks
-the signature when reading; keep the user delegation token separately.
+adds the token to `SessionSpec.tokens["flame_cache"]` automatically. The
+executor receives it in `SessionContext.tokens`; ordinary session responses
+do not return it. Service cache calls use the active session token. Cache
+`List` uses the cache system identity. `ObjectRef` contains the endpoint, key,
+version, and signature for that exact key. The cache checks the signature when
+reading; keep the user delegation token separately.
 
 When deploying a Python App with cache-backed packages, `CacheStorage`
 requests `Delegate(app)` to upload or delete `<app>/pkg/...` objects. An executor

@@ -180,6 +180,7 @@ impl TryFrom<(rpc::Application, rpc::Session)> for SessionContext {
             session_id: metadata.id,
             application,
             common_data: spec.common_data.map(CommonData::from),
+            tokens: spec.tokens,
         })
     }
 }

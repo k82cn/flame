@@ -344,6 +344,7 @@ mod tests {
                 installer: None,
             },
             common_data: None,
+            tokens: Default::default(),
         };
 
         let result = shim.on_session_enter(&ctx).await;

@@ -129,6 +129,7 @@ impl From<SessionContext> for rpc::SessionContext {
             session_id: ctx.session_id.clone(),
             application: Some(ctx.application.into()),
             common_data: ctx.common_data.map(|d| d.into()),
+            tokens: ctx.tokens,
         }
     }
 }
@@ -217,6 +218,9 @@ impl From<&Session> for rpc::Session {
             spec: Some(rpc::SessionSpec {
                 application: ssn.application.clone(),
                 common_data: ssn.common_data.clone().map(CommonData::into),
+                // Frontend resources must not expose service credentials. The
+                // backend injects them only into the bound executor context.
+                tokens: Default::default(),
                 min_instances: ssn.min_instances,
                 max_instances: ssn.max_instances,
                 batch_size: 1,

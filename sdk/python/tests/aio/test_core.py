@@ -10,6 +10,29 @@ from flamepy.core._bridge import LoopThread
 from flamepy.core.types import ApplicationAttributes, FlameError, SessionAttributes, TaskState
 
 
+def test_secure_session_spec_includes_cache_token(monkeypatch):
+    from flamepy.core.aio import cache as aio_cache
+    from flamepy.core.aio.client import Connection
+
+    signed = []
+
+    async def sign(application):
+        signed.append(application)
+        return "signed-app-token"
+
+    monkeypatch.setattr(aio_cache, "cached_app_token", sign)
+    connection = object.__new__(Connection)
+    connection.addr = "https://session-manager:8080"
+    spec = asyncio.run(connection._session_spec_with_cache_token(SessionAttributes(application="app")))
+    assert spec.tokens["flame_cache"] == "signed-app-token"
+    assert signed == ["app"]
+
+    explicit = SessionAttributes(application="app", tokens={"flame_cache": "supplied"})
+    spec = asyncio.run(connection._session_spec_with_cache_token(explicit))
+    assert spec.tokens["flame_cache"] == "supplied"
+    assert signed == ["app"]
+
+
 def test_aio_frontend_api_parity(frontend_server):
     endpoint, service, server_loop = frontend_server
 
