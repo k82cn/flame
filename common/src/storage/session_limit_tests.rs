@@ -35,11 +35,20 @@ mod tests {
     async fn test_no_eviction_when_no_limit() {
         let ctx = test_context_with_limit(None);
         let storage = storage::new_ptr(&ctx).await.unwrap();
+        storage
+            .register_application(
+                "default".to_string(),
+                "test-app".to_string(),
+                Default::default(),
+            )
+            .await
+            .unwrap();
 
         for i in 0..5 {
             let attr = SessionAttributes {
                 tokens: Default::default(),
-                id: format!("ssn-{}", i),
+                workspace: "default".to_string(),
+                name: format!("ssn-{}", i),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -52,7 +61,10 @@ mod tests {
         }
 
         for i in 0..3 {
-            storage.close_session(format!("ssn-{}", i)).await.unwrap();
+            storage
+                .close_session("default", &format!("ssn-{}", i))
+                .await
+                .unwrap();
         }
 
         let sessions = storage.list_sessions(None).unwrap();
@@ -63,11 +75,20 @@ mod tests {
     async fn test_eviction_when_limit_reached() {
         let ctx = test_context_with_limit(Some(3));
         let storage = storage::new_ptr(&ctx).await.unwrap();
+        storage
+            .register_application(
+                "default".to_string(),
+                "test-app".to_string(),
+                Default::default(),
+            )
+            .await
+            .unwrap();
 
         for i in 0..3 {
             let attr = SessionAttributes {
                 tokens: Default::default(),
-                id: format!("ssn-{}", i),
+                workspace: "default".to_string(),
+                name: format!("ssn-{}", i),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -82,12 +103,12 @@ mod tests {
         let sessions_before = storage.list_sessions(None).unwrap();
         assert_eq!(sessions_before.len(), 3);
 
-        storage.close_session("ssn-0".to_string()).await.unwrap();
+        storage.close_session("default", "ssn-0").await.unwrap();
 
         let sessions_after = storage.list_sessions(None).unwrap();
         assert_eq!(sessions_after.len(), 2);
 
-        let session_ids: Vec<_> = sessions_after.iter().map(|s| s.id.as_str()).collect();
+        let session_ids: Vec<_> = sessions_after.iter().map(|s| s.name.as_str()).collect();
         assert!(!session_ids.contains(&"ssn-0"));
     }
 
@@ -95,11 +116,20 @@ mod tests {
     async fn test_no_eviction_under_limit() {
         let ctx = test_context_with_limit(Some(5));
         let storage = storage::new_ptr(&ctx).await.unwrap();
+        storage
+            .register_application(
+                "default".to_string(),
+                "test-app".to_string(),
+                Default::default(),
+            )
+            .await
+            .unwrap();
 
         for i in 0..3 {
             let attr = SessionAttributes {
                 tokens: Default::default(),
-                id: format!("ssn-{}", i),
+                workspace: "default".to_string(),
+                name: format!("ssn-{}", i),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -111,7 +141,7 @@ mod tests {
             storage.create_session(attr).await.unwrap();
         }
 
-        storage.close_session("ssn-0".to_string()).await.unwrap();
+        storage.close_session("default", "ssn-0").await.unwrap();
 
         let sessions = storage.list_sessions(None).unwrap();
         assert_eq!(sessions.len(), 3);
@@ -121,11 +151,20 @@ mod tests {
     async fn test_eviction_only_removes_closed_sessions() {
         let ctx = test_context_with_limit(Some(3));
         let storage = storage::new_ptr(&ctx).await.unwrap();
+        storage
+            .register_application(
+                "default".to_string(),
+                "test-app".to_string(),
+                Default::default(),
+            )
+            .await
+            .unwrap();
 
         for i in 0..3 {
             let attr = SessionAttributes {
                 tokens: Default::default(),
-                id: format!("ssn-{}", i),
+                workspace: "default".to_string(),
+                name: format!("ssn-{}", i),
                 application: "test-app".to_string(),
                 common_data: None,
                 min_instances: 1,
@@ -137,7 +176,7 @@ mod tests {
             storage.create_session(attr).await.unwrap();
         }
 
-        storage.close_session("ssn-1".to_string()).await.unwrap();
+        storage.close_session("default", "ssn-1").await.unwrap();
 
         let sessions = storage.list_sessions(None).unwrap();
         assert_eq!(sessions.len(), 2);

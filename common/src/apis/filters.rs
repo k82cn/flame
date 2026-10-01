@@ -11,9 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use super::{
-    ApplicationID, ApplicationState, ExecutorID, ExecutorState, SessionID, SessionState, TaskState,
-};
+use super::{ApplicationState, ExecutorState, SessionState, TaskState};
 use crate::FlameError;
 use rpc::flame::v1 as rpc;
 
@@ -32,16 +30,18 @@ impl SessionPredicate {
 
 /// Filter for tasks owned by one session.
 pub struct TaskFilter {
+    pub workspace: String,
     /// Owning session.
-    pub session: SessionID,
+    pub session: String,
     /// Task states to include. `None` matches every state.
     pub states: Option<Vec<TaskState>>,
 }
 
 impl TaskFilter {
     /// Creates a filter for every task in a session.
-    pub fn by_session(session: impl Into<SessionID>) -> Self {
+    pub fn by_session(workspace: impl Into<String>, session: impl Into<String>) -> Self {
         Self {
+            workspace: workspace.into(),
             session: session.into(),
             states: None,
         }
@@ -49,18 +49,24 @@ impl TaskFilter {
 
     /// Creates a filter for tasks in any of the provided states.
     pub fn by_session_states(
-        session: impl Into<SessionID>,
+        workspace: impl Into<String>,
+        session: impl Into<String>,
         states: impl Into<Vec<TaskState>>,
     ) -> Self {
         Self {
+            workspace: workspace.into(),
             session: session.into(),
             states: Some(states.into()),
         }
     }
 
     /// Creates a filter for non-terminal tasks in a session.
-    pub fn non_terminal(session: impl Into<SessionID>) -> Self {
-        Self::by_session_states(session, vec![TaskState::Pending, TaskState::Running])
+    pub fn non_terminal(workspace: impl Into<String>, session: impl Into<String>) -> Self {
+        Self::by_session_states(
+            workspace,
+            session,
+            vec![TaskState::Pending, TaskState::Running],
+        )
     }
 }
 
@@ -69,12 +75,13 @@ impl TaskFilter {
 /// - `None` = ignore this filter (match all)
 /// - `Some(value)` = match exactly (empty vec matches nothing)
 pub struct SessionFilter {
+    pub workspace: Option<String>,
     /// Filter by owning application
-    pub application: Option<ApplicationID>,
+    pub application: Option<String>,
     /// Filter by session state
     pub state: Option<SessionState>,
-    /// Filter by session IDs
-    pub ids: Option<Vec<SessionID>>,
+    /// Filter by session names
+    pub names: Option<Vec<String>>,
     /// Additional in-memory predicate filter.
     pub predicate: Option<SessionPredicate>,
     /// Maximum number of matching sessions to return.
@@ -85,9 +92,10 @@ impl SessionFilter {
     /// Creates a new empty filter (matches all sessions).
     pub const fn new() -> Self {
         Self {
+            workspace: None,
             application: None,
             state: None,
-            ids: None,
+            names: None,
             predicate: None,
             limit: None,
         }
@@ -96,45 +104,46 @@ impl SessionFilter {
     /// Creates a filter for a specific state.
     pub const fn by_state(state: SessionState) -> Self {
         Self {
+            workspace: None,
             application: None,
             state: Some(state),
-            ids: None,
+            names: None,
             predicate: None,
             limit: None,
         }
     }
 
-    /// Creates a filter for specific session IDs.
-    pub fn by_ids(ids: Vec<SessionID>) -> Self {
+    /// Creates a filter for specific session names.
+    pub fn by_names(names: Vec<String>) -> Self {
         Self {
+            workspace: None,
             application: None,
             state: None,
-            ids: Some(ids),
+            names: Some(names),
             predicate: None,
             limit: None,
         }
     }
 
     /// Creates a filter for an application's sessions.
-    pub fn by_application(application: impl Into<ApplicationID>) -> Self {
+    pub fn by_application(application: impl Into<String>) -> Self {
         Self {
+            workspace: None,
             application: Some(application.into()),
             state: None,
-            ids: None,
+            names: None,
             predicate: None,
             limit: None,
         }
     }
 
     /// Creates a filter for an application's sessions in a specific state.
-    pub fn by_application_state(
-        application: impl Into<ApplicationID>,
-        state: SessionState,
-    ) -> Self {
+    pub fn by_application_state(application: impl Into<String>, state: SessionState) -> Self {
         Self {
+            workspace: None,
             application: Some(application.into()),
             state: Some(state),
-            ids: None,
+            names: None,
             predicate: None,
             limit: None,
         }
@@ -164,9 +173,10 @@ impl TryFrom<rpc::ListSessionsRequest> for SessionFilter {
 
     fn try_from(request: rpc::ListSessionsRequest) -> Result<Self, Self::Error> {
         Ok(Self {
+            workspace: request.workspace,
             application: request.application,
             state: request.state.map(SessionState::try_from).transpose()?,
-            ids: None,
+            names: None,
             predicate: None,
             limit: None,
         })
@@ -184,8 +194,8 @@ pub const READY_SESSION: Option<SessionFilter> =
 pub struct ExecutorFilter {
     /// Filter by executor state
     pub state: Option<ExecutorState>,
-    /// Filter by executor IDs
-    pub ids: Option<Vec<ExecutorID>>,
+    /// Filter by executor names
+    pub names: Option<Vec<String>>,
     /// Filter by node name
     pub node: Option<String>,
 }
@@ -195,7 +205,7 @@ impl ExecutorFilter {
     pub const fn new() -> Self {
         Self {
             state: None,
-            ids: None,
+            names: None,
             node: None,
         }
     }
@@ -204,7 +214,7 @@ impl ExecutorFilter {
     pub const fn by_state(state: ExecutorState) -> Self {
         Self {
             state: Some(state),
-            ids: None,
+            names: None,
             node: None,
         }
     }
@@ -213,16 +223,16 @@ impl ExecutorFilter {
     pub fn by_node(node: impl Into<String>) -> Self {
         Self {
             state: None,
-            ids: None,
+            names: None,
             node: Some(node.into()),
         }
     }
 
-    /// Creates a filter for specific executor IDs.
-    pub fn by_ids(ids: Vec<ExecutorID>) -> Self {
+    /// Creates a filter for specific executor names.
+    pub fn by_names(names: Vec<String>) -> Self {
         Self {
             state: None,
-            ids: Some(ids),
+            names: Some(names),
             node: None,
         }
     }
@@ -252,6 +262,7 @@ pub const ALL_EXECUTOR: Option<ExecutorFilter> = None;
 /// - `None` = ignore this filter (match all)
 /// - `Some(value)` = match exactly
 pub struct ApplicationFilter {
+    pub workspace: Option<String>,
     /// Filter by application state
     pub state: Option<ApplicationState>,
 }
@@ -259,12 +270,18 @@ pub struct ApplicationFilter {
 impl ApplicationFilter {
     /// Creates a new empty filter (matches all applications).
     pub const fn new() -> Self {
-        Self { state: None }
+        Self {
+            workspace: None,
+            state: None,
+        }
     }
 
     /// Creates a filter for a specific application state.
     pub const fn by_state(state: ApplicationState) -> Self {
-        Self { state: Some(state) }
+        Self {
+            workspace: None,
+            state: Some(state),
+        }
     }
 }
 
@@ -279,6 +296,7 @@ impl TryFrom<rpc::ListApplicationsRequest> for ApplicationFilter {
 
     fn try_from(request: rpc::ListApplicationsRequest) -> Result<Self, Self::Error> {
         Ok(Self {
+            workspace: request.workspace,
             state: request.state.map(ApplicationState::try_from).transpose()?,
         })
     }

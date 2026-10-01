@@ -182,7 +182,9 @@ struct RenderedSchema {
 
 pub async fn run(ctx: &FlameContext, options: &Options) -> Result<(), FlameError> {
     let plan = build_plan(ctx, options)?;
-    let object_key = plan.prepared.object_key(&plan.app_name);
+    let object_key = plan
+        .prepared
+        .object_key(&ctx.get_current_context()?.workspace, &plan.app_name);
     let (uploaded_key, package_endpoint) = if plan.dry_run {
         (object_key, plan.cache_endpoint.clone())
     } else {
@@ -222,7 +224,8 @@ pub async fn run(ctx: &FlameContext, options: &Options) -> Result<(), FlameError
             &current_ctx.cluster.endpoint,
             current_ctx.cluster.tls.as_ref(),
         )
-        .await?;
+        .await?
+        .with_workspace(current_ctx.workspace.clone());
         conn.register_application(plan.app_name.clone(), attributes)
             .await?;
     }
@@ -641,22 +644,22 @@ mod tests {
     }
 
     #[test]
-    fn binary_package_url_uses_three_part_content_addressed_object_key() {
+    fn binary_package_url_uses_workspace_content_addressed_object_key() {
         let temp = tempfile::TempDir::new().unwrap();
         let bin = temp.path().join("service");
         std::fs::write(&bin, b"#!/bin/sh\n").unwrap();
         make_executable(&bin);
 
         let prepared = prepare_application(&bin).unwrap();
-        let object_key = prepared.object_key("demo");
+        let object_key = prepared.object_key("default", "demo");
         assert_eq!(
             object_key,
-            format!("demo/pkg/demo-{}.tar.gz", &prepared.sha256[..16])
+            format!("default/demo/pkg/demo-{}.tar.gz", &prepared.sha256[..16])
         );
         assert_eq!(
             object_url("grpc://cache:9090", &object_key),
             format!(
-                "grpc://cache:9090/demo/pkg/demo-{}.tar.gz",
+                "grpc://cache:9090/default/demo/pkg/demo-{}.tar.gz",
                 &prepared.sha256[..16]
             )
         );

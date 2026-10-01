@@ -26,9 +26,24 @@ impl Session {
     }
 
     pub fn update_task(&mut self, task: &Task) -> Result<(), FlameError> {
+        if task.workspace != self.workspace || task.session != self.name {
+            return Err(FlameError::InvalidConfig(format!(
+                "task <{}/{}/{}> does not belong to session <{}/{}>",
+                task.workspace, task.session, task.name, self.workspace, self.name
+            )));
+        }
+        let number = task
+            .name
+            .parse::<u64>()
+            .map_err(|_| FlameError::InvalidConfig("task name must be a decimal number".into()))?;
+        if number == 0 || number.to_string() != task.name {
+            return Err(FlameError::InvalidConfig(
+                "task name must be a canonical positive decimal number".into(),
+            ));
+        }
         let task_ptr = TaskPtr::new(task.clone().into());
 
-        let old_task_ptr = self.tasks.get(&task.id);
+        let old_task_ptr = self.tasks.get(&task.name);
         if let Some(old_task_ptr) = old_task_ptr {
             let old_task = lock_ptr!(old_task_ptr)?;
             if old_task.version >= task.version {
@@ -46,24 +61,24 @@ impl Session {
             "Updating task <{}> from state {:?} to {:?} (version {})",
             task.id,
             self.tasks
-                .get(&task.id)
+                .get(&task.name)
                 .and_then(|t| lock_ptr!(t).ok())
                 .map(|t| t.state),
             task.state,
             task.version
         );
 
-        self.tasks.insert(task.id, task_ptr.clone());
+        self.tasks.insert(task.name.clone(), task_ptr.clone());
         self.tasks_index.entry(task.state).or_default();
 
         for state in self.tasks_index.values_mut() {
-            state.remove(&task.id);
+            state.remove(&task.name);
         }
 
         self.tasks_index
             .get_mut(&task.state)
             .unwrap()
-            .insert(task.id, task_ptr);
+            .insert(task.name.clone(), task_ptr);
 
         let pending_count = self
             .tasks_index
@@ -88,11 +103,20 @@ impl Session {
     /// Remove the oldest pending task.
     pub fn pop_pending_task(&mut self) -> Option<TaskPtr> {
         let pending_tasks = self.tasks_index.get_mut(&TaskState::Pending)?;
-        let task_id = *pending_tasks.keys().next()?;
-        pending_tasks.remove(&task_id)
+        let task_name = pending_tasks
+            .keys()
+            .min_by_key(|name| name.parse::<u64>().unwrap_or(u64::MAX))?
+            .clone();
+        pending_tasks.remove(&task_name)
     }
 
     pub fn validate_spec(&self, attr: &SessionAttributes) -> Result<(), FlameError> {
+        if self.workspace != attr.workspace || self.name != attr.name {
+            return Err(FlameError::InvalidConfig(format!(
+                "session <{}/{}> spec mismatch: expected <{}/{}>",
+                self.workspace, self.name, attr.workspace, attr.name
+            )));
+        }
         if self.application != attr.application {
             return Err(FlameError::InvalidConfig(format!(
                 "session <{}> spec mismatch: application differs (expected '{}', got '{}')",
@@ -152,11 +176,35 @@ mod tests {
     }
 
     #[test]
+    fn rejects_tasks_from_other_sessions_or_workspaces() {
+        let mut session = Session {
+            workspace: "team-a".into(),
+            name: "run".into(),
+            ..Default::default()
+        };
+        for (workspace, parent) in [("team-b", "run"), ("team-a", "other")] {
+            let task = Task {
+                workspace: workspace.into(),
+                session: parent.into(),
+                name: "1".into(),
+                version: 1,
+                ..Default::default()
+            };
+            assert!(session.update_task(&task).is_err());
+        }
+        assert!(session.tasks.is_empty());
+    }
+
+    #[test]
     fn pop_pending_task_is_fifo() {
-        let mut session = Session::default();
+        let mut session = Session {
+            workspace: "default".into(),
+            ..Default::default()
+        };
         session
             .update_task(&Task {
-                id: 1,
+                id: crate::apis::new_metadata_id(),
+                name: "1".into(),
                 version: 1,
                 affinity: HashSet::from([bytes::Bytes::from_static(b"cold")]),
                 ..Default::default()
@@ -164,14 +212,25 @@ mod tests {
             .unwrap();
         session
             .update_task(&Task {
-                id: 2,
+                id: crate::apis::new_metadata_id(),
+                name: "2".into(),
                 version: 1,
                 affinity: HashSet::from([bytes::Bytes::from_static(b"warm")]),
                 ..Default::default()
             })
             .unwrap();
 
-        let task = session.pop_pending_task().unwrap();
-        assert_eq!(lock_ptr!(task).unwrap().id, 1);
+        session
+            .update_task(&Task {
+                id: crate::apis::new_metadata_id(),
+                name: "10".into(),
+                version: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        for expected in ["1", "2", "10"] {
+            let task = session.pop_pending_task().unwrap();
+            assert_eq!(lock_ptr!(task).unwrap().name, expected);
+        }
     }
 }

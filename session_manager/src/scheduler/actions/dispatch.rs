@@ -82,7 +82,7 @@ impl Action for DispatchAction {
             let available = ctx.select_executor(&ssn, &idle_executors)?;
             if let Some(exec) = available {
                 ctx.bind_session(&exec, &ssn).await?;
-                idle_executors.remove(&exec.id);
+                idle_executors.remove(&exec.name);
 
                 // A session may need more than one executor. Give Dispatch the
                 // first opportunity to satisfy that demand from retained Idle

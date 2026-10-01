@@ -55,7 +55,10 @@ impl ApplicationManager {
         let applications = self.controller.list_applications(Some(&filter)).await?;
 
         for application in applications {
-            if let Err(error) = self.reconcile_application(&application.name).await {
+            if let Err(error) = self
+                .reconcile_application(&application.workspace, &application.name)
+                .await
+            {
                 tracing::warn!(
                     "Failed to reconcile disabled application <{}>: {}",
                     application.name,
@@ -66,8 +69,8 @@ impl ApplicationManager {
         Ok(())
     }
 
-    async fn reconcile_application(&self, name: &str) -> Result<(), FlameError> {
-        let application = match self.controller.get_application(name.to_string()).await {
+    async fn reconcile_application(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
+        let application = match self.controller.get_application(workspace, name).await {
             Ok(application) => application,
             Err(FlameError::NotFound(_)) => return Ok(()),
             Err(error) => return Err(error),
@@ -75,18 +78,24 @@ impl ApplicationManager {
         if application.state != ApplicationState::Disabled {
             return Ok(());
         }
-        let closed_filter =
+        let mut closed_filter =
             SessionFilter::by_application_state(application.name.clone(), SessionState::Closed);
+        closed_filter.workspace = Some(application.workspace.clone());
         for session in self.storage.list_sessions(Some(&closed_filter))? {
-            match self.controller.delete_session(session.id).await {
+            match self
+                .controller
+                .delete_session(&session.workspace, &session.name)
+                .await
+            {
                 Ok(_) | Err(FlameError::NotFound(_)) => {}
                 Err(error) => return Err(error),
             }
         }
 
-        let open_filter =
+        let mut open_filter =
             SessionFilter::by_application_state(application.name.clone(), SessionState::Open)
                 .with_limit(1);
+        open_filter.workspace = Some(application.workspace.clone());
         let has_open_sessions = !self.storage.list_sessions(Some(&open_filter))?.is_empty();
         if has_open_sessions {
             return Ok(());
@@ -96,8 +105,11 @@ impl ApplicationManager {
             .storage
             .list_executors(Some(&ExecutorFilter::by_state(ExecutorState::Idle)))?
             .into_iter()
-            .filter(|executor| executor.application == application.name)
-            .map(|executor| executor.id)
+            .filter(|executor| {
+                executor.workspace == application.workspace
+                    && executor.application == application.name
+            })
+            .map(|executor| executor.name)
             .collect::<Vec<_>>();
         for executor_id in idle_executors {
             if let Err(error) = self.controller.release_executor(executor_id.clone()).await {
@@ -110,7 +122,9 @@ impl ApplicationManager {
             }
         }
 
-        self.storage.delete_application(application.name).await
+        self.storage
+            .delete_application(&application.workspace, &application.name)
+            .await
     }
 }
 
@@ -317,43 +331,47 @@ mod tests {
     async fn manager_waits_for_open_sessions_before_removing_application() {
         let (manager, controller) = application_manager().await;
         controller
-            .register_application("draining-app".to_string(), ApplicationAttributes::default())
+            .register_application(
+                "default".to_string(),
+                "draining-app".to_string(),
+                ApplicationAttributes::default(),
+            )
             .await
             .unwrap();
         controller
             .create_session(SessionAttributes {
-                id: "closed-session".to_string(),
+                name: "closed-session".to_string(),
                 application: "draining-app".to_string(),
                 ..SessionAttributes::default()
             })
             .await
             .unwrap();
         controller
-            .close_session("closed-session".to_string())
+            .close_session("default", "closed-session")
             .await
             .unwrap();
         controller
             .create_session(SessionAttributes {
-                id: "open-session".to_string(),
+                name: "open-session".to_string(),
                 application: "draining-app".to_string(),
                 ..SessionAttributes::default()
             })
             .await
             .unwrap();
         controller
-            .unregister_application("draining-app".to_string())
+            .unregister_application("default", "draining-app")
             .await
             .unwrap();
 
         manager.reconcile_once().await.unwrap();
         assert!(matches!(
-            controller.get_session("closed-session".to_string()),
+            controller.get_session("default", "closed-session"),
             Err(FlameError::NotFound(_))
         ));
-        assert!(controller.get_session("open-session".to_string()).is_ok());
+        assert!(controller.get_session("default", "open-session").is_ok());
         assert_eq!(
             controller
-                .get_application("draining-app".to_string())
+                .get_application("default", "draining-app")
                 .await
                 .unwrap()
                 .state,
@@ -361,16 +379,16 @@ mod tests {
         );
 
         controller
-            .close_session("open-session".to_string())
+            .close_session("default", "open-session")
             .await
             .unwrap();
         manager.reconcile_once().await.unwrap();
         assert!(matches!(
-            controller.get_session("open-session".to_string()),
+            controller.get_session("default", "open-session"),
             Err(FlameError::NotFound(_))
         ));
         assert!(matches!(
-            controller.get_application("draining-app".to_string()).await,
+            controller.get_application("default", "draining-app").await,
             Err(FlameError::NotFound(_))
         ));
     }
@@ -379,7 +397,11 @@ mod tests {
     async fn manager_ignores_enabled_applications() {
         let (manager, controller) = application_manager().await;
         controller
-            .register_application("enabled-app".to_string(), ApplicationAttributes::default())
+            .register_application(
+                "default".to_string(),
+                "enabled-app".to_string(),
+                ApplicationAttributes::default(),
+            )
             .await
             .unwrap();
 
@@ -387,7 +409,7 @@ mod tests {
 
         assert_eq!(
             controller
-                .get_application("enabled-app".to_string())
+                .get_application("default", "enabled-app")
                 .await
                 .unwrap()
                 .state,

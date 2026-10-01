@@ -16,9 +16,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::apis::{
-    Application, ApplicationAttributes, ApplicationID, ApplicationState, ExecutorID, ExecutorState,
-    Node, Session, SessionAttributes, SessionID, Task, TaskGID, TaskInput, TaskOptions, TaskResult,
-    TaskState,
+    Application, ApplicationAttributes, ApplicationState, ExecutorState, Node, Session,
+    SessionAttributes, Task, TaskInput, TaskOptions, TaskResult, TaskState, Workspace,
 };
 use crate::apis::{ApplicationFilter, Executor};
 use crate::FlameError;
@@ -35,67 +34,89 @@ pub type EnginePtr = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + 'static {
+    async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError>;
+    async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError>;
     // Application operations
     async fn register_application(
         &self,
+        workspace: String,
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError>;
     async fn update_application_state(
         &self,
-        id: ApplicationID,
+        workspace: &str,
+        name: &str,
         state: ApplicationState,
     ) -> Result<Application, FlameError>;
-    async fn delete_application(&self, id: ApplicationID) -> Result<(), FlameError>;
+    async fn delete_application(&self, workspace: &str, name: &str) -> Result<(), FlameError>;
     async fn update_application(
         &self,
-        id: String,
+        workspace: &str,
+        name: &str,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError>;
-    async fn get_application(&self, id: ApplicationID) -> Result<Application, FlameError>;
+    async fn get_application(&self, workspace: &str, name: &str)
+        -> Result<Application, FlameError>;
     async fn find_applications(
         &self,
         filter: Option<&ApplicationFilter>,
     ) -> Result<Vec<Application>, FlameError>;
     // Session operations
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError>;
-    async fn get_session(&self, id: SessionID) -> Result<Session, FlameError>;
+    async fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError>;
     async fn open_session(
         &self,
-        id: SessionID,
+        workspace: &str,
+        name: &str,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError>;
-    async fn close_session(&self, id: SessionID) -> Result<Session, FlameError>;
-    async fn delete_session(&self, id: SessionID) -> Result<Session, FlameError>;
+    async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError>;
+    async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError>;
     async fn find_sessions(&self) -> Result<Vec<Session>, FlameError>;
 
     // Task operations
     async fn create_task(
         &self,
-        ssn_id: SessionID,
+        workspace: &str,
+        session: &str,
         task_input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError>;
 
     #[allow(dead_code)]
-    async fn get_task(&self, gid: TaskGID) -> Result<Task, FlameError>;
+    async fn get_task(
+        &self,
+        workspace: &str,
+        session: &str,
+        task: &str,
+    ) -> Result<Task, FlameError>;
 
-    async fn retry_task(&self, gid: TaskGID) -> Result<Task, FlameError>;
+    async fn retry_task(
+        &self,
+        workspace: &str,
+        session: &str,
+        task: &str,
+    ) -> Result<Task, FlameError>;
 
     async fn update_task_state(
         &self,
-        gid: TaskGID,
+        workspace: &str,
+        session: &str,
+        task: &str,
         task_state: TaskState,
         message: Option<String>,
     ) -> Result<Task, FlameError>;
 
     async fn update_task_result(
         &self,
-        gid: TaskGID,
+        workspace: &str,
+        session: &str,
+        task: &str,
         task_result: TaskResult,
     ) -> Result<Task, FlameError>;
 
-    async fn find_tasks(&self, ssn_id: SessionID) -> Result<Vec<Task>, FlameError>;
+    async fn find_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError>;
 
     // Node operations
     async fn create_node(&self, node: &Node) -> Result<Node, FlameError>;
@@ -108,15 +129,20 @@ pub trait Engine: Send + Sync + 'static {
     // Executor operations
     async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError>;
     #[allow(dead_code)]
-    async fn get_executor(&self, id: &ExecutorID) -> Result<Option<Executor>, FlameError>;
+    async fn get_executor(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<Option<Executor>, FlameError>;
     async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError>;
     #[allow(dead_code)]
     async fn update_executor_state(
         &self,
-        id: &ExecutorID,
+        workspace: &str,
+        name: &str,
         state: ExecutorState,
     ) -> Result<Executor, FlameError>;
-    async fn delete_executor(&self, id: &ExecutorID) -> Result<(), FlameError>;
+    async fn delete_executor(&self, workspace: &str, name: &str) -> Result<(), FlameError>;
     async fn find_executors(&self, node: Option<&str>) -> Result<Vec<Executor>, FlameError>;
 }
 

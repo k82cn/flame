@@ -20,9 +20,9 @@ use stdng::{lock_ptr, MutexPtr};
 
 use common::apis::{
     Application, ApplicationFilter, ApplicationState, Executor, ExecutorFilter, ExecutorID,
-    ExecutorState, Node, NodeState, ResourceRequirement, Session, SessionFilter, SessionID,
-    SessionPredicate, SessionState, Shim, Task, TaskID, TaskState, ALL_APPLICATION, ALL_EXECUTOR,
-    BOUND_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION, READY_SESSION, VOID_EXECUTOR,
+    ExecutorState, Node, NodeState, ResourceRequirement, Session, SessionFilter, SessionPredicate,
+    SessionState, Shim, Task, TaskState, ALL_APPLICATION, ALL_EXECUTOR, BOUND_EXECUTOR,
+    IDLE_EXECUTOR, OPEN_SESSION, READY_SESSION, VOID_EXECUTOR,
 };
 use common::ctx::DEFAULT_SESSION_RETRY_LIMITS;
 use common::FlameError;
@@ -33,17 +33,18 @@ pub type TaskInfoPtr = Arc<TaskInfo>;
 pub type ExecutorInfoPtr = Arc<ExecutorInfo>;
 pub type NodeInfoPtr = Arc<NodeInfo>;
 pub type AppInfoPtr = Arc<AppInfo>;
+pub type ScopedName = (String, String);
 
 #[derive(Clone)]
 pub struct SnapShot {
     pub session_retry_limits: u32,
 
-    pub applications: MutexPtr<HashMap<String, AppInfoPtr>>,
+    pub applications: MutexPtr<HashMap<ScopedName, AppInfoPtr>>,
 
-    pub sessions: MutexPtr<HashMap<SessionID, SessionInfoPtr>>,
-    pub ssn_index: MutexPtr<HashMap<SessionState, HashMap<SessionID, SessionInfoPtr>>>,
-    pub executors: MutexPtr<HashMap<ExecutorID, ExecutorInfoPtr>>,
-    pub exec_index: MutexPtr<HashMap<ExecutorState, HashMap<ExecutorID, ExecutorInfoPtr>>>,
+    pub sessions: MutexPtr<HashMap<ScopedName, SessionInfoPtr>>,
+    pub ssn_index: MutexPtr<HashMap<SessionState, HashMap<ScopedName, SessionInfoPtr>>>,
+    pub executors: MutexPtr<HashMap<String, ExecutorInfoPtr>>,
+    pub exec_index: MutexPtr<HashMap<ExecutorState, HashMap<String, ExecutorInfoPtr>>>,
 
     pub nodes: MutexPtr<HashMap<String, NodeInfoPtr>>,
 }
@@ -102,17 +103,32 @@ impl SnapShot {
         Ok(())
     }
 
-    /// Get the application info for a session by looking up the application name.
-    pub fn get_application(&self, app_name: &str) -> Result<Option<AppInfoPtr>, FlameError> {
+    pub fn get_application(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<Option<AppInfoPtr>, FlameError> {
         let apps = lock_ptr!(self.applications)?;
-        Ok(apps.get(app_name).cloned())
+        Ok(apps
+            .get(&(workspace.to_string(), name.to_string()))
+            .cloned())
+    }
+
+    pub fn get_application_by_name(
+        &self,
+        workspace: &str,
+        name: &str,
+    ) -> Result<Option<AppInfoPtr>, FlameError> {
+        self.get_application(workspace, name)
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct TaskInfo {
-    pub id: TaskID,
-    pub ssn_id: SessionID,
+    pub id: String,
+    pub name: String,
+    pub session: String,
+    pub workspace: String,
 
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
@@ -123,7 +139,9 @@ pub struct TaskInfo {
 
 #[derive(Debug, Default, Clone)]
 pub struct SessionInfo {
-    pub id: SessionID,
+    pub id: String,
+    pub name: String,
+    pub workspace: String,
     pub application: String,
 
     pub tasks_status: HashMap<TaskState, i32>,
@@ -138,10 +156,14 @@ pub struct SessionInfo {
     pub priority: u32,
     pub resreq: Option<ResourceRequirement>,
     pub retry_count: u32,
-    pub task_index: HashMap<TaskState, BTreeMap<TaskID, TaskInfoPtr>>,
+    pub task_index: HashMap<TaskState, BTreeMap<String, TaskInfoPtr>>,
 }
 
 impl SessionInfo {
+    pub fn key(&self) -> ScopedName {
+        (self.workspace.clone(), self.name.clone())
+    }
+
     pub fn is_ready(&self, retry_limits: u32) -> bool {
         self.retry_count < retry_limits
     }
@@ -150,13 +172,15 @@ impl SessionInfo {
 #[derive(Clone, Debug, Default)]
 pub struct ExecutorInfo {
     pub id: ExecutorID,
+    pub name: String,
     pub node: String,
+    pub workspace: String,
     pub resreq: ResourceRequirement,
     pub shim: Shim,
     /// Application owning the retained service instance.
     pub application: String,
-    pub task_id: Option<TaskID>,
-    pub ssn_id: Option<SessionID>,
+    pub task: Option<String>,
+    pub session: Option<String>,
 
     pub creation_time: DateTime<Utc>,
     /// Last in-memory lifecycle update, used to age Idle retained instances.
@@ -175,11 +199,19 @@ pub struct NodeInfo {
 
 #[derive(Clone, Debug, Default)]
 pub struct AppInfo {
+    pub id: String,
     pub name: String,
+    pub workspace: String,
     pub state: ApplicationState,
     pub shim: Shim, // Required shim type for the application
     pub max_instances: u32,
     pub delay_release: Duration,
+}
+
+impl AppInfo {
+    pub fn key(&self) -> ScopedName {
+        (self.workspace.clone(), self.name.clone())
+    }
 }
 
 impl From<Application> for AppInfo {
@@ -201,7 +233,9 @@ impl From<&Node> for NodeInfo {
 impl From<&Application> for AppInfo {
     fn from(app: &Application) -> Self {
         AppInfo {
+            id: app.id.clone(),
             name: app.name.to_string(),
+            workspace: app.workspace.clone(),
             state: app.state,
             shim: app.shim, // Get shim from application
             max_instances: app.max_instances,
@@ -214,12 +248,14 @@ impl From<&Executor> for ExecutorInfo {
     fn from(exec: &Executor) -> Self {
         ExecutorInfo {
             id: exec.id.clone(),
+            name: exec.name.clone(),
             node: exec.node.clone(),
+            workspace: exec.workspace.clone(),
             resreq: exec.resreq.clone(),
             shim: exec.shim,
             application: exec.application.clone(),
-            task_id: exec.task_id,
-            ssn_id: exec.ssn_id.clone(),
+            task: exec.task.clone(),
+            session: exec.session.clone(),
             creation_time: exec.creation_time,
             latest_updated_timestamp: exec.latest_updated_timestamp,
             state: exec.state,
@@ -231,8 +267,10 @@ impl From<&Executor> for ExecutorInfo {
 impl From<&Task> for TaskInfo {
     fn from(task: &Task) -> Self {
         TaskInfo {
-            id: task.id,
-            ssn_id: task.ssn_id.clone(),
+            id: task.id.clone(),
+            name: task.name.clone(),
+            session: task.session.clone(),
+            workspace: task.workspace.clone(),
             creation_time: task.creation_time,
             completion_time: task.completion_time,
             state: task.state,
@@ -257,13 +295,18 @@ impl TryFrom<&Session> for SessionInfo {
         {
             let mut task_infos = BTreeMap::new();
             for (task_id, task) in tasks {
-                task_infos.insert(*task_id, Arc::new(TaskInfo::from(&*lock_ptr!(task)?)));
+                task_infos.insert(
+                    task_id.clone(),
+                    Arc::new(TaskInfo::from(&*lock_ptr!(task)?)),
+                );
             }
             task_index.insert(*state, task_infos);
         }
 
         Ok(SessionInfo {
             id: ssn.id.clone(),
+            name: ssn.name.clone(),
+            workspace: ssn.workspace.clone(),
             application: ssn.application.clone(),
             tasks_status,
             creation_time: ssn.creation_time,
@@ -386,7 +429,7 @@ impl SnapShot {
     pub fn find_applications(
         &self,
         filter: Option<ApplicationFilter>,
-    ) -> Result<HashMap<String, AppInfoPtr>, FlameError> {
+    ) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
         match filter {
             Some(filter) => self.find_applications_by_filter(filter),
             None => self.find_all_applications(),
@@ -396,7 +439,7 @@ impl SnapShot {
     fn find_applications_by_filter(
         &self,
         filter: ApplicationFilter,
-    ) -> Result<HashMap<String, AppInfoPtr>, FlameError> {
+    ) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
         let apps = lock_ptr!(self.applications)?;
 
         let filtered: Vec<AppInfoPtr> = match filter.state {
@@ -408,20 +451,24 @@ impl SnapShot {
                 .collect(),
         };
 
-        Ok(filtered
-            .into_iter()
-            .map(|app| (app.name.clone(), app))
-            .collect())
+        let filtered = filtered.into_iter().filter(|app| {
+            filter
+                .workspace
+                .as_ref()
+                .is_none_or(|workspace| &app.workspace == workspace)
+        });
+
+        Ok(filtered.map(|app| (app.key(), app)).collect())
     }
 
-    fn find_all_applications(&self) -> Result<HashMap<String, AppInfoPtr>, FlameError> {
+    fn find_all_applications(&self) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
         let mut appinfos = HashMap::new();
 
         {
             let apps = lock_ptr!(self.applications)?;
 
             for app in apps.values() {
-                appinfos.insert(app.name.clone(), app.clone());
+                appinfos.insert(app.key(), app.clone());
             }
         }
 
@@ -431,7 +478,7 @@ impl SnapShot {
     pub fn find_sessions(
         &self,
         filter: Option<SessionFilter>,
-    ) -> Result<HashMap<SessionID, SessionInfoPtr>, FlameError> {
+    ) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
         match filter {
             Some(filter) => self.find_sessions_by_filter(filter),
             None => self.find_all_sessions(),
@@ -441,7 +488,7 @@ impl SnapShot {
     fn find_sessions_by_filter(
         &self,
         filter: SessionFilter,
-    ) -> Result<HashMap<SessionID, SessionInfoPtr>, FlameError> {
+    ) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
         let sessions = lock_ptr!(self.sessions)?;
         let ssn_index = lock_ptr!(self.ssn_index)?;
 
@@ -454,14 +501,24 @@ impl SnapShot {
                 .unwrap_or_default(),
         };
 
-        // Apply ids filter if specified
-        let filtered: Vec<SessionInfoPtr> = match filter.ids {
+        // Apply local-name filter if specified.
+        let filtered: Vec<SessionInfoPtr> = match filter.names {
             None => candidates,
-            Some(ref ids) => candidates
+            Some(ref names) => candidates
                 .into_iter()
-                .filter(|ssn| ids.contains(&ssn.id))
+                .filter(|ssn| names.contains(&ssn.name))
                 .collect(),
         };
+
+        let filtered: Vec<SessionInfoPtr> = filtered
+            .into_iter()
+            .filter(|ssn| {
+                filter
+                    .workspace
+                    .as_ref()
+                    .is_none_or(|workspace| &ssn.workspace == workspace)
+            })
+            .collect();
 
         let filtered: Vec<SessionInfoPtr> = match filter.application {
             None => filtered,
@@ -479,20 +536,17 @@ impl SnapShot {
                 .collect(),
         };
 
-        Ok(filtered
-            .into_iter()
-            .map(|ssn| (ssn.id.clone(), ssn))
-            .collect())
+        Ok(filtered.into_iter().map(|ssn| (ssn.key(), ssn)).collect())
     }
 
-    fn find_all_sessions(&self) -> Result<HashMap<SessionID, SessionInfoPtr>, FlameError> {
+    fn find_all_sessions(&self) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
         let mut ssns = HashMap::new();
 
         {
             let sessions = lock_ptr!(self.sessions)?;
 
             for ssn in sessions.values() {
-                ssns.insert(ssn.id.clone(), ssn.clone());
+                ssns.insert(ssn.key(), ssn.clone());
             }
         }
 
@@ -511,7 +565,7 @@ impl SnapShot {
     pub fn add_session(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
         {
             let mut sessions = lock_ptr!(self.sessions)?;
-            sessions.insert(ssn.id.clone(), ssn.clone());
+            sessions.insert(ssn.key(), ssn.clone());
         }
 
         {
@@ -519,7 +573,7 @@ impl SnapShot {
             ssn_index.entry(ssn.state).or_default();
 
             if let Some(ssn_list) = ssn_index.get_mut(&ssn.state) {
-                ssn_list.insert(ssn.id.clone(), ssn.clone());
+                ssn_list.insert(ssn.key(), ssn.clone());
             }
         }
 
@@ -529,30 +583,32 @@ impl SnapShot {
     pub fn add_application(&self, app: AppInfoPtr) -> Result<(), FlameError> {
         {
             let mut apps = lock_ptr!(self.applications)?;
-            apps.insert(app.name.clone(), app.clone());
+            apps.insert(app.key(), app.clone());
         }
 
         Ok(())
     }
 
-    pub fn get_session(&self, id: &SessionID) -> Result<SessionInfoPtr, FlameError> {
+    pub fn get_session(&self, workspace: &str, name: &str) -> Result<SessionInfoPtr, FlameError> {
         let sessions = lock_ptr!(self.sessions)?;
-        match sessions.get(id) {
+        match sessions.get(&(workspace.to_string(), name.to_string())) {
             Some(ptr) => Ok(ptr.clone()),
-            None => Err(FlameError::NotFound(format!("session <{id}> not found"))),
+            None => Err(FlameError::NotFound(format!(
+                "session <{workspace}/{name}> not found"
+            ))),
         }
     }
 
     pub fn delete_session(&self, ssn: SessionInfoPtr) -> Result<(), FlameError> {
         {
             let mut sessions = lock_ptr!(self.sessions)?;
-            sessions.remove(&ssn.id.clone());
+            sessions.remove(&ssn.key());
         }
 
         {
             let mut ssn_index = lock_ptr!(self.ssn_index)?;
             for ssn_list in &mut ssn_index.values_mut() {
-                ssn_list.remove(&ssn.id.clone());
+                ssn_list.remove(&ssn.key());
             }
         }
 
@@ -569,7 +625,7 @@ impl SnapShot {
     pub fn find_executors(
         &self,
         filter: Option<ExecutorFilter>,
-    ) -> Result<HashMap<ExecutorID, ExecutorInfoPtr>, FlameError> {
+    ) -> Result<HashMap<String, ExecutorInfoPtr>, FlameError> {
         match filter {
             Some(filter) => self.find_executors_by_filter(filter),
             None => self.find_all_executors(),
@@ -579,7 +635,7 @@ impl SnapShot {
     fn find_executors_by_filter(
         &self,
         filter: ExecutorFilter,
-    ) -> Result<HashMap<ExecutorID, ExecutorInfoPtr>, FlameError> {
+    ) -> Result<HashMap<String, ExecutorInfoPtr>, FlameError> {
         let executors = lock_ptr!(self.executors)?;
         let exec_index = lock_ptr!(self.exec_index)?;
 
@@ -592,12 +648,12 @@ impl SnapShot {
                 .unwrap_or_default(),
         };
 
-        // Apply ids filter if specified
-        let filtered: Vec<ExecutorInfoPtr> = match filter.ids {
+        // Apply local-name filter if specified.
+        let filtered: Vec<ExecutorInfoPtr> = match filter.names {
             None => candidates,
-            Some(ref ids) => candidates
+            Some(ref names) => candidates
                 .into_iter()
-                .filter(|exec| ids.contains(&exec.id))
+                .filter(|exec| names.contains(&exec.name))
                 .collect(),
         };
 
@@ -612,18 +668,18 @@ impl SnapShot {
 
         Ok(filtered
             .into_iter()
-            .map(|exec| (exec.id.clone(), exec))
+            .map(|exec| (exec.name.clone(), exec))
             .collect())
     }
 
-    fn find_all_executors(&self) -> Result<HashMap<ExecutorID, ExecutorInfoPtr>, FlameError> {
+    fn find_all_executors(&self) -> Result<HashMap<String, ExecutorInfoPtr>, FlameError> {
         let mut execs = HashMap::new();
 
         {
             let executors = lock_ptr!(self.executors)?;
 
             for e in executors.values() {
-                execs.insert(e.id.clone(), e.clone());
+                execs.insert(e.name.clone(), e.clone());
             }
         }
 
@@ -633,7 +689,7 @@ impl SnapShot {
     pub fn add_executor(&self, exec: ExecutorInfoPtr) -> Result<(), FlameError> {
         {
             let mut executors = lock_ptr!(self.executors)?;
-            executors.insert(exec.id.clone(), exec.clone());
+            executors.insert(exec.name.clone(), exec.clone());
         }
 
         {
@@ -641,7 +697,7 @@ impl SnapShot {
             exec_index.entry(exec.state).or_default();
 
             if let Some(exec_list) = exec_index.get_mut(&exec.state.clone()) {
-                exec_list.insert(exec.id.clone(), exec.clone());
+                exec_list.insert(exec.name.clone(), exec.clone());
             }
         }
 
@@ -651,12 +707,12 @@ impl SnapShot {
     pub fn delete_executor(&self, exec: ExecutorInfoPtr) -> Result<(), FlameError> {
         {
             let mut executors = lock_ptr!(self.executors)?;
-            executors.remove(&exec.id);
+            executors.remove(&exec.name);
         }
         {
             let mut exec_index = lock_ptr!(self.exec_index)?;
             for exec_list in &mut exec_index.values_mut() {
-                exec_list.remove(&exec.id);
+                exec_list.remove(&exec.name);
             }
         }
 
@@ -670,12 +726,14 @@ impl SnapShot {
     ) -> Result<(), FlameError> {
         let new_exec = Arc::new(ExecutorInfo {
             id: exec.id.clone(),
+            name: exec.name.clone(),
             node: exec.node.clone(),
+            workspace: exec.workspace.clone(),
             resreq: exec.resreq.clone(),
-            task_id: exec.task_id,
+            task: exec.task.clone(),
             shim: exec.shim,
             application: exec.application.clone(),
-            ssn_id: exec.ssn_id.clone(),
+            session: exec.session.clone(),
             creation_time: exec.creation_time,
             latest_updated_timestamp: Utc::now(),
             state,
@@ -712,7 +770,7 @@ impl SnapShot {
 
         // Get the application's required shim
         let app_shim = self
-            .get_application(&ssn.application)?
+            .get_application_by_name(&ssn.workspace, &ssn.application)?
             .map(|app| app.shim)
             .unwrap_or(Shim::Host);
 
@@ -744,6 +802,7 @@ mod tests {
     fn application_filter_maps_rpc_state() {
         let filter = ApplicationFilter::try_from(rpc::ListApplicationsRequest {
             state: Some(rpc::ApplicationState::Disabled as i32),
+            workspace: None,
         })
         .unwrap();
 
@@ -752,9 +811,11 @@ mod tests {
 
     #[test]
     fn application_filter_rejects_unknown_rpc_state() {
-        assert!(
-            ApplicationFilter::try_from(rpc::ListApplicationsRequest { state: Some(99) }).is_err()
-        );
+        assert!(ApplicationFilter::try_from(rpc::ListApplicationsRequest {
+            state: Some(99),
+            workspace: None
+        })
+        .is_err());
     }
 
     #[test]
@@ -762,6 +823,7 @@ mod tests {
         let filter = SessionFilter::try_from(rpc::ListSessionsRequest {
             application: Some("test-app".to_string()),
             state: Some(rpc::SessionState::Open as i32),
+            workspace: Some("default".to_string()),
         })
         .unwrap();
 
@@ -774,6 +836,7 @@ mod tests {
         assert!(SessionFilter::try_from(rpc::ListSessionsRequest {
             application: None,
             state: Some(99),
+            workspace: None,
         })
         .is_err());
     }
@@ -812,12 +875,14 @@ mod tests {
     ) -> ExecutorInfoPtr {
         Arc::new(ExecutorInfo {
             id: id.to_string(),
+            name: id.to_string(),
             node: "test-node".to_string(),
+            workspace: "default".to_string(),
             resreq,
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: None,
+            task: None,
+            session: None,
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
             state,
@@ -833,6 +898,8 @@ mod tests {
     ) -> SessionInfoPtr {
         Arc::new(SessionInfo {
             id: id.to_string(),
+            name: id.to_string(),
+            workspace: "default".to_string(),
             application: "test-app".to_string(),
             tasks_status: HashMap::from([(TaskState::Pending, 1)]),
             creation_time: Utc::now(),
@@ -944,8 +1011,8 @@ mod tests {
         // Find only open sessions
         let open_ssns = ss.find_sessions(OPEN_SESSION).unwrap();
         assert_eq!(open_ssns.len(), 2);
-        assert!(open_ssns.contains_key("ssn-open-1"));
-        assert!(open_ssns.contains_key("ssn-open-2"));
+        assert!(open_ssns.contains_key(&("default".to_string(), "ssn-open-1".to_string())));
+        assert!(open_ssns.contains_key(&("default".to_string(), "ssn-open-2".to_string())));
 
         // Find all sessions
         let all_ssns = ss.find_sessions(None).unwrap();
@@ -972,7 +1039,7 @@ mod tests {
         let ready_ssns = ss.find_sessions(READY_SESSION).unwrap();
 
         assert_eq!(ready_ssns.len(), 1);
-        assert!(ready_ssns.contains_key("ssn-ready"));
+        assert!(ready_ssns.contains_key(&("default".to_string(), "ssn-ready".to_string())));
     }
 
     /// Test that update_executor_state correctly updates the exec_index.
@@ -1021,7 +1088,9 @@ mod tests {
 
         // Register the application so `pipelined_executors` can look up its shim.
         ss.add_application(Arc::new(AppInfo {
+            id: "debug-app-id".to_string(),
             name: "test-app".to_string(),
+            workspace: "default".to_string(),
             state: ApplicationState::Enabled,
             shim: Shim::Host,
             max_instances: 0,
@@ -1051,11 +1120,11 @@ mod tests {
         // Should NOT include exec-r4-idle (wrong resreq) or exec-r2-bound (wrong state).
         assert_eq!(pipelined.len(), 2);
 
-        let ids: Vec<&str> = pipelined.iter().map(|e| e.id.as_str()).collect();
-        assert!(ids.contains(&"exec-r2-idle"));
-        assert!(ids.contains(&"exec-r2-void"));
-        assert!(!ids.contains(&"exec-r4-idle"));
-        assert!(!ids.contains(&"exec-r2-bound"));
+        let names: Vec<&str> = pipelined.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"exec-r2-idle"));
+        assert!(names.contains(&"exec-r2-void"));
+        assert!(!names.contains(&"exec-r4-idle"));
+        assert!(!names.contains(&"exec-r2-bound"));
     }
 
     /// Test that empty filters return empty results.
@@ -1071,17 +1140,17 @@ mod tests {
         let releasing_execs = ss
             .find_executors(Some(ExecutorFilter {
                 state: Some(ExecutorState::Releasing),
-                ids: None,
+                names: None,
                 node: None,
             }))
             .unwrap();
         assert_eq!(releasing_execs.len(), 0);
 
-        // Filter by ID that doesn't exist
+        // Filter by name that doesn't exist.
         let nonexistent = ss
             .find_executors(Some(ExecutorFilter {
                 state: None,
-                ids: Some(vec!["nonexistent".to_string()]),
+                names: Some(vec!["nonexistent".to_string()]),
                 node: None,
             }))
             .unwrap();

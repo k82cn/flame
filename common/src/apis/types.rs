@@ -12,13 +12,14 @@ limitations under the License.
 */
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::{env, fmt};
+use std::env;
 
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 #[cfg(target_os = "linux")]
 use rustix::system;
 use stdng::MutexPtr;
+use uuid::Uuid;
 
 pub const DEFAULT_MAX_INSTANCES: u32 = 1_000_000;
 pub const DEFAULT_DELAY_RELEASE: Duration = Duration::seconds(60);
@@ -26,14 +27,47 @@ pub const BIND_RESULT_OK: i32 = 0;
 pub const BIND_RESULT_SHIM_CREATE_FAILED: i32 = 11;
 pub const BIND_RESULT_ON_SESSION_ENTER_FAILED: i32 = 12;
 pub const BIND_RESULT_UNKNOWN_FAILED: i32 = 19;
-pub const SESSION_EVENT_TASK_ID: i64 = 0;
 pub const SESSION_BIND_FAILED: i32 = 1001;
 pub const SESSION_RETRY_LIMIT_REACHED: i32 = 1002;
 
-pub type SessionID = String;
-pub type TaskID = i64;
 pub type ExecutorID = String;
 pub type ApplicationID = String;
+pub const DEFAULT_WORKSPACE: &str = "default";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Workspace {
+    pub name: String,
+    pub create_at: DateTime<Utc>,
+}
+
+pub fn validate_workspace_name(name: &str) -> Result<(), crate::FlameError> {
+    let bytes = name.as_bytes();
+    let valid = (1..=63).contains(&bytes.len())
+        && bytes
+            .first()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes
+            .last()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(crate::FlameError::InvalidConfig(format!(
+            "invalid workspace name: {name}"
+        )))
+    }
+}
+
+pub fn validate_session_name(name: &str) -> Result<(), crate::FlameError> {
+    validate_application_name(name)
+}
+
+pub fn new_metadata_id() -> String {
+    Uuid::new_v4().to_string()
+}
 pub type TaskPtr = MutexPtr<Task>;
 pub type SessionPtr = MutexPtr<Session>;
 pub type NodePtr = MutexPtr<Node>;
@@ -46,15 +80,24 @@ pub type CommonData = Message;
 
 #[derive(Clone, Debug)]
 pub struct EventOwner {
-    pub task_id: TaskID,
-    pub session_id: SessionID,
+    pub workspace: String,
+    pub session: String,
+    pub task: Option<String>,
 }
 
 impl EventOwner {
-    pub fn session(session_id: SessionID) -> Self {
+    pub fn session(workspace: String, session: String) -> Self {
         Self {
-            session_id,
-            task_id: SESSION_EVENT_TASK_ID,
+            workspace,
+            session,
+            task: None,
+        }
+    }
+    pub fn task(workspace: String, session: String, task: String) -> Self {
+        Self {
+            workspace,
+            session,
+            task: Some(task),
         }
     }
 }
@@ -103,6 +146,8 @@ pub struct ApplicationSchema {
 
 #[derive(Clone, Debug, Default)]
 pub struct Application {
+    pub id: String,
+    pub workspace: String,
     pub name: String,
     pub version: u32,
     pub state: ApplicationState,
@@ -159,6 +204,37 @@ impl Default for ApplicationAttributes {
     }
 }
 
+/// Cache package references must stay inside the application's workspace.
+pub fn validate_application_url(
+    workspace: &str,
+    value: Option<&str>,
+) -> Result<(), crate::FlameError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let scheme = value.split(':').next().unwrap_or("").to_ascii_lowercase();
+    if !matches!(
+        scheme.as_str(),
+        "grpc" | "grpcs" | "grpc+tls" | "grpcs-proxy"
+    ) {
+        return Ok(());
+    }
+    let parsed = url::Url::parse(value).map_err(|error| {
+        crate::FlameError::InvalidConfig(format!("invalid application cache URL: {error}"))
+    })?;
+    let parts: Vec<_> = parsed.path().trim_start_matches('/').split('/').collect();
+    if parsed.host_str().is_none()
+        || parts.len() != 4
+        || parts.iter().any(|part| part.is_empty())
+        || parts[0] != workspace
+    {
+        return Err(crate::FlameError::InvalidConfig(format!(
+            "application cache URL must reference an object in workspace {workspace}"
+        )));
+    }
+    Ok(())
+}
+
 pub fn validate_application_name(name: &str) -> Result<(), crate::FlameError> {
     if name.is_empty() {
         return Err(crate::FlameError::InvalidConfig(
@@ -196,7 +272,8 @@ pub fn validate_application_name(name: &str) -> Result<(), crate::FlameError> {
 
 #[derive(Clone)]
 pub struct SessionAttributes {
-    pub id: SessionID,
+    pub workspace: String,
+    pub name: String,
     pub application: String,
     pub common_data: Option<CommonData>,
     pub tokens: HashMap<String, String>,
@@ -210,7 +287,7 @@ pub struct SessionAttributes {
 impl std::fmt::Debug for SessionAttributes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SessionAttributes")
-            .field("id", &self.id)
+            .field("name", &self.name)
             .field("application", &self.application)
             .field("tokens", &"<redacted>")
             .finish_non_exhaustive()
@@ -220,7 +297,8 @@ impl std::fmt::Debug for SessionAttributes {
 impl Default for SessionAttributes {
     fn default() -> Self {
         Self {
-            id: String::new(),
+            workspace: DEFAULT_WORKSPACE.to_string(),
+            name: String::new(),
             application: String::new(),
             common_data: None,
             tokens: HashMap::new(),
@@ -247,13 +325,15 @@ pub struct SessionStatus {
 
 #[derive(Default, Clone)]
 pub struct Session {
-    pub id: SessionID,
+    pub id: String,
+    pub workspace: String,
+    pub name: String,
     pub application: String,
     pub version: u32,
     pub common_data: Option<CommonData>,
     pub tokens: HashMap<String, String>,
-    pub tasks: HashMap<TaskID, TaskPtr>,
-    pub tasks_index: HashMap<TaskState, BTreeMap<TaskID, TaskPtr>>,
+    pub tasks: HashMap<String, TaskPtr>,
+    pub tasks_index: HashMap<TaskState, BTreeMap<String, TaskPtr>>,
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
     pub events: Vec<Event>,
@@ -293,16 +373,12 @@ impl TaskState {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-pub struct TaskGID {
-    pub ssn_id: SessionID,
-    pub task_id: TaskID,
-}
-
 #[derive(Clone, Debug)]
 pub struct Task {
-    pub id: TaskID,
-    pub ssn_id: SessionID,
+    pub id: String,
+    pub workspace: String,
+    pub session: String,
+    pub name: String,
     pub version: u32,
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
@@ -323,8 +399,10 @@ pub struct TaskOptions {
 impl Default for Task {
     fn default() -> Self {
         Self {
-            id: 0,
-            ssn_id: String::new(),
+            id: String::new(),
+            workspace: DEFAULT_WORKSPACE.to_string(),
+            session: String::new(),
+            name: String::new(),
             version: 0,
             input: None,
             output: None,
@@ -340,13 +418,6 @@ impl Default for Task {
 impl Task {
     pub fn is_completed(&self) -> bool {
         self.state.is_terminal()
-    }
-
-    pub fn gid(&self) -> TaskGID {
-        TaskGID {
-            ssn_id: self.ssn_id.clone(),
-            task_id: self.id,
-        }
     }
 }
 
@@ -365,14 +436,16 @@ pub enum ExecutorState {
 
 #[derive(Clone, Debug)]
 pub struct TaskContext {
-    pub task_id: String,
-    pub session_id: String,
+    pub task: String,
+    pub session: String,
+    pub workspace: String,
     pub input: Option<TaskInput>,
 }
 
 #[derive(Clone)]
 pub struct SessionContext {
-    pub session_id: String,
+    pub session: String,
+    pub workspace: String,
     pub application: ApplicationContext,
     pub common_data: Option<CommonData>,
     pub tokens: HashMap<String, String>,
@@ -381,7 +454,7 @@ pub struct SessionContext {
 impl std::fmt::Debug for SessionContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SessionContext")
-            .field("session_id", &self.session_id)
+            .field("session", &self.session)
             .field("application", &self.application)
             .field("tokens", &"<redacted>")
             .finish_non_exhaustive()
@@ -391,6 +464,7 @@ impl std::fmt::Debug for SessionContext {
 #[derive(Clone, Debug)]
 pub struct ApplicationContext {
     pub name: String,
+    pub workspace: String,
     pub shim: Shim,
     pub image: Option<String>,
     pub command: Option<String>,
@@ -424,6 +498,7 @@ pub struct ResourceRequirement {
 
 #[derive(Clone, Debug, Default)]
 pub struct Node {
+    pub id: String,
     pub name: String,
     pub capacity: ResourceRequirement,
     pub allocatable: ResourceRequirement,
@@ -694,12 +769,6 @@ impl ResourceRequirement {
         self.memory -= other.memory;
         self.gpu -= other.gpu;
         Ok(self)
-    }
-}
-
-impl fmt::Display for TaskGID {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}/{}", self.ssn_id, self.task_id)
     }
 }
 

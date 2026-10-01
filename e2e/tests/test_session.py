@@ -50,7 +50,7 @@ def setup_test_env():
         if sess.application != FLM_TEST_SVC_APP:
             continue
         try:
-            flamepy.close_session(sess.id)
+            flamepy.close_session(sess.name)
         except Exception:
             pass
 
@@ -70,10 +70,10 @@ class TestSessionLifecycle:
         session_id = f"test-lifecycle-{random_string(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
         )
 
-        assert session.id == session_id
+        assert session.name == session_id
         assert session.application == FLM_TEST_SVC_APP
         assert session.state == SessionState.OPEN
 
@@ -82,7 +82,7 @@ class TestSessionLifecycle:
 
         # Verify closed state
         sessions = flamepy.list_sessions()
-        closed_session = next((s for s in sessions if s.id == session_id), None)
+        closed_session = next((s for s in sessions if s.name == session_id), None)
         assert closed_session is not None
         assert closed_session.state == SessionState.CLOSED
 
@@ -91,13 +91,13 @@ class TestSessionLifecycle:
         session_id = f"test-get-{random_string(8)}"
         created_session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
         )
 
         # Get the session
         retrieved_session = flamepy.get_session(session_id)
 
-        assert retrieved_session.id == created_session.id
+        assert retrieved_session.name == created_session.name
         assert retrieved_session.application == created_session.application
         assert retrieved_session.state == SessionState.OPEN
 
@@ -110,12 +110,12 @@ class TestSessionLifecycle:
         # Create a session
         flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
         )
 
         # Should appear in list with OPEN state
         sessions = flamepy.list_sessions()
-        open_session = next((s for s in sessions if s.id == session_id), None)
+        open_session = next((s for s in sessions if s.name == session_id), None)
         assert open_session is not None
         assert open_session.state == SessionState.OPEN
 
@@ -124,7 +124,7 @@ class TestSessionLifecycle:
 
         # Should now be CLOSED
         sessions = flamepy.list_sessions()
-        closed_session = next((s for s in sessions if s.id == session_id), None)
+        closed_session = next((s for s in sessions if s.name == session_id), None)
         assert closed_session is not None
         assert closed_session.state == SessionState.CLOSED
 
@@ -133,7 +133,7 @@ class TestSessionLifecycle:
         session_id = f"test-idempotent-{random_string(8)}"
         flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
         )
 
         # Close once
@@ -163,11 +163,11 @@ class TestResourceRequirements:
 
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
             resreq=resreq,
         )
 
-        assert session.id == session_id
+        assert session.name == session_id
         assert session.state == SessionState.OPEN
 
         # Run a task to verify session works
@@ -182,12 +182,12 @@ class TestResourceRequirements:
         session_id = f"test-minmax-{random_string(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
             min_instances=0,
             max_instances=5,
         )
 
-        assert session.id == session_id
+        assert session.name == session_id
         assert session.state == SessionState.OPEN
 
         # Run a task to verify session works
@@ -202,12 +202,12 @@ class TestResourceRequirements:
         session_id = f"test-batch-{random_string(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
             batch_size=2,
             min_instances=2,
         )
 
-        assert session.id == session_id
+        assert session.name == session_id
         assert session.state == SessionState.OPEN
 
         session.close()
@@ -231,13 +231,13 @@ class TestConcurrentSessions:
             for sid in session_ids:
                 session = flamepy.create_session(
                     application=FLM_TEST_SVC_APP,
-                    session_id=sid,
+                    session=sid,
                 )
                 sessions.append(session)
 
             # Verify all are open
             for i, session in enumerate(sessions):
-                assert session.id == session_ids[i]
+                assert session.name == session_ids[i]
                 assert session.state == SessionState.OPEN
 
             # Run tasks in each session
@@ -259,7 +259,7 @@ class TestConcurrentSessions:
         session_id = f"test-concurrent-tasks-{random_string(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
         )
 
         try:
@@ -295,7 +295,7 @@ class TestConcurrentSessions:
         def create_session(sid):
             session = flamepy.create_session(
                 application=FLM_TEST_SVC_APP,
-                session_id=sid,
+                session=sid,
             )
             with lock:
                 created_sessions.append(session)
@@ -341,11 +341,11 @@ class TestTaskStateTransitions:
             task = session.create_task(request_bytes)
 
             # The task may advance before this status read.
-            initial_task = session.get_task(task.id)
+            initial_task = session.get_task(task.name)
             assert initial_task.state in [TaskState.PENDING, TaskState.RUNNING, TaskState.SUCCEED]
 
             # Watch for completion
-            watcher = session.watch_task(task.id)
+            watcher = session.watch_task(task.name)
             final_task = None
             for task_update in watcher:
                 if task_update.is_completed():
@@ -378,7 +378,7 @@ class TestTaskStateTransitions:
 
             # At least one task should have events
             task_with_events = tasks[0]
-            refreshed_task = session.get_task(task_with_events.id)
+            refreshed_task = session.get_task(task_with_events.name)
             # Events are recorded during state transitions
             assert refreshed_task.events is not None
 
@@ -390,7 +390,7 @@ class TestTaskStateTransitions:
         session_id = f"test-counters-{random_string(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
-            session_id=session_id,
+            session=session_id,
         )
 
         try:
@@ -482,7 +482,7 @@ def setup_open_session_app():
     for sess in sessions:
         try:
             if sess.application == app_name:
-                flamepy.close_session(sess.id)
+                flamepy.close_session(sess.name)
         except Exception:
             pass
 
@@ -499,14 +499,14 @@ class TestOpenSession:
         session_id = f"test-open-existing-{random_string(8)}"
         created_session = flamepy.create_session(
             application=app_name,
-            session_id=session_id,
+            session=session_id,
         )
 
         # Open the existing session without spec
         opened_session = flamepy.open_session(session_id)
 
         # Verify it's the same session
-        assert opened_session.id == created_session.id
+        assert opened_session.name == created_session.name
         assert opened_session.application == created_session.application
         assert opened_session.state == flamepy.SessionState.OPEN
 
@@ -520,7 +520,7 @@ class TestOpenSession:
 
         # Open session with spec - should create it
         spec = flamepy.SessionAttributes(
-            id=session_id,
+            name=session_id,
             application=app_name,
             min_instances=0,
             max_instances=5,
@@ -528,7 +528,7 @@ class TestOpenSession:
         session = flamepy.open_session(session_id, spec=spec)
 
         # Verify session was created
-        assert session.id == session_id
+        assert session.name == session_id
         assert session.application == app_name
         assert session.state == flamepy.SessionState.OPEN
 
@@ -542,14 +542,14 @@ class TestOpenSession:
 
         # Create session with specific spec
         spec = flamepy.SessionAttributes(
-            id=session_id,
+            name=session_id,
             application=app_name,
             min_instances=0,
             max_instances=10,
         )
         created_session = flamepy.create_session(
             application=app_name,
-            session_id=session_id,
+            session=session_id,
             min_instances=0,
             max_instances=10,
         )
@@ -558,7 +558,7 @@ class TestOpenSession:
         opened_session = flamepy.open_session(session_id, spec=spec)
 
         # Verify it's the same session
-        assert opened_session.id == created_session.id
+        assert opened_session.name == created_session.name
         assert opened_session.application == created_session.application
 
         # Clean up
@@ -572,14 +572,14 @@ class TestOpenSession:
         # Create session with specific spec
         flamepy.create_session(
             application=app_name,
-            session_id=session_id,
+            session=session_id,
             min_instances=0,
             max_instances=10,
         )
 
         # Try to open with different spec - should fail
         mismatched_spec = flamepy.SessionAttributes(
-            id=session_id,
+            name=session_id,
             application=app_name,
             min_instances=0,
             max_instances=5,  # Different max_instances
@@ -610,7 +610,7 @@ class TestOpenSession:
         session_id = f"test-open-idempotent-{random_string(8)}"
 
         spec = flamepy.SessionAttributes(
-            id=session_id,
+            name=session_id,
             application=app_name,
             min_instances=0,
             max_instances=5,
@@ -626,7 +626,7 @@ class TestOpenSession:
         session3 = flamepy.open_session(session_id)
 
         # All should be the same session
-        assert session1.id == session2.id == session3.id
+        assert session1.name == session2.name == session3.name
         assert session1.application == session2.application == session3.application
 
         # Clean up
@@ -640,7 +640,7 @@ class TestOpenSession:
         # Create and close a session
         flamepy.create_session(
             application=app_name,
-            session_id=session_id,
+            session=session_id,
         )
         flamepy.close_session(session_id)
 

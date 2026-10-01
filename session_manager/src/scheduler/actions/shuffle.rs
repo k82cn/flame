@@ -28,7 +28,8 @@ use common::FlameError;
 pub struct ShuffleAction {}
 
 fn idle_executor_expired(snapshot: &SnapShot, executor: &ExecutorInfo) -> Result<bool, FlameError> {
-    let Some(application) = snapshot.get_application(&executor.application)? else {
+    let Some(application) = snapshot.get_application(&executor.workspace, &executor.application)?
+    else {
         return Ok(true);
     };
     let delay_release = application.delay_release;
@@ -80,8 +81,8 @@ impl Action for ShuffleAction {
                     ssn.id.clone()
                 );
 
-                let target_ssn = match e.ssn_id.clone() {
-                    Some(ssn_id) => Some(ss.get_session(&ssn_id)?),
+                let target_ssn = match e.session.clone() {
+                    Some(session) => Some(ss.get_session(&e.workspace, &session)?),
                     None => None,
                 };
 
@@ -106,7 +107,7 @@ impl Action for ShuffleAction {
                     ssn.id.clone()
                 );
 
-                bound_execs.remove(&exec.id);
+                bound_execs.remove(&exec.name);
 
                 // Pipeline the executor to the underused session to avoid over allocation.
                 ctx.pipeline_executor(&exec, &ssn)?;
@@ -140,6 +141,7 @@ mod tests {
     fn idle_executor(updated_at: DateTime<Utc>) -> ExecutorInfo {
         ExecutorInfo {
             application: "app".to_string(),
+            workspace: "default".to_string(),
             latest_updated_timestamp: updated_at,
             ..Default::default()
         }
@@ -150,6 +152,8 @@ mod tests {
         if let Some(delay_release) = delay_release {
             snapshot
                 .add_application(Arc::new(AppInfo {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    workspace: "default".to_string(),
                     name: "app".to_string(),
                     delay_release,
                     ..Default::default()
@@ -211,11 +215,16 @@ mod tests {
         let storage = crate::storage::new_ptr(&config).await.unwrap();
         let controller = crate::controller::new_ptr(storage.clone());
         controller
-            .register_application("app".to_string(), ApplicationAttributes::default())
+            .register_application(
+                "default".to_string(),
+                "app".to_string(),
+                ApplicationAttributes::default(),
+            )
             .await
             .unwrap();
         storage
             .register_node(&Node {
+                id: uuid::Uuid::new_v4().to_string(),
                 name: "node".to_string(),
                 state: NodeState::Ready,
                 ..Default::default()
@@ -224,7 +233,8 @@ mod tests {
             .unwrap();
         controller
             .create_session(SessionAttributes {
-                id: "session".to_string(),
+                workspace: "default".to_string(),
+                name: "session".to_string(),
                 application: "app".to_string(),
                 resreq: Some(ResourceRequirement::default()),
                 ..Default::default()
@@ -232,17 +242,17 @@ mod tests {
             .await
             .unwrap();
         let executor = controller
-            .create_executor("node".to_string(), "session".to_string())
+            .create_executor("node".to_string(), "default", "session")
             .await
             .unwrap();
         controller.register_executor(&executor).await.unwrap();
         controller
-            .bind_session(executor.id.clone(), "session".to_string())
+            .bind_session(executor.name.clone(), "default", "session")
             .await
             .unwrap();
         controller
             .bind_executor_completed(
-                executor.id.clone(),
+                executor.name.clone(),
                 Some(FlameResult {
                     return_code: BIND_RESULT_OK,
                     message: None,
@@ -252,24 +262,24 @@ mod tests {
             .await
             .unwrap();
         controller
-            .close_session("session".to_string())
+            .close_session("default", "session")
             .await
             .unwrap();
         controller
-            .unbind_executor(executor.id.clone())
+            .unbind_executor(executor.name.clone())
             .await
             .unwrap();
 
         controller
-            .unregister_application("app".to_string())
+            .unregister_application("default", "app")
             .await
             .unwrap();
         controller
-            .unbind_executor_completed(executor.id.clone())
+            .unbind_executor_completed(executor.name.clone())
             .await
             .unwrap();
         assert_eq!(
-            controller.get_executor(executor.id.clone()).unwrap().state,
+            controller.get_executor(&executor.name).unwrap().state,
             ExecutorState::Idle
         );
 
@@ -281,7 +291,7 @@ mod tests {
         ShuffleAction {}.execute(&mut context).await.unwrap();
 
         assert_eq!(
-            controller.get_executor(executor.id).unwrap().state,
+            controller.get_executor(&executor.name).unwrap().state,
             ExecutorState::Idle
         );
     }

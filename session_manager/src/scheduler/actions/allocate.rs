@@ -101,7 +101,9 @@ impl Action for AllocateAction {
                 let all_executors = ss.find_executors(None)?;
                 let current_count = all_executors
                     .values()
-                    .filter(|e| e.ssn_id.as_ref() == Some(&ssn.id))
+                    .filter(|e| {
+                        e.workspace == ssn.workspace && e.session.as_ref() == Some(&ssn.name)
+                    })
                     .count();
                 if current_count >= max_instances as usize {
                     tracing::debug!(
@@ -120,14 +122,14 @@ impl Action for AllocateAction {
                 .cloned()
             {
                 ctx.pipeline_executor(&exec, &ssn)?;
-                void_executors.remove(&exec.id);
+                void_executors.remove(&exec.name);
             } else if let Some(exec) = unbinding_executors
                 .values()
                 .find(|e| ctx.is_available(e, &ssn).unwrap_or(false))
                 .cloned()
             {
                 ctx.pipeline_executor(&exec, &ssn)?;
-                unbinding_executors.remove(&exec.id);
+                unbinding_executors.remove(&exec.name);
             } else if let Some(node) = nodes
                 .iter()
                 .find(|node| ctx.is_allocatable(node, &ssn).unwrap_or(false))

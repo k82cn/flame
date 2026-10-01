@@ -79,9 +79,13 @@ impl States for BoundState {
     ) -> Result<Option<Task>, FlameError> {
         trace_fn!("BoundState::launch_task");
 
-        let (ssn_id, task_id) = {
+        let (workspace, session, task_name) = {
             let task = lock_ptr!(task_ptr)?;
-            (task.ssn_id.clone(), task.id)
+            (
+                task.workspace.clone(),
+                task.session.clone(),
+                task.name.clone(),
+            )
         };
 
         let host = {
@@ -89,7 +93,12 @@ impl States for BoundState {
             e.node.clone()
         };
 
-        tracing::debug!("Launching task <{}/{}> on host <{}>", ssn_id, task_id, host);
+        tracing::debug!(
+            "Launching task <{}/{}> on host <{}>",
+            session,
+            task_name,
+            host
+        );
 
         let msg = format!("Running task on host <{}>.", host);
         self.storage
@@ -98,8 +107,13 @@ impl States for BoundState {
 
         {
             let mut e = lock_ptr!(self.executor)?;
-            e.task_id = Some(task_id);
-            e.ssn_id = Some(ssn_id);
+            if e.workspace != workspace {
+                return Err(FlameError::InvalidConfig(
+                    "executor and task must share a workspace".to_string(),
+                ));
+            }
+            e.task = Some(task_name);
+            e.session = Some(session);
         };
 
         let task = lock_ptr!(task_ptr)?;
@@ -120,7 +134,7 @@ impl States for BoundState {
 
         {
             let mut e = lock_ptr!(self.executor)?;
-            e.task_id = None;
+            e.task = None;
         };
 
         Ok(())

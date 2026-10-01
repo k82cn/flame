@@ -17,19 +17,21 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use stdng::MutexPtr;
 
-use super::{ExecutorID, ExecutorState, ResourceRequirement, SessionID, Shim, TaskID};
+use super::{ExecutorID, ExecutorState, ResourceRequirement, Shim};
 use rpc::flame::v1 as rpc;
 
 #[derive(Clone, Debug)]
 pub struct Executor {
     pub id: ExecutorID,
+    pub name: String,
     pub node: String,
     pub resreq: ResourceRequirement,
     pub shim: Shim,
     /// Persisted owner of the retained service instance, also carried by RPC.
     pub application: String,
-    pub task_id: Option<TaskID>,
-    pub ssn_id: Option<SessionID>,
+    pub workspace: String,
+    pub task: Option<String>,
+    pub session: Option<String>,
     /// Volatile instance attributes, intentionally omitted from storage/RPC.
     pub attributes: HashSet<Bytes>,
 
@@ -50,12 +52,14 @@ impl Default for Executor {
     fn default() -> Self {
         Executor {
             id: String::new(),
+            name: String::new(),
             node: String::new(),
             resreq: ResourceRequirement::default(),
             shim: Shim::Host,
             application: String::new(),
-            task_id: None,
-            ssn_id: None,
+            workspace: String::new(),
+            task: None,
+            session: None,
             attributes: HashSet::new(),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
@@ -82,12 +86,14 @@ impl From<&rpc::Executor> for Executor {
 
         Executor {
             id: metadata.id.clone(),
+            name: metadata.name.clone(),
             node: spec.node.clone(),
             resreq: spec.resreq.unwrap().into(),
             shim: Shim::from(spec.shim()),
             application: spec.application.clone(),
-            task_id: None,
-            ssn_id: None,
+            workspace: spec.workspace.clone(),
+            task: None,
+            session: status.session.clone(),
             attributes: HashSet::new(),
             creation_time: Utc::now(),
             latest_updated_timestamp: Utc::now(),
@@ -106,7 +112,8 @@ impl From<&Executor> for rpc::Executor {
     fn from(e: &Executor) -> Self {
         let metadata = Some(rpc::Metadata {
             id: e.id.clone(),
-            name: e.id.clone(),
+            name: e.name.clone(),
+            workspace: Some(e.workspace.clone()),
         });
 
         let spec = Some(rpc::ExecutorSpec {
@@ -114,11 +121,12 @@ impl From<&Executor> for rpc::Executor {
             node: e.node.clone(),
             shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
             application: e.application.clone(),
+            workspace: e.workspace.clone(),
         });
 
         let status = Some(rpc::ExecutorStatus {
             state: rpc::ExecutorState::from(e.state).into(),
-            session_id: e.ssn_id.clone(),
+            session: e.session.clone(),
         });
 
         rpc::Executor {
