@@ -596,13 +596,13 @@ class TestOpenSession:
 
     def test_open_session_not_found_without_spec(self, setup_open_session_app):
         """Test open_session raises error when session doesn't exist and no spec provided."""
-        non_existent_id = f"non-existent-{random_string(8)}"
+        non_existent_name = f"non-existent-{random_string(8)}"
 
-        with pytest.raises(Exception) as exc_info:
-            flamepy.open_session(non_existent_id)
+        with pytest.raises(flamepy.FlameError) as exc_info:
+            flamepy.open_session(non_existent_name)
 
-        # Verify error indicates session not found
-        assert "not found" in str(exc_info.value).lower()
+        assert exc_info.value.code == flamepy.FlameErrorCode.NOT_FOUND
+        assert f"{flamepy.FlameContext().workspace}/{non_existent_name}" in exc_info.value.message
 
     def test_open_session_idempotent(self, setup_open_session_app):
         """Test open_session is idempotent - multiple calls return same session."""
