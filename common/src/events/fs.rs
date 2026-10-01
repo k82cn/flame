@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use stdng::{lock_ptr, new_ptr, MutexPtr};
 
-use crate::apis::{validate_session_name, validate_workspace_name, Event, EventOwner};
+use crate::apis::{Event, EventOwner};
 use crate::FlameError;
 
 use super::EventManager;
@@ -55,7 +55,6 @@ impl FsEventManager {
                 )));
             }
             let workspace = workspace_entry.file_name().to_string_lossy().to_string();
-            validate_workspace_name(&workspace)?;
             for session_entry in fs::read_dir(workspace_entry.path())? {
                 let session_entry = session_entry?;
                 if !session_entry.file_type()?.is_dir() {
@@ -65,7 +64,6 @@ impl FsEventManager {
                     )));
                 }
                 let session = session_entry.file_name().to_string_lossy().to_string();
-                validate_session_name(&session)?;
                 let log_path = session_entry.path().join("events.jsonl");
                 let mut owners = OwnerEvents::new();
                 if log_path.exists() {
@@ -98,8 +96,6 @@ impl FsEventManager {
 
 impl EventManager for FsEventManager {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
-        validate_workspace_name(&owner.workspace)?;
-        validate_session_name(&owner.session)?;
         let path = self.event_path(&owner.workspace, &owner.session);
         let record = EventRecord {
             task: owner.task.clone(),
@@ -145,8 +141,6 @@ impl EventManager for FsEventManager {
     }
 
     fn remove_events(&self, workspace: &str, session: &str) -> Result<(), FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_session_name(session)?;
         let mut events = lock_ptr!(self.events)?;
         let path = self.storage_path.join(workspace).join(session);
         if path.exists() {
