@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use stdng::{lock_ptr, new_ptr, MutexPtr};
 
-use crate::apis::{Event, EventOwner};
+use crate::apis::{Event, EventOwner, SessionGID};
 use crate::FlameError;
 
 use super::EventManager;
@@ -29,7 +29,7 @@ struct InMemoryEvent {
 }
 
 type OwnerEvents = HashMap<Option<String>, Vec<InMemoryEvent>>;
-type Events = HashMap<String, HashMap<String, OwnerEvents>>;
+type Events = HashMap<SessionGID, OwnerEvents>;
 
 pub struct MemoryEventManager {
     events: MutexPtr<Events>,
@@ -53,9 +53,7 @@ impl EventManager for MemoryEventManager {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
         events
-            .entry(owner.workspace)
-            .or_default()
-            .entry(owner.session)
+            .entry(SessionGID::new(owner.workspace, owner.session))
             .or_default()
             .entry(owner.task)
             .or_default()
@@ -69,9 +67,7 @@ impl EventManager for MemoryEventManager {
 
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
         let events = lock_ptr!(self.events)?;
-        let Some(session_events) = events
-            .get(&owner.workspace)
-            .and_then(|sessions| sessions.get(&owner.session))
+        let Some(session_events) = events.get(&SessionGID::new(owner.workspace, owner.session))
         else {
             return Ok(vec![]);
         };
@@ -94,12 +90,7 @@ impl EventManager for MemoryEventManager {
 
     fn remove_events(&self, workspace: &str, session: &str) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
-        if let Some(sessions) = events.get_mut(workspace) {
-            sessions.remove(session);
-            if sessions.is_empty() {
-                events.remove(workspace);
-            }
-        }
+        events.remove(&SessionGID::new(workspace, session));
         Ok(())
     }
 

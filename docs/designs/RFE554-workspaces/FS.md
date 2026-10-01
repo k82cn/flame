@@ -14,6 +14,9 @@ This RFE adds persistent Workspaces, a workspace field in resource metadata,
 workspace-local name indexes, storage and cache paths,
 and initialization of a fresh installation with `default`. RPC references remain names.
 There is no ApplicationGID, SessionGID, or TaskGID string contract.
+Internally, `SessionGID { workspace, session }` and
+`ExecutorGID { workspace, executor }` are typed map keys for filesystem locks;
+`SessionGID` also keys event maps. They are not RPC references or metadata IDs.
 
 A Workspace is a namespace, not an access boundary. Any client that can
 reach the current API can name, list, or operate on any workspace under the

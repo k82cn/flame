@@ -52,9 +52,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::apis::{
     new_metadata_id, validate_application_name, validate_session_name, validate_workspace_name,
-    Application, ApplicationAttributes, ApplicationSchema, ApplicationState, ExecutorState, Node,
-    NodeInfo, NodeState, ResourceRequirement, Session, SessionAttributes, SessionState,
-    SessionStatus, Shim, Task, TaskInput, TaskOptions, TaskResult, TaskState, Workspace,
+    Application, ApplicationAttributes, ApplicationSchema, ApplicationState, ExecutorGID,
+    ExecutorState, Node, NodeInfo, NodeState, ResourceRequirement, Session, SessionAttributes,
+    SessionGID, SessionState, SessionStatus, Shim, Task, TaskInput, TaskOptions, TaskResult,
+    TaskState, Workspace,
 };
 use crate::{FlameError, FLAME_HOME};
 
@@ -68,7 +69,7 @@ use crate::storage::engine::{Engine, EnginePtr};
 #[derive(Encode, Decode, Debug, Clone, Default)]
 struct TaskMetadata {
     /// Numeric file slot and internal task name; RPC uses its decimal string.
-    pub sequence: u64,
+    pub name: u64,
     /// Persisted UUID used only as debug metadata.
     pub id: [u8; 16],
     /// Optimistic locking version
@@ -216,7 +217,7 @@ fn task_record_size() -> usize {
 /// Calculate CRC32 checksum for task metadata (excluding the checksum field itself).
 fn calculate_checksum(meta: &TaskMetadata) -> u32 {
     let mut hasher = crc32fast::Hasher::new();
-    hasher.update(&meta.sequence.to_le_bytes());
+    hasher.update(&meta.name.to_le_bytes());
     hasher.update(&meta.id);
     hasher.update(&meta.version.to_le_bytes());
     hasher.update(&[meta.state]);
@@ -229,14 +230,15 @@ fn calculate_checksum(meta: &TaskMetadata) -> u32 {
     hasher.finalize()
 }
 
-type ScopedLocks = RwLock<HashMap<(String, String), Arc<Mutex<()>>>>;
+type SessionLocks = RwLock<HashMap<SessionGID, Arc<Mutex<()>>>>;
+type ExecutorLocks = RwLock<HashMap<ExecutorGID, Arc<Mutex<()>>>>;
 
 pub struct FilesystemEngine {
     base_path: PathBuf,
     record_size: usize,
-    ssn_locks: ScopedLocks,
+    ssn_locks: SessionLocks,
     node_locks: RwLock<HashMap<String, Arc<Mutex<()>>>>,
-    executor_locks: ScopedLocks,
+    executor_locks: ExecutorLocks,
 }
 
 macro_rules! lock_ssn {
@@ -247,7 +249,7 @@ macro_rules! lock_ssn {
                 .write()
                 .map_err(|e| FlameError::Storage(format!("Session lock poisoned: {}", e)))?;
             locks
-                .entry(($workspace.to_string(), $session.to_string()))
+                .entry(SessionGID::new($workspace, $session))
                 .or_insert_with(|| Arc::new(Mutex::new(())))
                 .clone()
         };
@@ -292,7 +294,7 @@ macro_rules! lock_executor {
                 .write()
                 .map_err(|e| FlameError::Storage(format!("Executor lock poisoned: {}", e)))?;
             locks
-                .entry(($workspace.to_string(), $name.to_string()))
+                .entry(ExecutorGID::new($workspace, $name))
                 .or_insert_with(|| Arc::new(Mutex::new(())))
                 .clone()
         };
@@ -797,14 +799,14 @@ impl FilesystemEngine {
             .map_err(|e| FlameError::Storage(format!("Failed to open tasks file: {e}")))?;
 
         let offset = meta
-            .sequence
+            .name
             .checked_sub(1)
             .and_then(|number| number.checked_mul(self.record_size as u64))
             .ok_or_else(|| {
-                FlameError::InvalidConfig(format!("invalid task name: {}", meta.sequence))
+                FlameError::InvalidConfig(format!("invalid task name: {}", meta.name))
             })?;
         file.seek(SeekFrom::Start(offset)).map_err(|e| {
-            FlameError::Storage(format!("Failed to seek to task {}: {e}", meta.sequence))
+            FlameError::Storage(format!("Failed to seek to task {}: {e}", meta.name))
         })?;
 
         let buffer = bincode::encode_to_vec(meta, bincode_config())
@@ -996,7 +998,7 @@ impl FilesystemEngine {
 
         Ok(Task {
             id: uuid::Uuid::from_bytes(meta.id).to_string(),
-            name: meta.sequence,
+            name: meta.name,
             session: session.to_string(),
             workspace: workspace.to_string(),
             version: meta.version,
@@ -1407,7 +1409,7 @@ impl Engine for FilesystemEngine {
         {
             let mut locks = lock_app!(self)?;
             locks.insert(
-                (attr.workspace.clone(), attr.name.clone()),
+                SessionGID::new(&attr.workspace, &attr.name),
                 Arc::new(Mutex::new(())),
             );
         }
@@ -1577,7 +1579,7 @@ impl Engine for FilesystemEngine {
 
         {
             let mut locks = lock_app!(self)?;
-            locks.remove(&(workspace.to_string(), name.to_string()));
+            locks.remove(&SessionGID::new(workspace, name));
         }
 
         Ok(session)
@@ -1590,7 +1592,7 @@ impl Engine for FilesystemEngine {
             {
                 let mut locks = lock_app!(self)?;
                 locks
-                    .entry((metadata.workspace.clone(), metadata.name.clone()))
+                    .entry(SessionGID::new(&metadata.workspace, &metadata.name))
                     .or_insert_with(|| Arc::new(Mutex::new(())));
             }
             sessions.push(session);
@@ -1639,7 +1641,7 @@ impl Engine for FilesystemEngine {
             self.append_data(workspace, session, "affinity.bin", &affinity_data)?;
 
         let mut meta = TaskMetadata {
-            sequence: task_number,
+            name: task_number,
             id: *uuid::Uuid::new_v4().as_bytes(),
             version: 1,
             checksum: 0,
@@ -1972,7 +1974,7 @@ impl Engine for FilesystemEngine {
         self.executor_locks
             .write()
             .map_err(|error| FlameError::Storage(format!("Executor lock poisoned: {error}")))?
-            .remove(&(workspace.to_string(), name.to_string()));
+            .remove(&ExecutorGID::new(workspace, name));
         Ok(())
     }
 
@@ -2030,7 +2032,7 @@ mod tests {
         // Verify different metadata values produce same size
         let meta1 = TaskMetadata::default();
         let meta2 = TaskMetadata {
-            sequence: u64::MAX,
+            name: u64::MAX,
             id: [255; 16],
             version: u32::MAX,
             checksum: u32::MAX,
@@ -2054,7 +2056,7 @@ mod tests {
     #[tokio::test]
     async fn test_checksum_calculation() {
         let meta = TaskMetadata {
-            sequence: 1,
+            name: 1,
             id: [1; 16],
             version: 1,
             checksum: 0,
@@ -2075,10 +2077,7 @@ mod tests {
         assert_eq!(checksum1, checksum2);
 
         // Different metadata should produce different checksum
-        let meta2 = TaskMetadata {
-            sequence: 2,
-            ..meta
-        };
+        let meta2 = TaskMetadata { name: 2, ..meta };
 
         let checksum3 = calculate_checksum(&meta2);
         assert_ne!(checksum1, checksum3);

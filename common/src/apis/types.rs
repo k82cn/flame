@@ -40,6 +40,36 @@ pub struct Workspace {
     pub create_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SessionGID {
+    pub workspace: String,
+    pub session: String,
+}
+
+impl SessionGID {
+    pub fn new(workspace: impl Into<String>, session: impl Into<String>) -> Self {
+        Self {
+            workspace: workspace.into(),
+            session: session.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ExecutorGID {
+    pub workspace: String,
+    pub executor: String,
+}
+
+impl ExecutorGID {
+    pub fn new(workspace: impl Into<String>, executor: impl Into<String>) -> Self {
+        Self {
+            workspace: workspace.into(),
+            executor: executor.into(),
+        }
+    }
+}
+
 pub fn validate_workspace_name(name: &str) -> Result<(), crate::FlameError> {
     validate_resource_name(name, 63, "workspace")
 }

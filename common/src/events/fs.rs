@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use stdng::{lock_ptr, new_ptr, MutexPtr};
 
-use crate::apis::{Event, EventOwner};
+use crate::apis::{Event, EventOwner, SessionGID};
 use crate::FlameError;
 
 use super::EventManager;
@@ -34,7 +34,7 @@ struct EventRecord {
 }
 
 type OwnerEvents = HashMap<Option<String>, Vec<EventRecord>>;
-type Events = HashMap<String, HashMap<String, OwnerEvents>>;
+type Events = HashMap<SessionGID, OwnerEvents>;
 
 pub struct FsEventManager {
     storage_path: PathBuf,
@@ -74,10 +74,7 @@ impl FsEventManager {
                         owners.entry(record.task.clone()).or_default().push(record);
                     }
                 }
-                events
-                    .entry(workspace.clone())
-                    .or_insert_with(HashMap::new)
-                    .insert(session, owners);
+                events.insert(SessionGID::new(workspace.clone(), session), owners);
             }
         }
         Ok(Self {
@@ -112,9 +109,7 @@ impl EventManager for FsEventManager {
         file.write_all(b"\n")?;
         file.sync_data()?;
         events
-            .entry(owner.workspace)
-            .or_default()
-            .entry(owner.session)
+            .entry(SessionGID::new(owner.workspace, owner.session))
             .or_default()
             .entry(owner.task)
             .or_default()
@@ -124,8 +119,7 @@ impl EventManager for FsEventManager {
 
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
         lock_ptr!(self.events)?
-            .get(&owner.workspace)
-            .and_then(|sessions| sessions.get(&owner.session))
+            .get(&SessionGID::new(owner.workspace, owner.session))
             .and_then(|owners| owners.get(&owner.task))
             .into_iter()
             .flatten()
@@ -146,12 +140,7 @@ impl EventManager for FsEventManager {
         if path.exists() {
             fs::remove_dir_all(path)?;
         }
-        if let Some(sessions) = events.get_mut(workspace) {
-            sessions.remove(session);
-            if sessions.is_empty() {
-                events.remove(workspace);
-            }
-        }
+        events.remove(&SessionGID::new(workspace, session));
         Ok(())
     }
 
