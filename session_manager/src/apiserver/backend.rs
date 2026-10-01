@@ -324,18 +324,15 @@ impl Backend for Flame {
             .executor_spec
             .ok_or(FlameError::InvalidConfig("no executor spec".to_string()))?;
 
-        self.controller
-            .get_application(&spec.workspace, &spec.application)
-            .await?;
         let stored = self.controller.get_executor(&req.executor)?;
-        if stored.application != spec.application
-            || stored.workspace != spec.workspace
-            || stored.node != spec.node
-        {
+        if stored.application != spec.application || stored.node != spec.node {
             return Err(Status::invalid_argument(
                 "executor spec does not match stored ownership",
             ));
         }
+        self.controller
+            .get_application(&stored.workspace, &spec.application)
+            .await?;
 
         let shim = Shim::from(spec.shim());
         let now = Utc::now();
@@ -346,7 +343,7 @@ impl Backend for Flame {
             resreq: spec.resreq.unwrap_or_default().into(),
             shim,
             application: spec.application,
-            workspace: spec.workspace,
+            workspace: stored.workspace,
             session: None,
             task: None,
             attributes: Default::default(),

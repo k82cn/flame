@@ -27,8 +27,7 @@ use crate::cri_v1::{
 };
 
 pub const LABEL_MANAGED_BY: &str = "io.xflops.flame.managed-by";
-// Keep the deployed label key; its value is the executor name.
-pub const LABEL_EXECUTOR: &str = "io.xflops.flame.executor-id";
+pub const LABEL_EXECUTOR: &str = "io.xflops.flame.executor";
 pub const LABEL_APPLICATION: &str = "io.xflops.flame.application";
 pub const LABEL_WORKLOAD_UID: &str = "io.xflops.flame.workload-uid";
 pub const MANAGED_BY_EXECUTOR_MANAGER: &str = "executor-manager";

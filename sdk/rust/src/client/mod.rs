@@ -2518,16 +2518,15 @@ mod tests {
     fn executor_try_from_preserves_application() {
         let rpc_executor = rpc::Executor {
             metadata: Some(rpc::Metadata {
-                id: "executor-1".to_string(),
+                id: uuid::Uuid::new_v4().to_string(),
                 name: "executor-local".to_string(),
-                workspace: Some("default".to_string()),
+                workspace: Some("team-a".to_string()),
             }),
             spec: Some(rpc::ExecutorSpec {
                 node: "node-1".to_string(),
                 resreq: Some(rpc::ResourceRequirement::default()),
                 shim: rpc::Shim::Host as i32,
                 application: "app-1".to_string(),
-                workspace: "default".to_string(),
             }),
             status: Some(rpc::ExecutorStatus {
                 state: rpc::ExecutorState::ExecutorIdle as i32,
@@ -2538,6 +2537,7 @@ mod tests {
         let executor = Executor::try_from(&rpc_executor).unwrap();
 
         assert_eq!(executor.name, "executor-local");
+        assert_eq!(executor.workspace, "team-a");
         assert_eq!(executor.application, "app-1");
     }
 

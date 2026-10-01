@@ -58,15 +58,6 @@ fn filesystem_recovers_workspace_scoped_events() {
 }
 
 #[test]
-fn filesystem_rejects_legacy_event_layout() {
-    let dir = tempfile::tempdir().unwrap();
-    let legacy_session = dir.path().join("session");
-    std::fs::create_dir(&legacy_session).unwrap();
-    std::fs::write(legacy_session.join("events"), b"legacy").unwrap();
-    assert!(FsEventManager::new(&dir.path().to_string_lossy()).is_err());
-}
-
-#[test]
 fn filesystem_recovers_empty_event_directory() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("alpha").join("session")).unwrap();

@@ -1049,7 +1049,7 @@ mod tests {
         };
         assert!(ensure_owned(&sandbox, &filter).is_ok());
         sandbox.labels.insert(
-            "io.xflops.flame.executor-id".to_string(),
+            "io.xflops.flame.executor".to_string(),
             "executor-b".to_string(),
         );
         assert!(ensure_owned(&sandbox, &filter).is_err());

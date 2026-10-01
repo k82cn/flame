@@ -91,7 +91,9 @@ impl From<&rpc::Executor> for Executor {
             resreq: spec.resreq.unwrap().into(),
             shim: Shim::from(spec.shim()),
             application: spec.application.clone(),
-            workspace: spec.workspace.clone(),
+            workspace: metadata
+                .workspace
+                .expect("missing workspace in executor metadata"),
             task: None,
             session: status.session.clone(),
             attributes: HashSet::new(),
@@ -121,7 +123,6 @@ impl From<&Executor> for rpc::Executor {
             node: e.node.clone(),
             shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
             application: e.application.clone(),
-            workspace: e.workspace.clone(),
         });
 
         let status = Some(rpc::ExecutorStatus {
@@ -134,5 +135,32 @@ impl From<&Executor> for rpc::Executor {
             spec,
             status,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_roundtrip_preserves_workspace_in_metadata() {
+        let executor = Executor {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "executor".into(),
+            workspace: "team".into(),
+            application: "app".into(),
+            node: "node".into(),
+            ..Default::default()
+        };
+        let message = rpc::Executor::from(&executor);
+        assert_eq!(
+            message.metadata.as_ref().unwrap().workspace.as_deref(),
+            Some("team")
+        );
+        let restored = Executor::from(message);
+        assert_eq!(restored.workspace, executor.workspace);
+        assert_eq!(restored.id, executor.id);
+        assert_eq!(restored.name, executor.name);
+        assert_eq!(restored.application, executor.application);
     }
 }

@@ -12,7 +12,7 @@ application and session names.
 
 This RFE adds persistent Workspaces, a workspace field in resource metadata,
 workspace-local name indexes, storage and cache paths,
-and migration of existing data to `default`. RPC references remain names.
+and initialization of a fresh installation with `default`. RPC references remain names.
 There is no ApplicationGID, SessionGID, or TaskGID string contract.
 
 A Workspace is a namespace, not an access boundary. Any client that can
@@ -145,8 +145,10 @@ name filter requires a workspace filter, so it identifies one application.
 Apply state filters together with workspace filters. These are selection
 rules, not caller authorization.
 
-Add `ExecutorSpec.workspace` for its local application reference and use it
-for `ExecutorStatus.session` when bound. Add workspace fields to
+Use `Executor.metadata.workspace` for the local application reference in
+`ExecutorSpec.application` and the bound `ExecutorStatus.session`.
+`ExecutorSpec` does not contain workspace. Executor registration resolves
+workspace from the stored executor selected by its name. Add workspace fields to
 `ApplicationContext`, `SessionContext`, and `TaskContext`, retaining their
 existing local-name fields. Backend requests that identify only a global
 node or executor name need no workspace. Bind responses include Application
@@ -232,7 +234,7 @@ Persist Node and Executor UUIDs in metadata; retain name-based directory
 layouts. Validate each name before
 joining filesystem paths.
 
-## 5. Cache names and migration
+## 5. Cache names and initialization
 
 The canonical cache key is `<workspace>/<application>/<session>/<object>`.
 Put prefixes use `<workspace>/<application>/<session>` and wildcard
@@ -251,48 +253,12 @@ alone. It compares each cache key with the application in the same
 workspace. Its creation-time and grace-period behavior remains as in
 [RFE540](../RFE540-cache-owned-application-garbage-collection/FS.md).
 
-Upgrade is an offline, one-time migration. Stop session manager, executor
-managers, cache, and clients; snapshot SQLite databases, filesystem stores,
-cache volumes, and package metadata. Inventory legacy names and destination
-paths, reject unsafe names or collisions, and record a versioned completion
-marker. New binaries refuse a legacy layout so old and new writers cannot
-mix. On failure, keep services stopped and restore the snapshot before
-retrying.
-
-The migration creates `default` with its `create_at` timestamp, assigns and
-persists UUID debug metadata for legacy applications, sessions, tasks, and
-nodes, and adds workspace to their name keys and references. Preserve each
-task's session-local number and every valid existing Executor UUID; backfill
-any legacy executor UUID that is invalid without changing its name reference.
-Executor Node and Task references remain names.
-Stage filesystem directories under
-`workspaces/default` and switch roots only after metadata, data files, and
-references have been verified and made durable. Bootstrap application
-manifests loaded by the session manager belong to `default`.
-
-For a filesystem store and its event directory, run the offline helpers
-first without `--apply` to validate the source, then with `--apply` to write
-new destination directories:
-
-```sh
-python3 common/scripts/migrate_filesystem_workspaces.py OLD_STORE NEW_STORE --apply
-python3 common/scripts/migrate_event_workspaces.py OLD_EVENTS NEW_EVENTS --apply
-```
-
-Both helpers preserve their source directories and refuse an existing
-destination. Point the filesystem storage URL at `NEW_STORE`; install
-`NEW_EVENTS` as the session manager's `events` directory before restarting.
-Keep the old directories with the volume snapshot until verification is
-complete. SQLite storage uses the versioned database migration instead of
-the filesystem store helper; its event directory still uses the event helper.
-
-For each cache replica, move legacy keys and disk files from
-`<app>/<ssn>/<object>` to `default/<app>/<ssn>/<object>`, preserving versions,
-creation times, and patch chains. Migrate `pkg` and `shared` components.
-Externally held ObjectRefs and package URLs cannot be rewritten by the
-server; inventory and reissue them before reopening writers. Do not accept
-both legacy and workspace keys after cutover. Resume GC only after FSM and
-all cache replicas use the new key grammar.
+This RFE targets a fresh installation. Initialize the final SQLite schema and
+workspace filesystem/cache layouts directly, and create `default` with its
+`create_at` timestamp. Bootstrap application manifests loaded by the session
+manager belong to `default`. Existing data conversion and compatibility with
+older persisted layouts are outside this RFE. Restart recovery reads data
+written using the current workspace layout.
 
 ## 6. Clients and verification
 
@@ -331,10 +297,9 @@ Verification covers:
 5. Reject session-to-application, task-to-session, executor-binding, and
    Flame cache URL references that cross workspace boundaries. Verify task
    watches keep one parent workspace/session.
-6. Migrate populated SQLite, filesystem, and cache fixtures, including
-   tasks, nodes, packages, object patches, and executor references. Compare counts,
-   UUIDs, task numbers, references, and payloads; test interrupted migration
-   and rollback.
+6. Initialize empty SQLite, filesystem, and cache stores. Persist resources
+   with the same local names in different workspaces, restart, and verify
+   names, UUID metadata, references, task ordering, and payloads are preserved.
 7. Exercise SDK, CLI, Host/CRI, and E2E paths, including cache URLs with
    exactly one workspace component and GC with repeated local app names.
 
@@ -343,7 +308,7 @@ Verification covers:
 | Area | Changes |
 | --- | --- |
 | `rpc/protos/{frontend,types,shim}.proto` and SDK proto copies | Workspace RPCs, metadata workspace, and separate request workspace fields |
-| `common/src/apis`, `common/src/storage`, SQLite migrations | Scoped name indexes, Workspace persistence, and debug UUID metadata |
+| `common/src/apis`, `common/src/storage`, SQLite initialization schema | Scoped name indexes, Workspace persistence, and debug UUID metadata |
 | `session_manager/src/apiserver`, controller, scheduler | Scoped name references and indexes |
 | `executor_manager` and shim contexts | Local-name references with explicit workspace |
 | `object_cache/src/{cache,gc,storage}` | Workspace key grammar, disk paths, and GC snapshot keys |

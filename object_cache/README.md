@@ -53,24 +53,6 @@ clusters:
 - `FLAME_CACHE_STORAGE`: Override cache storage path
 - `FLAME_HOME`: Flame installation directory
 
-## Migrating legacy disk data
-
-Stop the cache and all clients, then snapshot every cache volume. Run the
-workspace migration helper once for each cache replica's disk storage root:
-
-```bash
-python3 object_cache/scripts/migrate_workspaces.py /var/lib/flame/cache
-python3 object_cache/scripts/migrate_workspaces.py /var/lib/flame/cache --apply
-```
-
-The first command only checks and lists legacy application directories. The
-second moves `<app>/<session>/<object>` to
-`default/<app>/<session>/<object>` and writes a completion marker. It refuses
-unsafe paths, a workspace-layout volume, or an interrupted migration. Restore
-the volume snapshot before retrying an interrupted move. Reissue externally
-held object references and package URLs with the `default/` key prefix before
-restarting clients.
-
 ## Running
 
 ### Standalone Binary

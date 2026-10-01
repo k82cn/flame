@@ -189,7 +189,6 @@ impl BackendClient {
                 node: exe.node.clone(),
                 shim: rpc::Shim::from(exe.shim).into(), // Include shim in registration
                 application: exe.application.clone(),
-                workspace: exe.workspace.clone(),
             }),
         };
 

@@ -60,7 +60,7 @@ impl FsEventManager {
                 let session_entry = session_entry?;
                 if !session_entry.file_type()?.is_dir() {
                     return Err(FlameError::Storage(format!(
-                        "legacy or invalid event storage layout: {}",
+                        "invalid event storage layout: {}",
                         session_entry.path().display()
                     )));
                 }

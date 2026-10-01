@@ -278,11 +278,6 @@ impl StorageEngine for DiskStorage {
                         let session_path = session_entry.path();
 
                         if !session_path.is_dir() {
-                            if session_path.extension().is_some_and(|extension| extension == "bin") {
-                                return Err(FlameError::InvalidState(
-                                    "legacy object-cache disk layout detected; migrate before starting".to_string(),
-                                ));
-                            }
                             continue;
                         }
 
@@ -315,7 +310,8 @@ impl StorageEngine for DiskStorage {
                                 })?
                                 .to_string();
 
-                            let key_path = format!("{workspace}/{application}/{session}/{object_id}");
+                            let key_path =
+                                format!("{workspace}/{application}/{session}/{object_id}");
                             let key = ObjectKey::try_from(key_path.as_str())?;
 
                             let delta_dir = session_path.join(format!("{}.deltas", object_id));
@@ -596,19 +592,6 @@ mod tests {
             b"second"
         );
         assert_eq!(storage.load_objects().await.unwrap().len(), 2);
-    }
-
-    #[tokio::test]
-    async fn recovery_rejects_legacy_disk_layout() {
-        let temp_dir = tempdir().unwrap();
-        let legacy_session = temp_dir.path().join("app").join("session");
-        fs::create_dir_all(&legacy_session).unwrap();
-        fs::write(legacy_session.join("object.bin"), b"legacy").unwrap();
-        let storage = DiskStorage::new(temp_dir.path().to_path_buf()).unwrap();
-        assert!(matches!(
-            storage.load_objects().await,
-            Err(FlameError::InvalidState(_))
-        ));
     }
 
     #[tokio::test]

@@ -82,7 +82,9 @@ impl TryFrom<&rpc::Executor> for Executor {
             id: metadata.id.clone(),
             name: metadata.name.clone(),
             application: spec.application.clone(),
-            workspace: spec.workspace.clone(),
+            workspace: metadata.workspace.clone().ok_or_else(|| {
+                FlameError::Internal("missing workspace in executor metadata".to_string())
+            })?,
             resreq: resreq.into(),
             node: spec.node.clone(),
             shim: Shim::from(spec.shim()), // Get shim from spec
@@ -114,7 +116,6 @@ impl From<&Executor> for rpc::Executor {
             node: e.node.clone(),
             shim: rpc::Shim::from(e.shim).into(), // Include shim in spec
             application: e.application.clone(),
-            workspace: e.workspace.clone(),
         });
 
         let status = Some(ExecutorStatus {
@@ -219,4 +220,37 @@ pub fn start(client: BackendClient, executor: ExecutorPtr, app_manager: Arc<Appl
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn executor_message() -> rpc::Executor {
+        rpc::Executor::from(common::apis::Executor {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "executor".into(),
+            workspace: "team".into(),
+            application: "app".into(),
+            node: "node".into(),
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn rpc_roundtrip_preserves_workspace_in_metadata() {
+        let message = executor_message();
+        let executor = Executor::try_from(&message).unwrap();
+        assert_eq!(executor.workspace, "team");
+        let restored = rpc::Executor::from(executor);
+        assert_eq!(restored.metadata, message.metadata);
+        assert_eq!(restored.spec, message.spec);
+    }
+
+    #[test]
+    fn rpc_requires_workspace_in_metadata() {
+        let mut message = executor_message();
+        message.metadata.as_mut().unwrap().workspace = None;
+        assert!(Executor::try_from(&message).is_err());
+    }
 }
