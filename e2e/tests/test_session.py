@@ -32,7 +32,7 @@ from flamepy import SessionState, TaskState
 
 from e2e.api import TestRequest
 from e2e.helpers import invoke_task, serialize_request
-from tests.utils import deploy_e2e_application, random_string
+from tests.utils import deploy_e2e_application, random_name_suffix, random_string
 
 FLM_TEST_SVC_APP = "flme2e-session-svc"
 
@@ -67,7 +67,7 @@ class TestSessionLifecycle:
 
     def test_session_create_and_close(self):
         """Test basic session creation and closure."""
-        session_id = f"test-lifecycle-{random_string(8)}"
+        session_id = f"test-lifecycle-{random_name_suffix(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -88,7 +88,7 @@ class TestSessionLifecycle:
 
     def test_session_get_after_create(self):
         """Test getting session info after creation."""
-        session_id = f"test-get-{random_string(8)}"
+        session_id = f"test-get-{random_name_suffix(8)}"
         created_session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -105,7 +105,7 @@ class TestSessionLifecycle:
 
     def test_session_list_filters_by_state(self):
         """Test that list_sessions returns sessions in expected states."""
-        session_id = f"test-list-{random_string(8)}"
+        session_id = f"test-list-{random_name_suffix(8)}"
 
         # Create a session
         flamepy.create_session(
@@ -130,7 +130,7 @@ class TestSessionLifecycle:
 
     def test_session_close_is_idempotent(self):
         """Test that closing an already closed session doesn't error."""
-        session_id = f"test-idempotent-{random_string(8)}"
+        session_id = f"test-idempotent-{random_name_suffix(8)}"
         flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -153,7 +153,7 @@ class TestResourceRequirements:
 
     def test_session_with_resreq(self):
         """Test creating session with explicit resource requirements."""
-        session_id = f"test-resreq-{random_string(8)}"
+        session_id = f"test-resreq-{random_name_suffix(8)}"
 
         resreq = flamepy.ResourceRequirement(
             cpu=1,
@@ -179,7 +179,7 @@ class TestResourceRequirements:
 
     def test_session_with_min_max_instances(self):
         """Test creating session with min/max instance constraints."""
-        session_id = f"test-minmax-{random_string(8)}"
+        session_id = f"test-minmax-{random_name_suffix(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -199,7 +199,7 @@ class TestResourceRequirements:
 
     def test_session_batch_size(self):
         """Test that the reserved batch_size argument is normalized to one."""
-        session_id = f"test-batch-{random_string(8)}"
+        session_id = f"test-batch-{random_name_suffix(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -223,7 +223,7 @@ class TestConcurrentSessions:
 
     def test_multiple_sessions_same_app(self):
         """Test creating multiple sessions for the same application."""
-        session_ids = [f"test-multi-{random_string(8)}" for _ in range(3)]
+        session_ids = [f"test-multi-{random_name_suffix(8)}" for _ in range(3)]
         sessions = []
 
         try:
@@ -256,7 +256,7 @@ class TestConcurrentSessions:
 
     def test_concurrent_task_creation(self):
         """Test concurrent task creation in the same session."""
-        session_id = f"test-concurrent-tasks-{random_string(8)}"
+        session_id = f"test-concurrent-tasks-{random_name_suffix(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -288,7 +288,7 @@ class TestConcurrentSessions:
     def test_parallel_session_creation(self):
         """Test creating sessions in parallel threads."""
         num_sessions = 5
-        session_ids = [f"test-parallel-create-{random_string(8)}" for _ in range(num_sessions)]
+        session_ids = [f"test-parallel-create-{random_name_suffix(8)}" for _ in range(num_sessions)]
         created_sessions = []
         lock = threading.Lock()
 
@@ -387,7 +387,7 @@ class TestTaskStateTransitions:
 
     def test_session_task_counters(self):
         """Test that session tracks task counters correctly."""
-        session_id = f"test-counters-{random_string(8)}"
+        session_id = f"test-counters-{random_name_suffix(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,
@@ -496,7 +496,7 @@ class TestOpenSession:
         """Test open_session returns existing session when no spec provided."""
         app_name = setup_open_session_app
         # First create a session
-        session_id = f"test-open-existing-{random_string(8)}"
+        session_id = f"test-open-existing-{random_name_suffix(8)}"
         created_session = flamepy.create_session(
             application=app_name,
             session=session_id,
@@ -516,7 +516,7 @@ class TestOpenSession:
     def test_open_session_create_with_spec(self, setup_open_session_app):
         """Test open_session creates new session when spec provided and session doesn't exist."""
         app_name = setup_open_session_app
-        session_id = f"test-open-create-{random_string(8)}"
+        session_id = f"test-open-create-{random_name_suffix(8)}"
 
         # Open session with spec - should create it
         spec = flamepy.SessionAttributes(
@@ -538,7 +538,7 @@ class TestOpenSession:
     def test_open_session_existing_with_matching_spec(self, setup_open_session_app):
         """Test open_session returns existing session when spec matches."""
         app_name = setup_open_session_app
-        session_id = f"test-open-match-{random_string(8)}"
+        session_id = f"test-open-match-{random_name_suffix(8)}"
 
         # Create session with specific spec
         spec = flamepy.SessionAttributes(
@@ -567,7 +567,7 @@ class TestOpenSession:
     def test_open_session_existing_with_mismatched_spec(self, setup_open_session_app):
         """Test open_session raises error when spec doesn't match existing session."""
         app_name = setup_open_session_app
-        session_id = f"test-open-mismatch-{random_string(8)}"
+        session_id = f"test-open-mismatch-{random_name_suffix(8)}"
 
         # Create session with specific spec
         flamepy.create_session(
@@ -596,7 +596,7 @@ class TestOpenSession:
 
     def test_open_session_not_found_without_spec(self, setup_open_session_app):
         """Test open_session raises error when session doesn't exist and no spec provided."""
-        non_existent_name = f"non-existent-{random_string(8)}"
+        non_existent_name = f"non-existent-{random_name_suffix(8)}"
 
         with pytest.raises(flamepy.FlameError) as exc_info:
             flamepy.open_session(non_existent_name)
@@ -607,7 +607,7 @@ class TestOpenSession:
     def test_open_session_idempotent(self, setup_open_session_app):
         """Test open_session is idempotent - multiple calls return same session."""
         app_name = setup_open_session_app
-        session_id = f"test-open-idempotent-{random_string(8)}"
+        session_id = f"test-open-idempotent-{random_name_suffix(8)}"
 
         spec = flamepy.SessionAttributes(
             name=session_id,
@@ -635,7 +635,7 @@ class TestOpenSession:
     def test_open_session_closed_session(self, setup_open_session_app):
         """Test open_session raises error when session exists but is closed."""
         app_name = setup_open_session_app
-        session_id = f"test-open-closed-{random_string(8)}"
+        session_id = f"test-open-closed-{random_name_suffix(8)}"
 
         # Create and close a session
         flamepy.create_session(

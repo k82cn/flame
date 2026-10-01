@@ -126,7 +126,7 @@ impl SnapShot {
 #[derive(Debug, Default, Clone)]
 pub struct TaskInfo {
     pub id: String,
-    pub name: String,
+    pub name: u64,
     pub session: String,
     pub workspace: String,
 
@@ -156,7 +156,7 @@ pub struct SessionInfo {
     pub priority: u32,
     pub resreq: Option<ResourceRequirement>,
     pub retry_count: u32,
-    pub task_index: HashMap<TaskState, BTreeMap<String, TaskInfoPtr>>,
+    pub task_index: HashMap<TaskState, BTreeMap<u64, TaskInfoPtr>>,
 }
 
 impl SessionInfo {
@@ -268,7 +268,7 @@ impl From<&Task> for TaskInfo {
     fn from(task: &Task) -> Self {
         TaskInfo {
             id: task.id.clone(),
-            name: task.name.clone(),
+            name: task.name,
             session: task.session.clone(),
             workspace: task.workspace.clone(),
             creation_time: task.creation_time,
@@ -294,11 +294,8 @@ impl TryFrom<&Session> for SessionInfo {
             .filter(|(state, _)| !state.is_terminal())
         {
             let mut task_infos = BTreeMap::new();
-            for (task_id, task) in tasks {
-                task_infos.insert(
-                    task_id.clone(),
-                    Arc::new(TaskInfo::from(&*lock_ptr!(task)?)),
-                );
+            for (number, task) in tasks {
+                task_infos.insert(*number, Arc::new(TaskInfo::from(&*lock_ptr!(task)?)));
             }
             task_index.insert(*state, task_infos);
         }

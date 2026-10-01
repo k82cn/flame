@@ -24,7 +24,7 @@ from e2e.helpers import (
     serialize_common_data,
     serialize_request,
 )
-from tests.utils import deploy_e2e_application, random_string, wait_for_application_deleted
+from tests.utils import deploy_e2e_application, random_name_suffix, random_string, wait_for_application_deleted
 
 FLM_TEST_SVC_APP = "flme2e-core-svc"
 TASK_FAILED_EVENT_CODE = int(flamepy.TaskState.FAILED)
@@ -588,7 +588,7 @@ class TestSessionBindFailureRecovery:
 
     def test_on_session_enter_failure_records_session_event(self):
         """Test that on_session_enter failure is reported as a session event."""
-        session_id = f"test-enter-failure-{random_string(8)}"
+        session_id = f"test-enter-failure-{random_name_suffix(8)}"
         session = flamepy.create_session(
             application=FLM_TEST_SVC_APP,
             session=session_id,

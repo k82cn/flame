@@ -262,7 +262,11 @@ mod tests {
                 .unwrap();
 
             let task = storage
-                .get_task("default", "close-cancel-pending-ssn", &task.name)
+                .get_task(
+                    "default",
+                    "close-cancel-pending-ssn",
+                    &task.name.to_string(),
+                )
                 .unwrap();
             assert_eq!(task.state, TaskState::Cancelled);
             assert!(task.completion_time.is_some());
@@ -282,7 +286,7 @@ mod tests {
                 .get_session_ptr("default", "close-running-ssn")
                 .unwrap();
             let task_ptr = storage
-                .get_task_ptr("default", "close-running-ssn", &task.name)
+                .get_task_ptr("default", "close-running-ssn", &task.name.to_string())
                 .unwrap();
             storage
                 .update_task_state(ssn_ptr, task_ptr, TaskState::Running, None)

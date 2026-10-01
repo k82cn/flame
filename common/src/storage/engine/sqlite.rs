@@ -433,8 +433,21 @@ impl Engine for SqliteEngine {
                 "session {session} is not open"
             )));
         }
-        let next:i64=sqlx::query_scalar("SELECT coalesce(max(cast(name as integer)),0)+1 FROM tasks WHERE workspace=? AND session=?")
-            .bind(workspace).bind(session).fetch_one(&mut *tx).await.map_err(storage)?;
+        let latest: Option<String> = sqlx::query_scalar(
+            "SELECT name FROM tasks WHERE workspace=? AND session=? ORDER BY length(name) DESC, name DESC LIMIT 1",
+        )
+        .bind(workspace)
+        .bind(session)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage)?;
+        let next = latest
+            .as_deref()
+            .map(|name| name.parse::<u64>().map_err(storage))
+            .transpose()?
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or_else(|| storage("task number overflow"))?;
         let affinity = serde_json::to_string(
             &options
                 .unwrap_or_default()
@@ -500,7 +513,7 @@ impl Engine for SqliteEngine {
     }
     async fn find_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError> {
         let rows: Vec<TaskDao> = sqlx::query_as(
-            "SELECT * FROM tasks WHERE workspace=? AND session=? ORDER BY cast(name as integer)",
+            "SELECT * FROM tasks WHERE workspace=? AND session=? ORDER BY length(name), name",
         )
         .bind(workspace)
         .bind(session)

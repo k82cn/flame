@@ -207,11 +207,21 @@ impl TryFrom<&TaskDao> for Task {
     type Error = FlameError;
 
     fn try_from(task: &TaskDao) -> Result<Self, Self::Error> {
+        let name = task
+            .name
+            .parse::<u64>()
+            .map_err(|e| FlameError::Storage(format!("invalid task name {}: {e}", task.name)))?;
+        if name == 0 || name.to_string() != task.name {
+            return Err(FlameError::Storage(format!(
+                "invalid task name {}",
+                task.name
+            )));
+        }
         Ok(Self {
             id: task.id.clone(),
             workspace: task.workspace.clone(),
             session: task.session.clone(),
-            name: task.name.clone(),
+            name,
             version: task.version,
             input: task.input.clone().map(Bytes::from),
             output: task.output.clone().map(Bytes::from),

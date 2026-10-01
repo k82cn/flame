@@ -216,7 +216,7 @@ mod tests {
             .update_task(&Task {
                 id: uuid::Uuid::new_v4().to_string(),
                 workspace: "default".to_string(),
-                name: "1".to_string(),
+                name: 1,
                 session: source.name.clone(),
                 affinity: HashSet::from([Bytes::from_static(b"local")]),
                 ..Default::default()

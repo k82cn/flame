@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ from flamepy.core.types import (
     TaskState,
     short_name,
 )
+from flamepy.util import short_name as util_short_name
 
 
 def test_session_spec_carries_tokens():
@@ -734,13 +736,14 @@ def test_application_with_installer():
     assert app.installer == "curl -sSL https://install.sh | bash"
 
 
-def test_short_name_generation():
+@pytest.mark.parametrize("short_name", [short_name, util_short_name])
+def test_short_name_generation(short_name):
     s1 = short_name("foo", length=8)
     s2 = short_name("bar", length=8)
     assert s1.startswith("foo-")
     assert s2.startswith("bar-")
-    assert len(s1) >= len("foo-") + 8
-    assert len(s2) >= len("bar-") + 8
+    assert re.fullmatch(r"foo-[a-z0-9]{8}", s1)
+    assert re.fullmatch(r"bar-[a-z0-9]{8}", s2)
 
 
 def test_flame_context_env_overrides(tmp_path, monkeypatch):

@@ -97,11 +97,11 @@ mod tests {
         }
     }
 
-    fn task(session_id: &str, id: i64, keys: &[&'static [u8]]) -> Task {
+    fn task(session_id: &str, id: u64, keys: &[&'static [u8]]) -> Task {
         Task {
             id: uuid::Uuid::new_v4().to_string(),
             workspace: "default".to_string(),
-            name: id.to_string(),
+            name: id,
             session: session_id.to_string(),
             version: 1,
             state: TaskState::Pending,
@@ -216,7 +216,7 @@ mod tests {
             .update_task(&Task {
                 id: uuid::Uuid::new_v4().to_string(),
                 workspace: "default".to_string(),
-                name: "1".to_string(),
+                name: 1,
                 session: "session".to_string(),
                 version: 1,
                 affinity: HashSet::from([Bytes::from_static(b"popped")]),
@@ -227,7 +227,7 @@ mod tests {
             .update_task(&Task {
                 id: uuid::Uuid::new_v4().to_string(),
                 workspace: "default".to_string(),
-                name: "2".to_string(),
+                name: 2,
                 session: "session".to_string(),
                 version: 1,
                 affinity: HashSet::from([Bytes::from_static(b"pending")]),

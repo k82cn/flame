@@ -170,7 +170,7 @@ impl Storage {
                 let task = match task.state {
                     TaskState::Running => {
                         self.engine
-                            .retry_task(&task.workspace, &task.session, &task.name)
+                            .retry_task(&task.workspace, &task.session, &task.name.to_string())
                             .await?
                     }
                     _ => task,
@@ -645,8 +645,13 @@ impl Storage {
     ) -> Result<TaskPtr, FlameError> {
         let ssn_ptr = self.get_session_ptr(workspace, session)?;
         let ssn = lock_ptr!(ssn_ptr)?;
+        let task_number = task
+            .parse::<u64>()
+            .ok()
+            .filter(|number| *number != 0 && number.to_string() == task)
+            .ok_or_else(|| FlameError::NotFound(format!("task {workspace}/{session}/{task}")))?;
         ssn.tasks
-            .get(task)
+            .get(&task_number)
             .cloned()
             .ok_or_else(|| FlameError::NotFound(format!("task {workspace}/{session}/{task}")))
     }
@@ -1009,7 +1014,7 @@ impl Storage {
             .update_task_state(
                 &current.workspace,
                 &current.session,
-                &current.name,
+                &current.name.to_string(),
                 task_state,
                 message,
             )
@@ -1075,7 +1080,7 @@ impl Storage {
             .update_task_result(
                 &current.workspace,
                 &current.session,
-                &current.name,
+                &current.name.to_string(),
                 task_result,
             )
             .await

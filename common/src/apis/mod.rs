@@ -25,6 +25,7 @@ pub use types::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rpc::flame::v1 as rpc;
 
     #[test]
     fn test_resreq_from_string() {
@@ -75,6 +76,16 @@ mod tests {
     fn test_application_attributes_default_shim() {
         let attrs = ApplicationAttributes::default();
         assert_eq!(attrs.shim, Shim::Host);
+    }
+
+    #[test]
+    fn numeric_task_name_is_decimal_text_in_rpc_metadata() {
+        let task = Task {
+            name: 10,
+            ..Default::default()
+        };
+        let rpc_task = rpc::Task::from(&task);
+        assert_eq!(rpc_task.metadata.unwrap().name, "10");
     }
 
     mod validate_resource_names {

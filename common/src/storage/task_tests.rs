@@ -177,7 +177,7 @@ mod tests {
                 .unwrap();
 
             let retrieved_task = storage
-                .get_task("default", "get-task-ssn", &created_task.name)
+                .get_task("default", "get-task-ssn", &created_task.name.to_string())
                 .unwrap();
 
             assert_eq!(retrieved_task.id, created_task.id);
@@ -215,11 +215,34 @@ mod tests {
                 .unwrap();
 
             let task_ptr = storage
-                .get_task_ptr("default", "ptr-task-ssn", &created_task.name)
+                .get_task_ptr("default", "ptr-task-ssn", &created_task.name.to_string())
                 .unwrap();
             let task = lock_ptr!(task_ptr).unwrap();
 
             assert_eq!(task.id, created_task.id);
+        }
+
+        #[tokio::test]
+        async fn requires_canonical_positive_task_name() {
+            let storage = test_storage().await;
+            storage
+                .create_session(create_session_attr("canonical-task-ssn"))
+                .await
+                .unwrap();
+            storage
+                .create_task("default", "canonical-task-ssn", None, None)
+                .await
+                .unwrap();
+
+            for name in ["0", "01", "+1", "-1", "not-a-number"] {
+                assert!(matches!(
+                    storage.get_task_ptr("default", "canonical-task-ssn", name),
+                    Err(crate::FlameError::NotFound(_))
+                ));
+            }
+            assert!(storage
+                .get_task_ptr("default", "canonical-task-ssn", "1")
+                .is_ok());
         }
     }
 
@@ -283,7 +306,7 @@ mod tests {
                 .get_session_ptr("default", "update-state-ssn")
                 .unwrap();
             let task_ptr = storage
-                .get_task_ptr("default", "update-state-ssn", &task.name)
+                .get_task_ptr("default", "update-state-ssn", &task.name.to_string())
                 .unwrap();
 
             storage
@@ -292,7 +315,7 @@ mod tests {
                 .unwrap();
 
             let updated_task = storage
-                .get_task("default", "update-state-ssn", &task.name)
+                .get_task("default", "update-state-ssn", &task.name.to_string())
                 .unwrap();
             assert_eq!(updated_task.state, TaskState::Running);
         }
@@ -311,7 +334,7 @@ mod tests {
 
             let ssn_ptr = storage.get_session_ptr("default", "state-msg-ssn").unwrap();
             let task_ptr = storage
-                .get_task_ptr("default", "state-msg-ssn", &task.name)
+                .get_task_ptr("default", "state-msg-ssn", &task.name.to_string())
                 .unwrap();
 
             storage
@@ -325,7 +348,7 @@ mod tests {
                 .unwrap();
 
             let updated_task = storage
-                .get_task("default", "state-msg-ssn", &task.name)
+                .get_task("default", "state-msg-ssn", &task.name.to_string())
                 .unwrap();
             assert_eq!(updated_task.state, TaskState::Running);
         }
@@ -348,7 +371,7 @@ mod tests {
 
             let ssn_ptr = storage.get_session_ptr("default", "result-ssn").unwrap();
             let task_ptr = storage
-                .get_task_ptr("default", "result-ssn", &task.name)
+                .get_task_ptr("default", "result-ssn", &task.name.to_string())
                 .unwrap();
 
             let result = TaskResult {
@@ -363,7 +386,7 @@ mod tests {
                 .unwrap();
 
             let updated_task = storage
-                .get_task("default", "result-ssn", &task.name)
+                .get_task("default", "result-ssn", &task.name.to_string())
                 .unwrap();
             assert_eq!(updated_task.state, TaskState::Succeed);
             assert!(updated_task.output.is_some());
@@ -386,7 +409,7 @@ mod tests {
                 .get_session_ptr("default", "fail-result-ssn")
                 .unwrap();
             let task_ptr = storage
-                .get_task_ptr("default", "fail-result-ssn", &task.name)
+                .get_task_ptr("default", "fail-result-ssn", &task.name.to_string())
                 .unwrap();
 
             let result = TaskResult {
@@ -401,7 +424,7 @@ mod tests {
                 .unwrap();
 
             let updated_task = storage
-                .get_task("default", "fail-result-ssn", &task.name)
+                .get_task("default", "fail-result-ssn", &task.name.to_string())
                 .unwrap();
             assert_eq!(updated_task.state, TaskState::Failed);
         }

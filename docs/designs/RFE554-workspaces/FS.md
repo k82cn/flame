@@ -189,7 +189,7 @@ The controller and scheduler use the same scoped names for references.
 selects or links a resource by that UUID. Remove the legacy `TaskID` and
 `SessionID` aliases. Application and Session records carry `id`, `name`, and
 `workspace`; Session and SessionAttributes carry local `application` and no
-`app_id`. Task carries UUID `id`, decimal local `name`, local parent `session`,
+`app_id`. Task carries UUID `id`, numeric local `name` (`u64`), local parent `session`,
 and `workspace`, with no `ssn_id` or `TaskNumber`. Executor carries local
 `application`, `session`, `task`, and `node` names and its `workspace`.
 `EventOwner` contains workspace plus local `session` and optional local `task`.
@@ -200,9 +200,10 @@ in another workspace. Keep names reserved while disabled applications and
 closed sessions still exist. Create atomically claims the scoped name and
 returns `AlreadyExists` on a duplicate, including concurrent creates.
 Deleting the resource releases the name; a later resource with that name gets
-a new debug UUID. Within a Session, key tasks directly by their decimal local
-name, including its state indexes. Select the oldest pending task by numeric
-comparison of decimal names so `2` precedes `10`.
+a new debug UUID. Within Flame, keep the task's local `name` as `u64` and key
+the Session task lookup and ordered state indexes by that number. Encode it as
+decimal text in RPC fields. The first pending index entry is the oldest task
+(`2` precedes `10`).
 `EventOwner.task = None` denotes a session-level event.
 
 SQLite adds a `workspaces` table keyed by `name`, with `create_at`.

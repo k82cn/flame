@@ -67,7 +67,7 @@ use crate::storage::engine::{Engine, EnginePtr};
 /// The checksum is calculated using `crc32fast` for data integrity.
 #[derive(Encode, Decode, Debug, Clone, Default)]
 struct TaskMetadata {
-    /// Numeric file slot; the public task name is its decimal string.
+    /// Numeric file slot and internal task name; RPC uses its decimal string.
     pub sequence: u64,
     /// Persisted UUID used only as debug metadata.
     pub id: [u8; 16],
@@ -718,9 +718,9 @@ impl FilesystemEngine {
         &self,
         workspace: &str,
         session: &str,
-        task_number: i64,
+        task_number: u64,
     ) -> Result<TaskMetadata, FlameError> {
-        if task_number < 1 {
+        if task_number == 0 {
             return Err(FlameError::NotFound(format!(
                 "Invalid task name: {task_number} (must be >= 1)"
             )));
@@ -733,7 +733,11 @@ impl FilesystemEngine {
             .open(&path)
             .map_err(|e| FlameError::NotFound(format!("Tasks file not found: {e}")))?;
 
-        let offset = (task_number as u64 - 1) * self.record_size as u64;
+        let offset = (task_number - 1)
+            .checked_mul(self.record_size as u64)
+            .ok_or_else(|| {
+                FlameError::InvalidConfig(format!("invalid task name: {task_number}"))
+            })?;
         file.seek(SeekFrom::Start(offset)).map_err(|e| {
             FlameError::Storage(format!("Failed to seek to task {task_number}: {e}"))
         })?;
@@ -766,7 +770,7 @@ impl FilesystemEngine {
         task: &str,
     ) -> Result<TaskMetadata, FlameError> {
         let number = task
-            .parse::<i64>()
+            .parse::<u64>()
             .map_err(|_| FlameError::InvalidConfig(format!("invalid task name: {task}")))?;
         if number.to_string() != task {
             return Err(FlameError::InvalidConfig(format!(
@@ -792,7 +796,13 @@ impl FilesystemEngine {
             .open(&path)
             .map_err(|e| FlameError::Storage(format!("Failed to open tasks file: {e}")))?;
 
-        let offset = (meta.sequence - 1) * self.record_size as u64;
+        let offset = meta
+            .sequence
+            .checked_sub(1)
+            .and_then(|number| number.checked_mul(self.record_size as u64))
+            .ok_or_else(|| {
+                FlameError::InvalidConfig(format!("invalid task name: {}", meta.sequence))
+            })?;
         file.seek(SeekFrom::Start(offset)).map_err(|e| {
             FlameError::Storage(format!("Failed to seek to task {}: {e}", meta.sequence))
         })?;
@@ -885,8 +895,7 @@ impl FilesystemEngine {
 
         let mut count = 0;
         for task_id in 1..=task_count {
-            let metadata =
-                self.read_task_metadata(&filter.workspace, &filter.session, task_id as i64)?;
+            let metadata = self.read_task_metadata(&filter.workspace, &filter.session, task_id)?;
             let state = TaskState::try_from(metadata.state as i32)?;
             if states.contains(&state) {
                 count += 1;
@@ -987,7 +996,7 @@ impl FilesystemEngine {
 
         Ok(Task {
             id: uuid::Uuid::from_bytes(meta.id).to_string(),
-            name: meta.sequence.to_string(),
+            name: meta.sequence,
             session: session.to_string(),
             workspace: workspace.to_string(),
             version: meta.version,
@@ -1505,7 +1514,7 @@ impl Engine for FilesystemEngine {
 
         // First pass: check for running tasks and collect pending tasks
         for task_number in 1..=task_count {
-            if let Ok(task_meta) = self.read_task_metadata(workspace, name, task_number as i64) {
+            if let Ok(task_meta) = self.read_task_metadata(workspace, name, task_number) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
                     Ok(s) => s,
                     Err(e) => {
@@ -1607,7 +1616,9 @@ impl Engine for FilesystemEngine {
         lock_ssn!(self, workspace, session);
 
         let task_count = self._count_task(&TaskFilter::by_session(workspace, session))?;
-        let task_number = task_count + 1;
+        let task_number = task_count
+            .checked_add(1)
+            .ok_or_else(|| FlameError::Storage("task number overflow".into()))?;
 
         let (input_offset, input_len) = if let Some(ref data) = input {
             let offset = self.append_data(workspace, session, "inputs.bin", data)?;
@@ -1729,7 +1740,7 @@ impl Engine for FilesystemEngine {
         let task_count = self._count_task(&TaskFilter::by_session(workspace, session))?;
 
         for task_number in 1..=task_count {
-            if let Ok(meta) = self.read_task_metadata(workspace, session, task_number as i64) {
+            if let Ok(meta) = self.read_task_metadata(workspace, session, task_number) {
                 if let Ok(task) = self.task_from_metadata(workspace, session, &meta) {
                     tasks.push(task);
                 }
@@ -2399,7 +2410,7 @@ mod tests {
             .create_task("default", "test-session", Some(input.clone()), None)
             .await
             .unwrap();
-        assert_eq!(task.name, "1");
+        assert_eq!(task.name, 1);
         assert_eq!(task.state, TaskState::Pending);
         assert_eq!(task.input, Some(input));
 
@@ -2409,7 +2420,7 @@ mod tests {
             .get_task("default", "test-session", gid)
             .await
             .unwrap();
-        assert_eq!(task2.name, "1");
+        assert_eq!(task2.name, 1);
 
         // Update task state
         let task3 = engine
@@ -2441,7 +2452,7 @@ mod tests {
             .create_task("default", "test-session", None, None)
             .await
             .unwrap();
-        assert_eq!(task5.name, "2");
+        assert_eq!(task5.name, 2);
 
         // Complete second task
         let gid2 = "2";
@@ -2595,13 +2606,13 @@ mod tests {
         assert_eq!(closed.status.state, SessionState::Closed);
 
         let task1_after = engine
-            .get_task("default", "test-session", &task1.name)
+            .get_task("default", "test-session", &task1.name.to_string())
             .await
             .unwrap();
         assert_eq!(task1_after.state, TaskState::Cancelled);
 
         let task2_after = engine
-            .get_task("default", "test-session", &task2.name)
+            .get_task("default", "test-session", &task2.name.to_string())
             .await
             .unwrap();
         assert_eq!(task2_after.state, TaskState::Cancelled);
@@ -2659,7 +2670,7 @@ mod tests {
             .update_task_state(
                 "default",
                 "test-session",
-                &task.name,
+                &task.name.to_string(),
                 TaskState::Running,
                 None,
             )
@@ -2895,7 +2906,7 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            assert_eq!(task.name, "1");
+            assert_eq!(task.name, 1);
             for id in [&app.id, &session.id, &task.id] {
                 assert_eq!(uuid::Uuid::parse_str(id).unwrap().get_version_num(), 4);
             }

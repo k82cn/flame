@@ -483,7 +483,10 @@ impl Controller {
             .storage
             .create_task(workspace, session, task_input, options)
             .await?;
-        let _ = self.notifier.tasks.notify(workspace, session, &task.name);
+        let _ = self
+            .notifier
+            .tasks
+            .notify(workspace, session, &task.name.to_string());
         self.notify_scheduler();
         Ok(task)
     }
@@ -834,7 +837,7 @@ impl Controller {
 
         let task_name = {
             let task = lock_ptr!(task_ptr)?;
-            task.name.clone()
+            task.name.to_string()
         };
 
         let state = executors::from(self.storage.clone(), exe_ptr.clone())?;
@@ -1980,7 +1983,7 @@ mod tests {
                 .get_session_ptr(&session.workspace, &session.name)
                 .unwrap();
             let task_ptr = storage
-                .get_task_ptr(&session.workspace, &session.name, &task.name)
+                .get_task_ptr(&session.workspace, &session.name, &task.name.to_string())
                 .unwrap();
             storage
                 .update_task_state(session_ptr, task_ptr, TaskState::Running, None)
@@ -1992,7 +1995,7 @@ mod tests {
                 .unwrap();
             executor.state = ExecutorState::Releasing;
             executor.session = Some(session.name.clone());
-            executor.task = Some(task.name.clone());
+            executor.task = Some(task.name.to_string());
             storage.update_executor(&executor).await.unwrap();
 
             controller
@@ -2002,7 +2005,7 @@ mod tests {
 
             assert_eq!(
                 controller
-                    .get_task(&session.workspace, &session.name, &task.name)
+                    .get_task(&session.workspace, &session.name, &task.name.to_string())
                     .unwrap()
                     .state,
                 TaskState::Failed

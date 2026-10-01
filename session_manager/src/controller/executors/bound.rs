@@ -84,7 +84,7 @@ impl States for BoundState {
             (
                 task.workspace.clone(),
                 task.session.clone(),
-                task.name.clone(),
+                task.name.to_string(),
             )
         };
 

@@ -52,7 +52,7 @@ async fn sqlite_uses_names_scoped_by_workspace() {
             .create_task(workspace, "shared", None, None)
             .await
             .unwrap();
-        assert_eq!(task.name, "1");
+        assert_eq!(task.name, 1);
         assert_eq!(task.session, "shared");
         assert_eq!(Uuid::parse_str(&task.id).unwrap().get_version_num(), 4);
         task_ids.push(task.id);

@@ -41,7 +41,7 @@ from flamepy.proto import types_pb2
 from e2e.api import TestContext
 from e2e.api import TestRequest as E2ETestRequest
 from e2e.helpers import invoke_task, serialize_common_data
-from tests.utils import deploy_e2e_application, random_string
+from tests.utils import deploy_e2e_application, random_name_suffix, random_string
 
 FLM_SYSTEM_TEST_APP = "flme2e-system-svc"
 SYSTEM_TESTS_ENV = "FLAME_E2E_SYSTEM_TESTS"
@@ -638,7 +638,7 @@ def test_single_session_longevity():
 
     session = flamepy.create_session(
         application=FLM_SYSTEM_TEST_APP,
-        session=f"system-longevity-{random_string(8)}",
+        session=f"system-longevity-{random_name_suffix(8)}",
         common_data=serialize_common_data(
             TestContext(common_data=common_data),
             FLM_SYSTEM_TEST_APP,
@@ -745,7 +745,7 @@ def test_app_fuzzed_task_workload():
     )
 
     cluster_before = _cluster_snapshot()
-    app_name = f"system-app-{random_string(8)}"
+    app_name = f"system-app-{random_name_suffix(8)}"
     started_at = time.perf_counter()
 
     app.init(app_name)

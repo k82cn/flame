@@ -68,7 +68,7 @@ async fn names_are_scoped_by_workspace_and_metadata_ids_are_uuids() {
             .create_task(workspace, "run", None, None)
             .await
             .unwrap();
-        assert_eq!(task.name, "1");
+        assert_eq!(task.name, 1);
         assert_eq!(task.workspace, workspace);
         assert_eq!(task.session, "run");
         Uuid::parse_str(&task.id).unwrap();

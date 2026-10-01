@@ -113,9 +113,9 @@ impl Flame {
             // once, after the state snapshot, instead of on every watch update.
             task = self
                 .controller
-                .get_task(workspace, session, &task.name)
+                .get_task(workspace, session, &task.name.to_string())
                 .map_err(Status::from)?;
-            registered_tasks.remove(&task.name);
+            registered_tasks.remove(&task.name.to_string());
         }
         tx.send(Ok(Task::from(&task)))
             .await
@@ -788,12 +788,12 @@ mod tests {
             .await
             .unwrap();
         assert!(!controller
-            .get_task("default", "watch-test-session", &task.name)
+            .get_task("default", "watch-test-session", &task.name.to_string())
             .unwrap()
             .events
             .is_empty());
 
-        let (_requests_tx, requests) = watch_requests(task.name.clone());
+        let (_requests_tx, requests) = watch_requests(task.name.to_string());
         let (tx, mut rx) = mpsc::channel(1);
         let watcher = tokio::spawn(watch_task_stream(controller, requests, tx));
         let reported = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
@@ -821,7 +821,7 @@ mod tests {
             .get_session_ptr("default", "watch-test-session")
             .unwrap();
         let task_ptr = storage
-            .get_task_ptr("default", "watch-test-session", &task.name)
+            .get_task_ptr("default", "watch-test-session", &task.name.to_string())
             .unwrap();
         storage
             .update_task_result(
@@ -836,7 +836,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_requests_tx, requests) = watch_requests(task.name.clone());
+        let (_requests_tx, requests) = watch_requests(task.name.to_string());
         let (tx, mut rx) = mpsc::channel(1);
         let watcher = tokio::spawn(watch_task_stream(controller, requests, tx));
         let reported = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
@@ -885,7 +885,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (_requests_tx, requests) = watch_requests(task.name.clone());
+        let (_requests_tx, requests) = watch_requests(task.name.to_string());
         let (tx, _rx) = mpsc::channel(1);
         let result = watch_task_stream(controller, requests, tx).await;
         let status = result.unwrap_err();
@@ -900,7 +900,7 @@ mod tests {
             .create_task("default", "watch-test-session", None, None)
             .await
             .unwrap();
-        let (_requests_tx, requests) = watch_requests(task.name.clone());
+        let (_requests_tx, requests) = watch_requests(task.name.to_string());
         let (tx, mut rx) = mpsc::channel(2);
         let watcher = tokio::spawn(watch_task_stream(controller.clone(), requests, tx));
         rx.recv().await.unwrap().unwrap();
@@ -943,7 +943,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (requests_tx, requests) = watch_requests(first.name.clone());
+        let (requests_tx, requests) = watch_requests(first.name.to_string());
         let (tx, mut rx) = mpsc::channel(2);
         let watcher = tokio::spawn(watch_task_stream(controller.clone(), requests, tx));
         let initial = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
@@ -964,7 +964,7 @@ mod tests {
         );
 
         requests_tx
-            .send(Ok(watch_request(first.name.clone())))
+            .send(Ok(watch_request(first.name.to_string())))
             .await
             .unwrap();
         let repeated_snapshot = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
@@ -979,7 +979,7 @@ mod tests {
         );
 
         requests_tx
-            .send(Ok(watch_request(second.name.clone())))
+            .send(Ok(watch_request(second.name.to_string())))
             .await
             .unwrap();
         drop(requests_tx);
@@ -1027,7 +1027,7 @@ mod tests {
             .create_task("default", "watch-test-session", None, None)
             .await
             .unwrap();
-        let (_requests_tx, requests) = watch_requests(task.name.clone());
+        let (_requests_tx, requests) = watch_requests(task.name.to_string());
         let (tx, rx) = mpsc::channel(1);
         let watcher = tokio::spawn(watch_task_stream(controller, requests, tx));
         tokio::task::yield_now().await;

@@ -161,7 +161,7 @@ impl From<&Task> for rpc::Task {
     fn from(task: &Task) -> Self {
         let metadata = Some(rpc::Metadata {
             id: task.id.clone(),
-            name: task.name.clone(),
+            name: task.name.to_string(),
             workspace: Some(task.workspace.clone()),
         });
 
@@ -383,7 +383,7 @@ impl From<&Task> for EventOwner {
         Self {
             workspace: task.workspace.clone(),
             session: task.session.clone(),
-            task: Some(task.name.clone()),
+            task: Some(task.name.to_string()),
         }
     }
 }

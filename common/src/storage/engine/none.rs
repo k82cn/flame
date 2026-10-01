@@ -342,12 +342,14 @@ impl Engine for NoneEngine {
         }
         let mut counters = lock_ptr!(self.task_counters)?;
         let number = counters.entry(key).or_default();
-        *number += 1;
+        *number = number
+            .checked_add(1)
+            .ok_or_else(|| FlameError::Storage("task number overflow".into()))?;
         Ok(Task {
             id: new_metadata_id(),
             workspace: workspace.into(),
             session: session.into(),
-            name: number.to_string(),
+            name: *number,
             version: 1,
             input,
             output: None,
