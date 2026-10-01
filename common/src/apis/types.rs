@@ -41,28 +41,11 @@ pub struct Workspace {
 }
 
 pub fn validate_workspace_name(name: &str) -> Result<(), crate::FlameError> {
-    let bytes = name.as_bytes();
-    let valid = (1..=63).contains(&bytes.len())
-        && bytes
-            .first()
-            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        && bytes
-            .last()
-            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        && bytes
-            .iter()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-');
-    if valid {
-        Ok(())
-    } else {
-        Err(crate::FlameError::InvalidConfig(format!(
-            "invalid workspace name: {name}"
-        )))
-    }
+    validate_resource_name(name, 63, "workspace")
 }
 
 pub fn validate_session_name(name: &str) -> Result<(), crate::FlameError> {
-    validate_application_name(name)
+    validate_resource_name(name, 253, "session")
 }
 
 pub fn new_metadata_id() -> String {
@@ -236,38 +219,25 @@ pub fn validate_application_url(
 }
 
 pub fn validate_application_name(name: &str) -> Result<(), crate::FlameError> {
-    if name.is_empty() {
-        return Err(crate::FlameError::InvalidConfig(
-            "application name cannot be empty".into(),
-        ));
+    validate_resource_name(name, 253, "application")
+}
+
+fn validate_resource_name(name: &str, max_len: usize, kind: &str) -> Result<(), crate::FlameError> {
+    let bytes = name.as_bytes();
+    let alphanumeric = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    let valid = (1..=max_len).contains(&bytes.len())
+        && bytes.first().is_some_and(alphanumeric)
+        && bytes.last().is_some_and(alphanumeric)
+        && bytes
+            .iter()
+            .all(|byte| alphanumeric(byte) || *byte == b'-' || *byte == b'_');
+    if valid {
+        Ok(())
+    } else {
+        Err(crate::FlameError::InvalidConfig(format!(
+            "invalid {kind} name: {name}"
+        )))
     }
-    if name.len() > 253 {
-        return Err(crate::FlameError::InvalidConfig(
-            "application name exceeds maximum length of 253 characters".into(),
-        ));
-    }
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err(crate::FlameError::InvalidConfig(format!(
-            "application name contains invalid characters (path traversal): {}",
-            name
-        )));
-    }
-    if name.starts_with('.') || name.starts_with('-') {
-        return Err(crate::FlameError::InvalidConfig(format!(
-            "application name cannot start with '.' or '-': {}",
-            name
-        )));
-    }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-    {
-        return Err(crate::FlameError::InvalidConfig(format!(
-            "application name contains invalid characters (only alphanumeric, '-', '_', '.' allowed): {}",
-            name
-        )));
-    }
-    Ok(())
 }
 
 #[derive(Clone)]

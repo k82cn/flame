@@ -49,11 +49,12 @@ gets its UUID on first registration and retains it across updates, while its
 global name is the lookup key. Executor UUIDs are persisted debug metadata;
 its name is the lookup key.
 
-The Workspace name is one lowercase DNS label: 1–63 ASCII characters,
-`[a-z0-9]` at both ends and `[a-z0-9-]` between. Reject uppercase, dots,
-slashes, backslashes, percent escapes, empty names, and control characters.
-This also makes it safe as a directory component. Bootstrap a Workspace named
-`default`. Workspace deletion and renaming are outside this RFE.
+Workspace, application, and session names use the same ASCII character rule:
+`[a-z0-9]` at both ends and `[a-z0-9_-]` between. Workspace names are 1–63
+characters; application and session names are 1–253 characters. Reject
+uppercase, dots, slashes, backslashes, percent escapes, empty names, and
+control characters. These names are safe as directory components. Bootstrap a
+Workspace named `default`. Workspace deletion and renaming are outside this RFE.
 
 Add frontend `CreateWorkspace` and `ListWorkspaces` RPCs. `CreateWorkspace`
 takes a Workspace name, validates it, sets `create_at` to the creation
@@ -154,9 +155,8 @@ existing local-name fields. Backend requests that identify only a global
 node or executor name need no workspace. Bind responses include Application
 and Session metadata so the receiver can recover workspace and local names.
 
-On input, reject an unknown Workspace or an unsafe local name. Keep the
-existing application-name validation and add equivalent path-safe validation
-for local session names. When a full resource message is supplied, validate
+On input, reject an unknown Workspace or a local name that violates the shared
+name rule. When a full resource message is supplied, validate
 that its `metadata.id`, `metadata.name`, and `metadata.workspace` agree with
 the stored resource or the requested operation. Do not accept a caller ID as
 authority to select a different resource.
@@ -275,8 +275,9 @@ or TLS configuration.
 
 Verification covers:
 
-1. Workspace-name validation, creation, duplicate handling, persistence,
-   stable list order, and default bootstrap.
+1. Shared workspace/application/session name syntax and their distinct length
+   limits; Workspace creation, duplicate handling, persistence, stable list
+   order, and default bootstrap.
 2. Equal local application and session names in two workspaces. Confirm
    `(workspace, local name)` selects the correct resource, and storage,
    controller, scheduler, event, and executor references use scoped names.

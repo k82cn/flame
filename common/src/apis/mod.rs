@@ -77,52 +77,52 @@ mod tests {
         assert_eq!(attrs.shim, Shim::Host);
     }
 
-    mod validate_application_name {
+    mod validate_resource_names {
         use super::*;
 
         #[test]
-        fn valid_names() {
-            assert!(validate_application_name("my-app").is_ok());
-            assert!(validate_application_name("my_app").is_ok());
-            assert!(validate_application_name("my.app").is_ok());
-            assert!(validate_application_name("myapp123").is_ok());
-            assert!(validate_application_name("MyApp").is_ok());
-            assert!(validate_application_name("a").is_ok());
+        fn all_resource_names_share_the_same_character_rule() {
+            type Validator = fn(&str) -> Result<(), crate::FlameError>;
+            let validators: [Validator; 3] = [
+                validate_workspace_name,
+                validate_application_name,
+                validate_session_name,
+            ];
+            for validate in validators {
+                for name in ["a", "my-app", "my_app", "a--__b", "myapp123"] {
+                    assert!(validate(name).is_ok(), "expected valid name: {name}");
+                }
+                for name in [
+                    "",
+                    "-app",
+                    "_app",
+                    "app-",
+                    "app_",
+                    "my.app",
+                    "MyApp",
+                    "app name",
+                    "app/../etc",
+                    "app\\etc",
+                    "é",
+                ] {
+                    assert!(validate(name).is_err(), "expected invalid name: {name}");
+                }
+            }
         }
 
         #[test]
-        fn empty_name() {
-            assert!(validate_application_name("").is_err());
-        }
-
-        #[test]
-        fn path_traversal() {
-            assert!(validate_application_name("..").is_err());
-            assert!(validate_application_name("../etc").is_err());
-            assert!(validate_application_name("app/../../etc").is_err());
-            assert!(validate_application_name("app\\..\\etc").is_err());
-        }
-
-        #[test]
-        fn starts_with_dot_or_dash() {
-            assert!(validate_application_name(".hidden").is_err());
-            assert!(validate_application_name("-invalid").is_err());
-        }
-
-        #[test]
-        fn invalid_characters() {
-            assert!(validate_application_name("app name").is_err());
-            assert!(validate_application_name("app@name").is_err());
-            assert!(validate_application_name("app#name").is_err());
-            assert!(validate_application_name("app$name").is_err());
-        }
-
-        #[test]
-        fn too_long() {
-            let long_name = "a".repeat(254);
-            assert!(validate_application_name(&long_name).is_err());
-            let ok_name = "a".repeat(253);
-            assert!(validate_application_name(&ok_name).is_ok());
+        fn only_length_limits_differ() {
+            let max_workspace = "a".repeat(63);
+            let longer_workspace = "a".repeat(64);
+            let max_application = "a".repeat(253);
+            let longer_application = "a".repeat(254);
+            assert!(validate_workspace_name(&max_workspace).is_ok());
+            assert!(validate_workspace_name(&longer_workspace).is_err());
+            for validate in [validate_application_name, validate_session_name] {
+                assert!(validate(&longer_workspace).is_ok());
+                assert!(validate(&max_application).is_ok());
+                assert!(validate(&longer_application).is_err());
+            }
         }
     }
 }
