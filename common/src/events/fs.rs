@@ -34,7 +34,7 @@ struct EventRecord {
 }
 
 type OwnerEvents = HashMap<Option<String>, Vec<EventRecord>>;
-type Events = HashMap<(String, String), OwnerEvents>;
+type Events = HashMap<String, HashMap<String, OwnerEvents>>;
 
 pub struct FsEventManager {
     storage_path: PathBuf,
@@ -67,20 +67,19 @@ impl FsEventManager {
                 let session = session_entry.file_name().to_string_lossy().to_string();
                 validate_session_name(&session)?;
                 let log_path = session_entry.path().join("events.jsonl");
-                let mut owners = HashMap::new();
-                if !log_path.exists() {
-                    events.insert((workspace.clone(), session), owners);
-                    continue;
+                let mut owners = OwnerEvents::new();
+                if log_path.exists() {
+                    for line in BufReader::new(fs::File::open(log_path)?).lines() {
+                        let record: EventRecord = serde_json::from_str(&line?).map_err(|e| {
+                            FlameError::Storage(format!("invalid event record: {e}"))
+                        })?;
+                        owners.entry(record.task.clone()).or_default().push(record);
+                    }
                 }
-                for line in BufReader::new(fs::File::open(log_path)?).lines() {
-                    let record: EventRecord = serde_json::from_str(&line?)
-                        .map_err(|e| FlameError::Storage(format!("invalid event record: {e}")))?;
-                    owners
-                        .entry(record.task.clone())
-                        .or_insert_with(Vec::new)
-                        .push(record);
-                }
-                events.insert((workspace.clone(), session), owners);
+                events
+                    .entry(workspace.clone())
+                    .or_insert_with(HashMap::new)
+                    .insert(session, owners);
             }
         }
         Ok(Self {
@@ -117,7 +116,9 @@ impl EventManager for FsEventManager {
         file.write_all(b"\n")?;
         file.sync_data()?;
         events
-            .entry((owner.workspace, owner.session))
+            .entry(owner.workspace)
+            .or_default()
+            .entry(owner.session)
             .or_default()
             .entry(owner.task)
             .or_default()
@@ -127,7 +128,8 @@ impl EventManager for FsEventManager {
 
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
         lock_ptr!(self.events)?
-            .get(&(owner.workspace, owner.session))
+            .get(&owner.workspace)
+            .and_then(|sessions| sessions.get(&owner.session))
             .and_then(|owners| owners.get(&owner.task))
             .into_iter()
             .flatten()
@@ -150,7 +152,12 @@ impl EventManager for FsEventManager {
         if path.exists() {
             fs::remove_dir_all(path)?;
         }
-        events.remove(&(workspace.to_string(), session.to_string()));
+        if let Some(sessions) = events.get_mut(workspace) {
+            sessions.remove(session);
+            if sessions.is_empty() {
+                events.remove(workspace);
+            }
+        }
         Ok(())
     }
 

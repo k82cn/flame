@@ -29,7 +29,7 @@ struct InMemoryEvent {
 }
 
 type OwnerEvents = HashMap<Option<String>, Vec<InMemoryEvent>>;
-type Events = HashMap<(String, String), OwnerEvents>;
+type Events = HashMap<String, HashMap<String, OwnerEvents>>;
 
 pub struct MemoryEventManager {
     events: MutexPtr<Events>,
@@ -53,7 +53,9 @@ impl EventManager for MemoryEventManager {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
         events
-            .entry((owner.workspace, owner.session))
+            .entry(owner.workspace)
+            .or_default()
+            .entry(owner.session)
             .or_default()
             .entry(owner.task)
             .or_default()
@@ -67,7 +69,10 @@ impl EventManager for MemoryEventManager {
 
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError> {
         let events = lock_ptr!(self.events)?;
-        let Some(session_events) = events.get(&(owner.workspace, owner.session)) else {
+        let Some(session_events) = events
+            .get(&owner.workspace)
+            .and_then(|sessions| sessions.get(&owner.session))
+        else {
             return Ok(vec![]);
         };
         let Some(task_events) = session_events.get(&owner.task) else {
@@ -89,7 +94,12 @@ impl EventManager for MemoryEventManager {
 
     fn remove_events(&self, workspace: &str, session: &str) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
-        events.remove(&(workspace.to_string(), session.to_string()));
+        if let Some(sessions) = events.get_mut(workspace) {
+            sessions.remove(session);
+            if sessions.is_empty() {
+                events.remove(workspace);
+            }
+        }
         Ok(())
     }
 
