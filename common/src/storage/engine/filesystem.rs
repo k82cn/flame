@@ -51,11 +51,11 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::apis::{
-    new_metadata_id, validate_application_name, validate_session_name, validate_workspace_name,
-    Application, ApplicationAttributes, ApplicationSchema, ApplicationState, ExecutorGID,
-    ExecutorState, Node, NodeInfo, NodeState, ResourceRequirement, Session, SessionAttributes,
-    SessionGID, SessionState, SessionStatus, Shim, Task, TaskInput, TaskName, TaskOptions,
-    TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
+    new_metadata_id, validate_session_name, validate_workspace_name, Application,
+    ApplicationAttributes, ApplicationSchema, ApplicationState, ExecutorGID, ExecutorState, Node,
+    NodeInfo, NodeState, ResourceRequirement, Session, SessionAttributes, SessionGID, SessionState,
+    SessionStatus, Shim, Task, TaskInput, TaskName, TaskOptions, TaskResult, TaskState, Workspace,
+    DEFAULT_WORKSPACE,
 };
 use crate::{FlameError, FLAME_HOME};
 
@@ -340,7 +340,7 @@ impl FilesystemEngine {
             let gid = executor.session().ok_or_else(|| {
                 FlameError::InvalidConfig("executor task requires session".to_string())
             })?;
-            self.read_task(&gid, task)?;
+            self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
         }
         Ok(())
     }
@@ -761,7 +761,7 @@ impl FilesystemEngine {
         Ok(meta)
     }
 
-    fn read_task(&self, gid: &SessionGID, task: &str) -> Result<TaskMetadata, FlameError> {
+    fn parse_task_name(task: &str) -> Result<TaskName, FlameError> {
         let number = task
             .parse::<TaskName>()
             .map_err(|_| FlameError::InvalidConfig(format!("invalid task name: {task}")))?;
@@ -770,7 +770,7 @@ impl FilesystemEngine {
                 "non-canonical task name: {task}"
             )));
         }
-        self.read_task_metadata(gid, number)
+        Ok(number)
     }
 
     /// Write task metadata to tasks.bin at the specified offset.
@@ -1040,10 +1040,10 @@ impl FilesystemEngine {
     fn _update_task_state(
         &self,
         gid: &SessionGID,
-        task: &str,
+        task: TaskName,
         task_state: TaskState,
     ) -> Result<Task, FlameError> {
-        let mut meta = self.read_task(gid, task)?;
+        let mut meta = self.read_task_metadata(gid, task)?;
 
         meta.state = task_state as u8;
         meta.version += 1;
@@ -1144,7 +1144,6 @@ impl Engine for FilesystemEngine {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError> {
-        validate_application_name(&name)?;
         crate::apis::validate_application_url(&workspace, attr.url.as_deref())?;
         self.require_workspace(&workspace)?;
         if self.read_application_metadata(&workspace, &name).is_ok() {
@@ -1468,14 +1467,14 @@ impl Engine for FilesystemEngine {
                     ));
                 }
                 if state == TaskState::Pending {
-                    pending_tasks.push(task_number.to_string());
+                    pending_tasks.push(task_number);
                 }
             }
         }
 
         // Second pass: cancel pending tasks
         for task in pending_tasks {
-            self._update_task_state(&gid, &task, TaskState::Cancelled)?;
+            self._update_task_state(&gid, task, TaskState::Cancelled)?;
         }
 
         meta.state = SessionState::Closed as i32;
@@ -1605,7 +1604,7 @@ impl Engine for FilesystemEngine {
     ) -> Result<Task, FlameError> {
         let gid = SessionGID::new(workspace, session);
         lock_ssn!(self, &gid);
-        let meta = self.read_task(&gid, task)?;
+        let meta = self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
         self.task_from_metadata(&gid, &meta)
     }
 
@@ -1618,7 +1617,7 @@ impl Engine for FilesystemEngine {
         let gid = SessionGID::new(workspace, session);
         lock_ssn!(self, &gid);
 
-        let mut meta = self.read_task(&gid, task)?;
+        let mut meta = self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
 
         meta.state = TaskState::Pending as u8;
         meta.version += 1;
@@ -1639,7 +1638,7 @@ impl Engine for FilesystemEngine {
         let gid = SessionGID::new(workspace, session);
         lock_ssn!(self, &gid);
 
-        self._update_task_state(&gid, task, task_state)
+        self._update_task_state(&gid, Self::parse_task_name(task)?, task_state)
     }
 
     async fn update_task_result(
@@ -1652,7 +1651,7 @@ impl Engine for FilesystemEngine {
         let gid = SessionGID::new(workspace, session);
         lock_ssn!(self, &gid);
 
-        let mut meta = self.read_task(&gid, task)?;
+        let mut meta = self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
 
         if let Some(ref output) = task_result.output {
             let offset = self.append_data(&gid, "outputs.bin", output)?;
@@ -1842,7 +1841,6 @@ impl Engine for FilesystemEngine {
     }
 
     async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
-        validate_application_name(&executor.name)?;
         self.validate_executor_references(executor)?;
         let gid = executor.gid();
         lock_executor!(self, &gid);
@@ -2381,6 +2379,19 @@ mod tests {
         assert_eq!(task.name, 1);
         assert_eq!(task.state, TaskState::Pending);
         assert_eq!(task.input, Some(input));
+
+        for invalid_name in ["01", "+1", "not-a-number", "18446744073709551616"] {
+            assert!(matches!(
+                engine
+                    .get_task("default", "test-session", invalid_name)
+                    .await,
+                Err(FlameError::InvalidConfig(_))
+            ));
+        }
+        assert!(matches!(
+            engine.get_task("default", "test-session", "0").await,
+            Err(FlameError::NotFound(_))
+        ));
 
         // Get task
         let gid = "1";
