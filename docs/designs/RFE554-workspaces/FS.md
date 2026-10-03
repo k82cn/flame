@@ -20,7 +20,9 @@ Internally, `SessionGID { workspace, session }` and
 in the filesystem engine, event manager, and controller. They are not RPC
 references or metadata IDs.
 `TaskName` aliases the internal `u64` task name; `TaskFilter::session()` returns
-the scoped owner. `Executor::gid()` returns its `ExecutorGID`.
+the scoped owner. `SessionFilter::session()` returns the explicitly named
+sessions when a workspace is specified, preserving multiple names and empty
+name lists. `Executor::gid()` returns its `ExecutorGID`.
 `Session` and `SessionInfo` expose `gid()`; `Task`, `TaskInfo`, `Executor`, and
 `ExecutorInfo` expose `session()`. Executor variants return `None` when unbound.
 

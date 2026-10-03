@@ -94,6 +94,20 @@ pub struct SessionFilter {
 }
 
 impl SessionFilter {
+    /// Returns explicitly named sessions when a workspace is specified.
+    /// `None` means the filter does not identify scoped sessions;
+    /// an empty vector means no sessions match the name filter.
+    pub fn session(&self) -> Option<Vec<SessionGID>> {
+        let workspace = self.workspace.as_ref()?;
+        Some(
+            self.names
+                .as_ref()?
+                .iter()
+                .map(|name| SessionGID::new(workspace, name))
+                .collect(),
+        )
+    }
+
     /// Creates a new empty filter (matches all sessions).
     pub const fn new() -> Self {
         Self {
@@ -308,3 +322,33 @@ impl TryFrom<rpc::ListApplicationsRequest> for ApplicationFilter {
 }
 
 pub const ALL_APPLICATION: Option<ApplicationFilter> = None;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_filter_preserves_optional_scope_and_multiple_names() {
+        let mut filter = SessionFilter::new();
+        assert_eq!(filter.session(), None);
+        filter.workspace = Some("research".to_string());
+        assert_eq!(filter.session(), None);
+        filter.names = Some(Vec::new());
+        assert_eq!(filter.session(), Some(Vec::new()));
+        filter.names = Some(vec!["first".to_string()]);
+        assert_eq!(
+            filter.session(),
+            Some(vec![SessionGID::new("research", "first")])
+        );
+        filter.names.as_mut().unwrap().push("second".to_string());
+        assert_eq!(
+            filter.session(),
+            Some(vec![
+                SessionGID::new("research", "first"),
+                SessionGID::new("research", "second"),
+            ])
+        );
+        filter.workspace = None;
+        assert_eq!(filter.session(), None);
+    }
+}

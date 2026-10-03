@@ -369,42 +369,40 @@ impl FilesystemEngine {
             node_locks: RwLock::new(HashMap::new()),
             executor_locks: RwLock::new(HashMap::new()),
         });
-        if !engine
+        if engine
             .base_path
             .join(WORKSPACES)
             .join(DEFAULT_WORKSPACE)
-            .join("workspace.json")
             .exists()
         {
-            match engine.create_workspace(DEFAULT_WORKSPACE.to_string()).await {
-                Ok(_) => {}
-                Err(FlameError::AlreadyExist(_)) => {
-                    // Resume an interrupted default-workspace initialization.
-                    engine.initialize_workspace(DEFAULT_WORKSPACE)?;
-                }
-                Err(error) => return Err(error),
-            }
+            engine.read_workspace(DEFAULT_WORKSPACE)?;
+        } else {
+            engine
+                .create_workspace(DEFAULT_WORKSPACE.to_string())
+                .await?;
         }
         Ok(engine)
     }
 
-    fn initialize_workspace(&self, name: &str) -> Result<Workspace, FlameError> {
-        let workspace = Workspace {
+    fn read_workspace(&self, name: &str) -> Result<Workspace, FlameError> {
+        let path = self
+            .base_path
+            .join(WORKSPACES)
+            .join(name)
+            .join("workspace.json");
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)
+            .map_err(|e| FlameError::Storage(e.to_string()))?;
+        let name = value["name"]
+            .as_str()
+            .ok_or_else(|| FlameError::Storage("missing workspace name".into()))?;
+        let millis = value["create_at"]
+            .as_i64()
+            .ok_or_else(|| FlameError::Storage("missing workspace timestamp".into()))?;
+        Ok(Workspace {
             name: name.to_string(),
-            create_at: Utc::now(),
-        };
-        let path = self.base_path.join(WORKSPACES).join(name);
-        for directory in [SESSIONS, APPLICATIONS, EXECUTORS] {
-            fs::create_dir_all(path.join(directory))?;
-        }
-        fs::write(
-            path.join("workspace.json"),
-            serde_json::json!({
-                "name": name, "create_at": workspace.create_at.timestamp_millis(),
-            })
-            .to_string(),
-        )?;
-        Ok(workspace)
+            create_at: DateTime::<Utc>::from_timestamp_millis(millis)
+                .ok_or_else(|| FlameError::Storage("invalid workspace timestamp".into()))?,
+        })
     }
 
     /// Parse the storage URL to extract the base path.
@@ -1116,26 +1114,28 @@ impl Engine for FilesystemEngine {
                 FlameError::Storage(e.to_string())
             }
         })?;
-        self.initialize_workspace(&name)
+        let workspace = Workspace {
+            name: name.clone(),
+            create_at: Utc::now(),
+        };
+        for directory in [SESSIONS, APPLICATIONS, EXECUTORS] {
+            fs::create_dir(path.join(directory))?;
+        }
+        fs::write(
+            path.join("workspace.json"),
+            serde_json::json!({
+                "name": name, "create_at": workspace.create_at.timestamp_millis(),
+            })
+            .to_string(),
+        )?;
+        Ok(workspace)
     }
 
     async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError> {
         let mut result = Vec::new();
         for entry in fs::read_dir(self.base_path.join(WORKSPACES))? {
-            let path = entry?.path().join("workspace.json");
-            let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)
-                .map_err(|e| FlameError::Storage(e.to_string()))?;
-            let name = value["name"]
-                .as_str()
-                .ok_or_else(|| FlameError::Storage("missing workspace name".into()))?;
-            let millis = value["create_at"]
-                .as_i64()
-                .ok_or_else(|| FlameError::Storage("missing workspace timestamp".into()))?;
-            result.push(Workspace {
-                name: name.to_string(),
-                create_at: DateTime::<Utc>::from_timestamp_millis(millis)
-                    .ok_or_else(|| FlameError::Storage("invalid workspace timestamp".into()))?,
-            });
+            let name = entry?.file_name().to_string_lossy().to_string();
+            result.push(self.read_workspace(&name)?);
         }
         result.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(result)
@@ -1968,23 +1968,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn default_workspace_recovers_partial_initialization_and_preserves_metadata() {
+    async fn default_workspace_is_read_without_reinitialization() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join(WORKSPACES).join(DEFAULT_WORKSPACE);
-        fs::create_dir_all(path.join(SESSIONS)).unwrap();
         let url = format!("filesystem://{}", dir.path().display());
         let engine = FilesystemEngine::new_ptr(&url).await.unwrap();
         let workspace = engine.list_workspaces().await.unwrap().remove(0);
-        assert_eq!(workspace.name, DEFAULT_WORKSPACE);
-        for directory in [SESSIONS, APPLICATIONS, EXECUTORS] {
-            assert!(path.join(directory).is_dir());
-        }
+        let path = dir.path().join(WORKSPACES).join(DEFAULT_WORKSPACE);
+        let metadata = fs::read(path.join("workspace.json")).unwrap();
+        fs::remove_dir(path.join(EXECUTORS)).unwrap();
+        let reopened = FilesystemEngine::new_ptr(&url).await.unwrap();
+        assert_eq!(reopened.list_workspaces().await.unwrap(), vec![workspace]);
+        assert_eq!(fs::read(path.join("workspace.json")).unwrap(), metadata);
+        assert!(!path.join(EXECUTORS).exists());
         assert!(matches!(
             engine.create_workspace(DEFAULT_WORKSPACE.to_string()).await,
             Err(FlameError::AlreadyExist(_))
         ));
-        let reopened = FilesystemEngine::new_ptr(&url).await.unwrap();
-        assert_eq!(reopened.list_workspaces().await.unwrap(), vec![workspace]);
+    }
+
+    #[tokio::test]
+    async fn existing_default_workspace_requires_readable_metadata() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(WORKSPACES).join(DEFAULT_WORKSPACE);
+        fs::create_dir_all(&path).unwrap();
+        let url = format!("filesystem://{}", dir.path().display());
+        assert!(FilesystemEngine::new_ptr(&url).await.is_err());
+        assert!(!path.join("workspace.json").exists());
+        for directory in [SESSIONS, APPLICATIONS, EXECUTORS] {
+            assert!(!path.join(directory).exists());
+        }
     }
 
     #[tokio::test]
