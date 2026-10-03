@@ -19,7 +19,7 @@ use common::apis::{ResourceRequirement, TaskState};
 use common::FlameError;
 
 use crate::model::{
-    ExecutorInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_EXECUTOR, ALL_NODE, OPEN_SESSION,
+    ExecutorInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_EXECUTOR, ALL_NODE,
 };
 use crate::scheduler::plugins::{Plugin, PluginPtr};
 
@@ -169,7 +169,7 @@ impl Plugin for PriorityPlugin {
         // ── Step 2: distribute `total` by (priority desc, creation_time asc) ─
         // Hash iteration is non-deterministic; collect and sort explicitly so that
         // earlier-created sessions within a priority tier are filled first.
-        let open_ssns = ss.find_sessions(OPEN_SESSION)?;
+        let open_ssns = crate::scheduler::open_sessions(ss)?;
         let mut sessions: Vec<SessionInfoPtr> = open_ssns.values().cloned().collect();
         sessions.sort_by(|a, b| {
             b.priority

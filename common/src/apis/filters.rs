@@ -42,65 +42,51 @@ impl TaskFilter {
         &self.session
     }
 
-    /// Creates a filter for every task in a session.
-    pub fn by_session(session: SessionGID) -> Self {
+    /// Creates a filter for every task in one session.
+    pub fn new(session: SessionGID) -> Self {
         Self {
             session,
             states: None,
         }
     }
 
-    /// Creates a filter for tasks in any of the provided states.
-    pub fn by_session_states(session: SessionGID, states: impl Into<Vec<TaskState>>) -> Self {
-        Self {
-            session,
-            states: Some(states.into()),
-        }
+    pub fn by_state(self, state: TaskState) -> Self {
+        self.by_states(vec![state])
     }
 
-    /// Creates a filter for non-terminal tasks in a session.
-    pub fn non_terminal(session: SessionGID) -> Self {
-        Self::by_session_states(session, vec![TaskState::Pending, TaskState::Running])
+    pub fn by_states(mut self, states: impl Into<Vec<TaskState>>) -> Self {
+        self.states = Some(states.into());
+        self
     }
 }
 
-/// Filter for listing sessions.
-/// All fields are Option:
-/// - `None` = ignore this filter (match all)
-/// - `Some(value)` = match exactly (empty vec matches nothing)
+/// Filter for listing sessions within one required workspace.
+/// Optional criteria are combined with AND; empty names match no sessions.
 pub struct SessionFilter {
-    pub workspace: Option<String>,
-    /// Filter by owning application
+    pub workspace: String,
     pub application: Option<String>,
-    /// Filter by session state
     pub state: Option<SessionState>,
-    /// Filter by session names
     pub names: Option<Vec<String>>,
-    /// Additional in-memory predicate filter.
     pub predicate: Option<SessionPredicate>,
-    /// Maximum number of matching sessions to return.
     pub limit: Option<usize>,
 }
 
 impl SessionFilter {
-    /// Returns explicitly named sessions when a workspace is specified.
-    /// `None` means the filter does not identify scoped sessions;
-    /// an empty vector means no sessions match the name filter.
+    /// Returns explicitly named sessions; an empty vector matches no sessions.
     pub fn session(&self) -> Option<Vec<SessionGID>> {
-        let workspace = self.workspace.as_ref()?;
         Some(
             self.names
                 .as_ref()?
                 .iter()
-                .map(|name| SessionGID::new(workspace, name))
+                .map(|name| SessionGID::new(&self.workspace, name))
                 .collect(),
         )
     }
 
-    /// Creates a new empty filter (matches all sessions).
-    pub const fn new() -> Self {
+    /// Creates a filter for all sessions in one workspace.
+    pub fn new(workspace: impl Into<String>) -> Self {
         Self {
-            workspace: None,
+            workspace: workspace.into(),
             application: None,
             state: None,
             names: None,
@@ -109,70 +95,32 @@ impl SessionFilter {
         }
     }
 
-    /// Creates a filter for a specific state.
-    pub const fn by_state(state: SessionState) -> Self {
-        Self {
-            workspace: None,
-            application: None,
-            state: Some(state),
-            names: None,
-            predicate: None,
-            limit: None,
-        }
+    /// Restricts the filter to one state.
+    pub fn by_state(mut self, state: SessionState) -> Self {
+        self.state = Some(state);
+        self
     }
 
-    /// Creates a filter for specific session names.
-    pub fn by_names(names: Vec<String>) -> Self {
-        Self {
-            workspace: None,
-            application: None,
-            state: None,
-            names: Some(names),
-            predicate: None,
-            limit: None,
-        }
+    /// Restricts the filter to the provided local names.
+    pub fn by_names(mut self, names: Vec<String>) -> Self {
+        self.names = Some(names);
+        self
     }
 
-    /// Creates a filter for an application's sessions.
-    pub fn by_application(application: impl Into<String>) -> Self {
-        Self {
-            workspace: None,
-            application: Some(application.into()),
-            state: None,
-            names: None,
-            predicate: None,
-            limit: None,
-        }
+    /// Restricts the filter to one application in its workspace.
+    pub fn by_application(mut self, application: impl Into<String>) -> Self {
+        self.application = Some(application.into());
+        self
     }
 
-    /// Creates a filter for an application's sessions in a specific state.
-    pub fn by_application_state(application: impl Into<String>, state: SessionState) -> Self {
-        Self {
-            workspace: None,
-            application: Some(application.into()),
-            state: Some(state),
-            names: None,
-            predicate: None,
-            limit: None,
-        }
-    }
-
-    /// Adds an in-memory predicate filter.
     pub const fn with_predicate(mut self, predicate: SessionPredicate) -> Self {
         self.predicate = Some(predicate);
         self
     }
 
-    /// Limits the number of matching sessions returned.
     pub const fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
         self
-    }
-}
-
-impl Default for SessionFilter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -180,8 +128,12 @@ impl TryFrom<rpc::ListSessionsRequest> for SessionFilter {
     type Error = FlameError;
 
     fn try_from(request: rpc::ListSessionsRequest) -> Result<Self, Self::Error> {
+        let workspace = request.workspace.ok_or_else(|| {
+            FlameError::InvalidConfig("workspace is required when listing sessions".to_string())
+        })?;
+        super::validate_workspace_name(&workspace)?;
         Ok(Self {
-            workspace: request.workspace,
+            workspace,
             application: request.application,
             state: request.state.map(SessionState::try_from).transpose()?,
             names: None,
@@ -190,10 +142,6 @@ impl TryFrom<rpc::ListSessionsRequest> for SessionFilter {
         })
     }
 }
-
-pub const OPEN_SESSION: Option<SessionFilter> = Some(SessionFilter::by_state(SessionState::Open));
-pub const READY_SESSION: Option<SessionFilter> =
-    Some(SessionFilter::by_state(SessionState::Open).with_predicate(SessionPredicate::Ready));
 
 /// Filter for listing executors.
 /// All fields are Option:
@@ -265,37 +213,23 @@ pub const BINDING_EXECUTOR: Option<ExecutorFilter> =
 
 pub const ALL_EXECUTOR: Option<ExecutorFilter> = None;
 
-/// Filter for listing applications.
-/// All fields are Option:
-/// - `None` = ignore this filter (match all)
-/// - `Some(value)` = match exactly
+/// Filter for applications within one required workspace.
 pub struct ApplicationFilter {
-    pub workspace: Option<String>,
-    /// Filter by application state
+    pub workspace: String,
     pub state: Option<ApplicationState>,
 }
 
 impl ApplicationFilter {
-    /// Creates a new empty filter (matches all applications).
-    pub const fn new() -> Self {
+    pub fn new(workspace: impl Into<String>) -> Self {
         Self {
-            workspace: None,
+            workspace: workspace.into(),
             state: None,
         }
     }
 
-    /// Creates a filter for a specific application state.
-    pub const fn by_state(state: ApplicationState) -> Self {
-        Self {
-            workspace: None,
-            state: Some(state),
-        }
-    }
-}
-
-impl Default for ApplicationFilter {
-    fn default() -> Self {
-        Self::new()
+    pub fn by_state(mut self, state: ApplicationState) -> Self {
+        self.state = Some(state);
+        self
     }
 }
 
@@ -303,24 +237,75 @@ impl TryFrom<rpc::ListApplicationsRequest> for ApplicationFilter {
     type Error = FlameError;
 
     fn try_from(request: rpc::ListApplicationsRequest) -> Result<Self, Self::Error> {
+        let workspace = request.workspace.ok_or_else(|| {
+            FlameError::InvalidConfig("workspace is required when listing applications".to_string())
+        })?;
+        super::validate_workspace_name(&workspace)?;
         Ok(Self {
-            workspace: request.workspace,
+            workspace,
             state: request.state.map(ApplicationState::try_from).transpose()?,
         })
     }
 }
-
-pub const ALL_APPLICATION: Option<ApplicationFilter> = None;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn session_filter_preserves_optional_scope_and_multiple_names() {
-        let mut filter = SessionFilter::new();
-        assert_eq!(filter.session(), None);
-        filter.workspace = Some("research".to_string());
+    fn task_and_application_builders_preserve_scope() {
+        let session = SessionGID::new("research", "run");
+        let task_filter = TaskFilter::new(session.clone()).by_state(TaskState::Pending);
+        assert_eq!(task_filter.session(), &session);
+        assert_eq!(task_filter.states, Some(vec![TaskState::Pending]));
+        let task_filter = task_filter.by_states(vec![TaskState::Running, TaskState::Pending]);
+        assert_eq!(task_filter.session(), &session);
+        assert_eq!(
+            task_filter.states,
+            Some(vec![TaskState::Running, TaskState::Pending])
+        );
+        let app_filter = ApplicationFilter::new("research").by_state(ApplicationState::Disabled);
+        assert_eq!(app_filter.workspace, "research");
+        assert_eq!(app_filter.state, Some(ApplicationState::Disabled));
+        assert!(ApplicationFilter::try_from(rpc::ListApplicationsRequest::default()).is_err());
+    }
+
+    #[test]
+    fn session_filter_builders_preserve_workspace_and_other_criteria() {
+        let filter = SessionFilter::new("research")
+            .by_state(SessionState::Open)
+            .by_names(vec!["run".to_string()])
+            .by_application("service")
+            .with_limit(2);
+        assert_eq!(filter.workspace, "research");
+        assert_eq!(filter.state, Some(SessionState::Open));
+        assert_eq!(filter.application.as_deref(), Some("service"));
+        assert_eq!(filter.limit, Some(2));
+        assert_eq!(
+            filter.session(),
+            Some(vec![SessionGID::new("research", "run")])
+        );
+    }
+
+    #[test]
+    fn session_filter_rpc_requires_valid_workspace() {
+        assert!(SessionFilter::try_from(rpc::ListSessionsRequest::default()).is_err());
+        assert!(SessionFilter::try_from(rpc::ListSessionsRequest {
+            workspace: Some("Invalid".to_string()),
+            ..Default::default()
+        })
+        .is_err());
+        let filter = SessionFilter::try_from(rpc::ListSessionsRequest {
+            workspace: Some("research".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(filter.workspace, "research");
+    }
+
+    #[test]
+    fn session_filter_preserves_multiple_names_in_required_workspace() {
+        let mut filter = SessionFilter::new("research");
         assert_eq!(filter.session(), None);
         filter.names = Some(Vec::new());
         assert_eq!(filter.session(), Some(Vec::new()));
@@ -337,7 +322,5 @@ mod tests {
                 SessionGID::new("research", "second"),
             ])
         );
-        filter.workspace = None;
-        assert_eq!(filter.session(), None);
     }
 }

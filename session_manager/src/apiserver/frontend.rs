@@ -412,7 +412,7 @@ impl Frontend for Flame {
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let app_list = self
             .controller
-            .list_applications(Some(&filter))
+            .list_applications(&filter)
             .await
             .map_err(Status::from)?;
 
@@ -597,17 +597,12 @@ impl Frontend for Flame {
         request: Request<ListSessionsRequest>,
     ) -> Result<Response<SessionList>, Status> {
         trace_fn!("Frontend::list_sessions");
-        let mut request = request.into_inner();
-        if request.application.is_some() {
-            request.workspace.as_deref().ok_or_else(|| {
-                Status::invalid_argument("workspace is required when filtering by application")
-            })?;
-        }
+        let request = request.into_inner();
         let filter = crate::model::SessionFilter::try_from(request)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let ssn_list = self
             .controller
-            .list_sessions(Some(&filter))
+            .list_sessions(&filter)
             .map_err(Status::from)?;
 
         let sessions = ssn_list.iter().map(Session::from).collect();

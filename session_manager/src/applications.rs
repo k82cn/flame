@@ -51,8 +51,12 @@ impl ApplicationManager {
     }
 
     pub(crate) async fn reconcile_once(&self) -> Result<(), FlameError> {
-        let filter = ApplicationFilter::by_state(ApplicationState::Disabled);
-        let applications = self.controller.list_applications(Some(&filter)).await?;
+        let mut applications = Vec::new();
+        for workspace in self.storage.list_workspaces()? {
+            let filter =
+                ApplicationFilter::new(workspace.name).by_state(ApplicationState::Disabled);
+            applications.extend(self.controller.list_applications(&filter).await?);
+        }
 
         for application in applications {
             if let Err(error) = self
@@ -78,21 +82,21 @@ impl ApplicationManager {
         if application.state != ApplicationState::Disabled {
             return Ok(());
         }
-        let mut closed_filter =
-            SessionFilter::by_application_state(application.name.clone(), SessionState::Closed);
-        closed_filter.workspace = Some(application.workspace.clone());
-        for session in self.storage.list_sessions(Some(&closed_filter))? {
+        let closed_filter = SessionFilter::new(application.workspace.clone())
+            .by_application(application.name.clone())
+            .by_state(SessionState::Closed);
+        for session in self.storage.list_sessions(&closed_filter)? {
             match self.controller.delete_session(&session.gid()).await {
                 Ok(_) | Err(FlameError::NotFound(_)) => {}
                 Err(error) => return Err(error),
             }
         }
 
-        let mut open_filter =
-            SessionFilter::by_application_state(application.name.clone(), SessionState::Open)
-                .with_limit(1);
-        open_filter.workspace = Some(application.workspace.clone());
-        let has_open_sessions = !self.storage.list_sessions(Some(&open_filter))?.is_empty();
+        let open_filter = SessionFilter::new(application.workspace.clone())
+            .by_application(application.name.clone())
+            .by_state(SessionState::Open)
+            .with_limit(1);
+        let has_open_sessions = !self.storage.list_sessions(&open_filter)?.is_empty();
         if has_open_sessions {
             return Ok(());
         }

@@ -688,27 +688,24 @@ impl Storage {
         Ok(ssn)
     }
 
-    pub fn list_sessions(
-        &self,
-        filter: Option<&SessionFilter>,
-    ) -> Result<Vec<Session>, FlameError> {
-        if filter.and_then(|filter| filter.limit) == Some(0) {
+    pub fn list_sessions(&self, filter: &SessionFilter) -> Result<Vec<Session>, FlameError> {
+        if filter.limit == Some(0) {
             return Ok(Vec::new());
         }
         let mut ssn_list = vec![];
         let ssn_map = lock_ptr!(self.sessions)?;
 
-        for ssn in ssn_map.deref().values() {
+        for ((workspace, _), ssn) in ssn_map.iter() {
+            if workspace != &filter.workspace {
+                continue;
+            }
             let ssn = lock_ptr!(ssn)?;
             let mut ssn = ssn.clone();
             ssn.events = self
                 .event_manager
                 .find_events(EventOwner::session(ssn.workspace.clone(), ssn.name.clone()))?;
-            let matches = filter.is_none_or(|filter| {
-                filter
-                    .workspace
-                    .as_ref()
-                    .is_none_or(|workspace| ssn.workspace == *workspace)
+            let matches = {
+                ssn.workspace == filter.workspace
                     && filter
                         .application
                         .as_ref()
@@ -718,20 +715,17 @@ impl Storage {
                         .names
                         .as_ref()
                         .is_none_or(|names| names.contains(&ssn.name))
-            });
+            };
             if !matches {
                 continue;
             }
-            if let Some(predicate) = filter.and_then(|filter| filter.predicate) {
+            if let Some(predicate) = filter.predicate {
                 if !predicate.matches(ssn.retry_count, self.session_retry_limits()) {
                     continue;
                 }
             }
             ssn_list.push(ssn);
-            if filter
-                .and_then(|filter| filter.limit)
-                .is_some_and(|limit| ssn_list.len() >= limit)
-            {
+            if filter.limit.is_some_and(|limit| ssn_list.len() >= limit) {
                 break;
             }
         }
@@ -960,9 +954,9 @@ impl Storage {
 
     pub async fn list_applications(
         &self,
-        filter: Option<&ApplicationFilter>,
+        filter: &ApplicationFilter,
     ) -> Result<Vec<Application>, FlameError> {
-        self.engine.find_applications(filter).await
+        self.engine.find_applications(Some(filter)).await
     }
 
     pub async fn session_application(
@@ -988,7 +982,7 @@ impl Storage {
     }
 
     pub fn count_session(&self, filter: &SessionFilter) -> Result<usize, FlameError> {
-        Ok(self.list_sessions(Some(filter))?.len())
+        Ok(self.list_sessions(filter)?.len())
     }
 
     pub async fn update_task_state(

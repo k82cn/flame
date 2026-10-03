@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use crate::model::ScopedName;
 use crate::model::{
     ExecutorInfoPtr, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_EXECUTOR, ALL_NODE,
-    OPEN_SESSION,
 };
 use crate::scheduler::plugins::{Plugin, PluginPtr};
 use common::apis::{ResourceRequirement, TaskState};
@@ -135,7 +134,7 @@ impl Plugin for DRFPlugin {
             }
         }
 
-        let sessions = ss.find_sessions(OPEN_SESSION)?;
+        let sessions = crate::scheduler::open_sessions(ss)?;
         for ssn in sessions.values() {
             let ssn_id = ssn.key();
             let _ = self

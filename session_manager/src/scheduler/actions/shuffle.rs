@@ -18,7 +18,7 @@ use stdng::{logs::TraceFn, trace_fn};
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::model::{ExecutorInfo, SnapShot, BOUND_EXECUTOR, IDLE_EXECUTOR, READY_SESSION};
+use crate::model::{ExecutorInfo, SnapShot, BOUND_EXECUTOR, IDLE_EXECUTOR};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::ctx::Context;
 use crate::scheduler::plugins::ssn_order_fn;
@@ -52,7 +52,7 @@ impl Action for ShuffleAction {
         let ss = ctx.snapshot.clone();
 
         let mut underused = BinaryHeap::new(ssn_order_fn(ctx));
-        let open_ssns = ss.find_sessions(READY_SESSION)?;
+        let open_ssns = crate::scheduler::ready_sessions(&ss)?;
         for ssn in open_ssns.values() {
             if ctx.is_underused(ssn)? {
                 underused.push(ssn.clone());

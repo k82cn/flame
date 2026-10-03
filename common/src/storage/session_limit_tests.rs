@@ -67,7 +67,9 @@ mod tests {
                 .unwrap();
         }
 
-        let sessions = storage.list_sessions(None).unwrap();
+        let sessions = storage
+            .list_sessions(&crate::apis::SessionFilter::new("default"))
+            .unwrap();
         assert_eq!(sessions.len(), 5);
     }
 
@@ -100,12 +102,16 @@ mod tests {
             storage.create_session(attr).await.unwrap();
         }
 
-        let sessions_before = storage.list_sessions(None).unwrap();
+        let sessions_before = storage
+            .list_sessions(&crate::apis::SessionFilter::new("default"))
+            .unwrap();
         assert_eq!(sessions_before.len(), 3);
 
         storage.close_session("default", "ssn-0").await.unwrap();
 
-        let sessions_after = storage.list_sessions(None).unwrap();
+        let sessions_after = storage
+            .list_sessions(&crate::apis::SessionFilter::new("default"))
+            .unwrap();
         assert_eq!(sessions_after.len(), 2);
 
         let session_ids: Vec<_> = sessions_after.iter().map(|s| s.name.as_str()).collect();
@@ -143,7 +149,9 @@ mod tests {
 
         storage.close_session("default", "ssn-0").await.unwrap();
 
-        let sessions = storage.list_sessions(None).unwrap();
+        let sessions = storage
+            .list_sessions(&crate::apis::SessionFilter::new("default"))
+            .unwrap();
         assert_eq!(sessions.len(), 3);
     }
 
@@ -178,7 +186,9 @@ mod tests {
 
         storage.close_session("default", "ssn-1").await.unwrap();
 
-        let sessions = storage.list_sessions(None).unwrap();
+        let sessions = storage
+            .list_sessions(&crate::apis::SessionFilter::new("default"))
+            .unwrap();
         assert_eq!(sessions.len(), 2);
 
         let open_count = sessions

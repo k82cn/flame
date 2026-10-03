@@ -104,7 +104,9 @@ mod tests {
                 storage.create_session(attr).await.unwrap();
             }
 
-            let sessions = storage.list_sessions(None).unwrap();
+            let sessions = storage
+                .list_sessions(&crate::apis::SessionFilter::new("default"))
+                .unwrap();
             assert_eq!(sessions.len(), 5);
         }
     }
@@ -336,14 +338,26 @@ mod tests {
             let attr = create_session_attr("list-delete-ssn");
             storage.create_session(attr).await.unwrap();
 
-            assert_eq!(storage.list_sessions(None).unwrap().len(), 1);
+            assert_eq!(
+                storage
+                    .list_sessions(&crate::apis::SessionFilter::new("default"))
+                    .unwrap()
+                    .len(),
+                1
+            );
 
             storage
                 .delete_session("default", "list-delete-ssn")
                 .await
                 .unwrap();
 
-            assert_eq!(storage.list_sessions(None).unwrap().len(), 0);
+            assert_eq!(
+                storage
+                    .list_sessions(&crate::apis::SessionFilter::new("default"))
+                    .unwrap()
+                    .len(),
+                0
+            );
         }
     }
 
@@ -354,7 +368,9 @@ mod tests {
         async fn returns_empty_list_initially() {
             let storage = test_storage().await;
 
-            let sessions = storage.list_sessions(None).unwrap();
+            let sessions = storage
+                .list_sessions(&crate::apis::SessionFilter::new("default"))
+                .unwrap();
             assert!(sessions.is_empty());
         }
 
@@ -367,7 +383,9 @@ mod tests {
                 storage.create_session(attr).await.unwrap();
             }
 
-            let sessions = storage.list_sessions(None).unwrap();
+            let sessions = storage
+                .list_sessions(&crate::apis::SessionFilter::new("default"))
+                .unwrap();
             assert_eq!(sessions.len(), 3);
 
             let names: Vec<_> = sessions.iter().map(|s| s.name.as_str()).collect();
@@ -390,7 +408,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            let sessions = storage.list_sessions(None).unwrap();
+            let sessions = storage
+                .list_sessions(&crate::apis::SessionFilter::new("default"))
+                .unwrap();
             assert_eq!(sessions.len(), 2);
 
             let open_count = sessions
@@ -424,7 +444,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            let sessions = storage.list_sessions(None).unwrap();
+            let sessions = storage
+                .list_sessions(&crate::apis::SessionFilter::new("default"))
+                .unwrap();
             let session = sessions
                 .iter()
                 .find(|session| session.name == "list-event-ssn")

@@ -12,11 +12,13 @@ limitations under the License.
 */
 
 use async_trait::async_trait;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::{thread, time};
 use tokio::time::Duration;
 
 use crate::controller::ControllerPtr;
+use crate::model::{ScopedName, SessionInfoPtr, SnapShot};
 use crate::scheduler::ctx::Context;
 use crate::scheduler::plugins::PluginsOptions;
 
@@ -27,6 +29,36 @@ use common::FlameError;
 mod actions;
 mod ctx;
 mod plugins;
+
+/// Aggregate workspace-scoped queries for the cluster-wide scheduler.
+fn scheduling_sessions(
+    snapshot: &SnapShot,
+    ready_only: bool,
+) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
+    use common::apis::{SessionFilter, SessionPredicate, SessionState};
+    let workspaces: HashSet<String> = snapshot
+        .all_sessions()?
+        .values()
+        .map(|session| session.workspace.clone())
+        .collect();
+    let mut sessions = HashMap::new();
+    for workspace in workspaces {
+        let mut filter = SessionFilter::new(workspace).by_state(SessionState::Open);
+        if ready_only {
+            filter = filter.with_predicate(SessionPredicate::Ready);
+        }
+        sessions.extend(snapshot.find_sessions(&filter)?);
+    }
+    Ok(sessions)
+}
+
+fn open_sessions(snapshot: &SnapShot) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
+    scheduling_sessions(snapshot, false)
+}
+
+fn ready_sessions(snapshot: &SnapShot) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
+    scheduling_sessions(snapshot, true)
+}
 
 pub fn new(controller: ControllerPtr) -> Arc<dyn FlameThread> {
     Arc::new(ScheduleRunner { controller })
@@ -69,10 +101,52 @@ impl FlameThread for ScheduleRunner {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scheduler_aggregates_scoped_sessions_across_workspaces() {
+        use crate::model::{SessionInfo, SnapShot};
+        use common::apis::SessionState;
+        use std::sync::Arc;
+        let snapshot = SnapShot::new_with_session_retry_limits(2);
+        for workspace in ["default", "research"] {
+            snapshot
+                .add_session(Arc::new(SessionInfo {
+                    name: "shared".to_string(),
+                    workspace: workspace.to_string(),
+                    state: SessionState::Open,
+                    ..Default::default()
+                }))
+                .unwrap();
+        }
+        snapshot
+            .add_session(Arc::new(SessionInfo {
+                name: "exhausted".to_string(),
+                workspace: "research".to_string(),
+                state: SessionState::Open,
+                retry_count: 2,
+                ..Default::default()
+            }))
+            .unwrap();
+        snapshot
+            .add_session(Arc::new(SessionInfo {
+                name: "closed".to_string(),
+                workspace: "research".to_string(),
+                state: SessionState::Closed,
+                ..Default::default()
+            }))
+            .unwrap();
+        let open = super::open_sessions(&snapshot).unwrap();
+        assert_eq!(open.len(), 3);
+        let ready = super::ready_sessions(&snapshot).unwrap();
+        assert_eq!(ready.len(), 2);
+        for workspace in ["default", "research"] {
+            assert!(ready.contains_key(&(workspace.to_string(), "shared".to_string())));
+        }
+    }
+
     use rand::Rng;
 
     use crate::controller;
-    use crate::model::{ALL_NODE, OPEN_SESSION};
+    use crate::model::ALL_NODE;
     use crate::scheduler::actions::{AllocateAction, DispatchAction};
     use crate::scheduler::ctx::Context;
     use crate::scheduler::plugins::{PluginManager, PluginsOptions};
@@ -247,7 +321,7 @@ mod tests {
             let alloc = AllocateAction::new_ptr();
             tokio_test::block_on(alloc.execute(&mut ctx))?;
 
-            let ssn_list = snapshot.find_sessions(OPEN_SESSION)?;
+            let ssn_list = crate::scheduler::open_sessions(&snapshot)?;
             assert_eq!(ssn_list.len(), 1);
             assert_eq!(ssn_list.values().next().unwrap().id, ssn_1.id.clone());
 

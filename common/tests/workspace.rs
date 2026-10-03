@@ -12,7 +12,8 @@ limitations under the License.
 */
 
 use common::apis::{
-    ApplicationAttributes, Node, ResourceRequirement, SessionAttributes, TaskState,
+    ApplicationAttributes, ApplicationFilter, Node, ResourceRequirement, SessionAttributes,
+    SessionFilter, SessionState, TaskState,
 };
 use common::ctx::{FlameCluster, FlameClusterContext};
 use common::storage;
@@ -81,6 +82,28 @@ async fn names_are_scoped_by_workspace_and_metadata_ids_are_uuids() {
         assert_eq!(executor.application, "service");
         Uuid::parse_str(&executor.id).unwrap();
     }
+
+    for workspace in ["team-a", "team-b"] {
+        let filter = SessionFilter::new(workspace)
+            .by_state(SessionState::Open)
+            .by_names(vec!["run".to_string()])
+            .by_application("service");
+        let applications = store
+            .list_applications(&ApplicationFilter::new(workspace))
+            .await
+            .unwrap();
+        assert_eq!(applications.len(), 1);
+        assert_eq!(applications[0].workspace, workspace);
+        assert_eq!(applications[0].name, "service");
+        let sessions = store.list_sessions(&filter).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].workspace, workspace);
+        assert_eq!(sessions[0].name, "run");
+    }
+    assert!(store
+        .list_sessions(&SessionFilter::new("default"))
+        .unwrap()
+        .is_empty());
 
     assert_ne!(
         store.get_application("team-a", "service").await.unwrap().id,

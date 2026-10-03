@@ -21,8 +21,8 @@ use stdng::{lock_ptr, MutexPtr};
 use common::apis::{
     Application, ApplicationFilter, ApplicationState, Executor, ExecutorFilter, ExecutorID,
     ExecutorState, Node, NodeState, ResourceRequirement, Session, SessionFilter, SessionGID,
-    SessionPredicate, SessionState, Shim, Task, TaskName, TaskState, ALL_APPLICATION, ALL_EXECUTOR,
-    BOUND_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION, READY_SESSION, VOID_EXECUTOR,
+    SessionPredicate, SessionState, Shim, Task, TaskName, TaskState, ALL_EXECUTOR, BOUND_EXECUTOR,
+    IDLE_EXECUTOR, VOID_EXECUTOR,
 };
 use common::ctx::DEFAULT_SESSION_RETRY_LIMITS;
 use common::FlameError;
@@ -441,19 +441,10 @@ impl SnapShot {
         Ok(nodes)
     }
 
+    /// Query applications within the filter's mandatory workspace.
     pub fn find_applications(
         &self,
-        filter: Option<ApplicationFilter>,
-    ) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
-        match filter {
-            Some(filter) => self.find_applications_by_filter(filter),
-            None => self.find_all_applications(),
-        }
-    }
-
-    fn find_applications_by_filter(
-        &self,
-        filter: ApplicationFilter,
+        filter: &ApplicationFilter,
     ) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
         let apps = lock_ptr!(self.applications)?;
 
@@ -466,17 +457,15 @@ impl SnapShot {
                 .collect(),
         };
 
-        let filtered = filtered.into_iter().filter(|app| {
-            filter
-                .workspace
-                .as_ref()
-                .is_none_or(|workspace| &app.workspace == workspace)
-        });
+        let filtered = filtered
+            .into_iter()
+            .filter(|app| app.workspace == filter.workspace);
 
         Ok(filtered.map(|app| (app.key(), app)).collect())
     }
 
-    fn find_all_applications(&self) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
+    /// Iterate every application for internal cluster-wide scheduling.
+    pub fn all_applications(&self) -> Result<HashMap<ScopedName, AppInfoPtr>, FlameError> {
         let mut appinfos = HashMap::new();
 
         {
@@ -490,19 +479,10 @@ impl SnapShot {
         Ok(appinfos)
     }
 
+    /// Query sessions within the filter's mandatory workspace.
     pub fn find_sessions(
         &self,
-        filter: Option<SessionFilter>,
-    ) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
-        match filter {
-            Some(filter) => self.find_sessions_by_filter(filter),
-            None => self.find_all_sessions(),
-        }
-    }
-
-    fn find_sessions_by_filter(
-        &self,
-        filter: SessionFilter,
+        filter: &SessionFilter,
     ) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
         let sessions = lock_ptr!(self.sessions)?;
         let ssn_index = lock_ptr!(self.ssn_index)?;
@@ -527,12 +507,7 @@ impl SnapShot {
 
         let filtered: Vec<SessionInfoPtr> = filtered
             .into_iter()
-            .filter(|ssn| {
-                filter
-                    .workspace
-                    .as_ref()
-                    .is_none_or(|workspace| &ssn.workspace == workspace)
-            })
+            .filter(|ssn| ssn.workspace == filter.workspace)
             .collect();
 
         let filtered: Vec<SessionInfoPtr> = match filter.application {
@@ -554,7 +529,8 @@ impl SnapShot {
         Ok(filtered.into_iter().map(|ssn| (ssn.key(), ssn)).collect())
     }
 
-    fn find_all_sessions(&self) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
+    /// Iterate every session for internal cluster-wide scheduling.
+    pub fn all_sessions(&self) -> Result<HashMap<ScopedName, SessionInfoPtr>, FlameError> {
         let mut ssns = HashMap::new();
 
         {
@@ -818,7 +794,7 @@ mod tests {
     fn application_filter_maps_rpc_state() {
         let filter = ApplicationFilter::try_from(rpc::ListApplicationsRequest {
             state: Some(rpc::ApplicationState::Disabled as i32),
-            workspace: None,
+            workspace: Some("default".to_string()),
         })
         .unwrap();
 
@@ -829,9 +805,47 @@ mod tests {
     fn application_filter_rejects_unknown_rpc_state() {
         assert!(ApplicationFilter::try_from(rpc::ListApplicationsRequest {
             state: Some(99),
-            workspace: None
+            workspace: Some("default".to_string())
         })
         .is_err());
+    }
+
+    #[test]
+    fn application_queries_isolate_repeated_names_by_workspace() {
+        let snapshot = SnapShot::new();
+        for workspace in ["default", "research"] {
+            snapshot
+                .add_application(Arc::new(AppInfo {
+                    name: "shared".to_string(),
+                    workspace: workspace.to_string(),
+                    state: ApplicationState::Enabled,
+                    ..Default::default()
+                }))
+                .unwrap();
+        }
+        for workspace in ["default", "research"] {
+            let applications = snapshot
+                .find_applications(&ApplicationFilter::new(workspace))
+                .unwrap();
+            assert_eq!(applications.len(), 1);
+            assert!(applications.contains_key(&(workspace.to_string(), "shared".to_string())));
+            assert_eq!(
+                snapshot
+                    .find_applications(
+                        &ApplicationFilter::new(workspace).by_state(ApplicationState::Enabled)
+                    )
+                    .unwrap()
+                    .len(),
+                1
+            );
+            assert!(snapshot
+                .find_applications(
+                    &ApplicationFilter::new(workspace).by_state(ApplicationState::Disabled)
+                )
+                .unwrap()
+                .is_empty());
+        }
+        assert_eq!(snapshot.all_applications().unwrap().len(), 2);
     }
 
     #[test]
@@ -852,7 +866,7 @@ mod tests {
         assert!(SessionFilter::try_from(rpc::ListSessionsRequest {
             application: None,
             state: Some(99),
-            workspace: None,
+            workspace: Some("default".to_string()),
         })
         .is_err());
     }
@@ -1025,13 +1039,15 @@ mod tests {
         ss.add_session(ssn_closed.clone()).unwrap();
 
         // Find only open sessions
-        let open_ssns = ss.find_sessions(OPEN_SESSION).unwrap();
+        let open_ssns = ss
+            .find_sessions(&SessionFilter::new("default").by_state(SessionState::Open))
+            .unwrap();
         assert_eq!(open_ssns.len(), 2);
         assert!(open_ssns.contains_key(&("default".to_string(), "ssn-open-1".to_string())));
         assert!(open_ssns.contains_key(&("default".to_string(), "ssn-open-2".to_string())));
 
         // Find all sessions
-        let all_ssns = ss.find_sessions(None).unwrap();
+        let all_ssns = ss.find_sessions(&SessionFilter::new("default")).unwrap();
         assert_eq!(all_ssns.len(), 3);
     }
 
@@ -1052,10 +1068,45 @@ mod tests {
         ss.add_session(Arc::new(not_ready_open)).unwrap();
         ss.add_session(closed_ready.clone()).unwrap();
 
-        let ready_ssns = ss.find_sessions(READY_SESSION).unwrap();
+        let ready_ssns = ss
+            .find_sessions(
+                &SessionFilter::new("default")
+                    .by_state(SessionState::Open)
+                    .with_predicate(SessionPredicate::Ready),
+            )
+            .unwrap();
 
         assert_eq!(ready_ssns.len(), 1);
         assert!(ready_ssns.contains_key(&("default".to_string(), "ssn-ready".to_string())));
+    }
+
+    #[test]
+    fn session_queries_isolate_repeated_names_by_workspace() {
+        let snapshot = SnapShot::new();
+        for workspace in ["default", "research"] {
+            let mut session = create_test_session("shared", None, SessionState::Open)
+                .as_ref()
+                .clone();
+            session.workspace = workspace.to_string();
+            snapshot.add_session(Arc::new(session)).unwrap();
+        }
+        for workspace in ["default", "research"] {
+            for filter in [
+                SessionFilter::new(workspace),
+                SessionFilter::new(workspace).by_names(vec!["shared".to_string()]),
+                SessionFilter::new(workspace).by_state(SessionState::Open),
+                SessionFilter::new(workspace).by_application("test-app"),
+            ] {
+                let sessions = snapshot.find_sessions(&filter).unwrap();
+                assert_eq!(sessions.len(), 1);
+                assert!(sessions.contains_key(&(workspace.to_string(), "shared".to_string())));
+            }
+            assert!(snapshot
+                .find_sessions(&SessionFilter::new(workspace).by_names(vec![]))
+                .unwrap()
+                .is_empty());
+        }
+        assert_eq!(snapshot.all_sessions().unwrap().len(), 2);
     }
 
     /// Test that update_executor_state correctly updates the exec_index.

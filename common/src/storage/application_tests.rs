@@ -45,7 +45,10 @@ mod tests {
                 .await
                 .unwrap();
 
-            let apps = storage.list_applications(None).await.unwrap();
+            let apps = storage
+                .list_applications(&crate::apis::ApplicationFilter::new("default"))
+                .await
+                .unwrap();
             assert_eq!(apps.len(), 1);
             assert_eq!(apps[0].name, "test-app");
         }
@@ -65,7 +68,10 @@ mod tests {
                 .await
                 .unwrap();
 
-            let apps = storage.list_applications(None).await.unwrap();
+            let apps = storage
+                .list_applications(&crate::apis::ApplicationFilter::new("default"))
+                .await
+                .unwrap();
             assert_eq!(apps.len(), 2);
         }
 
@@ -237,7 +243,10 @@ mod tests {
                 .await
                 .unwrap();
 
-            let apps = storage.list_applications(None).await.unwrap();
+            let apps = storage
+                .list_applications(&crate::apis::ApplicationFilter::new("default"))
+                .await
+                .unwrap();
             assert!(apps.is_empty());
         }
 
@@ -255,15 +264,22 @@ mod tests {
             let ssn_attr = create_session_attr("cleanup-ssn", "cleanup-app");
             storage.create_session(ssn_attr).await.unwrap();
 
-            assert_eq!(storage.list_sessions(None).unwrap().len(), 1);
+            assert_eq!(
+                storage
+                    .list_sessions(&crate::apis::SessionFilter::new("default"))
+                    .unwrap()
+                    .len(),
+                1
+            );
 
             storage
                 .update_application_state("default", "cleanup-app", ApplicationState::Disabled)
                 .await
                 .unwrap();
 
-            let open_sessions =
-                crate::apis::SessionFilter::by_application_state("cleanup-app", SessionState::Open);
+            let open_sessions = crate::apis::SessionFilter::new("default")
+                .by_application("cleanup-app")
+                .by_state(SessionState::Open);
             assert_eq!(storage.count_session(&open_sessions).unwrap(), 1);
             let result = storage.delete_application("default", "cleanup-app").await;
             assert!(matches!(result, Err(crate::FlameError::InvalidState(_))));
@@ -274,7 +290,13 @@ mod tests {
                 .unwrap();
             let result = storage.delete_application("default", "cleanup-app").await;
             assert!(matches!(result, Err(crate::FlameError::InvalidState(_))));
-            assert_eq!(storage.list_sessions(None).unwrap().len(), 1);
+            assert_eq!(
+                storage
+                    .list_sessions(&crate::apis::SessionFilter::new("default"))
+                    .unwrap()
+                    .len(),
+                1
+            );
 
             storage
                 .delete_session("default", "cleanup-ssn")
@@ -285,7 +307,13 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(storage.list_sessions(None).unwrap().len(), 0);
+            assert_eq!(
+                storage
+                    .list_sessions(&crate::apis::SessionFilter::new("default"))
+                    .unwrap()
+                    .len(),
+                0
+            );
         }
 
         #[tokio::test]
@@ -313,7 +341,10 @@ mod tests {
             let ctx = test_context();
             let storage = storage::new_ptr(&ctx).await.unwrap();
 
-            let apps = storage.list_applications(None).await.unwrap();
+            let apps = storage
+                .list_applications(&crate::apis::ApplicationFilter::new("default"))
+                .await
+                .unwrap();
             assert!(apps.is_empty());
         }
 
@@ -334,7 +365,10 @@ mod tests {
                     .unwrap();
             }
 
-            let apps = storage.list_applications(None).await.unwrap();
+            let apps = storage
+                .list_applications(&crate::apis::ApplicationFilter::new("default"))
+                .await
+                .unwrap();
             assert_eq!(apps.len(), 3);
 
             let names: Vec<_> = apps.iter().map(|a| a.name.as_str()).collect();
@@ -371,9 +405,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            let filter =
-                crate::apis::ApplicationFilter::by_state(crate::apis::ApplicationState::Disabled);
-            let apps = storage.list_applications(Some(&filter)).await.unwrap();
+            let filter = crate::apis::ApplicationFilter::new("default")
+                .by_state(crate::apis::ApplicationState::Disabled);
+            let apps = storage.list_applications(&filter).await.unwrap();
             assert_eq!(apps.len(), 1);
             assert_eq!(apps[0].name, "disabled-app");
         }

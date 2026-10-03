@@ -20,10 +20,15 @@ Internally, `SessionGID { workspace, session }` and
 in the filesystem engine, event manager, and controller. They are not RPC
 references or metadata IDs.
 `TaskName` aliases the internal `u64` task name. `TaskFilter` stores one
-mandatory `SessionGID`; `session()` borrows that owner. Task filtering is
-always scoped to one session. `SessionFilter::session()` returns the explicitly named
-sessions when a workspace is specified, preserving multiple names and empty
-name lists. `Executor::gid()` returns its `ExecutorGID`.
+mandatory `SessionGID`; use `TaskFilter::new(gid).by_state(state)` or
+`.by_states(states)`, and `session()` borrows that owner. Task filtering is
+always scoped to one session. `SessionFilter` requires a workspace and uses
+`SessionFilter::new(ws).by_state(state).by_names(names).by_application(app)`.
+Its `session()` helper returns explicitly named sessions in that workspace,
+preserving multiple names and empty name lists. Queries never span workspaces.
+`ApplicationFilter` also requires workspace and uses `ApplicationFilter::new(ws).by_state(state)`. Internal scheduler,
+cleanup and cache GC enumerate workspaces before issuing scoped queries.
+`Executor::gid()` returns its `ExecutorGID`.
 `Session` and `SessionInfo` expose `gid()`; `Task`, `TaskInfo`, `Executor`, and
 `ExecutorInfo` expose `session()`. Executor variants return `None` when unbound.
 

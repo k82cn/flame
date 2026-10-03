@@ -476,7 +476,7 @@ impl Controller {
 
     pub fn list_sessions(
         &self,
-        filter: Option<&crate::model::SessionFilter>,
+        filter: &crate::model::SessionFilter,
     ) -> Result<Vec<Session>, FlameError> {
         self.storage.list_sessions(filter)
     }
@@ -649,7 +649,7 @@ impl Controller {
 
     pub async fn list_applications(
         &self,
-        filter: Option<&crate::model::ApplicationFilter>,
+        filter: &crate::model::ApplicationFilter,
     ) -> Result<Vec<Application>, FlameError> {
         trace_fn!("Controller::list_applications");
         self.storage.list_applications(filter).await

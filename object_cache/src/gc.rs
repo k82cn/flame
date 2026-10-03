@@ -108,19 +108,31 @@ impl FrontendApplicationLister {
 #[async_trait]
 impl ApplicationLister for FrontendApplicationLister {
     async fn list_applications(&mut self) -> Result<ApplicationMap, FlameError> {
-        let mut request = Request::new(ListApplicationsRequest {
-            state: None,
-            workspace: None,
-        });
+        let mut request = Request::new(flame_rpc::ListWorkspacesRequest {});
         request.set_timeout(LIST_APPLICATIONS_TIMEOUT);
-
-        let applications = self
+        let workspaces = self
             .client
-            .list_applications(request)
+            .list_workspaces(request)
             .await
             .map_err(|error| FlameError::Network(error.to_string()))?
             .into_inner()
-            .applications;
+            .workspaces;
+        let mut applications = Vec::new();
+        for workspace in workspaces {
+            let mut request = Request::new(ListApplicationsRequest {
+                state: None,
+                workspace: Some(workspace.name),
+            });
+            request.set_timeout(LIST_APPLICATIONS_TIMEOUT);
+            applications.extend(
+                self.client
+                    .list_applications(request)
+                    .await
+                    .map_err(|error| FlameError::Network(error.to_string()))?
+                    .into_inner()
+                    .applications,
+            );
+        }
 
         validate_applications(applications)
     }

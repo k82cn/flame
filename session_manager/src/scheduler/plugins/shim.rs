@@ -20,7 +20,6 @@ use std::collections::HashMap;
 
 use crate::model::{
     AppInfoPtr, ExecutorInfoPtr, NodeInfoPtr, ScopedName, SessionInfo, SessionInfoPtr, SnapShot,
-    ALL_APPLICATION,
 };
 use crate::scheduler::plugins::{Plugin, PluginPtr};
 use common::apis::Shim;
@@ -50,10 +49,10 @@ impl Plugin for ShimPlugin {
         self.ssn_shim_map.clear();
 
         // Get all applications to look up shim requirements
-        let apps = ss.find_applications(ALL_APPLICATION)?;
+        let apps = ss.all_applications()?;
 
-        // Get all open sessions and map their shim requirements
-        let sessions = ss.find_sessions(None)?;
+        // Iterate all sessions and map their shim requirements
+        let sessions = ss.all_sessions()?;
         for ssn in sessions.values() {
             if let Some(app) = apps.get(&(ssn.workspace.clone(), ssn.application.clone())) {
                 self.ssn_shim_map.insert(ssn.key(), app.shim);
@@ -165,6 +164,34 @@ mod tests {
             state: ExecutorState::Idle,
             ..Default::default()
         })
+    }
+
+    #[test]
+    fn shim_setup_preserves_same_named_applications_across_workspaces() {
+        let snapshot = create_test_snapshot();
+        let mut sessions = Vec::new();
+        for (workspace, shim) in [("default", Shim::Host), ("research", Shim::Wasm)] {
+            let mut app = create_app_info("shared-app", shim).as_ref().clone();
+            app.workspace = workspace.to_string();
+            snapshot.add_application(Arc::new(app)).unwrap();
+            let mut session = create_session_info("shared-session", "shared-app")
+                .as_ref()
+                .clone();
+            session.workspace = workspace.to_string();
+            let session = Arc::new(session);
+            snapshot.add_session(session.clone()).unwrap();
+            sessions.push((session, shim));
+        }
+        let mut plugin = ShimPlugin::new_ptr();
+        plugin.setup(&snapshot).unwrap();
+        for (session, shim) in sessions {
+            let mut executor = create_executor_info("executor", shim).as_ref().clone();
+            executor.workspace = session.workspace.clone();
+            assert_eq!(
+                plugin.is_available(&Arc::new(executor), &session),
+                Some(true)
+            );
+        }
     }
 
     #[test]

@@ -491,10 +491,7 @@ impl FilesystemEngine {
                 continue;
             }
             let workspace = workspace_entry.file_name().to_string_lossy().to_string();
-            if filter
-                .and_then(|f| f.workspace.as_ref())
-                .is_some_and(|name| name != &workspace)
-            {
+            if filter.is_some_and(|filter| filter.workspace != workspace) {
                 continue;
             }
             let sessions_dir = workspace_entry.path().join(SESSIONS);
@@ -1216,11 +1213,7 @@ impl Engine for FilesystemEngine {
             )));
         }
 
-        let filter = SessionFilter {
-            workspace: Some(workspace.to_string()),
-            application: Some(name.to_string()),
-            ..SessionFilter::default()
-        };
+        let filter = SessionFilter::new(workspace).by_application(name);
         let sessions = self._list_sessions_metadata(Some(&filter))?;
         if !sessions.is_empty() {
             return Err(FlameError::InvalidState(format!(
@@ -1252,12 +1245,9 @@ impl Engine for FilesystemEngine {
             )));
         }
 
-        let filter = SessionFilter {
-            workspace: Some(workspace.to_string()),
-            application: Some(name.to_string()),
-            state: Some(SessionState::Open),
-            ..SessionFilter::default()
-        };
+        let filter = SessionFilter::new(workspace)
+            .by_application(name)
+            .by_state(SessionState::Open);
         if !self._list_sessions_metadata(Some(&filter))?.is_empty() {
             return Err(FlameError::Storage(format!(
                 "Cannot update application '{}': has open sessions",
@@ -1311,10 +1301,7 @@ impl Engine for FilesystemEngine {
                 continue;
             }
             let workspace = workspace_entry.file_name().to_string_lossy().to_string();
-            if filter
-                .and_then(|f| f.workspace.as_ref())
-                .is_some_and(|name| name != &workspace)
-            {
+            if filter.is_some_and(|filter| filter.workspace != workspace) {
                 continue;
             }
             let apps_dir = workspace_entry.path().join(APPLICATIONS);
@@ -1454,7 +1441,7 @@ impl Engine for FilesystemEngine {
 
         let mut meta = self.read_session_metadata(&gid)?;
 
-        let task_count = self._count_task(&TaskFilter::by_session(gid.clone()))?;
+        let task_count = self._count_task(&TaskFilter::new(gid.clone()))?;
         let mut pending_tasks = Vec::new();
 
         // First pass: check for running tasks and collect pending tasks
@@ -1509,7 +1496,10 @@ impl Engine for FilesystemEngine {
             ));
         }
 
-        if self._count_task(&TaskFilter::non_terminal(gid.clone()))? > 0 {
+        if self._count_task(
+            &TaskFilter::new(gid.clone()).by_states(vec![TaskState::Pending, TaskState::Running]),
+        )? > 0
+        {
             return Err(FlameError::Storage(
                 "Cannot delete session with non-terminal tasks".to_string(),
             ));
@@ -1562,7 +1552,7 @@ impl Engine for FilesystemEngine {
 
         lock_ssn!(self, &gid);
 
-        let task_count = self._count_task(&TaskFilter::by_session(gid.clone()))?;
+        let task_count = self._count_task(&TaskFilter::new(gid.clone()))?;
         let task_number = task_count
             .checked_add(1)
             .ok_or_else(|| FlameError::Storage("task number overflow".into()))?;
@@ -1688,7 +1678,7 @@ impl Engine for FilesystemEngine {
         lock_ssn!(self, &gid);
 
         let mut tasks = Vec::new();
-        let task_count = self._count_task(&TaskFilter::by_session(gid.clone()))?;
+        let task_count = self._count_task(&TaskFilter::new(gid.clone()))?;
 
         for task_number in 1..=task_count {
             if let Ok(meta) = self.read_task_metadata(&gid, task_number) {
@@ -2120,7 +2110,10 @@ mod tests {
         assert_eq!(app2.name, "test-app");
 
         // Find applications
-        let apps = engine.find_applications(None).await.unwrap();
+        let apps = engine
+            .find_applications(Some(&ApplicationFilter::new("default")))
+            .await
+            .unwrap();
         assert_eq!(apps.len(), 1);
 
         // Update application
@@ -2168,7 +2161,7 @@ mod tests {
         assert_eq!(unchanged.version, disabled.version);
         assert_eq!(unchanged.image, disabled.image);
 
-        let filter = ApplicationFilter::by_state(ApplicationState::Disabled);
+        let filter = ApplicationFilter::new("default").by_state(ApplicationState::Disabled);
         let disabled_apps = engine.find_applications(Some(&filter)).await.unwrap();
         assert_eq!(disabled_apps.len(), 1);
         assert_eq!(disabled_apps[0].name, "test-app");
@@ -2208,7 +2201,9 @@ mod tests {
             .await
             .unwrap();
 
-        let open_sessions = SessionFilter::by_application_state("test-app", SessionState::Open);
+        let open_sessions = SessionFilter::new("default")
+            .by_application("test-app")
+            .by_state(SessionState::Open);
         assert_eq!(
             engine
                 ._list_sessions_metadata(Some(&open_sessions))
@@ -2259,10 +2254,7 @@ mod tests {
         fs::create_dir_all(engine.session_path(&SessionGID::new("default", "incomplete-session")))
             .unwrap();
 
-        let sessions = SessionFilter {
-            application: Some("test-app".to_string()),
-            ..SessionFilter::default()
-        };
+        let sessions = SessionFilter::new("default").by_application("test-app");
         assert!(engine._list_sessions_metadata(Some(&sessions)).is_err());
         assert!(engine
             .delete_application("default", "test-app")

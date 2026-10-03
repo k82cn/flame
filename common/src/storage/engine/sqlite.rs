@@ -303,8 +303,7 @@ impl Engine for SqliteEngine {
         rows.into_iter()
             .filter(|x| {
                 filter.is_none_or(|f| {
-                    f.workspace.as_ref().is_none_or(|w| w == &x.workspace)
-                        && f.state.is_none_or(|s| s as i32 == x.state)
+                    f.workspace == x.workspace && f.state.is_none_or(|s| s as i32 == x.state)
                 })
             })
             .map(Application::try_from)

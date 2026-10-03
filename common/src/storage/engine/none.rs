@@ -230,8 +230,7 @@ impl Engine for NoneEngine {
             .values()
             .filter(|app| {
                 filter.is_none_or(|f| {
-                    f.workspace.as_ref().is_none_or(|w| w == &app.workspace)
-                        && f.state.is_none_or(|s| s == app.state)
+                    f.workspace == app.workspace && f.state.is_none_or(|s| s == app.state)
                 })
             })
             .cloned()
