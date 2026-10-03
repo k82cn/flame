@@ -19,8 +19,9 @@ Internally, `SessionGID { workspace, session }` and
 `SessionGID` also keys event maps and is passed through session-scoped helpers
 in the filesystem engine, event manager, and controller. They are not RPC
 references or metadata IDs.
-`TaskName` aliases the internal `u64` task name; `TaskFilter::session()` returns
-the scoped owner. `SessionFilter::session()` returns the explicitly named
+`TaskName` aliases the internal `u64` task name. `TaskFilter` stores one
+mandatory `SessionGID`; `session()` borrows that owner. Task filtering is
+always scoped to one session. `SessionFilter::session()` returns the explicitly named
 sessions when a workspace is specified, preserving multiple names and empty
 name lists. `Executor::gid()` returns its `ExecutorGID`.
 `Session` and `SessionInfo` expose `gid()`; `Task`, `TaskInfo`, `Executor`, and

@@ -30,48 +30,37 @@ impl SessionPredicate {
 
 /// Filter for tasks owned by one session.
 pub struct TaskFilter {
-    pub workspace: String,
-    /// Owning session.
-    pub session: String,
+    /// Owning session, including its workspace.
+    pub session: SessionGID,
     /// Task states to include. `None` matches every state.
     pub states: Option<Vec<TaskState>>,
 }
 
 impl TaskFilter {
-    /// Returns the owning session's globally scoped name.
-    pub fn session(&self) -> SessionGID {
-        SessionGID::new(&self.workspace, &self.session)
+    /// Returns the owning session's scoped name.
+    pub fn session(&self) -> &SessionGID {
+        &self.session
     }
 
     /// Creates a filter for every task in a session.
-    pub fn by_session(workspace: impl Into<String>, session: impl Into<String>) -> Self {
+    pub fn by_session(session: SessionGID) -> Self {
         Self {
-            workspace: workspace.into(),
-            session: session.into(),
+            session,
             states: None,
         }
     }
 
     /// Creates a filter for tasks in any of the provided states.
-    pub fn by_session_states(
-        workspace: impl Into<String>,
-        session: impl Into<String>,
-        states: impl Into<Vec<TaskState>>,
-    ) -> Self {
+    pub fn by_session_states(session: SessionGID, states: impl Into<Vec<TaskState>>) -> Self {
         Self {
-            workspace: workspace.into(),
-            session: session.into(),
+            session,
             states: Some(states.into()),
         }
     }
 
     /// Creates a filter for non-terminal tasks in a session.
-    pub fn non_terminal(workspace: impl Into<String>, session: impl Into<String>) -> Self {
-        Self::by_session_states(
-            workspace,
-            session,
-            vec![TaskState::Pending, TaskState::Running],
-        )
+    pub fn non_terminal(session: SessionGID) -> Self {
+        Self::by_session_states(session, vec![TaskState::Pending, TaskState::Running])
     }
 }
 

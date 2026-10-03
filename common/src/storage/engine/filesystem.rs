@@ -871,7 +871,7 @@ impl FilesystemEngine {
     /// Count tasks matching the filter.
     fn _count_task(&self, filter: &TaskFilter) -> Result<u64, FlameError> {
         let gid = filter.session();
-        let path = self.session_path(&gid).join("tasks.bin");
+        let path = self.session_path(gid).join("tasks.bin");
 
         let task_count = match fs::metadata(&path) {
             Ok(metadata) => metadata.len() / self.record_size as u64,
@@ -883,7 +883,7 @@ impl FilesystemEngine {
 
         let mut count = 0;
         for task_id in 1..=task_count {
-            let metadata = self.read_task_metadata(&gid, task_id)?;
+            let metadata = self.read_task_metadata(gid, task_id)?;
             let state = TaskState::try_from(metadata.state as i32)?;
             if states.contains(&state) {
                 count += 1;
@@ -1454,7 +1454,7 @@ impl Engine for FilesystemEngine {
 
         let mut meta = self.read_session_metadata(&gid)?;
 
-        let task_count = self._count_task(&TaskFilter::by_session(workspace, name))?;
+        let task_count = self._count_task(&TaskFilter::by_session(gid.clone()))?;
         let mut pending_tasks = Vec::new();
 
         // First pass: check for running tasks and collect pending tasks
@@ -1509,7 +1509,7 @@ impl Engine for FilesystemEngine {
             ));
         }
 
-        if self._count_task(&TaskFilter::non_terminal(workspace, name))? > 0 {
+        if self._count_task(&TaskFilter::non_terminal(gid.clone()))? > 0 {
             return Err(FlameError::Storage(
                 "Cannot delete session with non-terminal tasks".to_string(),
             ));
@@ -1562,7 +1562,7 @@ impl Engine for FilesystemEngine {
 
         lock_ssn!(self, &gid);
 
-        let task_count = self._count_task(&TaskFilter::by_session(workspace, session))?;
+        let task_count = self._count_task(&TaskFilter::by_session(gid.clone()))?;
         let task_number = task_count
             .checked_add(1)
             .ok_or_else(|| FlameError::Storage("task number overflow".into()))?;
@@ -1688,7 +1688,7 @@ impl Engine for FilesystemEngine {
         lock_ssn!(self, &gid);
 
         let mut tasks = Vec::new();
-        let task_count = self._count_task(&TaskFilter::by_session(workspace, session))?;
+        let task_count = self._count_task(&TaskFilter::by_session(gid.clone()))?;
 
         for task_number in 1..=task_count {
             if let Ok(meta) = self.read_task_metadata(&gid, task_number) {
