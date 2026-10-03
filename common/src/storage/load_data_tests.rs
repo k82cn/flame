@@ -138,7 +138,9 @@ mod tests {
         assert!(idle_exec.attributes.is_empty());
         assert!(idle_exec.latest_updated_timestamp > stale_timestamp);
 
-        let db_executor = tokio_test::block_on(engine.get_executor("default", "binding-exec"))?;
+        let db_executor = tokio_test::block_on(
+            engine.get_executor(&crate::apis::ExecutorGID::new("default", "binding-exec")),
+        )?;
         assert!(db_executor.is_some());
         let db_executor = db_executor.unwrap();
         assert_eq!(db_executor.state, ExecutorState::Idle);

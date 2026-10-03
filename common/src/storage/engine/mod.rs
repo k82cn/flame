@@ -16,8 +16,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::apis::{
-    Application, ApplicationAttributes, ApplicationState, ExecutorState, Node, Session,
-    SessionAttributes, Task, TaskInput, TaskOptions, TaskResult, TaskState, Workspace,
+    Application, ApplicationAttributes, ApplicationState, ExecutorGID, ExecutorState, Node,
+    Session, SessionAttributes, SessionGID, Task, TaskInput, TaskOptions, TaskResult, TaskState,
+    Workspace,
 };
 use crate::apis::{ApplicationFilter, Executor};
 use crate::FlameError;
@@ -64,45 +65,32 @@ pub trait Engine: Send + Sync + 'static {
     ) -> Result<Vec<Application>, FlameError>;
     // Session operations
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError>;
-    async fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError>;
+    async fn get_session(&self, session: &SessionGID) -> Result<Session, FlameError>;
     async fn open_session(
         &self,
-        workspace: &str,
-        name: &str,
+        session: &SessionGID,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError>;
-    async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError>;
-    async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError>;
+    async fn close_session(&self, session: &SessionGID) -> Result<Session, FlameError>;
+    async fn delete_session(&self, session: &SessionGID) -> Result<Session, FlameError>;
     async fn find_sessions(&self) -> Result<Vec<Session>, FlameError>;
 
     // Task operations
     async fn create_task(
         &self,
-        workspace: &str,
-        session: &str,
+        session: &SessionGID,
         task_input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError>;
 
     #[allow(dead_code)]
-    async fn get_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError>;
+    async fn get_task(&self, session: &SessionGID, task: &str) -> Result<Task, FlameError>;
 
-    async fn retry_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError>;
+    async fn retry_task(&self, session: &SessionGID, task: &str) -> Result<Task, FlameError>;
 
     async fn update_task_state(
         &self,
-        workspace: &str,
-        session: &str,
+        session: &SessionGID,
         task: &str,
         task_state: TaskState,
         message: Option<String>,
@@ -110,13 +98,12 @@ pub trait Engine: Send + Sync + 'static {
 
     async fn update_task_result(
         &self,
-        workspace: &str,
-        session: &str,
+        session: &SessionGID,
         task: &str,
         task_result: TaskResult,
     ) -> Result<Task, FlameError>;
 
-    async fn find_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError>;
+    async fn find_tasks(&self, session: &SessionGID) -> Result<Vec<Task>, FlameError>;
 
     // Node operations
     async fn create_node(&self, node: &Node) -> Result<Node, FlameError>;
@@ -129,20 +116,15 @@ pub trait Engine: Send + Sync + 'static {
     // Executor operations
     async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError>;
     #[allow(dead_code)]
-    async fn get_executor(
-        &self,
-        workspace: &str,
-        name: &str,
-    ) -> Result<Option<Executor>, FlameError>;
+    async fn get_executor(&self, executor: &ExecutorGID) -> Result<Option<Executor>, FlameError>;
     async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError>;
     #[allow(dead_code)]
     async fn update_executor_state(
         &self,
-        workspace: &str,
-        name: &str,
+        executor: &ExecutorGID,
         state: ExecutorState,
     ) -> Result<Executor, FlameError>;
-    async fn delete_executor(&self, workspace: &str, name: &str) -> Result<(), FlameError>;
+    async fn delete_executor(&self, executor: &ExecutorGID) -> Result<(), FlameError>;
     async fn find_executors(&self, node: Option<&str>) -> Result<Vec<Executor>, FlameError>;
 }
 

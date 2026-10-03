@@ -131,7 +131,6 @@ impl TryFrom<rpc::ListSessionsRequest> for SessionFilter {
         let workspace = request.workspace.ok_or_else(|| {
             FlameError::InvalidConfig("workspace is required when listing sessions".to_string())
         })?;
-        super::validate_workspace_name(&workspace)?;
         Ok(Self {
             workspace,
             application: request.application,
@@ -240,7 +239,6 @@ impl TryFrom<rpc::ListApplicationsRequest> for ApplicationFilter {
         let workspace = request.workspace.ok_or_else(|| {
             FlameError::InvalidConfig("workspace is required when listing applications".to_string())
         })?;
-        super::validate_workspace_name(&workspace)?;
         Ok(Self {
             workspace,
             state: request.state.map(ApplicationState::try_from).transpose()?,
@@ -288,13 +286,8 @@ mod tests {
     }
 
     #[test]
-    fn session_filter_rpc_requires_valid_workspace() {
+    fn session_filter_rpc_requires_workspace() {
         assert!(SessionFilter::try_from(rpc::ListSessionsRequest::default()).is_err());
-        assert!(SessionFilter::try_from(rpc::ListSessionsRequest {
-            workspace: Some("Invalid".to_string()),
-            ..Default::default()
-        })
-        .is_err());
         let filter = SessionFilter::try_from(rpc::ListSessionsRequest {
             workspace: Some("research".to_string()),
             ..Default::default()

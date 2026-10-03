@@ -17,7 +17,10 @@ There is no ApplicationGID, SessionGID, or TaskGID string contract.
 Internally, `SessionGID { workspace, session }` and
 `ExecutorGID { workspace, executor }` are typed map keys for filesystem locks;
 `SessionGID` also keys event maps and is passed through session-scoped helpers
-in the filesystem engine, event manager, and controller. They are not RPC
+in the filesystem engine, event manager, controller, and storage `Engine` trait.
+`Engine` session/task operations take `&SessionGID`; executor lookup/state/delete
+operations take `&ExecutorGID`. Resource-bearing creation/update operations
+carry scope in their existing models. They are not RPC
 references or metadata IDs.
 `TaskName` aliases the internal `u64` task name. `TaskFilter` stores one
 mandatory `SessionGID`; use `TaskFilter::new(gid).by_state(state)` or
@@ -31,6 +34,9 @@ cleanup and cache GC enumerate workspaces before issuing scoped queries.
 `Executor::gid()` returns its `ExecutorGID`.
 `Session` and `SessionInfo` expose `gid()`; `Task`, `TaskInfo`, `Executor`, and
 `ExecutorInfo` expose `session()`. Executor variants return `None` when unbound.
+
+Resource-name grammar is validated only at frontend RPC ingress. Controllers,
+filters, storage engines, and recovery consume those established names.
 
 A Workspace is a namespace, not an access boundary. Any client that can
 reach the current API can name, list, or operate on any workspace under the

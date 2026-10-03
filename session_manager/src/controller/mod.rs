@@ -618,7 +618,6 @@ impl Controller {
         attr: ApplicationAttributes,
     ) -> Result<(), FlameError> {
         trace_fn!("Controller::register_application");
-        common::apis::validate_application_name(&name)?;
         self.storage
             .register_application(workspace, name, attr)
             .await

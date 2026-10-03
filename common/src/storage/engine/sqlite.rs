@@ -28,8 +28,8 @@ use super::{
 use crate::{
     apis::{
         Application, ApplicationAttributes, ApplicationFilter, ApplicationState, Executor,
-        ExecutorState, Node, Session, SessionAttributes, SessionState, Task, TaskInput, TaskName,
-        TaskOptions, TaskResult, TaskState, Workspace,
+        ExecutorGID, ExecutorState, Node, Session, SessionAttributes, SessionGID, SessionState,
+        Task, TaskInput, TaskName, TaskOptions, TaskResult, TaskState, Workspace,
     },
     FlameError,
 };
@@ -102,7 +102,9 @@ impl SqliteEngine {
                 }
             })
     }
-    async fn session(&self, workspace: &str, name: &str) -> Result<SessionDao, FlameError> {
+    async fn session(&self, gid: &SessionGID) -> Result<SessionDao, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
         sqlx::query_as("SELECT * FROM sessions WHERE workspace=? AND name=?")
             .bind(workspace)
             .bind(name)
@@ -116,12 +118,9 @@ impl SqliteEngine {
                 }
             })
     }
-    async fn task(
-        &self,
-        workspace: &str,
-        session: &str,
-        name: &str,
-    ) -> Result<TaskDao, FlameError> {
+    async fn task(&self, gid: &SessionGID, name: &str) -> Result<TaskDao, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         sqlx::query_as("SELECT * FROM tasks WHERE workspace=? AND session=? AND name=?")
             .bind(workspace)
             .bind(session)
@@ -141,7 +140,6 @@ impl SqliteEngine {
 #[async_trait]
 impl Engine for SqliteEngine {
     async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
-        crate::apis::validate_workspace_name(&name)?;
         let now = Utc::now();
         sqlx::query("INSERT INTO workspaces(name,create_at) VALUES (?,?)")
             .bind(&name)
@@ -334,16 +332,17 @@ impl Engine for SqliteEngine {
             .fetch_one(&self.pool).await.map_err(|e| unique(e,"session"))?;
         dao.try_into()
     }
-    async fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        self.session(workspace, name).await?.try_into()
+    async fn get_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        self.session(gid).await?.try_into()
     }
     async fn open_session(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &SessionGID,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
-        match self.session(workspace, name).await {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
+        match self.session(gid).await {
             Ok(dao) => {
                 if dao.state == SessionState::Open as i32 {
                     return dao.try_into();
@@ -359,7 +358,9 @@ impl Engine for SqliteEngine {
             Err(e) => Err(e),
         }
     }
-    async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
+    async fn close_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
         let mut tx = self.pool.begin().await.map_err(storage)?;
         let running: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM tasks WHERE workspace=? AND session=? AND state=?",
@@ -384,7 +385,9 @@ impl Engine for SqliteEngine {
         tx.commit().await.map_err(storage)?;
         dao.try_into()
     }
-    async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
+    async fn delete_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
         let mut tx = self.pool.begin().await.map_err(storage)?;
         let dao: SessionDao = sqlx::query_as(
             "DELETE FROM sessions WHERE workspace=? AND name=? AND state=? RETURNING *",
@@ -414,11 +417,12 @@ impl Engine for SqliteEngine {
     }
     async fn create_task(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         let mut tx = self.pool.begin().await.map_err(storage)?;
         let state: Option<i32> =
             sqlx::query_scalar("SELECT state FROM sessions WHERE workspace=? AND name=?")
@@ -463,20 +467,12 @@ impl Engine for SqliteEngine {
         tx.commit().await.map_err(storage)?;
         dao.try_into()
     }
-    async fn get_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
-        self.task(workspace, session, task).await?.try_into()
+    async fn get_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        self.task(gid, task).await?.try_into()
     }
-    async fn retry_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
+    async fn retry_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         let dao:TaskDao=sqlx::query_as("UPDATE tasks SET state=?,output=NULL,completion_time=NULL,version=version+1 WHERE workspace=? AND session=? AND name=? RETURNING *")
             .bind(TaskState::Pending as i32).bind(workspace).bind(session).bind(task).fetch_one(&self.pool).await
             .map_err(|e|if matches!(e,sqlx::Error::RowNotFound){missing("task",task)}else{storage(e)})?;
@@ -484,12 +480,13 @@ impl Engine for SqliteEngine {
     }
     async fn update_task_state(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         state: TaskState,
         _message: Option<String>,
     ) -> Result<Task, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         let completion = state.is_terminal().then(|| Utc::now().timestamp());
         let dao:TaskDao=sqlx::query_as("UPDATE tasks SET state=?,completion_time=?,version=version+1 WHERE workspace=? AND session=? AND name=? RETURNING *")
             .bind(state as i32).bind(completion).bind(workspace).bind(session).bind(task).fetch_one(&self.pool).await
@@ -498,11 +495,12 @@ impl Engine for SqliteEngine {
     }
     async fn update_task_result(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         result: TaskResult,
     ) -> Result<Task, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         let completion = result.state.is_terminal().then(|| Utc::now().timestamp());
         let dao:TaskDao=sqlx::query_as("UPDATE tasks SET state=?,output=?,completion_time=?,version=version+1 WHERE workspace=? AND session=? AND name=? RETURNING *")
             .bind(result.state as i32).bind(result.output.map(|x| x.to_vec())).bind(completion)
@@ -510,7 +508,9 @@ impl Engine for SqliteEngine {
             .map_err(|e|if matches!(e,sqlx::Error::RowNotFound){missing("task",task)}else{storage(e)})?;
         dao.try_into()
     }
-    async fn find_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError> {
+    async fn find_tasks(&self, gid: &SessionGID) -> Result<Vec<Task>, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         let rows: Vec<TaskDao> = sqlx::query_as(
             "SELECT * FROM tasks WHERE workspace=? AND session=? ORDER BY length(name), name",
         )
@@ -569,11 +569,9 @@ impl Engine for SqliteEngine {
             .bind(i32::from(executor.state)).fetch_one(&self.pool).await.map_err(|e|unique(e,"executor"))?;
         dao.try_into()
     }
-    async fn get_executor(
-        &self,
-        workspace: &str,
-        name: &str,
-    ) -> Result<Option<Executor>, FlameError> {
+    async fn get_executor(&self, gid: &ExecutorGID) -> Result<Option<Executor>, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.executor.as_str();
         let dao: Option<ExecutorDao> =
             sqlx::query_as("SELECT * FROM executors WHERE workspace=? AND name=?")
                 .bind(workspace)
@@ -594,10 +592,11 @@ impl Engine for SqliteEngine {
     }
     async fn update_executor_state(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &ExecutorGID,
         state: ExecutorState,
     ) -> Result<Executor, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.executor.as_str();
         let dao: ExecutorDao =
             sqlx::query_as("UPDATE executors SET state=? WHERE workspace=? AND name=? RETURNING *")
                 .bind(i32::from(state))
@@ -614,7 +613,9 @@ impl Engine for SqliteEngine {
                 })?;
         dao.try_into()
     }
-    async fn delete_executor(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
+    async fn delete_executor(&self, gid: &ExecutorGID) -> Result<(), FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.executor.as_str();
         sqlx::query("DELETE FROM executors WHERE workspace=? AND name=?")
             .bind(workspace)
             .bind(name)

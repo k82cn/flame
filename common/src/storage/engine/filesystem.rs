@@ -51,11 +51,10 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::apis::{
-    new_metadata_id, validate_session_name, validate_workspace_name, Application,
-    ApplicationAttributes, ApplicationSchema, ApplicationState, ExecutorGID, ExecutorState, Node,
-    NodeInfo, NodeState, ResourceRequirement, Session, SessionAttributes, SessionGID, SessionState,
-    SessionStatus, Shim, Task, TaskInput, TaskName, TaskOptions, TaskResult, TaskState, Workspace,
-    DEFAULT_WORKSPACE,
+    new_metadata_id, Application, ApplicationAttributes, ApplicationSchema, ApplicationState,
+    ExecutorGID, ExecutorState, Node, NodeInfo, NodeState, ResourceRequirement, Session,
+    SessionAttributes, SessionGID, SessionState, SessionStatus, Shim, Task, TaskInput, TaskName,
+    TaskOptions, TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
 };
 use crate::{FlameError, FLAME_HOME};
 
@@ -311,7 +310,6 @@ macro_rules! lock_executor {
 
 impl FilesystemEngine {
     fn require_workspace(&self, name: &str) -> Result<(), FlameError> {
-        validate_workspace_name(name)?;
         let path = self
             .base_path
             .join(WORKSPACES)
@@ -1102,7 +1100,6 @@ impl FilesystemEngine {
 #[async_trait]
 impl Engine for FilesystemEngine {
     async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
-        validate_workspace_name(&name)?;
         let path = self.base_path.join(WORKSPACES).join(&name);
         fs::create_dir(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
@@ -1327,7 +1324,6 @@ impl Engine for FilesystemEngine {
 
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
         self.require_workspace(&attr.workspace)?;
-        validate_session_name(&attr.name)?;
         self.read_application_metadata(&attr.workspace, &attr.application)?;
         let gid = SessionGID::new(&attr.workspace, &attr.name);
         if self.read_session_metadata(&gid).is_ok() {
@@ -1389,24 +1385,23 @@ impl Engine for FilesystemEngine {
         self.session_from_metadata(&meta)
     }
 
-    async fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        let meta = self.read_session_metadata(&SessionGID::new(workspace, name))?;
+    async fn get_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let meta = self.read_session_metadata(gid)?;
         self.session_from_metadata(&meta)
     }
 
     async fn open_session(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &SessionGID,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         // Try to get existing session
-        match self.read_session_metadata(&SessionGID::new(workspace, name)) {
+        match self.read_session_metadata(gid) {
             Ok(meta) => {
                 // Session exists - validate state
                 if meta.state != SessionState::Open as i32 {
                     return Err(FlameError::InvalidState(format!(
-                        "Session {workspace}/{name} is not open"
+                        "Session {gid} is not open"
                     )));
                 }
 
@@ -1426,32 +1421,29 @@ impl Engine for FilesystemEngine {
                 // Session doesn't exist
                 match spec {
                     Some(attr) => self.create_session(attr).await,
-                    None => Err(FlameError::NotFound(format!(
-                        "Session {workspace}/{name} not found"
-                    ))),
+                    None => Err(FlameError::NotFound(format!("Session {gid} not found"))),
                 }
             }
         }
     }
 
-    async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        let gid = SessionGID::new(workspace, name);
-        lock_ssn!(self, &gid);
+    async fn close_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        lock_ssn!(self, gid);
 
-        let mut meta = self.read_session_metadata(&gid)?;
+        let mut meta = self.read_session_metadata(gid)?;
 
         let task_count = self._count_task(&TaskFilter::new(gid.clone()))?;
         let mut pending_tasks = Vec::new();
 
         // First pass: check for running tasks and collect pending tasks
         for task_number in 1..=task_count {
-            if let Ok(task_meta) = self.read_task_metadata(&gid, task_number) {
+            if let Ok(task_meta) = self.read_task_metadata(gid, task_number) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!(
                             "Task {}/{} has corrupted state ({}): {}, treating as incomplete",
-                            name,
+                            gid.session,
                             task_number,
                             task_meta.state,
                             e
@@ -1474,20 +1466,19 @@ impl Engine for FilesystemEngine {
 
         // Second pass: cancel pending tasks
         for task in pending_tasks {
-            self._update_task_state(&gid, task, TaskState::Cancelled)?;
+            self._update_task_state(gid, task, TaskState::Cancelled)?;
         }
 
         meta.state = SessionState::Closed as i32;
         meta.completion_time = Some(Utc::now().timestamp());
         meta.version += 1;
 
-        self.write_session_metadata(&gid, &meta)?;
+        self.write_session_metadata(gid, &meta)?;
         self.session_from_metadata(&meta)
     }
 
-    async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        let gid = SessionGID::new(workspace, name);
-        let meta = self.read_session_metadata(&gid)?;
+    async fn delete_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let meta = self.read_session_metadata(gid)?;
 
         if meta.state != SessionState::Closed as i32 {
             return Err(FlameError::Storage(
@@ -1506,13 +1497,13 @@ impl Engine for FilesystemEngine {
 
         let session = self.session_from_metadata(&meta)?;
 
-        let session_dir = self.session_path(&gid);
+        let session_dir = self.session_path(gid);
         fs::remove_dir_all(&session_dir)
             .map_err(|e| FlameError::Storage(format!("Failed to delete session: {e}")))?;
 
         {
             let mut locks = lock_app!(self)?;
-            locks.remove(&gid);
+            locks.remove(gid);
         }
 
         Ok(session)
@@ -1536,20 +1527,18 @@ impl Engine for FilesystemEngine {
 
     async fn create_task(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
-        let gid = SessionGID::new(workspace, session);
-        let ssn_meta = self.read_session_metadata(&gid)?;
+        let ssn_meta = self.read_session_metadata(gid)?;
         if ssn_meta.state != SessionState::Open as i32 {
             return Err(FlameError::InvalidState(
                 "Cannot create task in closed session".to_string(),
             ));
         }
 
-        lock_ssn!(self, &gid);
+        lock_ssn!(self, gid);
 
         let task_count = self._count_task(&TaskFilter::new(gid.clone()))?;
         let task_number = task_count
@@ -1557,7 +1546,7 @@ impl Engine for FilesystemEngine {
             .ok_or_else(|| FlameError::Storage("task number overflow".into()))?;
 
         let (input_offset, input_len) = if let Some(ref data) = input {
-            let offset = self.append_data(&gid, "inputs.bin", data)?;
+            let offset = self.append_data(gid, "inputs.bin", data)?;
             (offset, data.len() as u64)
         } else {
             (0, 0)
@@ -1571,7 +1560,7 @@ impl Engine for FilesystemEngine {
             .collect::<Vec<_>>();
         let affinity_data = bincode::encode_to_vec(affinity_data, bincode_config())
             .map_err(|e| FlameError::Storage(e.to_string()))?;
-        let affinity_offset = self.append_data(&gid, "affinity.bin", &affinity_data)?;
+        let affinity_offset = self.append_data(gid, "affinity.bin", &affinity_data)?;
 
         let mut meta = TaskMetadata {
             name: task_number,
@@ -1591,70 +1580,54 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid, &meta)?;
+        self.write_task_metadata(gid, &meta)?;
 
-        self.task_from_metadata(&gid, &meta)
+        self.task_from_metadata(gid, &meta)
     }
 
-    async fn get_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
-        let gid = SessionGID::new(workspace, session);
-        lock_ssn!(self, &gid);
-        let meta = self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
-        self.task_from_metadata(&gid, &meta)
+    async fn get_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        lock_ssn!(self, gid);
+        let meta = self.read_task_metadata(gid, Self::parse_task_name(task)?)?;
+        self.task_from_metadata(gid, &meta)
     }
 
-    async fn retry_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
-        let gid = SessionGID::new(workspace, session);
-        lock_ssn!(self, &gid);
+    async fn retry_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        lock_ssn!(self, gid);
 
-        let mut meta = self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
+        let mut meta = self.read_task_metadata(gid, Self::parse_task_name(task)?)?;
 
         meta.state = TaskState::Pending as u8;
         meta.version += 1;
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid, &meta)?;
-        self.task_from_metadata(&gid, &meta)
+        self.write_task_metadata(gid, &meta)?;
+        self.task_from_metadata(gid, &meta)
     }
 
     async fn update_task_state(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         task_state: TaskState,
         _message: Option<String>,
     ) -> Result<Task, FlameError> {
-        let gid = SessionGID::new(workspace, session);
-        lock_ssn!(self, &gid);
+        lock_ssn!(self, gid);
 
-        self._update_task_state(&gid, Self::parse_task_name(task)?, task_state)
+        self._update_task_state(gid, Self::parse_task_name(task)?, task_state)
     }
 
     async fn update_task_result(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         task_result: TaskResult,
     ) -> Result<Task, FlameError> {
-        let gid = SessionGID::new(workspace, session);
-        lock_ssn!(self, &gid);
+        lock_ssn!(self, gid);
 
-        let mut meta = self.read_task_metadata(&gid, Self::parse_task_name(task)?)?;
+        let mut meta = self.read_task_metadata(gid, Self::parse_task_name(task)?)?;
 
         if let Some(ref output) = task_result.output {
-            let offset = self.append_data(&gid, "outputs.bin", output)?;
+            let offset = self.append_data(gid, "outputs.bin", output)?;
             meta.output_offset = offset;
             meta.output_len = output.len() as u64;
         }
@@ -1668,20 +1641,19 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(&gid, &meta)?;
-        self.task_from_metadata(&gid, &meta)
+        self.write_task_metadata(gid, &meta)?;
+        self.task_from_metadata(gid, &meta)
     }
 
-    async fn find_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError> {
-        let gid = SessionGID::new(workspace, session);
-        lock_ssn!(self, &gid);
+    async fn find_tasks(&self, gid: &SessionGID) -> Result<Vec<Task>, FlameError> {
+        lock_ssn!(self, gid);
 
         let mut tasks = Vec::new();
         let task_count = self._count_task(&TaskFilter::new(gid.clone()))?;
 
         for task_number in 1..=task_count {
-            if let Ok(meta) = self.read_task_metadata(&gid, task_number) {
-                if let Ok(task) = self.task_from_metadata(&gid, &meta) {
+            if let Ok(meta) = self.read_task_metadata(gid, task_number) {
+                if let Ok(task) = self.task_from_metadata(gid, &meta) {
                     tasks.push(task);
                 }
             }
@@ -1784,8 +1756,7 @@ impl Engine for FilesystemEngine {
 
     async fn delete_node(&self, name: &str) -> Result<(), FlameError> {
         for executor in self.find_executors(Some(name)).await? {
-            self.delete_executor(&executor.workspace, &executor.name)
-                .await?;
+            self.delete_executor(&executor.gid()).await?;
         }
         lock_node!(self, name);
 
@@ -1854,14 +1825,9 @@ impl Engine for FilesystemEngine {
         Ok(executor.clone())
     }
 
-    async fn get_executor(
-        &self,
-        workspace: &str,
-        name: &str,
-    ) -> Result<Option<Executor>, FlameError> {
-        let gid = ExecutorGID::new(workspace, name);
-        lock_executor!(self, &gid);
-        match self.read_executor_metadata(&gid) {
+    async fn get_executor(&self, gid: &ExecutorGID) -> Result<Option<Executor>, FlameError> {
+        lock_executor!(self, gid);
+        match self.read_executor_metadata(gid) {
             Ok(meta) => Ok(Some(Self::executor_from_metadata(meta))),
             Err(FlameError::NotFound(_)) => Ok(None),
             Err(error) => Err(error),
@@ -1884,29 +1850,26 @@ impl Engine for FilesystemEngine {
 
     async fn update_executor_state(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &ExecutorGID,
         state: ExecutorState,
     ) -> Result<Executor, FlameError> {
-        let gid = ExecutorGID::new(workspace, name);
-        lock_executor!(self, &gid);
-        let mut meta = self.read_executor_metadata(&gid)?;
+        lock_executor!(self, gid);
+        let mut meta = self.read_executor_metadata(gid)?;
         meta.state = i32::from(state);
-        self.write_executor_metadata(&gid, &meta)?;
+        self.write_executor_metadata(gid, &meta)?;
         Ok(Self::executor_from_metadata(meta))
     }
 
-    async fn delete_executor(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
-        let gid = ExecutorGID::new(workspace, name);
-        lock_executor!(self, &gid);
-        let path = self.executor_path(&gid);
+    async fn delete_executor(&self, gid: &ExecutorGID) -> Result<(), FlameError> {
+        lock_executor!(self, gid);
+        let path = self.executor_path(gid);
         if path.exists() {
             fs::remove_dir_all(path)?;
         }
         self.executor_locks
             .write()
             .map_err(|error| FlameError::Storage(format!("Executor lock poisoned: {error}")))?
-            .remove(&gid);
+            .remove(gid);
         Ok(())
     }
 
@@ -2213,15 +2176,18 @@ mod tests {
         assert!(matches!(result, Err(FlameError::InvalidState(_))));
 
         engine
-            .close_session("default", "test-session")
+            .close_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
         let result = engine.delete_application("default", "test-app").await;
         assert!(matches!(result, Err(FlameError::InvalidState(_))));
-        assert!(engine.get_session("default", "test-session").await.is_ok());
+        assert!(engine
+            .get_session(&SessionGID::new("default", "test-session"))
+            .await
+            .is_ok());
 
         engine
-            .delete_session("default", "test-session")
+            .delete_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
         engine
@@ -2229,7 +2195,9 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(
-            engine.get_session("default", "test-session").await,
+            engine
+                .get_session(&SessionGID::new("default", "test-session"))
+                .await,
             Err(FlameError::NotFound(_))
         ));
     }
@@ -2305,7 +2273,10 @@ mod tests {
         assert_eq!(session.status.state, SessionState::Open);
 
         // Get session
-        let session2 = engine.get_session("default", "test-session").await.unwrap();
+        let session2 = engine
+            .get_session(&SessionGID::new("default", "test-session"))
+            .await
+            .unwrap();
         assert_eq!(session2.name, "test-session");
         assert_eq!(
             session2.tokens.get("service").map(String::as_str),
@@ -2318,14 +2289,14 @@ mod tests {
 
         // Close session (should work since no tasks)
         let closed = engine
-            .close_session("default", "test-session")
+            .close_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
 
         // Delete session
         let deleted = engine
-            .delete_session("default", "test-session")
+            .delete_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
         assert_eq!(deleted.name, "test-session");
@@ -2373,7 +2344,11 @@ mod tests {
         // Create task with input
         let input = Bytes::from("test input data");
         let task = engine
-            .create_task("default", "test-session", Some(input.clone()), None)
+            .create_task(
+                &SessionGID::new("default", "test-session"),
+                Some(input.clone()),
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(task.name, 1);
@@ -2383,27 +2358,34 @@ mod tests {
         for invalid_name in ["01", "+1", "not-a-number", "18446744073709551616"] {
             assert!(matches!(
                 engine
-                    .get_task("default", "test-session", invalid_name)
+                    .get_task(&SessionGID::new("default", "test-session"), invalid_name)
                     .await,
                 Err(FlameError::InvalidConfig(_))
             ));
         }
         assert!(matches!(
-            engine.get_task("default", "test-session", "0").await,
+            engine
+                .get_task(&SessionGID::new("default", "test-session"), "0")
+                .await,
             Err(FlameError::NotFound(_))
         ));
 
         // Get task
         let gid = "1";
         let task2 = engine
-            .get_task("default", "test-session", gid)
+            .get_task(&SessionGID::new("default", "test-session"), gid)
             .await
             .unwrap();
         assert_eq!(task2.name, 1);
 
         // Update task state
         let task3 = engine
-            .update_task_state("default", "test-session", gid, TaskState::Running, None)
+            .update_task_state(
+                &SessionGID::new("default", "test-session"),
+                gid,
+                TaskState::Running,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(task3.state, TaskState::Running);
@@ -2416,19 +2398,22 @@ mod tests {
             message: None,
         };
         let task4 = engine
-            .update_task_result("default", "test-session", gid, result)
+            .update_task_result(&SessionGID::new("default", "test-session"), gid, result)
             .await
             .unwrap();
         assert_eq!(task4.state, TaskState::Succeed);
         assert_eq!(task4.output, Some(output));
 
         // Find tasks
-        let tasks = engine.find_tasks("default", "test-session").await.unwrap();
+        let tasks = engine
+            .find_tasks(&SessionGID::new("default", "test-session"))
+            .await
+            .unwrap();
         assert_eq!(tasks.len(), 1);
 
         // Create another task
         let task5 = engine
-            .create_task("default", "test-session", None, None)
+            .create_task(&SessionGID::new("default", "test-session"), None, None)
             .await
             .unwrap();
         assert_eq!(task5.name, 2);
@@ -2436,13 +2421,18 @@ mod tests {
         // Complete second task
         let gid2 = "2";
         engine
-            .update_task_state("default", "test-session", gid2, TaskState::Succeed, None)
+            .update_task_state(
+                &SessionGID::new("default", "test-session"),
+                gid2,
+                TaskState::Succeed,
+                None,
+            )
             .await
             .unwrap();
 
         // Now we can close the session
         let closed = engine
-            .close_session("default", "test-session")
+            .close_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
@@ -2567,37 +2557,43 @@ mod tests {
         engine.create_session(ssn_attr).await.unwrap();
 
         let task1 = engine
-            .create_task("default", "test-session", None, None)
+            .create_task(&SessionGID::new("default", "test-session"), None, None)
             .await
             .unwrap();
         assert_eq!(task1.state, TaskState::Pending);
 
         let task2 = engine
-            .create_task("default", "test-session", None, None)
+            .create_task(&SessionGID::new("default", "test-session"), None, None)
             .await
             .unwrap();
         assert_eq!(task2.state, TaskState::Pending);
 
         let closed = engine
-            .close_session("default", "test-session")
+            .close_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
         assert_eq!(closed.status.state, SessionState::Closed);
 
         let task1_after = engine
-            .get_task("default", "test-session", &task1.name.to_string())
+            .get_task(
+                &SessionGID::new("default", "test-session"),
+                &task1.name.to_string(),
+            )
             .await
             .unwrap();
         assert_eq!(task1_after.state, TaskState::Cancelled);
 
         let task2_after = engine
-            .get_task("default", "test-session", &task2.name.to_string())
+            .get_task(
+                &SessionGID::new("default", "test-session"),
+                &task2.name.to_string(),
+            )
             .await
             .unwrap();
         assert_eq!(task2_after.state, TaskState::Cancelled);
 
         engine
-            .delete_session("default", "test-session")
+            .delete_session(&SessionGID::new("default", "test-session"))
             .await
             .unwrap();
     }
@@ -2641,14 +2637,13 @@ mod tests {
         engine.create_session(ssn_attr).await.unwrap();
 
         let task = engine
-            .create_task("default", "test-session", None, None)
+            .create_task(&SessionGID::new("default", "test-session"), None, None)
             .await
             .unwrap();
 
         engine
             .update_task_state(
-                "default",
-                "test-session",
+                &SessionGID::new("default", "test-session"),
                 &task.name.to_string(),
                 TaskState::Running,
                 None,
@@ -2656,7 +2651,9 @@ mod tests {
             .await
             .unwrap();
 
-        let result = engine.close_session("default", "test-session").await;
+        let result = engine
+            .close_session(&SessionGID::new("default", "test-session"))
+            .await;
         assert!(result.is_err());
     }
 
@@ -2763,12 +2760,15 @@ mod tests {
         assert_eq!(created.name, "exec-1");
         assert_eq!(created.application, "test-app");
 
-        let found = engine.get_executor("default", "exec-1").await.unwrap();
+        let found = engine
+            .get_executor(&ExecutorGID::new("default", "exec-1"))
+            .await
+            .unwrap();
         assert!(found.is_some());
         assert_eq!(found.unwrap().application, "test-app");
 
         let updated = engine
-            .update_executor_state("default", "exec-1", ExecutorState::Idle)
+            .update_executor_state(&ExecutorGID::new("default", "exec-1"), ExecutorState::Idle)
             .await
             .unwrap();
         assert_eq!(updated.state, ExecutorState::Idle);
@@ -2784,8 +2784,14 @@ mod tests {
         let by_other = engine.find_executors(Some("other-node")).await.unwrap();
         assert_eq!(by_other.len(), 0);
 
-        engine.delete_executor("default", "exec-1").await.unwrap();
-        let deleted = engine.get_executor("default", "exec-1").await.unwrap();
+        engine
+            .delete_executor(&ExecutorGID::new("default", "exec-1"))
+            .await
+            .unwrap();
+        let deleted = engine
+            .get_executor(&ExecutorGID::new("default", "exec-1"))
+            .await
+            .unwrap();
         assert!(deleted.is_none());
     }
 
@@ -2878,8 +2884,7 @@ mod tests {
                 .unwrap();
             let task = engine
                 .create_task(
-                    workspace,
-                    "session",
+                    &SessionGID::new(workspace, "session"),
                     Some(Bytes::from(workspace.to_owned())),
                     None,
                 )
@@ -2897,13 +2902,19 @@ mod tests {
                 .await
                 .unwrap();
         for (index, workspace) in ["default", "other"].into_iter().enumerate() {
-            let session = reopened.get_session(workspace, "session").await.unwrap();
+            let session = reopened
+                .get_session(&SessionGID::new(workspace, "session"))
+                .await
+                .unwrap();
             assert_eq!(session.workspace, workspace);
-            let task = reopened.get_task(workspace, "session", "1").await.unwrap();
+            let task = reopened
+                .get_task(&SessionGID::new(workspace, "session"), "1")
+                .await
+                .unwrap();
             assert_eq!(task.id, ids[index]);
             assert_eq!(task.input, Some(Bytes::from(workspace.to_owned())));
             assert!(reopened
-                .get_task(workspace, "session", &task.id)
+                .get_task(&SessionGID::new(workspace, "session"), &task.id)
                 .await
                 .is_err());
         }

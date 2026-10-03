@@ -31,8 +31,9 @@ use stdng::{lock_ptr, trace_fn, MutexPtr};
 
 use crate::apis::{
     Application, ApplicationAttributes, ApplicationPtr, ApplicationState, Event, EventOwner,
-    ExecutorState, Node, NodePtr, Session, SessionAttributes, SessionGID, SessionPtr, SessionState,
-    Shim, Task, TaskInput, TaskName, TaskOptions, TaskPtr, TaskResult, TaskState, Workspace,
+    ExecutorGID, ExecutorState, Node, NodePtr, Session, SessionAttributes, SessionGID, SessionPtr,
+    SessionState, Shim, Task, TaskInput, TaskName, TaskOptions, TaskPtr, TaskResult, TaskState,
+    Workspace,
 };
 use crate::ctx::FlameClusterContext;
 use crate::FlameError;
@@ -164,13 +165,13 @@ impl Storage {
     pub async fn load_data(&self) -> Result<(), FlameError> {
         let ssn_list = self.engine.find_sessions().await?;
         for ssn in ssn_list {
-            let task_list = self.engine.find_tasks(&ssn.workspace, &ssn.name).await?;
+            let task_list = self.engine.find_tasks(&ssn.gid()).await?;
             let mut ssn = ssn.clone();
             for task in task_list {
                 let task = match task.state {
                     TaskState::Running => {
                         self.engine
-                            .retry_task(&task.workspace, &task.session, &task.name.to_string())
+                            .retry_task(&task.session(), &task.name.to_string())
                             .await?
                     }
                     _ => task,
@@ -432,12 +433,9 @@ impl Storage {
 
         for executor in executors {
             // If executor has a running task, retry it
-            if let (Some(task), Some(session)) = (&executor.task, &executor.session) {
-                match self
-                    .engine
-                    .retry_task(&executor.workspace, session, task)
-                    .await
-                {
+            if let (Some(task), Some(gid)) = (&executor.task, executor.session()) {
+                let session = &gid.session;
+                match self.engine.retry_task(&gid, task).await {
                     Ok(task) => {
                         // Update the in-memory session with the retried task
                         if let Ok(ssn_ptr) = self.get_session_ptr(&executor.workspace, session) {
@@ -522,7 +520,11 @@ impl Storage {
             }
         }
 
-        let persisted_ssn = match self.engine.close_session(workspace, name).await {
+        let persisted_ssn = match self
+            .engine
+            .close_session(&SessionGID::new(workspace, name))
+            .await
+        {
             Ok(ssn) => Some(ssn),
             Err(FlameError::NotFound(_)) => None,
             Err(e) => return Err(e),
@@ -622,7 +624,10 @@ impl Storage {
         }
 
         // Session not in cache or not open, delegate to engine for atomic get-or-create operation
-        let ssn = self.engine.open_session(workspace, name, spec).await?;
+        let ssn = self
+            .engine
+            .open_session(&SessionGID::new(workspace, name), spec)
+            .await?;
 
         {
             let mut ssn_map = lock_ptr!(self.sessions)?;
@@ -667,14 +672,22 @@ impl Storage {
         let ssn = match cached {
             Some(ssn_ptr) => {
                 let ssn = lock_ptr!(ssn_ptr)?.clone();
-                if let Err(error) = self.engine.delete_session(workspace, name).await {
+                if let Err(error) = self
+                    .engine
+                    .delete_session(&SessionGID::new(workspace, name))
+                    .await
+                {
                     if !matches!(error, FlameError::NotFound(_)) {
                         return Err(error);
                     }
                 }
                 ssn
             }
-            None => self.engine.delete_session(workspace, name).await?,
+            None => {
+                self.engine
+                    .delete_session(&SessionGID::new(workspace, name))
+                    .await?
+            }
         };
 
         {
@@ -801,7 +814,7 @@ impl Storage {
         trace_fn!("Storage::create_task");
         let task = self
             .engine
-            .create_task(workspace, session, task_input, options)
+            .create_task(&SessionGID::new(workspace, session), task_input, options)
             .await?;
 
         let ssn = self.get_session_ptr(workspace, session)?;
@@ -976,7 +989,7 @@ impl Storage {
 
         Ok(self
             .engine
-            .get_session(workspace, session)
+            .get_session(&SessionGID::new(workspace, session))
             .await?
             .application)
     }
@@ -1007,8 +1020,7 @@ impl Storage {
         let updated_task = match self
             .engine
             .update_task_state(
-                &current.workspace,
-                &current.session,
+                &current.session(),
                 &current.name.to_string(),
                 task_state,
                 message,
@@ -1072,12 +1084,7 @@ impl Storage {
 
         let updated_task = match self
             .engine
-            .update_task_result(
-                &current.workspace,
-                &current.session,
-                &current.name.to_string(),
-                task_result,
-            )
+            .update_task_result(&current.session(), &current.name.to_string(), task_result)
             .await
         {
             Ok(task) => task,
@@ -1209,7 +1216,9 @@ impl Storage {
 
     pub async fn delete_executor(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
         trace_fn!("Storage::delete_executor");
-        self.engine.delete_executor(workspace, name).await?;
+        self.engine
+            .delete_executor(&ExecutorGID::new(workspace, name))
+            .await?;
 
         let mut exe_map = lock_ptr!(self.executors)?;
         exe_map.remove(name);

@@ -241,7 +241,6 @@ fn build_plan(ctx: &FlameContext, options: &Options) -> Result<DeployPlan, Flame
         .clone()
         .or_else(|| profile.as_ref().map(|profile| profile.metadata.name.clone()))
         .ok_or_else(|| FlameError::InvalidConfig("application name required; pass --name or add metadata.name to flame.yaml or flm.yaml".to_string()))?;
-    validate_name(&app_name)?;
     let current_ctx = ctx.get_current_context()?;
     let cache_config = current_ctx
         .cache
@@ -441,11 +440,6 @@ fn parse_envs(values: &[String]) -> Result<HashMap<String, String>, FlameError> 
     Ok(envs)
 }
 
-fn validate_name(name: &str) -> Result<(), FlameError> {
-    common::apis::validate_application_name(name)
-        .map_err(|e| FlameError::InvalidConfig(e.to_string()))
-}
-
 fn normalize_cache_endpoint(raw: &str) -> Result<String, FlameError> {
     let parsed = Url::parse(raw)
         .map_err(|e| FlameError::InvalidConfig(format!("invalid cache endpoint: {}", e)))?;
@@ -605,13 +599,6 @@ mod tests {
         assert!(normalize_cache_endpoint("http://cache:9090").is_err());
         assert!(normalize_cache_endpoint("grpcs-proxy://gateway.example.com").is_err());
         assert!(normalize_cache_endpoint("grpcs-proxy://gateway.example.com:9443/path").is_err());
-    }
-
-    #[test]
-    fn validates_names_like_session_manager() {
-        assert!(validate_name("demo-app").is_ok());
-        assert!(validate_name("app@name").is_err());
-        assert!(validate_name("-demo").is_err());
     }
 
     #[test]

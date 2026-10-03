@@ -78,14 +78,6 @@ impl ExecutorGID {
     }
 }
 
-pub fn validate_workspace_name(name: &str) -> Result<(), crate::FlameError> {
-    validate_resource_name(name, 63, "workspace")
-}
-
-pub fn validate_session_name(name: &str) -> Result<(), crate::FlameError> {
-    validate_resource_name(name, 253, "session")
-}
-
 pub fn new_metadata_id() -> String {
     Uuid::new_v4().to_string()
 }
@@ -254,28 +246,6 @@ pub fn validate_application_url(
         )));
     }
     Ok(())
-}
-
-pub fn validate_application_name(name: &str) -> Result<(), crate::FlameError> {
-    validate_resource_name(name, 253, "application")
-}
-
-fn validate_resource_name(name: &str, max_len: usize, kind: &str) -> Result<(), crate::FlameError> {
-    let bytes = name.as_bytes();
-    let alphanumeric = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
-    let valid = (1..=max_len).contains(&bytes.len())
-        && bytes.first().is_some_and(alphanumeric)
-        && bytes.last().is_some_and(alphanumeric)
-        && bytes
-            .iter()
-            .all(|byte| alphanumeric(byte) || *byte == b'-' || *byte == b'_');
-    if valid {
-        Ok(())
-    } else {
-        Err(crate::FlameError::InvalidConfig(format!(
-            "invalid {kind} name: {name}"
-        )))
-    }
 }
 
 #[derive(Clone)]

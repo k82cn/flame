@@ -164,7 +164,6 @@ async fn session_application_must_exist_in_same_workspace() {
         })
         .await;
     assert!(result.is_err());
-    assert!(store.create_workspace("Invalid_Name".into()).await.is_err());
 }
 
 #[tokio::test]

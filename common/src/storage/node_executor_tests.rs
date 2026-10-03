@@ -160,7 +160,9 @@ mod tests {
         assert_eq!(created.application, "test-app");
 
         // Get the executor
-        let retrieved = tokio_test::block_on(storage.get_executor("default", "exec-1"))?;
+        let retrieved = tokio_test::block_on(
+            storage.get_executor(&crate::apis::ExecutorGID::new("default", "exec-1")),
+        )?;
         assert!(retrieved.is_some());
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.node, "test-node-exec");
@@ -168,8 +170,7 @@ mod tests {
 
         // Update executor state
         let updated = tokio_test::block_on(storage.update_executor_state(
-            "default",
-            "exec-1",
+            &crate::apis::ExecutorGID::new("default", "exec-1"),
             ExecutorState::Idle,
         ))?;
         assert_eq!(updated.state, ExecutorState::Idle);
@@ -185,10 +186,14 @@ mod tests {
         assert_eq!(all_executors.len(), 1);
 
         // Delete the executor
-        tokio_test::block_on(storage.delete_executor("default", "exec-1"))?;
+        tokio_test::block_on(
+            storage.delete_executor(&crate::apis::ExecutorGID::new("default", "exec-1")),
+        )?;
 
         // Verify deletion
-        let deleted = tokio_test::block_on(storage.get_executor("default", "exec-1"))?;
+        let deleted = tokio_test::block_on(
+            storage.get_executor(&crate::apis::ExecutorGID::new("default", "exec-1")),
+        )?;
         assert!(deleted.is_none());
 
         Ok(())
@@ -319,8 +324,7 @@ mod tests {
 
         for state in states {
             let updated = tokio_test::block_on(storage.update_executor_state(
-                "default",
-                "state-exec",
+                &crate::apis::ExecutorGID::new("default", "state-exec"),
                 state,
             ))?;
             assert_eq!(updated.state, state);

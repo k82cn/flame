@@ -22,10 +22,10 @@ use stdng::{lock_ptr, MutexPtr};
 
 use super::{Engine, EnginePtr};
 use crate::apis::{
-    new_metadata_id, validate_application_name, validate_session_name, validate_workspace_name,
-    Application, ApplicationAttributes, ApplicationFilter, ApplicationState, Executor,
-    ExecutorState, Node, Session, SessionAttributes, SessionState, SessionStatus, Task, TaskInput,
-    TaskName, TaskOptions, TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
+    new_metadata_id, Application, ApplicationAttributes, ApplicationFilter, ApplicationState,
+    Executor, ExecutorGID, ExecutorState, Node, Session, SessionAttributes, SessionGID,
+    SessionState, SessionStatus, Task, TaskInput, TaskName, TaskOptions, TaskResult, TaskState,
+    Workspace, DEFAULT_WORKSPACE,
 };
 use crate::FlameError;
 
@@ -57,7 +57,6 @@ impl NoneEngine {
     }
 
     fn require_workspace(&self, name: &str) -> Result<(), FlameError> {
-        validate_workspace_name(name)?;
         if lock_ptr!(self.workspaces)?.contains_key(name) {
             Ok(())
         } else {
@@ -69,7 +68,6 @@ impl NoneEngine {
 #[async_trait]
 impl Engine for NoneEngine {
     async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
-        validate_workspace_name(&name)?;
         let mut workspaces = lock_ptr!(self.workspaces)?;
         if workspaces.contains_key(&name) {
             return Err(FlameError::AlreadyExist(format!("workspace {name}")));
@@ -96,7 +94,6 @@ impl Engine for NoneEngine {
     ) -> Result<Application, FlameError> {
         crate::apis::validate_application_url(&workspace, attr.url.as_deref())?;
         self.require_workspace(&workspace)?;
-        validate_application_name(&name)?;
         let mut apps = lock_ptr!(self.applications)?;
         let key = Self::key(&workspace, &name);
         if apps.contains_key(&key) {
@@ -239,7 +236,6 @@ impl Engine for NoneEngine {
 
     async fn create_session(&self, attr: SessionAttributes) -> Result<Session, FlameError> {
         self.require_workspace(&attr.workspace)?;
-        validate_session_name(&attr.name)?;
         self.get_application(&attr.workspace, &attr.application)
             .await?;
         let key = Self::key(&attr.workspace, &attr.name);
@@ -278,7 +274,8 @@ impl Engine for NoneEngine {
         Ok(ssn)
     }
 
-    async fn get_session(&self, _workspace: &str, name: &str) -> Result<Session, FlameError> {
+    async fn get_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let name = gid.session.as_str();
         Err(FlameError::NotFound(format!(
             "session {name} not retained by none engine"
         )))
@@ -286,10 +283,11 @@ impl Engine for NoneEngine {
 
     async fn open_session(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &SessionGID,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
         match spec {
             Some(attr) if attr.workspace == workspace && attr.name == name => {
                 self.create_session(attr).await
@@ -298,7 +296,9 @@ impl Engine for NoneEngine {
         }
     }
 
-    async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
+    async fn close_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
         if let Some(ssn) = lock_ptr!(self.sessions)?.get_mut(&Self::key(workspace, name)) {
             if ssn.status.state == SessionState::Open {
                 ssn.status.state = SessionState::Closed;
@@ -311,7 +311,9 @@ impl Engine for NoneEngine {
         )))
     }
 
-    async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
+    async fn delete_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let name = gid.session.as_str();
         let key = Self::key(workspace, name);
         let ssn = lock_ptr!(self.sessions)?
             .remove(&key)
@@ -326,11 +328,12 @@ impl Engine for NoneEngine {
 
     async fn create_task(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         let key = Self::key(workspace, session);
         let ssn = lock_ptr!(self.sessions)?
             .get(&key)
@@ -360,44 +363,34 @@ impl Engine for NoneEngine {
         })
     }
 
-    async fn get_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
+    async fn get_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        let workspace = gid.workspace.as_str();
+        let session = gid.session.as_str();
         Err(FlameError::NotFound(format!(
             "task {workspace}/{session}/{task} not retained by none engine"
         )))
     }
-    async fn retry_task(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
-        self.get_task(workspace, session, task).await
+    async fn retry_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        self.get_task(gid, task).await
     }
     async fn update_task_state(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         _state: TaskState,
         _message: Option<String>,
     ) -> Result<Task, FlameError> {
-        self.get_task(workspace, session, task).await
+        self.get_task(gid, task).await
     }
     async fn update_task_result(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         _result: TaskResult,
     ) -> Result<Task, FlameError> {
-        self.get_task(workspace, session, task).await
+        self.get_task(gid, task).await
     }
-    async fn find_tasks(&self, _workspace: &str, _session: &str) -> Result<Vec<Task>, FlameError> {
+    async fn find_tasks(&self, _gid: &SessionGID) -> Result<Vec<Task>, FlameError> {
         Ok(vec![])
     }
 
@@ -419,11 +412,7 @@ impl Engine for NoneEngine {
     async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
         Ok(executor.clone())
     }
-    async fn get_executor(
-        &self,
-        _workspace: &str,
-        _name: &str,
-    ) -> Result<Option<Executor>, FlameError> {
+    async fn get_executor(&self, _gid: &ExecutorGID) -> Result<Option<Executor>, FlameError> {
         Ok(None)
     }
     async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
@@ -431,13 +420,13 @@ impl Engine for NoneEngine {
     }
     async fn update_executor_state(
         &self,
-        _workspace: &str,
-        name: &str,
+        gid: &ExecutorGID,
         _state: ExecutorState,
     ) -> Result<Executor, FlameError> {
+        let name = gid.executor.as_str();
         Err(FlameError::NotFound(format!("executor {name}")))
     }
-    async fn delete_executor(&self, _workspace: &str, _name: &str) -> Result<(), FlameError> {
+    async fn delete_executor(&self, _gid: &ExecutorGID) -> Result<(), FlameError> {
         Ok(())
     }
     async fn find_executors(&self, _node: Option<&str>) -> Result<Vec<Executor>, FlameError> {

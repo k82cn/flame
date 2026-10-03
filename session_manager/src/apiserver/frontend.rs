@@ -84,6 +84,36 @@ fn resolve_session_resreq(
     DEFAULT_FALLBACK_RESREQ
 }
 
+fn validate_workspace_name(name: &str) -> Result<(), Status> {
+    validate_resource_name(name, 63, "workspace")
+}
+
+fn validate_application_name(name: &str) -> Result<(), Status> {
+    validate_resource_name(name, 253, "application")
+}
+
+fn validate_session_name(name: &str) -> Result<(), Status> {
+    validate_resource_name(name, 253, "session")
+}
+
+fn validate_resource_name(name: &str, max_len: usize, kind: &str) -> Result<(), Status> {
+    let bytes = name.as_bytes();
+    let alphanumeric = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    let valid = (1..=max_len).contains(&bytes.len())
+        && bytes.first().is_some_and(alphanumeric)
+        && bytes.last().is_some_and(alphanumeric)
+        && bytes
+            .iter()
+            .all(|byte| alphanumeric(byte) || *byte == b'-' || *byte == b'_');
+    if valid {
+        Ok(())
+    } else {
+        Err(Status::invalid_argument(format!(
+            "invalid {kind} name: {name}"
+        )))
+    }
+}
+
 fn validate_working_directory(working_dir: &Option<String>) -> Result<(), FlameError> {
     if let Some(wd) = working_dir {
         if !wd.is_empty() && !Path::new(wd).is_absolute() {
@@ -132,10 +162,12 @@ impl Frontend for Flame {
         &self,
         req: Request<CreateWorkspaceRequest>,
     ) -> Result<Response<rpc::Workspace>, Status> {
+        let req = req.into_inner();
+        validate_workspace_name(&req.name)?;
         let workspace = self
             .controller
             .storage()
-            .create_workspace(req.into_inner().name)
+            .create_workspace(req.name)
             .await
             .map_err(Status::from)?;
         Ok(Response::new(rpc::Workspace::from(&workspace)))
@@ -164,6 +196,8 @@ impl Frontend for Flame {
             .message()
             .await?
             .ok_or_else(|| Status::invalid_argument("at least one task is required"))?;
+        validate_workspace_name(&first.workspace)?;
+        validate_session_name(&first.session)?;
         let gid = SessionGID::new(first.workspace.clone(), first.session.clone());
         // Subscribe before the first snapshot so no task update is lost.
         let mut task_updates = self.controller.subscribe(&gid).map_err(Status::from)?;
@@ -185,6 +219,8 @@ impl Frontend for Flame {
                         watch_request = watch_requests.message(), if !requests_closed => {
                             match watch_request? {
                                 Some(watch_request) => {
+                                    validate_workspace_name(&watch_request.workspace)?;
+                                    validate_session_name(&watch_request.session)?;
                                     if watch_request.session != gid.session || watch_request.workspace != gid.workspace {
                                         return Err(Status::invalid_argument("all watched tasks must be in one session"));
                                     }
@@ -232,6 +268,8 @@ impl Frontend for Flame {
     ) -> Result<Response<Self::ListTasksStream>, Status> {
         trace_fn!("Frontend::list_tasks");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.session)?;
         let task_list = self
             .controller
             .list_tasks(&SessionGID::new(&req.workspace, &req.session))
@@ -264,6 +302,8 @@ impl Frontend for Flame {
         trace_fn!("Frontend::register_application");
 
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_application_name(&req.name)?;
         let spec = req.application.ok_or(FlameError::InvalidConfig(
             "applilcation spec is missed".to_string(),
         ))?;
@@ -317,6 +357,8 @@ impl Frontend for Flame {
     ) -> Result<Response<rpc::Result>, Status> {
         trace_fn!("Frontend::unregister_application");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_application_name(&req.name)?;
         let res = self
             .controller
             .unregister_application(&req.workspace, &req.name)
@@ -340,6 +382,8 @@ impl Frontend for Flame {
     ) -> Result<Response<rpc::Result>, Status> {
         trace_fn!("Frontend::update_application");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_application_name(&req.name)?;
         let spec = req.application.ok_or(FlameError::InvalidConfig(
             "applilcation spec is missed".to_string(),
         ))?;
@@ -395,6 +439,8 @@ impl Frontend for Flame {
         trace_fn!("Frontend::get_application");
 
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_application_name(&req.name)?;
         let app = self
             .controller
             .get_application(&req.workspace, &req.name)
@@ -408,7 +454,11 @@ impl Frontend for Flame {
         request: Request<ListApplicationsRequest>,
     ) -> Result<Response<ApplicationList>, Status> {
         trace_fn!("Frontend::list_applications");
-        let filter = crate::model::ApplicationFilter::try_from(request.into_inner())
+        let request = request.into_inner();
+        validate_workspace_name(request.workspace.as_deref().ok_or_else(|| {
+            Status::invalid_argument("workspace is required when listing applications")
+        })?)?;
+        let filter = crate::model::ApplicationFilter::try_from(request)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let app_list = self
             .controller
@@ -427,6 +477,9 @@ impl Frontend for Flame {
     ) -> Result<Response<ExecutorList>, Status> {
         trace_fn!("Frontend::list_executors");
         let workspace = request.into_inner().workspace;
+        if let Some(workspace) = &workspace {
+            validate_workspace_name(workspace)?;
+        }
         let executor_list = self.controller.list_executors().map_err(Status::from)?;
         let executors = executor_list
             .iter()
@@ -472,7 +525,10 @@ impl Frontend for Flame {
     ) -> Result<Response<Session>, Status> {
         trace_fn!("Frontend::create_session");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.name)?;
         let ssn_spec = req.spec.ok_or(Status::invalid_argument("session spec"))?;
+        validate_application_name(&ssn_spec.application)?;
 
         let explicit = ssn_spec.resreq.map(apis::ResourceRequirement::from);
         let resreq = resolve_session_resreq(explicit, self.cluster_default_resreq.as_ref());
@@ -516,6 +572,8 @@ impl Frontend for Flame {
         req: Request<DeleteSessionRequest>,
     ) -> Result<Response<rpc::Session>, Status> {
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.session)?;
         let ssn = self
             .controller
             .delete_session(&SessionGID::new(&req.workspace, &req.session))
@@ -531,8 +589,11 @@ impl Frontend for Flame {
     ) -> Result<Response<rpc::Session>, Status> {
         trace_fn!("Frontend::open_session");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.session)?;
         let spec = match req.spec {
             Some(ssn_spec) => {
+                validate_application_name(&ssn_spec.application)?;
                 let explicit = ssn_spec.resreq.map(apis::ResourceRequirement::from);
                 let resreq = resolve_session_resreq(explicit, self.cluster_default_resreq.as_ref());
 
@@ -568,6 +629,8 @@ impl Frontend for Flame {
     ) -> Result<Response<rpc::Session>, Status> {
         trace_fn!("Frontend::close_session");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.session)?;
         let ssn = self
             .controller
             .close_session(&SessionGID::new(&req.workspace, &req.session))
@@ -584,6 +647,8 @@ impl Frontend for Flame {
     ) -> Result<Response<Session>, Status> {
         trace_fn!("Frontend::get_session");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.session)?;
         let ssn = self
             .controller
             .get_session(&SessionGID::new(&req.workspace, &req.session))
@@ -598,6 +663,12 @@ impl Frontend for Flame {
     ) -> Result<Response<SessionList>, Status> {
         trace_fn!("Frontend::list_sessions");
         let request = request.into_inner();
+        validate_workspace_name(request.workspace.as_deref().ok_or_else(|| {
+            Status::invalid_argument("workspace is required when listing sessions")
+        })?)?;
+        if let Some(application) = &request.application {
+            validate_application_name(application)?;
+        }
         let filter = crate::model::SessionFilter::try_from(request)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let ssn_list = self
@@ -613,7 +684,9 @@ impl Frontend for Flame {
     async fn create_task(&self, req: Request<CreateTaskRequest>) -> Result<Response<Task>, Status> {
         trace_fn!("Frontend::create_task");
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
         let task_spec = req.task.ok_or(Status::invalid_argument("session spec"))?;
+        validate_session_name(&task_spec.session)?;
         let task = self
             .controller
             .create_task(
@@ -635,6 +708,8 @@ impl Frontend for Flame {
     }
     async fn get_task(&self, req: Request<GetTaskRequest>) -> Result<Response<Task>, Status> {
         let req = req.into_inner();
+        validate_workspace_name(&req.workspace)?;
+        validate_session_name(&req.session)?;
         let task = self
             .controller
             .get_task(&SessionGID::new(&req.workspace, &req.session), &req.task)
@@ -649,6 +724,109 @@ impl Frontend for Flame {
 mod tests {
     use super::*;
     use futures::{Stream, StreamExt};
+
+    #[test]
+    fn validate_resource_names() {
+        for name in ["a", "0", "a-b", "a_b", "a--__9"] {
+            assert!(validate_workspace_name(name).is_ok());
+            assert!(validate_application_name(name).is_ok());
+            assert!(validate_session_name(name).is_ok());
+        }
+        for name in [
+            "", "Upper", "-a", "a-", "_a", "a_", "a.b", "a/b", "../a", "a b", "a\\b", "é",
+        ] {
+            assert!(validate_workspace_name(name).is_err());
+            assert!(validate_application_name(name).is_err());
+            assert!(validate_session_name(name).is_err());
+        }
+        assert!(validate_workspace_name(&"a".repeat(63)).is_ok());
+        assert!(validate_workspace_name(&"a".repeat(64)).is_err());
+        assert!(validate_application_name(&"a".repeat(64)).is_ok());
+        assert!(validate_session_name(&"a".repeat(64)).is_ok());
+        assert!(validate_application_name(&"a".repeat(253)).is_ok());
+        assert!(validate_application_name(&"a".repeat(254)).is_err());
+        assert!(validate_session_name(&"a".repeat(253)).is_ok());
+        assert!(validate_session_name(&"a".repeat(254)).is_err());
+    }
+
+    #[tokio::test]
+    async fn invalid_names_are_rejected_at_frontend_ingress() {
+        let (storage, controller) = watch_test_storage_and_controller().await;
+        let flame = Flame {
+            controller,
+            cluster_default_resreq: None,
+        };
+        let status = flame
+            .create_workspace(Request::new(CreateWorkspaceRequest {
+                name: "Invalid".to_string(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(!storage.workspace_exists("Invalid").unwrap());
+        let status = flame
+            .register_application(Request::new(RegisterApplicationRequest {
+                workspace: "default".to_string(),
+                name: "../invalid".to_string(),
+                application: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("application name"));
+        let status = flame
+            .get_session(Request::new(GetSessionRequest {
+                workspace: "default".to_string(),
+                session: "../invalid".to_string(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        let status = flame
+            .get_task(Request::new(GetTaskRequest {
+                workspace: "Invalid".to_string(),
+                session: "watch-test-session".to_string(),
+                task: "1".to_string(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert_eq!(
+            flame
+                .list_applications(Request::new(ListApplicationsRequest::default()))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            flame
+                .list_sessions(Request::new(ListSessionsRequest {
+                    workspace: Some("default".to_string()),
+                    application: Some("../invalid".to_string()),
+                    state: None,
+                }))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+    }
+
+    #[tokio::test]
+    async fn task_watch_rejects_invalid_scope_before_subscription() {
+        let controller = watch_test_controller().await;
+        let requests = futures::stream::iter([Ok(WatchTaskRequest {
+            workspace: "Invalid".to_string(),
+            session: "watch-test-session".to_string(),
+            task: "1".to_string(),
+        })]);
+        let (tx, _rx) = mpsc::channel(8);
+        let status = watch_task_stream(controller, requests, tx)
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
 
     async fn watch_task_stream<S>(
         controller: crate::controller::ControllerPtr,
