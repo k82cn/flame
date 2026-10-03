@@ -13,7 +13,7 @@ limitations under the License.
 
 use std::sync::Arc;
 
-use crate::apis::{Event, EventOwner};
+use crate::apis::{Event, EventOwner, SessionGID};
 use crate::FlameError;
 
 mod fs;
@@ -25,7 +25,7 @@ pub use memory::MemoryEventManager;
 pub trait EventManager: Send + Sync {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError>;
     fn find_events(&self, owner: EventOwner) -> Result<Vec<Event>, FlameError>;
-    fn remove_events(&self, workspace: &str, session: &str) -> Result<(), FlameError>;
+    fn remove_events(&self, session: &SessionGID) -> Result<(), FlameError>;
     fn clear(&self) -> Result<(), FlameError>;
 }
 

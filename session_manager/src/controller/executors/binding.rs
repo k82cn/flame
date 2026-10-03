@@ -18,8 +18,8 @@ use crate::controller::executors::States;
 use crate::model::ExecutorPtr;
 use crate::storage::StoragePtr;
 use common::apis::{
-    Event, EventOwner, ExecutorState, FlameResult, SessionPtr, Task, TaskPtr, TaskResult,
-    BIND_RESULT_OK, SESSION_BIND_FAILED, SESSION_RETRY_LIMIT_REACHED,
+    Event, EventOwner, ExecutorState, FlameResult, SessionGID, SessionPtr, Task, TaskPtr,
+    TaskResult, BIND_RESULT_OK, SESSION_BIND_FAILED, SESSION_RETRY_LIMIT_REACHED,
 };
 use common::FlameError;
 
@@ -66,11 +66,11 @@ impl BindingState {
         &self,
         executor: &crate::model::Executor,
     ) -> Result<(), FlameError> {
-        let ssn_id = executor.session.clone().ok_or_else(|| {
+        let gid = executor.session().ok_or_else(|| {
             FlameError::InvalidState(format!("Executor <{}> has no bound session", executor.id))
         })?;
         let retry_limit = self.storage.session_retry_limits();
-        let ssn_ptr = self.storage.get_session_ptr(&executor.workspace, &ssn_id)?;
+        let ssn_ptr = self.storage.get_session_ptr(&gid.workspace, &gid.session)?;
         let (retry_count, crossed_retry_limit) = {
             let mut ssn = lock_ptr!(ssn_ptr)?;
             let previous_retry_count = ssn.retry_count;
@@ -82,7 +82,7 @@ impl BindingState {
         };
 
         if crossed_retry_limit {
-            self.record_retry_limit_reached(&executor.workspace, &ssn_id, retry_count, retry_limit)
+            self.record_retry_limit_reached(&gid, retry_count, retry_limit)
                 .await?;
         }
 
@@ -119,14 +119,13 @@ impl BindingState {
 
     async fn record_retry_limit_reached(
         &self,
-        workspace: &str,
-        ssn_id: &str,
+        gid: &SessionGID,
         retry_count: u32,
         retry_limit: u32,
     ) -> Result<(), FlameError> {
         self.storage
             .record_event(
-                EventOwner::session(workspace.to_string(), ssn_id.to_string()),
+                EventOwner::session(gid.workspace.clone(), gid.session.clone()),
                 Event {
                     code: SESSION_RETRY_LIMIT_REACHED,
                     message: Some(format!(

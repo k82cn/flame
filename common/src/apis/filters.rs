@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use super::{ApplicationState, ExecutorState, SessionState, TaskState};
+use super::{ApplicationState, ExecutorState, SessionGID, SessionState, TaskState};
 use crate::FlameError;
 use rpc::flame::v1 as rpc;
 
@@ -38,6 +38,11 @@ pub struct TaskFilter {
 }
 
 impl TaskFilter {
+    /// Returns the owning session's globally scoped name.
+    pub fn session(&self) -> SessionGID {
+        SessionGID::new(&self.workspace, &self.session)
+    }
+
     /// Creates a filter for every task in a session.
     pub fn by_session(workspace: impl Into<String>, session: impl Into<String>) -> Self {
         Self {

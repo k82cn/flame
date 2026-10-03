@@ -28,7 +28,7 @@ use super::{
 use crate::{
     apis::{
         Application, ApplicationAttributes, ApplicationFilter, ApplicationState, Executor,
-        ExecutorState, Node, Session, SessionAttributes, SessionState, Task, TaskInput,
+        ExecutorState, Node, Session, SessionAttributes, SessionState, Task, TaskInput, TaskName,
         TaskOptions, TaskResult, TaskState, Workspace,
     },
     FlameError,
@@ -443,7 +443,7 @@ impl Engine for SqliteEngine {
         .map_err(storage)?;
         let next = latest
             .as_deref()
-            .map(|name| name.parse::<u64>().map_err(storage))
+            .map(|name| name.parse::<TaskName>().map_err(storage))
             .transpose()?
             .unwrap_or(0)
             .checked_add(1)

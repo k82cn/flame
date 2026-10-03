@@ -31,8 +31,8 @@ use stdng::{lock_ptr, trace_fn, MutexPtr};
 
 use crate::apis::{
     Application, ApplicationAttributes, ApplicationPtr, ApplicationState, Event, EventOwner,
-    ExecutorState, Node, NodePtr, Session, SessionAttributes, SessionPtr, SessionState, Shim, Task,
-    TaskInput, TaskOptions, TaskPtr, TaskResult, TaskState, Workspace,
+    ExecutorState, Node, NodePtr, Session, SessionAttributes, SessionGID, SessionPtr, SessionState,
+    Shim, Task, TaskInput, TaskName, TaskOptions, TaskPtr, TaskResult, TaskState, Workspace,
 };
 use crate::ctx::FlameClusterContext;
 use crate::FlameError;
@@ -646,7 +646,7 @@ impl Storage {
         let ssn_ptr = self.get_session_ptr(workspace, session)?;
         let ssn = lock_ptr!(ssn_ptr)?;
         let task_number = task
-            .parse::<u64>()
+            .parse::<TaskName>()
             .ok()
             .filter(|number| *number != 0 && number.to_string() == task)
             .ok_or_else(|| FlameError::NotFound(format!("task {workspace}/{session}/{task}")))?;
@@ -682,7 +682,8 @@ impl Storage {
             ssn_map.remove(&(workspace.to_string(), name.to_string()));
         }
 
-        self.event_manager.remove_events(workspace, name)?;
+        self.event_manager
+            .remove_events(&SessionGID::new(workspace, name))?;
 
         Ok(ssn)
     }

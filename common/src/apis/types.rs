@@ -32,6 +32,8 @@ pub const SESSION_RETRY_LIMIT_REACHED: i32 = 1002;
 
 pub type ExecutorID = String;
 pub type ApplicationID = String;
+/// Numeric task name, scoped to its owning session.
+pub type TaskName = u64;
 pub const DEFAULT_WORKSPACE: &str = "default";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +54,12 @@ impl SessionGID {
             workspace: workspace.into(),
             session: session.into(),
         }
+    }
+}
+
+impl std::fmt::Display for SessionGID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.workspace, self.session)
     }
 }
 
@@ -332,8 +340,8 @@ pub struct Session {
     pub version: u32,
     pub common_data: Option<CommonData>,
     pub tokens: HashMap<String, String>,
-    pub tasks: HashMap<u64, TaskPtr>,
-    pub tasks_index: HashMap<TaskState, BTreeMap<u64, TaskPtr>>,
+    pub tasks: HashMap<TaskName, TaskPtr>,
+    pub tasks_index: HashMap<TaskState, BTreeMap<TaskName, TaskPtr>>,
     pub creation_time: DateTime<Utc>,
     pub completion_time: Option<DateTime<Utc>>,
     pub events: Vec<Event>,
@@ -378,7 +386,7 @@ pub struct Task {
     pub id: String,
     pub workspace: String,
     pub session: String,
-    pub name: u64,
+    pub name: TaskName,
     pub version: u32,
     pub input: Option<TaskInput>,
     pub output: Option<TaskOutput>,
@@ -416,6 +424,10 @@ impl Default for Task {
 }
 
 impl Task {
+    pub fn session(&self) -> SessionGID {
+        SessionGID::new(&self.workspace, &self.session)
+    }
+
     pub fn is_completed(&self) -> bool {
         self.state.is_terminal()
     }

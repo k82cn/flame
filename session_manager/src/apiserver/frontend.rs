@@ -15,7 +15,7 @@ use std::path::Path;
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use common::apis::{ApplicationAttributes, SessionAttributes};
+use common::apis::{ApplicationAttributes, SessionAttributes, SessionGID};
 use futures::Stream;
 use serde_json::Value;
 use stdng::trace_fn;
@@ -98,22 +98,21 @@ fn validate_working_directory(working_dir: &Option<String>) -> Result<(), FlameE
 impl Flame {
     async fn forward_task_update(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         registered_tasks: &mut HashSet<String>,
         tx: &mpsc::Sender<Result<Task, Status>>,
     ) -> Result<(), Status> {
         let mut task = self
             .controller
-            .get_task_metadata(workspace, session, task)
+            .get_task_metadata(gid, task)
             .map_err(Status::from)?;
         if task.is_completed() {
             // Terminal updates carry failure details in task events. Load those
             // once, after the state snapshot, instead of on every watch update.
             task = self
                 .controller
-                .get_task(workspace, session, &task.name.to_string())
+                .get_task(gid, &task.name.to_string())
                 .map_err(Status::from)?;
             registered_tasks.remove(&task.name.to_string());
         }
@@ -165,24 +164,14 @@ impl Frontend for Flame {
             .message()
             .await?
             .ok_or_else(|| Status::invalid_argument("at least one task is required"))?;
-        let workspace = first.workspace.clone();
-        let session = first.session.clone();
+        let gid = SessionGID::new(first.workspace.clone(), first.session.clone());
         // Subscribe before the first snapshot so no task update is lost.
-        let mut task_updates = self
-            .controller
-            .subscribe(&workspace, &session)
-            .map_err(Status::from)?;
+        let mut task_updates = self.controller.subscribe(&gid).map_err(Status::from)?;
         let (tx, rx) = mpsc::channel(128);
         let mut registered_tasks = HashSet::new();
         registered_tasks.insert(first.task.clone());
-        self.forward_task_update(
-            &workspace,
-            &session,
-            &first.task,
-            &mut registered_tasks,
-            &tx,
-        )
-        .await?;
+        self.forward_task_update(&gid, &first.task, &mut registered_tasks, &tx)
+            .await?;
         let flame = self.clone();
         tokio::spawn(async move {
             let result: Result<(), Status> = async {
@@ -196,11 +185,11 @@ impl Frontend for Flame {
                         watch_request = watch_requests.message(), if !requests_closed => {
                             match watch_request? {
                                 Some(watch_request) => {
-                                    if watch_request.session != session || watch_request.workspace != workspace {
+                                    if watch_request.session != gid.session || watch_request.workspace != gid.workspace {
                                         return Err(Status::invalid_argument("all watched tasks must be in one session"));
                                     }
                                     registered_tasks.insert(watch_request.task.clone());
-                                    flame.forward_task_update(&workspace, &session, &watch_request.task, &mut registered_tasks, &tx).await?;
+                                    flame.forward_task_update(&gid, &watch_request.task, &mut registered_tasks, &tx).await?;
                                 }
                                 None => requests_closed = true,
                             }
@@ -209,19 +198,19 @@ impl Frontend for Flame {
                             match task_update {
                                 Ok(task) => {
                                     if registered_tasks.contains(&task) {
-                                        flame.forward_task_update(&workspace, &session, &task, &mut registered_tasks, &tx).await?;
+                                        flame.forward_task_update(&gid, &task, &mut registered_tasks, &tx).await?;
                                     }
                                 }
                                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                                     // Reconcile registered tasks after missing updates.
                                     for task in registered_tasks.iter().cloned().collect::<Vec<_>>() {
-                                        flame.forward_task_update(&workspace, &session, &task, &mut registered_tasks, &tx).await?;
+                                        flame.forward_task_update(&gid, &task, &mut registered_tasks, &tx).await?;
                                     }
                                 }
                                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                                     // Send final states for registered tasks before ending the watch.
                                     for task in registered_tasks.iter().cloned().collect::<Vec<_>>() {
-                                        flame.forward_task_update(&workspace, &session, &task, &mut registered_tasks, &tx).await?;
+                                        flame.forward_task_update(&gid, &task, &mut registered_tasks, &tx).await?;
                                     }
                                     return Err(Status::not_found("session task watch closed"));
                                 }
@@ -245,7 +234,7 @@ impl Frontend for Flame {
         let req = req.into_inner();
         let task_list = self
             .controller
-            .list_tasks(&req.workspace, &req.session)
+            .list_tasks(&SessionGID::new(&req.workspace, &req.session))
             .map_err(Status::from)?;
 
         let (tx, rx) = mpsc::channel(128);
@@ -529,7 +518,7 @@ impl Frontend for Flame {
         let req = req.into_inner();
         let ssn = self
             .controller
-            .delete_session(&req.workspace, &req.session)
+            .delete_session(&SessionGID::new(&req.workspace, &req.session))
             .await
             .map(Session::from)?;
 
@@ -565,7 +554,7 @@ impl Frontend for Flame {
 
         let ssn = self
             .controller
-            .open_session(&req.workspace, &req.session, spec)
+            .open_session(&SessionGID::new(&req.workspace, &req.session), spec)
             .await
             .map(Session::from)
             .map_err(Status::from)?;
@@ -581,7 +570,7 @@ impl Frontend for Flame {
         let req = req.into_inner();
         let ssn = self
             .controller
-            .close_session(&req.workspace, &req.session)
+            .close_session(&SessionGID::new(&req.workspace, &req.session))
             .await
             .map(rpc::Session::from)
             .map_err(Status::from)?;
@@ -597,7 +586,7 @@ impl Frontend for Flame {
         let req = req.into_inner();
         let ssn = self
             .controller
-            .get_session(&req.workspace, &req.session)
+            .get_session(&SessionGID::new(&req.workspace, &req.session))
             .map(rpc::Session::from)
             .map_err(Status::from)?;
 
@@ -633,8 +622,7 @@ impl Frontend for Flame {
         let task = self
             .controller
             .create_task(
-                &req.workspace,
-                &task_spec.session,
+                &SessionGID::new(&req.workspace, &task_spec.session),
                 task_spec.input.map(apis::TaskInput::from),
                 Some(apis::TaskOptions {
                     affinity: task_spec
@@ -654,7 +642,7 @@ impl Frontend for Flame {
         let req = req.into_inner();
         let task = self
             .controller
-            .get_task(&req.workspace, &req.session, &req.task)
+            .get_task(&SessionGID::new(&req.workspace, &req.session), &req.task)
             .map(Task::from)
             .map_err(Status::from)?;
 
@@ -784,11 +772,18 @@ mod tests {
     async fn watch_tasks_omits_event_history_until_terminal_state() {
         let controller = watch_test_controller().await;
         let task = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         assert!(!controller
-            .get_task("default", "watch-test-session", &task.name.to_string())
+            .get_task(
+                &SessionGID::new("default", "watch-test-session"),
+                &task.name.to_string()
+            )
             .unwrap()
             .events
             .is_empty());
@@ -814,7 +809,11 @@ mod tests {
 
         let (storage, controller) = watch_test_storage_and_controller().await;
         let task = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         let ssn_ptr = storage
@@ -877,11 +876,15 @@ mod tests {
     async fn watch_tasks_rejects_registration_after_session_close() {
         let controller = watch_test_controller().await;
         let task = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         controller
-            .close_session("default", "watch-test-session")
+            .close_session(&SessionGID::new("default", "watch-test-session"))
             .await
             .unwrap();
 
@@ -897,7 +900,11 @@ mod tests {
     async fn watch_tasks_reports_terminal_state_then_closes_on_session_close() {
         let controller = watch_test_controller().await;
         let task = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         let (_requests_tx, requests) = watch_requests(task.name.to_string());
@@ -906,7 +913,7 @@ mod tests {
         rx.recv().await.unwrap().unwrap();
 
         controller
-            .close_session("default", "watch-test-session")
+            .close_session(&SessionGID::new("default", "watch-test-session"))
             .await
             .unwrap();
         let terminal = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
@@ -931,15 +938,27 @@ mod tests {
     async fn watch_tasks_reports_only_registered_ids_on_one_stream() {
         let controller = watch_test_controller().await;
         let first = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         let second = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         let _unregistered = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
 
@@ -995,7 +1014,7 @@ mod tests {
         );
 
         controller
-            .close_session("default", "watch-test-session")
+            .close_session(&SessionGID::new("default", "watch-test-session"))
             .await
             .unwrap();
         let mut completed = HashSet::new();
@@ -1024,7 +1043,11 @@ mod tests {
     async fn watch_tasks_stops_when_response_stream_is_dropped() {
         let controller = watch_test_controller().await;
         let task = controller
-            .create_task("default", "watch-test-session", None, None)
+            .create_task(
+                &SessionGID::new("default", "watch-test-session"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         let (_requests_tx, requests) = watch_requests(task.name.to_string());

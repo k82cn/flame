@@ -88,9 +88,9 @@ impl EventManager for MemoryEventManager {
         Ok(event_list)
     }
 
-    fn remove_events(&self, workspace: &str, session: &str) -> Result<(), FlameError> {
+    fn remove_events(&self, session: &SessionGID) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
-        events.remove(&SessionGID::new(workspace, session));
+        events.remove(session);
         Ok(())
     }
 

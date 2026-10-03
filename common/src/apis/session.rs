@@ -17,6 +17,10 @@ use super::types::*;
 use crate::FlameError;
 
 impl Session {
+    pub fn gid(&self) -> SessionGID {
+        SessionGID::new(&self.workspace, &self.name)
+    }
+
     pub fn is_closed(&self) -> bool {
         self.status.state == SessionState::Closed
     }

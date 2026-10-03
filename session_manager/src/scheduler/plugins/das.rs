@@ -84,7 +84,7 @@ impl Plugin for DasPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::apis::{Session, Task, TaskState};
+    use common::apis::{Session, Task, TaskName, TaskState};
     use std::sync::Arc;
 
     fn executor(id: &str, attributes: &[&'static [u8]]) -> ExecutorInfo {
@@ -97,7 +97,7 @@ mod tests {
         }
     }
 
-    fn task(session_id: &str, id: u64, keys: &[&'static [u8]]) -> Task {
+    fn task(session_id: &str, id: TaskName, keys: &[&'static [u8]]) -> Task {
         Task {
             id: uuid::Uuid::new_v4().to_string(),
             workspace: "default".to_string(),

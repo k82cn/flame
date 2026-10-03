@@ -82,8 +82,8 @@ mod tests {
     use chrono::Duration;
     use chrono::Utc;
     use common::apis::{
-        Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement, Shim,
-        TaskOptions,
+        Application, ApplicationAttributes, Node, NodeInfo, NodeState, ResourceRequirement,
+        SessionGID, Shim, TaskOptions,
     };
     use common::ctx::{FlameCluster, FlameClusterContext, FlameRecovery, FlameSessionRecovery};
     use common::FlameError;
@@ -222,7 +222,11 @@ mod tests {
             }))?;
 
         for _ in 0..task_num {
-            tokio_test::block_on(controller.create_task("default", &ssn_1.name, None, None))?;
+            tokio_test::block_on(controller.create_task(
+                &SessionGID::new("default", &ssn_1.name),
+                None,
+                None,
+            ))?;
         }
 
         for i in 0..10 {
@@ -292,7 +296,11 @@ mod tests {
                     }),
                     ..Default::default()
                 }))?;
-            tokio_test::block_on(controller.create_task("default", &session.name, None, None))?;
+            tokio_test::block_on(controller.create_task(
+                &SessionGID::new("default", &session.name),
+                None,
+                None,
+            ))?;
         }
 
         let options = PluginsOptions {
@@ -371,7 +379,11 @@ mod tests {
                 }),
             }))?;
             for _ in 0..*task_count {
-                tokio_test::block_on(controller.create_task("default", &ssn_id, None, None))?;
+                tokio_test::block_on(controller.create_task(
+                    &SessionGID::new("default", &ssn_id),
+                    None,
+                    None,
+                ))?;
             }
             session_ids.push(ssn_id);
         }
@@ -380,8 +392,7 @@ mod tests {
         for _ in 0..executor_count {
             let executor = tokio_test::block_on(controller.create_executor(
                 "node_1".to_string(),
-                "default",
-                &session_ids[0],
+                &SessionGID::new("default", &session_ids[0]),
             ))?;
             tokio_test::block_on(controller.register_executor(&executor))?;
         }
@@ -464,8 +475,7 @@ mod tests {
         for index in 0..2 {
             let executor = tokio_test::block_on(controller.create_executor(
                 "node_1".to_string(),
-                "default",
-                &session_ids[0],
+                &SessionGID::new("default", &session_ids[0]),
             ))?;
             tokio_test::block_on(controller.register_executor(&executor))?;
             {
@@ -484,8 +494,7 @@ mod tests {
         };
         for index in 0..2 {
             tokio_test::block_on(controller.create_task(
-                "default",
-                &session_ids[index],
+                &SessionGID::new("default", &session_ids[index]),
                 None,
                 Some(TaskOptions {
                     affinity: [Bytes::from(format!("key-{index}"))].into_iter().collect(),
@@ -534,7 +543,11 @@ mod tests {
                 gpu: 0,
             }),
         }))?;
-        tokio_test::block_on(controller.create_task("default", &ssn_id, None, None))?;
+        tokio_test::block_on(controller.create_task(
+            &SessionGID::new("default", &ssn_id),
+            None,
+            None,
+        ))?;
 
         {
             let ssn_ptr = controller.storage().get_session_ptr("default", &ssn_id)?;
@@ -542,11 +555,9 @@ mod tests {
             ssn.retry_count = 1;
         }
 
-        let executor = tokio_test::block_on(controller.create_executor(
-            "node_1".to_string(),
-            "default",
-            &ssn_id,
-        ))?;
+        let executor = tokio_test::block_on(
+            controller.create_executor("node_1".to_string(), &SessionGID::new("default", &ssn_id)),
+        )?;
         tokio_test::block_on(controller.register_executor(&executor))?;
 
         let options = PluginsOptions::default();

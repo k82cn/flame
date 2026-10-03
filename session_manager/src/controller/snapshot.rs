@@ -20,9 +20,9 @@ use stdng::{lock_ptr, MutexPtr};
 
 use common::apis::{
     Application, ApplicationFilter, ApplicationState, Executor, ExecutorFilter, ExecutorID,
-    ExecutorState, Node, NodeState, ResourceRequirement, Session, SessionFilter, SessionPredicate,
-    SessionState, Shim, Task, TaskState, ALL_APPLICATION, ALL_EXECUTOR, BOUND_EXECUTOR,
-    IDLE_EXECUTOR, OPEN_SESSION, READY_SESSION, VOID_EXECUTOR,
+    ExecutorState, Node, NodeState, ResourceRequirement, Session, SessionFilter, SessionGID,
+    SessionPredicate, SessionState, Shim, Task, TaskName, TaskState, ALL_APPLICATION, ALL_EXECUTOR,
+    BOUND_EXECUTOR, IDLE_EXECUTOR, OPEN_SESSION, READY_SESSION, VOID_EXECUTOR,
 };
 use common::ctx::DEFAULT_SESSION_RETRY_LIMITS;
 use common::FlameError;
@@ -126,7 +126,7 @@ impl SnapShot {
 #[derive(Debug, Default, Clone)]
 pub struct TaskInfo {
     pub id: String,
-    pub name: u64,
+    pub name: TaskName,
     pub session: String,
     pub workspace: String,
 
@@ -135,6 +135,12 @@ pub struct TaskInfo {
 
     pub state: TaskState,
     pub affinity: HashSet<Bytes>,
+}
+
+impl TaskInfo {
+    pub fn session(&self) -> SessionGID {
+        SessionGID::new(&self.workspace, &self.session)
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -156,10 +162,14 @@ pub struct SessionInfo {
     pub priority: u32,
     pub resreq: Option<ResourceRequirement>,
     pub retry_count: u32,
-    pub task_index: HashMap<TaskState, BTreeMap<u64, TaskInfoPtr>>,
+    pub task_index: HashMap<TaskState, BTreeMap<TaskName, TaskInfoPtr>>,
 }
 
 impl SessionInfo {
+    pub fn gid(&self) -> SessionGID {
+        SessionGID::new(&self.workspace, &self.name)
+    }
+
     pub fn key(&self) -> ScopedName {
         (self.workspace.clone(), self.name.clone())
     }
@@ -188,6 +198,14 @@ pub struct ExecutorInfo {
     pub state: ExecutorState,
     /// Last accepted volatile attributes for the retained service instance.
     pub attributes: HashSet<Bytes>,
+}
+
+impl ExecutorInfo {
+    pub fn session(&self) -> Option<SessionGID> {
+        self.session
+            .as_ref()
+            .map(|session| SessionGID::new(&self.workspace, session))
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -586,12 +604,13 @@ impl SnapShot {
         Ok(())
     }
 
-    pub fn get_session(&self, workspace: &str, name: &str) -> Result<SessionInfoPtr, FlameError> {
+    pub fn get_session(&self, gid: &SessionGID) -> Result<SessionInfoPtr, FlameError> {
         let sessions = lock_ptr!(self.sessions)?;
-        match sessions.get(&(workspace.to_string(), name.to_string())) {
+        match sessions.get(&(gid.workspace.clone(), gid.session.clone())) {
             Some(ptr) => Ok(ptr.clone()),
             None => Err(FlameError::NotFound(format!(
-                "session <{workspace}/{name}> not found"
+                "session <{}/{}> not found",
+                gid.workspace, gid.session
             ))),
         }
     }

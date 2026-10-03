@@ -54,8 +54,8 @@ use crate::apis::{
     new_metadata_id, validate_application_name, validate_session_name, validate_workspace_name,
     Application, ApplicationAttributes, ApplicationSchema, ApplicationState, ExecutorGID,
     ExecutorState, Node, NodeInfo, NodeState, ResourceRequirement, Session, SessionAttributes,
-    SessionGID, SessionState, SessionStatus, Shim, Task, TaskInput, TaskOptions, TaskResult,
-    TaskState, Workspace,
+    SessionGID, SessionState, SessionStatus, Shim, Task, TaskInput, TaskName, TaskOptions,
+    TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
 };
 use crate::{FlameError, FLAME_HOME};
 
@@ -69,7 +69,7 @@ use crate::storage::engine::{Engine, EnginePtr};
 #[derive(Encode, Decode, Debug, Clone, Default)]
 struct TaskMetadata {
     /// Numeric file slot and internal task name; RPC uses its decimal string.
-    pub name: u64,
+    pub name: TaskName,
     /// Persisted UUID used only as debug metadata.
     pub id: [u8; 16],
     /// Optimistic locking version
@@ -230,6 +230,11 @@ fn calculate_checksum(meta: &TaskMetadata) -> u32 {
     hasher.finalize()
 }
 
+const WORKSPACES: &str = "workspaces";
+const SESSIONS: &str = "sessions";
+const APPLICATIONS: &str = "applications";
+const EXECUTORS: &str = "executors";
+
 type SessionLocks = RwLock<HashMap<SessionGID, Arc<Mutex<()>>>>;
 type ExecutorLocks = RwLock<HashMap<ExecutorGID, Arc<Mutex<()>>>>;
 
@@ -242,14 +247,14 @@ pub struct FilesystemEngine {
 }
 
 macro_rules! lock_ssn {
-    ($self:expr, $workspace:expr, $session:expr) => {
+    ($self:expr, $gid:expr) => {
         let __fs_local_ssn_lock = {
             let mut locks = $self
                 .ssn_locks
                 .write()
                 .map_err(|e| FlameError::Storage(format!("Session lock poisoned: {}", e)))?;
             locks
-                .entry(SessionGID::new($workspace, $session))
+                .entry((*$gid).clone())
                 .or_insert_with(|| Arc::new(Mutex::new(())))
                 .clone()
         };
@@ -287,14 +292,14 @@ macro_rules! lock_node {
 }
 
 macro_rules! lock_executor {
-    ($self:expr, $workspace:expr, $name:expr) => {
+    ($self:expr, $gid:expr) => {
         let __fs_local_exec_lock = {
             let mut locks = $self
                 .executor_locks
                 .write()
                 .map_err(|e| FlameError::Storage(format!("Executor lock poisoned: {}", e)))?;
             locks
-                .entry(ExecutorGID::new($workspace, $name))
+                .entry((*$gid).clone())
                 .or_insert_with(|| Arc::new(Mutex::new(())))
                 .clone()
         };
@@ -309,7 +314,7 @@ impl FilesystemEngine {
         validate_workspace_name(name)?;
         let path = self
             .base_path
-            .join("workspaces")
+            .join(WORKSPACES)
             .join(name)
             .join("workspace.json");
         if path.is_file() {
@@ -323,8 +328,8 @@ impl FilesystemEngine {
         self.require_workspace(&executor.workspace)?;
         self.read_node_metadata(&executor.node)?;
         self.read_application_metadata(&executor.workspace, &executor.application)?;
-        if let Some(session) = executor.session.as_deref() {
-            let parent = self.read_session_metadata(&executor.workspace, session)?;
+        if let Some(gid) = executor.session() {
+            let parent = self.read_session_metadata(&gid)?;
             if parent.application != executor.application {
                 return Err(FlameError::InvalidConfig(
                     "executor session belongs to another application".to_string(),
@@ -332,10 +337,10 @@ impl FilesystemEngine {
             }
         }
         if let Some(task) = executor.task.as_deref() {
-            let session = executor.session.as_deref().ok_or_else(|| {
+            let gid = executor.session().ok_or_else(|| {
                 FlameError::InvalidConfig("executor task requires session".to_string())
             })?;
-            self.read_task_by_name(&executor.workspace, session, task)?;
+            self.read_task(&gid, task)?;
         }
         Ok(())
     }
@@ -346,28 +351,8 @@ impl FilesystemEngine {
     pub async fn new_ptr(url: &str) -> Result<EnginePtr, FlameError> {
         let path = Self::parse_url(url)?;
 
-        let default_workspace = path.join("workspaces/default");
-        let sessions_path = default_workspace.join("sessions");
-        let applications_path = default_workspace.join("applications");
-        let nodes_path = path.join("nodes");
-
-        fs::create_dir_all(&sessions_path).map_err(|e| {
-            FlameError::Storage(format!("Failed to create sessions directory: {e}"))
-        })?;
-        fs::create_dir_all(&applications_path).map_err(|e| {
-            FlameError::Storage(format!("Failed to create applications directory: {e}"))
-        })?;
-        let default_metadata = default_workspace.join("workspace.json");
-        if !default_metadata.exists() {
-            fs::write(
-                &default_metadata,
-                serde_json::json!({
-                    "name": "default", "create_at": Utc::now().timestamp_millis(),
-                })
-                .to_string(),
-            )?;
-        }
-        fs::create_dir_all(&nodes_path)
+        fs::create_dir_all(path.join(WORKSPACES))?;
+        fs::create_dir_all(path.join("nodes"))
             .map_err(|e| FlameError::Storage(format!("Failed to create nodes directory: {e}")))?;
 
         let record_size = task_record_size();
@@ -377,13 +362,49 @@ impl FilesystemEngine {
             record_size
         );
 
-        Ok(Arc::new(FilesystemEngine {
+        let engine = Arc::new(FilesystemEngine {
             base_path: path,
             record_size,
             ssn_locks: RwLock::new(HashMap::new()),
             node_locks: RwLock::new(HashMap::new()),
             executor_locks: RwLock::new(HashMap::new()),
-        }))
+        });
+        if !engine
+            .base_path
+            .join(WORKSPACES)
+            .join(DEFAULT_WORKSPACE)
+            .join("workspace.json")
+            .exists()
+        {
+            match engine.create_workspace(DEFAULT_WORKSPACE.to_string()).await {
+                Ok(_) => {}
+                Err(FlameError::AlreadyExist(_)) => {
+                    // Resume an interrupted default-workspace initialization.
+                    engine.initialize_workspace(DEFAULT_WORKSPACE)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(engine)
+    }
+
+    fn initialize_workspace(&self, name: &str) -> Result<Workspace, FlameError> {
+        let workspace = Workspace {
+            name: name.to_string(),
+            create_at: Utc::now(),
+        };
+        let path = self.base_path.join(WORKSPACES).join(name);
+        for directory in [SESSIONS, APPLICATIONS, EXECUTORS] {
+            fs::create_dir_all(path.join(directory))?;
+        }
+        fs::write(
+            path.join("workspace.json"),
+            serde_json::json!({
+                "name": name, "create_at": workspace.create_at.timestamp_millis(),
+            })
+            .to_string(),
+        )?;
+        Ok(workspace)
     }
 
     /// Parse the storage URL to extract the base path.
@@ -409,19 +430,19 @@ impl FilesystemEngine {
         }
     }
 
-    fn session_path(&self, workspace: &str, session: &str) -> PathBuf {
+    fn session_path(&self, gid: &SessionGID) -> PathBuf {
         self.base_path
-            .join("workspaces")
-            .join(workspace)
-            .join("sessions")
-            .join(session)
+            .join(WORKSPACES)
+            .join(&gid.workspace)
+            .join(SESSIONS)
+            .join(&gid.session)
     }
 
     fn application_path(&self, workspace: &str, application: &str) -> PathBuf {
         self.base_path
-            .join("workspaces")
+            .join(WORKSPACES)
             .join(workspace)
-            .join("applications")
+            .join(APPLICATIONS)
             .join(application)
     }
 
@@ -429,35 +450,27 @@ impl FilesystemEngine {
         self.base_path.join("nodes").join(node_name)
     }
 
-    fn executor_path(&self, workspace: &str, name: &str) -> PathBuf {
+    fn executor_path(&self, gid: &ExecutorGID) -> PathBuf {
         self.base_path
-            .join("workspaces")
-            .join(workspace)
-            .join("executors")
-            .join(name)
+            .join(WORKSPACES)
+            .join(&gid.workspace)
+            .join(EXECUTORS)
+            .join(&gid.executor)
     }
 
     /// Read session metadata from disk.
-    fn read_session_metadata(
-        &self,
-        workspace: &str,
-        session: &str,
-    ) -> Result<SessionMetadata, FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_session_name(session)?;
-        let path = self.session_path(workspace, session).join("metadata");
+    fn read_session_metadata(&self, gid: &SessionGID) -> Result<SessionMetadata, FlameError> {
+        let path = self.session_path(gid).join("metadata");
         let content = fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                FlameError::NotFound(format!("Session {workspace}/{session} not found: {e}"))
+                FlameError::NotFound(format!("Session {gid} not found: {e}"))
             } else {
-                FlameError::Storage(format!(
-                    "Failed to read session metadata for {workspace}/{session}: {e}"
-                ))
+                FlameError::Storage(format!("Failed to read session metadata for {gid}: {e}"))
             }
         })?;
         let meta: SessionMetadata = serde_json::from_str(&content)
             .map_err(|e| FlameError::Storage(format!("Failed to parse session metadata: {e}")))?;
-        if meta.workspace != workspace || meta.name != session {
+        if meta.workspace != gid.workspace || meta.name != gid.session {
             return Err(FlameError::Storage(
                 "session metadata path mismatch".to_string(),
             ));
@@ -473,7 +486,7 @@ impl FilesystemEngine {
             return Ok(Vec::new());
         }
         let mut sessions = Vec::new();
-        let workspaces = self.base_path.join("workspaces");
+        let workspaces = self.base_path.join(WORKSPACES);
         for workspace_entry in fs::read_dir(workspaces)? {
             let workspace_entry = workspace_entry?;
             if !workspace_entry.path().is_dir() {
@@ -486,7 +499,7 @@ impl FilesystemEngine {
             {
                 continue;
             }
-            let sessions_dir = workspace_entry.path().join("sessions");
+            let sessions_dir = workspace_entry.path().join(SESSIONS);
             let entries = match fs::read_dir(sessions_dir) {
                 Ok(entries) => entries,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
@@ -503,7 +516,8 @@ impl FilesystemEngine {
                     ))
                 })?;
                 let session_name = entry.file_name().to_string_lossy().to_string();
-                let metadata = self.read_session_metadata(&workspace, &session_name)?;
+                let metadata =
+                    self.read_session_metadata(&SessionGID::new(&workspace, &session_name))?;
                 let matches = filter.is_none_or(|filter| {
                     filter
                         .application
@@ -534,13 +548,10 @@ impl FilesystemEngine {
     /// Write session metadata to disk atomically.
     fn write_session_metadata(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         meta: &SessionMetadata,
     ) -> Result<(), FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_session_name(session)?;
-        let session_dir = self.session_path(workspace, session);
+        let session_dir = self.session_path(gid);
         let path = session_dir.join("metadata");
         let tmp_path = session_dir.join("metadata.tmp");
 
@@ -565,8 +576,6 @@ impl FilesystemEngine {
         workspace: &str,
         application: &str,
     ) -> Result<ApplicationMetadata, FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_application_name(application)?;
         let path = self
             .application_path(workspace, application)
             .join("metadata");
@@ -599,8 +608,6 @@ impl FilesystemEngine {
         application: &str,
         meta: &ApplicationMetadata,
     ) -> Result<(), FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_application_name(application)?;
         let app_dir = self.application_path(workspace, application);
         fs::create_dir_all(&app_dir).map_err(|e| {
             FlameError::Storage(format!("Failed to create application directory: {e}"))
@@ -659,26 +666,24 @@ impl FilesystemEngine {
         Ok(())
     }
 
-    fn read_executor_metadata(
-        &self,
-        workspace: &str,
-        name: &str,
-    ) -> Result<ExecutorMetadata, FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_application_name(name)?;
-        let path = self.executor_path(workspace, name).join("metadata");
+    fn read_executor_metadata(&self, gid: &ExecutorGID) -> Result<ExecutorMetadata, FlameError> {
+        let path = self.executor_path(gid).join("metadata");
         let content = fs::read_to_string(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                FlameError::NotFound(format!("Executor {workspace}/{name} not found"))
+                FlameError::NotFound(format!(
+                    "Executor {}/{} not found",
+                    gid.workspace, gid.executor
+                ))
             } else {
                 FlameError::Storage(format!(
-                    "Failed to read executor metadata for {workspace}/{name}: {e}"
+                    "Failed to read executor metadata for {}/{}: {e}",
+                    gid.workspace, gid.executor
                 ))
             }
         })?;
         let meta: ExecutorMetadata = serde_json::from_str(&content)
             .map_err(|e| FlameError::Storage(format!("Failed to parse executor metadata: {e}")))?;
-        if meta.workspace != workspace || meta.name != name {
+        if meta.workspace != gid.workspace || meta.name != gid.executor {
             return Err(FlameError::Storage(
                 "executor metadata path mismatch".to_string(),
             ));
@@ -688,13 +693,10 @@ impl FilesystemEngine {
 
     fn write_executor_metadata(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &ExecutorGID,
         meta: &ExecutorMetadata,
     ) -> Result<(), FlameError> {
-        validate_workspace_name(workspace)?;
-        validate_application_name(name)?;
-        let exec_dir = self.executor_path(workspace, name);
+        let exec_dir = self.executor_path(gid);
         fs::create_dir_all(&exec_dir).map_err(|e| {
             FlameError::Storage(format!("Failed to create executor directory: {e}"))
         })?;
@@ -718,9 +720,8 @@ impl FilesystemEngine {
     /// Read task metadata from tasks.bin.
     fn read_task_metadata(
         &self,
-        workspace: &str,
-        session: &str,
-        task_number: u64,
+        gid: &SessionGID,
+        task_number: TaskName,
     ) -> Result<TaskMetadata, FlameError> {
         if task_number == 0 {
             return Err(FlameError::NotFound(format!(
@@ -728,7 +729,7 @@ impl FilesystemEngine {
             )));
         }
 
-        let path = self.session_path(workspace, session).join("tasks.bin");
+        let path = self.session_path(gid).join("tasks.bin");
 
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -765,31 +766,21 @@ impl FilesystemEngine {
         Ok(meta)
     }
 
-    fn read_task_by_name(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<TaskMetadata, FlameError> {
+    fn read_task(&self, gid: &SessionGID, task: &str) -> Result<TaskMetadata, FlameError> {
         let number = task
-            .parse::<u64>()
+            .parse::<TaskName>()
             .map_err(|_| FlameError::InvalidConfig(format!("invalid task name: {task}")))?;
         if number.to_string() != task {
             return Err(FlameError::InvalidConfig(format!(
                 "non-canonical task name: {task}"
             )));
         }
-        self.read_task_metadata(workspace, session, number)
+        self.read_task_metadata(gid, number)
     }
 
     /// Write task metadata to tasks.bin at the specified offset.
-    fn write_task_metadata(
-        &self,
-        workspace: &str,
-        session: &str,
-        meta: &TaskMetadata,
-    ) -> Result<(), FlameError> {
-        let path = self.session_path(workspace, session).join("tasks.bin");
+    fn write_task_metadata(&self, gid: &SessionGID, meta: &TaskMetadata) -> Result<(), FlameError> {
+        let path = self.session_path(gid).join("tasks.bin");
 
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -824,12 +815,11 @@ impl FilesystemEngine {
     /// Append data to a file and return the offset where it was written.
     fn append_data(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         filename: &str,
         data: &[u8],
     ) -> Result<u64, FlameError> {
-        let path = self.session_path(workspace, session).join(filename);
+        let path = self.session_path(gid).join(filename);
 
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -854,8 +844,7 @@ impl FilesystemEngine {
     /// Read data from a file at the specified offset and length.
     fn read_data(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         filename: &str,
         offset: u64,
         len: u64,
@@ -864,7 +853,7 @@ impl FilesystemEngine {
             return Ok(Vec::new());
         }
 
-        let path = self.session_path(workspace, session).join(filename);
+        let path = self.session_path(gid).join(filename);
 
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -883,9 +872,8 @@ impl FilesystemEngine {
 
     /// Count tasks matching the filter.
     fn _count_task(&self, filter: &TaskFilter) -> Result<u64, FlameError> {
-        let path = self
-            .session_path(&filter.workspace, &filter.session)
-            .join("tasks.bin");
+        let gid = filter.session();
+        let path = self.session_path(&gid).join("tasks.bin");
 
         let task_count = match fs::metadata(&path) {
             Ok(metadata) => metadata.len() / self.record_size as u64,
@@ -897,7 +885,7 @@ impl FilesystemEngine {
 
         let mut count = 0;
         for task_id in 1..=task_count {
-            let metadata = self.read_task_metadata(&filter.workspace, &filter.session, task_id)?;
+            let metadata = self.read_task_metadata(&gid, task_id)?;
             let state = TaskState::try_from(metadata.state as i32)?;
             if states.contains(&state) {
                 count += 1;
@@ -907,19 +895,12 @@ impl FilesystemEngine {
     }
 
     /// Read common data for a session.
-    fn read_common_data(
-        &self,
-        workspace: &str,
-        session: &str,
-        len: u64,
-    ) -> Result<Option<Bytes>, FlameError> {
+    fn read_common_data(&self, gid: &SessionGID, len: u64) -> Result<Option<Bytes>, FlameError> {
         if len == 0 {
             return Ok(None);
         }
 
-        let path = self
-            .session_path(workspace, session)
-            .join("common_data.bin");
+        let path = self.session_path(gid).join("common_data.bin");
         match fs::read(&path) {
             Ok(data) => Ok(Some(Bytes::from(data))),
             Err(_) => Ok(None),
@@ -927,15 +908,8 @@ impl FilesystemEngine {
     }
 
     /// Write common data for a session.
-    fn write_common_data(
-        &self,
-        workspace: &str,
-        session: &str,
-        data: &[u8],
-    ) -> Result<(), FlameError> {
-        let path = self
-            .session_path(workspace, session)
-            .join("common_data.bin");
+    fn write_common_data(&self, gid: &SessionGID, data: &[u8]) -> Result<(), FlameError> {
+        let path = self.session_path(gid).join("common_data.bin");
         fs::write(&path, data)
             .map_err(|e| FlameError::Storage(format!("Failed to write common data: {e}")))?;
         Ok(())
@@ -944,44 +918,26 @@ impl FilesystemEngine {
     /// Convert TaskMetadata to Task.
     fn task_from_metadata(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         meta: &TaskMetadata,
     ) -> Result<Task, FlameError> {
         let input = if meta.input_len > 0 {
-            let data = self.read_data(
-                workspace,
-                session,
-                "inputs.bin",
-                meta.input_offset,
-                meta.input_len,
-            )?;
+            let data = self.read_data(gid, "inputs.bin", meta.input_offset, meta.input_len)?;
             Some(Bytes::from(data))
         } else {
             None
         };
 
         let output = if meta.output_len > 0 {
-            let data = self.read_data(
-                workspace,
-                session,
-                "outputs.bin",
-                meta.output_offset,
-                meta.output_len,
-            )?;
+            let data = self.read_data(gid, "outputs.bin", meta.output_offset, meta.output_len)?;
             Some(Bytes::from(data))
         } else {
             None
         };
 
         let affinity: std::collections::HashSet<Bytes> = if meta.affinity_len > 0 {
-            let data = self.read_data(
-                workspace,
-                session,
-                "affinity.bin",
-                meta.affinity_offset,
-                meta.affinity_len,
-            )?;
+            let data =
+                self.read_data(gid, "affinity.bin", meta.affinity_offset, meta.affinity_len)?;
             let (keys, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(&data, bincode_config())
                 .map_err(|e| FlameError::Storage(e.to_string()))?;
             keys.into_iter().map(Bytes::from).collect()
@@ -999,8 +955,8 @@ impl FilesystemEngine {
         Ok(Task {
             id: uuid::Uuid::from_bytes(meta.id).to_string(),
             name: meta.name,
-            session: session.to_string(),
-            workspace: workspace.to_string(),
+            session: gid.session.clone(),
+            workspace: gid.workspace.clone(),
             version: meta.version,
             input,
             output,
@@ -1016,8 +972,10 @@ impl FilesystemEngine {
     /// Convert SessionMetadata to Session.
     fn session_from_metadata(&self, meta: &SessionMetadata) -> Result<Session, FlameError> {
         let state = SessionState::try_from(meta.state)?;
-        let common_data =
-            self.read_common_data(&meta.workspace, &meta.name, meta.common_data_len)?;
+        let common_data = self.read_common_data(
+            &SessionGID::new(&meta.workspace, &meta.name),
+            meta.common_data_len,
+        )?;
         let completion_time = meta
             .completion_time
             .and_then(|t| DateTime::from_timestamp(t, 0));
@@ -1086,12 +1044,11 @@ impl FilesystemEngine {
 
     fn _update_task_state(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task: &str,
         task_state: TaskState,
     ) -> Result<Task, FlameError> {
-        let mut meta = self.read_task_by_name(workspace, session, task)?;
+        let mut meta = self.read_task(gid, task)?;
 
         meta.state = task_state as u8;
         meta.version += 1;
@@ -1102,8 +1059,8 @@ impl FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(workspace, session, &meta)?;
-        self.task_from_metadata(workspace, session, &meta)
+        self.write_task_metadata(gid, &meta)?;
+        self.task_from_metadata(gid, &meta)
     }
 
     fn executor_from_metadata(meta: ExecutorMetadata) -> Executor {
@@ -1151,11 +1108,7 @@ impl FilesystemEngine {
 impl Engine for FilesystemEngine {
     async fn create_workspace(&self, name: String) -> Result<Workspace, FlameError> {
         validate_workspace_name(&name)?;
-        let workspace = Workspace {
-            name: name.clone(),
-            create_at: Utc::now(),
-        };
-        let path = self.base_path.join("workspaces").join(&name);
+        let path = self.base_path.join(WORKSPACES).join(&name);
         fs::create_dir(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
                 FlameError::AlreadyExist(format!("workspace {name}"))
@@ -1163,19 +1116,12 @@ impl Engine for FilesystemEngine {
                 FlameError::Storage(e.to_string())
             }
         })?;
-        fs::write(
-            path.join("workspace.json"),
-            serde_json::json!({
-                "name": name, "create_at": workspace.create_at.timestamp_millis(),
-            })
-            .to_string(),
-        )?;
-        Ok(workspace)
+        self.initialize_workspace(&name)
     }
 
     async fn list_workspaces(&self) -> Result<Vec<Workspace>, FlameError> {
         let mut result = Vec::new();
-        for entry in fs::read_dir(self.base_path.join("workspaces"))? {
+        for entry in fs::read_dir(self.base_path.join(WORKSPACES))? {
             let path = entry?.path().join("workspace.json");
             let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)
                 .map_err(|e| FlameError::Storage(e.to_string()))?;
@@ -1201,6 +1147,7 @@ impl Engine for FilesystemEngine {
         name: String,
         attr: ApplicationAttributes,
     ) -> Result<Application, FlameError> {
+        validate_application_name(&name)?;
         crate::apis::validate_application_url(&workspace, attr.url.as_deref())?;
         self.require_workspace(&workspace)?;
         if self.read_application_metadata(&workspace, &name).is_ok() {
@@ -1357,7 +1304,7 @@ impl Engine for FilesystemEngine {
         filter: Option<&ApplicationFilter>,
     ) -> Result<Vec<Application>, FlameError> {
         let mut apps = Vec::new();
-        let workspaces_dir = self.base_path.join("workspaces");
+        let workspaces_dir = self.base_path.join(WORKSPACES);
         for workspace_entry in fs::read_dir(workspaces_dir)? {
             let workspace_entry = workspace_entry?;
             if !workspace_entry.path().is_dir() {
@@ -1370,7 +1317,7 @@ impl Engine for FilesystemEngine {
             {
                 continue;
             }
-            let apps_dir = workspace_entry.path().join("applications");
+            let apps_dir = workspace_entry.path().join(APPLICATIONS);
             let Ok(entries) = fs::read_dir(apps_dir) else {
                 continue;
             };
@@ -1396,10 +1343,8 @@ impl Engine for FilesystemEngine {
         self.require_workspace(&attr.workspace)?;
         validate_session_name(&attr.name)?;
         self.read_application_metadata(&attr.workspace, &attr.application)?;
-        if self
-            .read_session_metadata(&attr.workspace, &attr.name)
-            .is_ok()
-        {
+        let gid = SessionGID::new(&attr.workspace, &attr.name);
+        if self.read_session_metadata(&gid).is_ok() {
             return Err(FlameError::AlreadyExist(format!(
                 "Session '{}/{}' already exists",
                 attr.workspace, attr.name
@@ -1408,18 +1353,15 @@ impl Engine for FilesystemEngine {
 
         {
             let mut locks = lock_app!(self)?;
-            locks.insert(
-                SessionGID::new(&attr.workspace, &attr.name),
-                Arc::new(Mutex::new(())),
-            );
+            locks.insert(gid.clone(), Arc::new(Mutex::new(())));
         }
 
-        let session_dir = self.session_path(&attr.workspace, &attr.name);
+        let session_dir = self.session_path(&gid);
         fs::create_dir_all(&session_dir)
             .map_err(|e| FlameError::Storage(format!("Failed to create session directory: {e}")))?;
 
         let common_data_len = if let Some(ref data) = attr.common_data {
-            self.write_common_data(&attr.workspace, &attr.name, data)?;
+            self.write_common_data(&gid, data)?;
             data.len() as u64
         } else {
             0
@@ -1445,7 +1387,7 @@ impl Engine for FilesystemEngine {
             resreq_gpu: attr.resreq.as_ref().map(|r| r.gpu),
         };
 
-        self.write_session_metadata(&attr.workspace, &attr.name, &meta)?;
+        self.write_session_metadata(&gid, &meta)?;
 
         let tasks_path = session_dir.join("tasks.bin");
         let inputs_path = session_dir.join("inputs.bin");
@@ -1462,7 +1404,7 @@ impl Engine for FilesystemEngine {
     }
 
     async fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        let meta = self.read_session_metadata(workspace, name)?;
+        let meta = self.read_session_metadata(&SessionGID::new(workspace, name))?;
         self.session_from_metadata(&meta)
     }
 
@@ -1473,7 +1415,7 @@ impl Engine for FilesystemEngine {
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         // Try to get existing session
-        match self.read_session_metadata(workspace, name) {
+        match self.read_session_metadata(&SessionGID::new(workspace, name)) {
             Ok(meta) => {
                 // Session exists - validate state
                 if meta.state != SessionState::Open as i32 {
@@ -1507,16 +1449,17 @@ impl Engine for FilesystemEngine {
     }
 
     async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        lock_ssn!(self, workspace, name);
+        let gid = SessionGID::new(workspace, name);
+        lock_ssn!(self, &gid);
 
-        let mut meta = self.read_session_metadata(workspace, name)?;
+        let mut meta = self.read_session_metadata(&gid)?;
 
         let task_count = self._count_task(&TaskFilter::by_session(workspace, name))?;
         let mut pending_tasks = Vec::new();
 
         // First pass: check for running tasks and collect pending tasks
         for task_number in 1..=task_count {
-            if let Ok(task_meta) = self.read_task_metadata(workspace, name, task_number) {
+            if let Ok(task_meta) = self.read_task_metadata(&gid, task_number) {
                 let state = match TaskState::try_from(task_meta.state as i32) {
                     Ok(s) => s,
                     Err(e) => {
@@ -1545,19 +1488,20 @@ impl Engine for FilesystemEngine {
 
         // Second pass: cancel pending tasks
         for task in pending_tasks {
-            self._update_task_state(workspace, name, &task, TaskState::Cancelled)?;
+            self._update_task_state(&gid, &task, TaskState::Cancelled)?;
         }
 
         meta.state = SessionState::Closed as i32;
         meta.completion_time = Some(Utc::now().timestamp());
         meta.version += 1;
 
-        self.write_session_metadata(workspace, name, &meta)?;
+        self.write_session_metadata(&gid, &meta)?;
         self.session_from_metadata(&meta)
     }
 
     async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        let meta = self.read_session_metadata(workspace, name)?;
+        let gid = SessionGID::new(workspace, name);
+        let meta = self.read_session_metadata(&gid)?;
 
         if meta.state != SessionState::Closed as i32 {
             return Err(FlameError::Storage(
@@ -1573,13 +1517,13 @@ impl Engine for FilesystemEngine {
 
         let session = self.session_from_metadata(&meta)?;
 
-        let session_dir = self.session_path(workspace, name);
+        let session_dir = self.session_path(&gid);
         fs::remove_dir_all(&session_dir)
             .map_err(|e| FlameError::Storage(format!("Failed to delete session: {e}")))?;
 
         {
             let mut locks = lock_app!(self)?;
-            locks.remove(&SessionGID::new(workspace, name));
+            locks.remove(&gid);
         }
 
         Ok(session)
@@ -1608,14 +1552,15 @@ impl Engine for FilesystemEngine {
         input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
-        let ssn_meta = self.read_session_metadata(workspace, session)?;
+        let gid = SessionGID::new(workspace, session);
+        let ssn_meta = self.read_session_metadata(&gid)?;
         if ssn_meta.state != SessionState::Open as i32 {
             return Err(FlameError::InvalidState(
                 "Cannot create task in closed session".to_string(),
             ));
         }
 
-        lock_ssn!(self, workspace, session);
+        lock_ssn!(self, &gid);
 
         let task_count = self._count_task(&TaskFilter::by_session(workspace, session))?;
         let task_number = task_count
@@ -1623,7 +1568,7 @@ impl Engine for FilesystemEngine {
             .ok_or_else(|| FlameError::Storage("task number overflow".into()))?;
 
         let (input_offset, input_len) = if let Some(ref data) = input {
-            let offset = self.append_data(workspace, session, "inputs.bin", data)?;
+            let offset = self.append_data(&gid, "inputs.bin", data)?;
             (offset, data.len() as u64)
         } else {
             (0, 0)
@@ -1637,8 +1582,7 @@ impl Engine for FilesystemEngine {
             .collect::<Vec<_>>();
         let affinity_data = bincode::encode_to_vec(affinity_data, bincode_config())
             .map_err(|e| FlameError::Storage(e.to_string()))?;
-        let affinity_offset =
-            self.append_data(workspace, session, "affinity.bin", &affinity_data)?;
+        let affinity_offset = self.append_data(&gid, "affinity.bin", &affinity_data)?;
 
         let mut meta = TaskMetadata {
             name: task_number,
@@ -1658,9 +1602,9 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(workspace, session, &meta)?;
+        self.write_task_metadata(&gid, &meta)?;
 
-        self.task_from_metadata(workspace, session, &meta)
+        self.task_from_metadata(&gid, &meta)
     }
 
     async fn get_task(
@@ -1669,9 +1613,10 @@ impl Engine for FilesystemEngine {
         session: &str,
         task: &str,
     ) -> Result<Task, FlameError> {
-        lock_ssn!(self, workspace, session);
-        let meta = self.read_task_by_name(workspace, session, task)?;
-        self.task_from_metadata(workspace, session, &meta)
+        let gid = SessionGID::new(workspace, session);
+        lock_ssn!(self, &gid);
+        let meta = self.read_task(&gid, task)?;
+        self.task_from_metadata(&gid, &meta)
     }
 
     async fn retry_task(
@@ -1680,16 +1625,17 @@ impl Engine for FilesystemEngine {
         session: &str,
         task: &str,
     ) -> Result<Task, FlameError> {
-        lock_ssn!(self, workspace, session);
+        let gid = SessionGID::new(workspace, session);
+        lock_ssn!(self, &gid);
 
-        let mut meta = self.read_task_by_name(workspace, session, task)?;
+        let mut meta = self.read_task(&gid, task)?;
 
         meta.state = TaskState::Pending as u8;
         meta.version += 1;
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(workspace, session, &meta)?;
-        self.task_from_metadata(workspace, session, &meta)
+        self.write_task_metadata(&gid, &meta)?;
+        self.task_from_metadata(&gid, &meta)
     }
 
     async fn update_task_state(
@@ -1700,9 +1646,10 @@ impl Engine for FilesystemEngine {
         task_state: TaskState,
         _message: Option<String>,
     ) -> Result<Task, FlameError> {
-        lock_ssn!(self, workspace, session);
+        let gid = SessionGID::new(workspace, session);
+        lock_ssn!(self, &gid);
 
-        self._update_task_state(workspace, session, task, task_state)
+        self._update_task_state(&gid, task, task_state)
     }
 
     async fn update_task_result(
@@ -1712,12 +1659,13 @@ impl Engine for FilesystemEngine {
         task: &str,
         task_result: TaskResult,
     ) -> Result<Task, FlameError> {
-        lock_ssn!(self, workspace, session);
+        let gid = SessionGID::new(workspace, session);
+        lock_ssn!(self, &gid);
 
-        let mut meta = self.read_task_by_name(workspace, session, task)?;
+        let mut meta = self.read_task(&gid, task)?;
 
         if let Some(ref output) = task_result.output {
-            let offset = self.append_data(workspace, session, "outputs.bin", output)?;
+            let offset = self.append_data(&gid, "outputs.bin", output)?;
             meta.output_offset = offset;
             meta.output_len = output.len() as u64;
         }
@@ -1731,19 +1679,20 @@ impl Engine for FilesystemEngine {
 
         meta.checksum = calculate_checksum(&meta);
 
-        self.write_task_metadata(workspace, session, &meta)?;
-        self.task_from_metadata(workspace, session, &meta)
+        self.write_task_metadata(&gid, &meta)?;
+        self.task_from_metadata(&gid, &meta)
     }
 
     async fn find_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError> {
-        lock_ssn!(self, workspace, session);
+        let gid = SessionGID::new(workspace, session);
+        lock_ssn!(self, &gid);
 
         let mut tasks = Vec::new();
         let task_count = self._count_task(&TaskFilter::by_session(workspace, session))?;
 
         for task_number in 1..=task_count {
-            if let Ok(meta) = self.read_task_metadata(workspace, session, task_number) {
-                if let Ok(task) = self.task_from_metadata(workspace, session, &meta) {
+            if let Ok(meta) = self.read_task_metadata(&gid, task_number) {
+                if let Ok(task) = self.task_from_metadata(&gid, &meta) {
                     tasks.push(task);
                 }
             }
@@ -1903,22 +1852,17 @@ impl Engine for FilesystemEngine {
     }
 
     async fn create_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
+        validate_application_name(&executor.name)?;
         self.validate_executor_references(executor)?;
-        lock_executor!(self, &executor.workspace, &executor.name);
-        if self
-            .read_executor_metadata(&executor.workspace, &executor.name)
-            .is_ok()
-        {
+        let gid = executor.gid();
+        lock_executor!(self, &gid);
+        if self.read_executor_metadata(&gid).is_ok() {
             return Err(FlameError::AlreadyExist(format!(
                 "executor {}/{}",
                 executor.workspace, executor.name
             )));
         }
-        self.write_executor_metadata(
-            &executor.workspace,
-            &executor.name,
-            &Self::executor_to_metadata(executor),
-        )?;
+        self.write_executor_metadata(&gid, &Self::executor_to_metadata(executor))?;
         Ok(executor.clone())
     }
 
@@ -1927,8 +1871,9 @@ impl Engine for FilesystemEngine {
         workspace: &str,
         name: &str,
     ) -> Result<Option<Executor>, FlameError> {
-        lock_executor!(self, workspace, name);
-        match self.read_executor_metadata(workspace, name) {
+        let gid = ExecutorGID::new(workspace, name);
+        lock_executor!(self, &gid);
+        match self.read_executor_metadata(&gid) {
             Ok(meta) => Ok(Some(Self::executor_from_metadata(meta))),
             Err(FlameError::NotFound(_)) => Ok(None),
             Err(error) => Err(error),
@@ -1937,18 +1882,15 @@ impl Engine for FilesystemEngine {
 
     async fn update_executor(&self, executor: &Executor) -> Result<Executor, FlameError> {
         self.validate_executor_references(executor)?;
-        lock_executor!(self, &executor.workspace, &executor.name);
-        let current = self.read_executor_metadata(&executor.workspace, &executor.name)?;
+        let gid = executor.gid();
+        lock_executor!(self, &gid);
+        let current = self.read_executor_metadata(&gid)?;
         if current.id != executor.id {
             return Err(FlameError::InvalidConfig(
                 "executor metadata ID mismatch".to_string(),
             ));
         }
-        self.write_executor_metadata(
-            &executor.workspace,
-            &executor.name,
-            &Self::executor_to_metadata(executor),
-        )?;
+        self.write_executor_metadata(&gid, &Self::executor_to_metadata(executor))?;
         Ok(executor.clone())
     }
 
@@ -1958,41 +1900,43 @@ impl Engine for FilesystemEngine {
         name: &str,
         state: ExecutorState,
     ) -> Result<Executor, FlameError> {
-        lock_executor!(self, workspace, name);
-        let mut meta = self.read_executor_metadata(workspace, name)?;
+        let gid = ExecutorGID::new(workspace, name);
+        lock_executor!(self, &gid);
+        let mut meta = self.read_executor_metadata(&gid)?;
         meta.state = i32::from(state);
-        self.write_executor_metadata(workspace, name, &meta)?;
+        self.write_executor_metadata(&gid, &meta)?;
         Ok(Self::executor_from_metadata(meta))
     }
 
     async fn delete_executor(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
-        lock_executor!(self, workspace, name);
-        let path = self.executor_path(workspace, name);
+        let gid = ExecutorGID::new(workspace, name);
+        lock_executor!(self, &gid);
+        let path = self.executor_path(&gid);
         if path.exists() {
             fs::remove_dir_all(path)?;
         }
         self.executor_locks
             .write()
             .map_err(|error| FlameError::Storage(format!("Executor lock poisoned: {error}")))?
-            .remove(&ExecutorGID::new(workspace, name));
+            .remove(&gid);
         Ok(())
     }
 
     async fn find_executors(&self, node: Option<&str>) -> Result<Vec<Executor>, FlameError> {
         let mut executors = Vec::new();
-        for workspace_entry in fs::read_dir(self.base_path.join("workspaces"))? {
+        for workspace_entry in fs::read_dir(self.base_path.join(WORKSPACES))? {
             let workspace_entry = workspace_entry?;
             if !workspace_entry.path().is_dir() {
                 continue;
             }
             let workspace = workspace_entry.file_name().to_string_lossy().to_string();
-            let Ok(entries) = fs::read_dir(workspace_entry.path().join("executors")) else {
+            let Ok(entries) = fs::read_dir(workspace_entry.path().join(EXECUTORS)) else {
                 continue;
             };
             for entry in entries {
                 let entry = entry?;
                 let name = entry.file_name().to_string_lossy().to_string();
-                let meta = self.read_executor_metadata(&workspace, &name)?;
+                let meta = self.read_executor_metadata(&ExecutorGID::new(&workspace, &name))?;
                 if node.is_none_or(|expected| meta.node == expected) {
                     executors.push(Self::executor_from_metadata(meta));
                 }
@@ -2021,6 +1965,26 @@ mod tests {
         };
 
         (engine, temp_dir)
+    }
+
+    #[tokio::test]
+    async fn default_workspace_recovers_partial_initialization_and_preserves_metadata() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(WORKSPACES).join(DEFAULT_WORKSPACE);
+        fs::create_dir_all(path.join(SESSIONS)).unwrap();
+        let url = format!("filesystem://{}", dir.path().display());
+        let engine = FilesystemEngine::new_ptr(&url).await.unwrap();
+        let workspace = engine.list_workspaces().await.unwrap().remove(0);
+        assert_eq!(workspace.name, DEFAULT_WORKSPACE);
+        for directory in [SESSIONS, APPLICATIONS, EXECUTORS] {
+            assert!(path.join(directory).is_dir());
+        }
+        assert!(matches!(
+            engine.create_workspace(DEFAULT_WORKSPACE.to_string()).await,
+            Err(FlameError::AlreadyExist(_))
+        ));
+        let reopened = FilesystemEngine::new_ptr(&url).await.unwrap();
+        assert_eq!(reopened.list_workspaces().await.unwrap(), vec![workspace]);
     }
 
     #[tokio::test]
@@ -2280,7 +2244,8 @@ mod tests {
             .update_application_state("default", "test-app", ApplicationState::Disabled)
             .await
             .unwrap();
-        fs::create_dir_all(engine.session_path("default", "incomplete-session")).unwrap();
+        fs::create_dir_all(engine.session_path(&SessionGID::new("default", "incomplete-session")))
+            .unwrap();
 
         let sessions = SessionFilter {
             application: Some("test-app".to_string()),

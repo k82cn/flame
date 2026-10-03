@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 use chrono::Utc;
-use common::apis::{Event, EventOwner};
+use common::apis::{Event, EventOwner, SessionGID};
 use common::events::{EventManager, FsEventManager, MemoryEventManager};
 use std::sync::Arc;
 
@@ -54,7 +54,9 @@ fn memory_scopes_by_workspace_session_and_task() {
         manager.find_events(session_event.clone()).unwrap()[0].code,
         3
     );
-    manager.remove_events("alpha", "session").unwrap();
+    manager
+        .remove_events(&SessionGID::new("alpha", "session"))
+        .unwrap();
     assert!(manager.find_events(first).unwrap().is_empty());
     assert!(manager.find_events(session_event).unwrap().is_empty());
     assert_eq!(manager.find_events(other_session).unwrap()[0].code, 4);
@@ -78,7 +80,9 @@ fn filesystem_recovers_workspace_scoped_events() {
         .unwrap();
     let recovered = FsEventManager::new(&path).unwrap();
     assert_eq!(recovered.find_events(owner.clone()).unwrap()[0].code, 7);
-    recovered.remove_events("alpha", "session").unwrap();
+    recovered
+        .remove_events(&SessionGID::new("alpha", "session"))
+        .unwrap();
     assert!(recovered.find_events(owner).unwrap().is_empty());
     assert_eq!(recovered.find_events(other_session).unwrap()[0].code, 8);
     assert_eq!(recovered.find_events(other_workspace).unwrap()[0].code, 9);

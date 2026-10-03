@@ -17,7 +17,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use stdng::MutexPtr;
 
-use super::{ExecutorID, ExecutorState, ResourceRequirement, Shim};
+use super::{ExecutorGID, ExecutorID, ExecutorState, ResourceRequirement, SessionGID, Shim};
 use rpc::flame::v1 as rpc;
 
 #[derive(Clone, Debug)]
@@ -42,6 +42,16 @@ pub struct Executor {
 }
 
 impl Executor {
+    pub fn gid(&self) -> ExecutorGID {
+        ExecutorGID::new(&self.workspace, &self.name)
+    }
+
+    pub fn session(&self) -> Option<SessionGID> {
+        self.session
+            .as_ref()
+            .map(|session| SessionGID::new(&self.workspace, session))
+    }
+
     pub fn set_state(&mut self, state: ExecutorState) {
         self.state = state;
         self.latest_updated_timestamp = Utc::now();

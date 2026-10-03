@@ -118,7 +118,7 @@ impl Context {
     ) -> Result<(), FlameError> {
         let executor = self
             .controller
-            .create_executor(node.name.clone(), &ssn.workspace, &ssn.name)
+            .create_executor(node.name.clone(), &ssn.gid())
             .await?;
         let exec_info = Arc::new(ExecutorInfo::from(&executor));
         self.snapshot.add_executor(exec_info.clone())?;
@@ -140,7 +140,7 @@ impl Context {
         ssn: &SessionInfoPtr,
     ) -> Result<(), FlameError> {
         self.controller
-            .bind_session(exec.name.clone(), &ssn.workspace, &ssn.name)
+            .bind_session(exec.name.clone(), &ssn.gid())
             .await?;
         self.plugins.on_session_bind(ssn.clone())?;
         self.snapshot

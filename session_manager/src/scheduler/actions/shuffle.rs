@@ -23,6 +23,7 @@ use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::ctx::Context;
 use crate::scheduler::plugins::ssn_order_fn;
 
+use common::apis::SessionGID;
 use common::FlameError;
 
 pub struct ShuffleAction {}
@@ -81,8 +82,8 @@ impl Action for ShuffleAction {
                     ssn.id.clone()
                 );
 
-                let target_ssn = match e.session.clone() {
-                    Some(session) => Some(ss.get_session(&e.workspace, &session)?),
+                let target_ssn = match e.session() {
+                    Some(gid) => Some(ss.get_session(&gid)?),
                     None => None,
                 };
 
@@ -242,12 +243,15 @@ mod tests {
             .await
             .unwrap();
         let executor = controller
-            .create_executor("node".to_string(), "default", "session")
+            .create_executor("node".to_string(), &SessionGID::new("default", "session"))
             .await
             .unwrap();
         controller.register_executor(&executor).await.unwrap();
         controller
-            .bind_session(executor.name.clone(), "default", "session")
+            .bind_session(
+                executor.name.clone(),
+                &SessionGID::new("default", "session"),
+            )
             .await
             .unwrap();
         controller
@@ -262,7 +266,7 @@ mod tests {
             .await
             .unwrap();
         controller
-            .close_session("default", "session")
+            .close_session(&SessionGID::new("default", "session"))
             .await
             .unwrap();
         controller

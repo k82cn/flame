@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use crate::apis::Event;
 use crate::apis::{
     Application, ApplicationSchema, ApplicationState, ExecutorState, Node, NodeInfo, NodeState,
-    ResourceRequirement, Session, SessionStatus, Shim, Task,
+    ResourceRequirement, Session, SessionStatus, Shim, Task, TaskName,
 };
 use crate::FlameError;
 use bytes::Bytes;
@@ -209,7 +209,7 @@ impl TryFrom<&TaskDao> for Task {
     fn try_from(task: &TaskDao) -> Result<Self, Self::Error> {
         let name = task
             .name
-            .parse::<u64>()
+            .parse::<TaskName>()
             .map_err(|e| FlameError::Storage(format!("invalid task name {}: {e}", task.name)))?;
         if name == 0 || name.to_string() != task.name {
             return Err(FlameError::Storage(format!(

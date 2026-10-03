@@ -380,9 +380,10 @@ impl From<ExecutorState> for i32 {
 
 impl From<&Task> for EventOwner {
     fn from(task: &Task) -> Self {
+        let session = task.session();
         Self {
-            workspace: task.workspace.clone(),
-            session: task.session.clone(),
+            workspace: session.workspace,
+            session: session.session,
             task: Some(task.name.to_string()),
         }
     }

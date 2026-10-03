@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::apis::{
-    Application, ApplicationAttributes, ApplicationState, ExecutorState, SessionState,
+    Application, ApplicationAttributes, ApplicationState, ExecutorState, SessionGID, SessionState,
 };
 use common::application::parse_application_manifests;
 use common::ctx::FlameClusterContext;
@@ -82,11 +82,7 @@ impl ApplicationManager {
             SessionFilter::by_application_state(application.name.clone(), SessionState::Closed);
         closed_filter.workspace = Some(application.workspace.clone());
         for session in self.storage.list_sessions(Some(&closed_filter))? {
-            match self
-                .controller
-                .delete_session(&session.workspace, &session.name)
-                .await
-            {
+            match self.controller.delete_session(&session.gid()).await {
                 Ok(_) | Err(FlameError::NotFound(_)) => {}
                 Err(error) => return Err(error),
             }
@@ -347,7 +343,7 @@ mod tests {
             .await
             .unwrap();
         controller
-            .close_session("default", "closed-session")
+            .close_session(&SessionGID::new("default", "closed-session"))
             .await
             .unwrap();
         controller
@@ -365,10 +361,12 @@ mod tests {
 
         manager.reconcile_once().await.unwrap();
         assert!(matches!(
-            controller.get_session("default", "closed-session"),
+            controller.get_session(&SessionGID::new("default", "closed-session")),
             Err(FlameError::NotFound(_))
         ));
-        assert!(controller.get_session("default", "open-session").is_ok());
+        assert!(controller
+            .get_session(&SessionGID::new("default", "open-session"))
+            .is_ok());
         assert_eq!(
             controller
                 .get_application("default", "draining-app")
@@ -379,12 +377,12 @@ mod tests {
         );
 
         controller
-            .close_session("default", "open-session")
+            .close_session(&SessionGID::new("default", "open-session"))
             .await
             .unwrap();
         manager.reconcile_once().await.unwrap();
         assert!(matches!(
-            controller.get_session("default", "open-session"),
+            controller.get_session(&SessionGID::new("default", "open-session")),
             Err(FlameError::NotFound(_))
         ));
         assert!(matches!(

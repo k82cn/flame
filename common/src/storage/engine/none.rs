@@ -25,7 +25,7 @@ use crate::apis::{
     new_metadata_id, validate_application_name, validate_session_name, validate_workspace_name,
     Application, ApplicationAttributes, ApplicationFilter, ApplicationState, Executor,
     ExecutorState, Node, Session, SessionAttributes, SessionState, SessionStatus, Task, TaskInput,
-    TaskOptions, TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
+    TaskName, TaskOptions, TaskResult, TaskState, Workspace, DEFAULT_WORKSPACE,
 };
 use crate::FlameError;
 
@@ -35,7 +35,7 @@ pub struct NoneEngine {
     workspaces: MutexPtr<HashMap<String, Workspace>>,
     applications: MutexPtr<HashMap<ScopedName, Application>>,
     sessions: MutexPtr<HashMap<ScopedName, Session>>,
-    task_counters: MutexPtr<HashMap<ScopedName, u64>>,
+    task_counters: MutexPtr<HashMap<ScopedName, TaskName>>,
 }
 
 impl NoneEngine {

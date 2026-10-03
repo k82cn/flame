@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use common::apis::{
     Application, ApplicationAttributes, ApplicationState, CommonData, Event, EventOwner,
-    ExecutorState, FlameResult, Node, NodeState, Session, SessionAttributes, SessionPtr,
-    SessionState, Task, TaskInput, TaskOptions, TaskPtr, TaskResult, TaskState,
+    ExecutorState, FlameResult, Node, NodeState, Session, SessionAttributes, SessionGID,
+    SessionPtr, SessionState, Task, TaskInput, TaskOptions, TaskPtr, TaskResult, TaskState,
 };
 
 use common::FlameError;
@@ -414,17 +414,23 @@ impl Controller {
 
     pub async fn open_session(
         &self,
-        workspace: &str,
-        name: &str,
+        gid: &SessionGID,
         spec: Option<SessionAttributes>,
     ) -> Result<Session, FlameError> {
         trace_fn!("Controller::open_session");
         let application = match &spec {
             Some(attr) => attr.application.clone(),
-            None => self.storage.get_session(workspace, name)?.application,
+            None => {
+                self.storage
+                    .get_session(&gid.workspace, &gid.session)?
+                    .application
+            }
         };
-        self.application_enabled(workspace, &application).await?;
-        self.storage.open_session(workspace, name, spec).await
+        self.application_enabled(&gid.workspace, &application)
+            .await?;
+        self.storage
+            .open_session(&gid.workspace, &gid.session, spec)
+            .await
     }
 
     async fn application_enabled(&self, workspace: &str, name: &str) -> Result<(), FlameError> {
@@ -437,28 +443,34 @@ impl Controller {
         Ok(())
     }
 
-    pub async fn close_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
+    pub async fn close_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
         trace_fn!("Controller::close_session");
-        let session = self.storage.close_session(workspace, name).await?;
+        let session = self
+            .storage
+            .close_session(&gid.workspace, &gid.session)
+            .await?;
         // Dropping the session's broadcast sender lets subscribers drain queued
         // task updates, then receive RecvError::Closed.
-        self.notifier.tasks.remove(workspace, name)?;
+        self.notifier.tasks.remove(gid)?;
         Ok(session)
     }
 
-    pub fn get_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        self.storage.get_session(workspace, name)
+    pub fn get_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        self.storage.get_session(&gid.workspace, &gid.session)
     }
 
-    pub fn is_session_open(&self, workspace: &str, name: &str) -> Result<bool, FlameError> {
-        let session = self.storage.get_session_ptr(workspace, name)?;
+    pub fn is_session_open(&self, gid: &SessionGID) -> Result<bool, FlameError> {
+        let session = self.storage.get_session_ptr(&gid.workspace, &gid.session)?;
         let is_open = lock_ptr!(session)?.status.state != SessionState::Closed;
         Ok(is_open)
     }
 
-    pub async fn delete_session(&self, workspace: &str, name: &str) -> Result<Session, FlameError> {
-        let session = self.storage.delete_session(workspace, name).await?;
-        self.notifier.tasks.remove(workspace, name)?;
+    pub async fn delete_session(&self, gid: &SessionGID) -> Result<Session, FlameError> {
+        let session = self
+            .storage
+            .delete_session(&gid.workspace, &gid.session)
+            .await?;
+        self.notifier.tasks.remove(gid)?;
         Ok(session)
     }
 
@@ -471,8 +483,7 @@ impl Controller {
 
     pub async fn create_task(
         &self,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
         task_input: Option<TaskInput>,
         options: Option<TaskOptions>,
     ) -> Result<Task, FlameError> {
@@ -481,57 +492,45 @@ impl Controller {
         }
         let task = self
             .storage
-            .create_task(workspace, session, task_input, options)
+            .create_task(&gid.workspace, &gid.session, task_input, options)
             .await?;
-        let _ = self
-            .notifier
-            .tasks
-            .notify(workspace, session, &task.name.to_string());
+        let _ = self.notifier.tasks.notify(gid, &task.name.to_string());
         self.notify_scheduler();
         Ok(task)
     }
 
-    pub fn subscribe(
-        &self,
-        workspace: &str,
-        session: &str,
-    ) -> Result<TaskSubscription, FlameError> {
-        let subscription = self.notifier.tasks.subscribe(workspace, session)?;
+    pub fn subscribe(&self, gid: &SessionGID) -> Result<TaskSubscription, FlameError> {
+        let subscription = self.notifier.tasks.subscribe(gid)?;
         // Subscribe first: a concurrent close then either fails this check or
         // closes the channel observed by the subscriber.
-        if !self.is_session_open(workspace, session)? {
+        if !self.is_session_open(gid)? {
             return Err(FlameError::NotFound("session is closed".to_string()));
         }
         Ok(subscription)
     }
 
-    pub fn get_task(&self, workspace: &str, session: &str, task: &str) -> Result<Task, FlameError> {
-        self.storage.get_task(workspace, session, task)
+    pub fn get_task(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        self.storage.get_task(&gid.workspace, &gid.session, task)
     }
 
-    pub fn get_task_metadata(
-        &self,
-        workspace: &str,
-        session: &str,
-        task: &str,
-    ) -> Result<Task, FlameError> {
-        self.storage.get_task_metadata(workspace, session, task)
+    pub fn get_task_metadata(&self, gid: &SessionGID, task: &str) -> Result<Task, FlameError> {
+        self.storage
+            .get_task_metadata(&gid.workspace, &gid.session, task)
     }
 
-    pub fn list_tasks(&self, workspace: &str, session: &str) -> Result<Vec<Task>, FlameError> {
-        self.storage.list_tasks(workspace, session)
+    pub fn list_tasks(&self, gid: &SessionGID) -> Result<Vec<Task>, FlameError> {
+        self.storage.list_tasks(&gid.workspace, &gid.session)
     }
 
     pub async fn create_executor(
         &self,
         node_name: String,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
     ) -> Result<Executor, FlameError> {
         trace_fn!("Controller::create_executor");
         let executor = self
             .storage
-            .create_executor(node_name.clone(), workspace, session)
+            .create_executor(node_name.clone(), &gid.workspace, &gid.session)
             .await?;
 
         // Notify the node about the new executor
@@ -661,14 +660,14 @@ impl Controller {
         let exe_ptr = self.storage.get_executor_ptr(&id)?;
         let mut rx = self.notifier.executors.subscribe(&id)?;
 
-        let (workspace, session) = loop {
+        let gid = loop {
             {
                 let exe = lock_ptr!(exe_ptr)?;
                 if exe.state == ExecutorState::Releasing || exe.state == ExecutorState::Released {
                     return Ok(None);
                 }
-                if let Some(session) = exe.session.clone() {
-                    break (exe.workspace.clone(), session);
+                if let Some(gid) = exe.session() {
+                    break gid;
                 }
             }
 
@@ -677,7 +676,7 @@ impl Controller {
             }
         };
 
-        let ssn_ptr = match self.storage.get_session_ptr(&workspace, &session) {
+        let ssn_ptr = match self.storage.get_session_ptr(&gid.workspace, &gid.session) {
             Ok(ssn_ptr) => ssn_ptr,
             Err(FlameError::NotFound(_)) => return Ok(None),
             Err(e) => return Err(e),
@@ -691,23 +690,18 @@ impl Controller {
         Ok(Some((*ssn).clone()))
     }
 
-    pub async fn bind_session(
-        &self,
-        id: String,
-        workspace: &str,
-        session: &str,
-    ) -> Result<(), FlameError> {
+    pub async fn bind_session(&self, id: String, gid: &SessionGID) -> Result<(), FlameError> {
         trace_fn!("Controller::bind_session");
 
         let exe_ptr = self.storage.get_executor_ptr(&id)?;
         let state = executors::from(self.storage.clone(), exe_ptr.clone())?;
 
-        if lock_ptr!(exe_ptr)?.workspace != workspace {
+        if lock_ptr!(exe_ptr)?.workspace != gid.workspace {
             return Err(FlameError::InvalidConfig(
                 "executor and session must share a workspace".to_string(),
             ));
         }
-        let ssn_ptr = self.storage.get_session_ptr(workspace, session)?;
+        let ssn_ptr = self.storage.get_session_ptr(&gid.workspace, &gid.session)?;
         state.bind_session(ssn_ptr).await?;
 
         let executor = {
@@ -786,35 +780,33 @@ impl Controller {
         trace_fn!("Controller::launch_task");
         let exe_ptr = self.storage.get_executor_ptr(&id)?;
         let state = executors::from(self.storage.clone(), exe_ptr.clone())?;
-        let (workspace, session, task) = {
+        let (gid, task) = {
             let exec = lock_ptr!(exe_ptr)?;
-            (
-                exec.workspace.clone(),
-                exec.session.clone(),
-                exec.task.clone(),
-            )
+            (exec.session(), exec.task.clone())
         };
 
-        tracing::debug!("Try to launch task for session <{:?}>", session);
-        let Some(session) = session else {
+        tracing::debug!("Try to launch task for session <{:?}>", gid);
+        let Some(gid) = gid else {
             tracing::debug!("No session to launch task for, return.");
             return Ok(None);
         };
 
         if let Some(task) = task {
-            tracing::warn!("Re-launch the task <{}/{}>", session, task);
-            let task_ptr = self.storage.get_task_ptr(&workspace, &session, &task)?;
+            tracing::warn!("Re-launch the task <{}/{}>", gid.session, task);
+            let task_ptr = self
+                .storage
+                .get_task_ptr(&gid.workspace, &gid.session, &task)?;
             let task = lock_ptr!(task_ptr)?;
             return Ok(Some((*task).clone()));
         }
 
-        tracing::debug!("Launching task for session <{:?}>", session);
-        let ssn_ptr = match self.storage.get_session_ptr(&workspace, &session) {
+        tracing::debug!("Launching task for session <{:?}>", gid.session);
+        let ssn_ptr = match self.storage.get_session_ptr(&gid.workspace, &gid.session) {
             Ok(ssn_ptr) => ssn_ptr,
             Err(FlameError::NotFound(msg)) => {
                 tracing::warn!(
                     "Session <{:?}> not found when launching task: {}",
-                    session,
+                    gid.session,
                     msg
                 );
                 return Ok(None);
@@ -822,14 +814,14 @@ impl Controller {
             Err(e) => {
                 tracing::error!(
                     "Failed to get session <{:?}> when launching task: {:?}",
-                    session,
+                    gid.session,
                     e
                 );
                 return Err(e);
             }
         };
 
-        let task_ptr = self.wait_for_task(&ssn_ptr, &workspace, &session).await?;
+        let task_ptr = self.wait_for_task(&ssn_ptr, &gid).await?;
 
         let Some(task_ptr) = task_ptr else {
             return Ok(None);
@@ -844,7 +836,7 @@ impl Controller {
         let result = state.launch_task(ssn_ptr, task_ptr).await;
 
         if result.is_ok() {
-            let _ = self.notifier.tasks.notify(&workspace, &session, &task_name);
+            let _ = self.notifier.tasks.notify(&gid, &task_name);
 
             let executor = {
                 let exe = lock_ptr!(exe_ptr)?;
@@ -859,18 +851,20 @@ impl Controller {
     async fn wait_for_task(
         &self,
         ssn: &SessionPtr,
-        workspace: &str,
-        session: &str,
+        gid: &SessionGID,
     ) -> Result<Option<TaskPtr>, FlameError> {
         let app_name = {
             let ssn_guard = lock_ptr!(ssn)?;
             ssn_guard.application.clone()
         };
-        let app = self.storage.get_application(workspace, &app_name).await?;
+        let app = self
+            .storage
+            .get_application(&gid.workspace, &app_name)
+            .await?;
         let delay_secs = app.delay_release.num_seconds().max(0) as u64;
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(delay_secs);
 
-        let mut rx = self.notifier.tasks.subscribe(workspace, session)?;
+        let mut rx = self.notifier.tasks.subscribe(gid)?;
 
         loop {
             {
@@ -908,11 +902,10 @@ impl Controller {
             .map(Self::validate_executor_attributes)
             .transpose()?;
         let exe_ptr = self.storage.get_executor_ptr(&id)?;
-        let (workspace, session, task, host) = {
+        let (gid, task, host) = {
             let exe = lock_ptr!(exe_ptr)?;
             (
-                exe.workspace.clone(),
-                exe.session.clone().ok_or(FlameError::InvalidState(
+                exe.session().ok_or(FlameError::InvalidState(
                     "no session in executor".to_string(),
                 ))?,
                 exe.task
@@ -922,8 +915,10 @@ impl Controller {
             )
         };
 
-        let task_ptr = self.storage.get_task_ptr(&workspace, &session, &task)?;
-        let ssn_ptr = self.storage.get_session_ptr(&workspace, &session)?;
+        let task_ptr = self
+            .storage
+            .get_task_ptr(&gid.workspace, &gid.session, &task)?;
+        let ssn_ptr = self.storage.get_session_ptr(&gid.workspace, &gid.session)?;
 
         let msg = match task_result.state {
             TaskState::Failed => task_result.message,
@@ -932,7 +927,7 @@ impl Controller {
                 tracing::warn!(
                     "Invalid task state <{:?}> for task <{}/{}> on host <{}> when completing task",
                     task_result.state,
-                    session,
+                    gid.session,
                     task,
                     host
                 );
@@ -950,7 +945,7 @@ impl Controller {
         }
         let state = executors::from(self.storage.clone(), exe_ptr.clone())?;
         state.complete_task(ssn_ptr, task_ptr, task_result).await?;
-        let _ = self.notifier.tasks.notify(&workspace, &session, &task);
+        let _ = self.notifier.tasks.notify(&gid, &task);
 
         let executor = {
             let exe = lock_ptr!(exe_ptr)?;
@@ -1069,11 +1064,11 @@ impl Controller {
 
         // Crash recovery is terminal in v1: after the node confirms targeted
         // service destruction, fail the interrupted task instead of retrying it.
-        if let (Some(task), Some(session)) = (executor.task.as_ref(), executor.session.as_ref()) {
-            let ssn_ptr = self.storage.get_session_ptr(&executor.workspace, session)?;
+        if let (Some(task), Some(gid)) = (executor.task.as_ref(), executor.session()) {
+            let ssn_ptr = self.storage.get_session_ptr(&gid.workspace, &gid.session)?;
             let task_ptr = self
                 .storage
-                .get_task_ptr(&executor.workspace, session, task)?;
+                .get_task_ptr(&gid.workspace, &gid.session, task)?;
             self.storage
                 .update_task_state(
                     ssn_ptr,
@@ -1085,10 +1080,7 @@ impl Controller {
                     )),
                 )
                 .await?;
-            let _ = self
-                .notifier
-                .tasks
-                .notify(&executor.workspace, session, task);
+            let _ = self.notifier.tasks.notify(&gid, task);
         }
 
         let state = executors::from(self.storage.clone(), exe_ptr)?;
@@ -1319,7 +1311,7 @@ mod tests {
         );
 
         controller
-            .create_task("default", "wake-session", None, None)
+            .create_task(&SessionGID::new("default", "wake-session"), None, None)
             .await
             .unwrap();
         tokio::time::timeout(
@@ -1335,7 +1327,10 @@ mod tests {
             .await
             .unwrap();
         let executor = controller
-            .create_executor("wake-node".to_string(), "default", "wake-session")
+            .create_executor(
+                "wake-node".to_string(),
+                &SessionGID::new("default", "wake-session"),
+            )
             .await
             .unwrap();
         assert!(
@@ -1357,7 +1352,10 @@ mod tests {
         .expect("newly Idle executor should wake scheduler");
 
         controller
-            .bind_session(executor.name.clone(), "default", "wake-session")
+            .bind_session(
+                executor.name.clone(),
+                &SessionGID::new("default", "wake-session"),
+            )
             .await
             .unwrap();
         controller
@@ -1399,12 +1397,12 @@ mod tests {
             .await
             .unwrap();
         let executor = controller
-            .create_executor("bind-node".to_string(), "default", ssn_id)
+            .create_executor("bind-node".to_string(), &SessionGID::new("default", ssn_id))
             .await
             .unwrap();
         controller.register_executor(&executor).await.unwrap();
         controller
-            .bind_session(executor.name.clone(), "default", ssn_id)
+            .bind_session(executor.name.clone(), &SessionGID::new("default", ssn_id))
             .await
             .unwrap();
         executor.name
@@ -1445,7 +1443,7 @@ mod tests {
             HashSet::from([bytes::Bytes::from_static(b"kv-cache-key")])
         );
         controller
-            .create_task("default", &ssn_id, None, None)
+            .create_task(&SessionGID::new("default", &ssn_id), None, None)
             .await
             .unwrap();
         controller
@@ -1528,7 +1526,10 @@ mod tests {
             )
             .await
             .unwrap();
-        controller.close_session("default", ssn_id).await.unwrap();
+        controller
+            .close_session(&SessionGID::new("default", ssn_id))
+            .await
+            .unwrap();
         controller
             .unbind_executor(executor_id.clone())
             .await
@@ -1582,7 +1583,7 @@ mod tests {
         };
         controller.create_session(attributes.clone()).await.unwrap();
         controller
-            .close_session("default", &attributes.name)
+            .close_session(&SessionGID::new("default", &attributes.name))
             .await
             .unwrap();
         controller
@@ -1601,15 +1602,14 @@ mod tests {
         ));
         assert!(matches!(
             controller
-                .open_session("default", &attributes.name, None)
+                .open_session(&SessionGID::new("default", &attributes.name), None)
                 .await,
             Err(FlameError::InvalidState(_))
         ));
         assert!(matches!(
             controller
                 .open_session(
-                    "default",
-                    "missing-disabled-session",
+                    &SessionGID::new("default", "missing-disabled-session"),
                     Some(SessionAttributes {
                         name: "missing-disabled-session".to_string(),
                         ..attributes
@@ -1658,7 +1658,9 @@ mod tests {
             assert_eq!(executor.session, None);
             assert_eq!(executor.task, None);
 
-            let session = controller.get_session("default", &ssn_id).unwrap();
+            let session = controller
+                .get_session(&SessionGID::new("default", &ssn_id))
+                .unwrap();
             assert_eq!(session.retry_count, 1);
             assert_eq!(
                 session
@@ -1687,7 +1689,7 @@ mod tests {
                 .await
                 .unwrap();
             controller
-                .bind_session(executor_id.clone(), "default", &ssn_id)
+                .bind_session(executor_id.clone(), &SessionGID::new("default", &ssn_id))
                 .await
                 .unwrap();
 
@@ -1697,13 +1699,15 @@ mod tests {
                 .await
                 .unwrap();
             controller
-                .bind_session(executor_id.clone(), "default", &ssn_id)
+                .bind_session(executor_id.clone(), &SessionGID::new("default", &ssn_id))
                 .await
                 .unwrap();
 
             fail_binding(&controller, &executor_id).await.unwrap();
 
-            let session = controller.get_session("default", &ssn_id).unwrap();
+            let session = controller
+                .get_session(&SessionGID::new("default", &ssn_id))
+                .unwrap();
             assert_eq!(session.retry_count, 3);
             assert_eq!(
                 session
@@ -1736,7 +1740,7 @@ mod tests {
                 .await
                 .unwrap();
             controller
-                .bind_session(executor_id.clone(), "default", &ssn_id)
+                .bind_session(executor_id.clone(), &SessionGID::new("default", &ssn_id))
                 .await
                 .unwrap();
 
@@ -1752,7 +1756,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            let session = controller.get_session("default", &ssn_id).unwrap();
+            let session = controller
+                .get_session(&SessionGID::new("default", &ssn_id))
+                .unwrap();
             assert_eq!(session.retry_count, 1);
             assert_eq!(
                 controller.get_executor(&executor_id).unwrap().state,
@@ -1804,7 +1810,10 @@ mod tests {
             let ssn_id = format!("closed-session-{}", Uuid::new_v4());
             let executor_id = create_binding_executor(&controller, &ssn_id).await;
 
-            controller.close_session("default", &ssn_id).await.unwrap();
+            controller
+                .close_session(&SessionGID::new("default", &ssn_id))
+                .await
+                .unwrap();
 
             let session = controller
                 .wait_for_session(executor_id.clone())
@@ -1834,8 +1843,14 @@ mod tests {
             let ssn_id = format!("missing-session-{}", Uuid::new_v4());
             let executor_id = create_binding_executor(&controller, &ssn_id).await;
 
-            controller.close_session("default", &ssn_id).await.unwrap();
-            controller.delete_session("default", &ssn_id).await.unwrap();
+            controller
+                .close_session(&SessionGID::new("default", &ssn_id))
+                .await
+                .unwrap();
+            controller
+                .delete_session(&SessionGID::new("default", &ssn_id))
+                .await
+                .unwrap();
 
             let session = controller
                 .wait_for_session(executor_id.clone())
@@ -1976,7 +1991,11 @@ mod tests {
                 .await
                 .unwrap();
             let task = controller
-                .create_task(&session.workspace, &session.name, None, None)
+                .create_task(
+                    &SessionGID::new(&session.workspace, &session.name),
+                    None,
+                    None,
+                )
                 .await
                 .unwrap();
             let session_ptr = storage
@@ -2005,7 +2024,10 @@ mod tests {
 
             assert_eq!(
                 controller
-                    .get_task(&session.workspace, &session.name, &task.name.to_string())
+                    .get_task(
+                        &SessionGID::new(&session.workspace, &session.name),
+                        &task.name.to_string()
+                    )
                     .unwrap()
                     .state,
                 TaskState::Failed

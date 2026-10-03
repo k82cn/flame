@@ -16,7 +16,13 @@ and initialization of a fresh installation with `default`. RPC references remain
 There is no ApplicationGID, SessionGID, or TaskGID string contract.
 Internally, `SessionGID { workspace, session }` and
 `ExecutorGID { workspace, executor }` are typed map keys for filesystem locks;
-`SessionGID` also keys event maps. They are not RPC references or metadata IDs.
+`SessionGID` also keys event maps and is passed through session-scoped helpers
+in the filesystem engine, event manager, and controller. They are not RPC
+references or metadata IDs.
+`TaskName` aliases the internal `u64` task name; `TaskFilter::session()` returns
+the scoped owner. `Executor::gid()` returns its `ExecutorGID`.
+`Session` and `SessionInfo` expose `gid()`; `Task`, `TaskInfo`, `Executor`, and
+`ExecutorInfo` expose `session()`. Executor variants return `None` when unbound.
 
 A Workspace is a namespace, not an access boundary. Any client that can
 reach the current API can name, list, or operate on any workspace under the

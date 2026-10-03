@@ -17,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, watch, Notify};
 use tokio::time::Duration;
 
+use common::apis::SessionGID;
 use common::FlameError;
 use stdng::{lock_ptr, MutexPtr};
 
@@ -44,13 +45,13 @@ impl WatchChannel {
 
 #[derive(Clone)]
 pub struct TaskNotifier {
-    channels: MutexPtr<HashMap<(String, String), broadcast::Sender<String>>>,
+    channels: MutexPtr<HashMap<SessionGID, broadcast::Sender<String>>>,
 }
 
 pub struct TaskSubscription {
     receiver: Option<broadcast::Receiver<String>>,
-    channels: MutexPtr<HashMap<(String, String), broadcast::Sender<String>>>,
-    session: (String, String),
+    channels: MutexPtr<HashMap<SessionGID, broadcast::Sender<String>>>,
+    session: SessionGID,
 }
 
 impl TaskSubscription {
@@ -93,13 +94,9 @@ impl TaskNotifier {
         }
     }
 
-    pub fn subscribe(
-        &self,
-        workspace: &str,
-        session: &str,
-    ) -> Result<TaskSubscription, FlameError> {
+    pub fn subscribe(&self, gid: &SessionGID) -> Result<TaskSubscription, FlameError> {
         let mut channels = lock_ptr!(self.channels)?;
-        let key = (workspace.to_string(), session.to_string());
+        let key = gid.clone();
         let sender = channels.entry(key.clone()).or_insert_with(|| {
             let (sender, _) = broadcast::channel(SESSION_TASK_UPDATE_CAPACITY);
             sender
@@ -111,17 +108,17 @@ impl TaskNotifier {
         })
     }
 
-    pub fn notify(&self, workspace: &str, session: &str, task: &str) -> Result<(), FlameError> {
+    pub fn notify(&self, gid: &SessionGID, task: &str) -> Result<(), FlameError> {
         let channels = lock_ptr!(self.channels)?;
-        if let Some(sender) = channels.get(&(workspace.to_string(), session.to_string())) {
+        if let Some(sender) = channels.get(gid) {
             let _ = sender.send(task.to_string());
         }
         Ok(())
     }
 
-    pub fn remove(&self, workspace: &str, session: &str) -> Result<(), FlameError> {
+    pub fn remove(&self, gid: &SessionGID) -> Result<(), FlameError> {
         let mut channels = lock_ptr!(self.channels)?;
-        channels.remove(&(workspace.to_string(), session.to_string()));
+        channels.remove(gid);
         Ok(())
     }
 }
@@ -251,16 +248,26 @@ mod tests {
         #[tokio::test]
         async fn same_session_names_in_different_workspaces_are_isolated() {
             let notifier = TaskNotifier::new();
-            let mut first = notifier.subscribe("first", "session").unwrap();
-            let mut second = notifier.subscribe("second", "session").unwrap();
-            notifier.notify("first", "session", "1").unwrap();
+            let mut first = notifier
+                .subscribe(&SessionGID::new("first", "session"))
+                .unwrap();
+            let mut second = notifier
+                .subscribe(&SessionGID::new("second", "session"))
+                .unwrap();
+            notifier
+                .notify(&SessionGID::new("first", "session"), "1")
+                .unwrap();
             assert_eq!(first.recv().await.unwrap(), "1");
             assert!(matches!(
                 second.try_recv(),
                 Err(broadcast::error::TryRecvError::Empty)
             ));
-            notifier.remove("first", "session").unwrap();
-            notifier.notify("second", "session", "2").unwrap();
+            notifier
+                .remove(&SessionGID::new("first", "session"))
+                .unwrap();
+            notifier
+                .notify(&SessionGID::new("second", "session"), "2")
+                .unwrap();
             assert_eq!(second.recv().await.unwrap(), "2");
         }
 
@@ -268,10 +275,16 @@ mod tests {
         async fn scheduler_subscribers_all_wake() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
-            let mut first = notifier.subscribe("default", &session).unwrap();
-            let mut second = notifier.subscribe("default", &session).unwrap();
+            let mut first = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
+            let mut second = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
 
-            notifier.notify("default", &session, "42").unwrap();
+            notifier
+                .notify(&SessionGID::new("default", &session), "42")
+                .unwrap();
             assert_eq!(first.recv().await.unwrap(), "42");
             assert_eq!(second.recv().await.unwrap(), "42");
         }
@@ -280,15 +293,21 @@ mod tests {
         fn task_watchers_share_one_channel_per_session() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
-            let first = notifier.subscribe("default", &session).unwrap();
-            let second = notifier.subscribe("default", &session).unwrap();
-            let other = notifier.subscribe("default", "session-2").unwrap();
+            let first = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
+            let second = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
+            let other = notifier
+                .subscribe(&SessionGID::new("default", "session-2"))
+                .unwrap();
 
             let channels = lock_ptr!(notifier.channels).unwrap();
             assert_eq!(channels.len(), 2);
             assert_eq!(
                 channels
-                    .get(&("default".to_string(), session.clone()))
+                    .get(&SessionGID::new("default", &session))
                     .unwrap()
                     .receiver_count(),
                 2
@@ -301,10 +320,16 @@ mod tests {
         async fn session_updates_include_task_ids_and_close_on_removal() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
-            let mut updates = notifier.subscribe("default", &session).unwrap();
+            let mut updates = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
 
-            notifier.notify("default", &session, "42").unwrap();
-            notifier.remove("default", &session).unwrap();
+            notifier
+                .notify(&SessionGID::new("default", &session), "42")
+                .unwrap();
+            notifier
+                .remove(&SessionGID::new("default", &session))
+                .unwrap();
             assert_eq!(updates.recv().await.unwrap(), "42");
             assert!(matches!(
                 updates.recv().await,
@@ -316,10 +341,14 @@ mod tests {
         async fn session_updates_report_lag_for_reconciliation() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
-            let mut updates = notifier.subscribe("default", &session).unwrap();
+            let mut updates = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
 
             for _ in 0..=SESSION_TASK_UPDATE_CAPACITY {
-                notifier.notify("default", &session, "42").unwrap();
+                notifier
+                    .notify(&SessionGID::new("default", &session), "42")
+                    .unwrap();
             }
             assert!(matches!(
                 updates.recv().await,
@@ -334,7 +363,7 @@ mod tests {
             let session = "session-1".to_string();
             for task_id in 1..=1000 {
                 notifier
-                    .notify("default", &session, &task_id.to_string())
+                    .notify(&SessionGID::new("default", &session), &task_id.to_string())
                     .unwrap();
             }
             assert!(lock_ptr!(notifier.channels).unwrap().is_empty());
@@ -344,41 +373,55 @@ mod tests {
         fn last_subscription_drop_releases_channel() {
             let notifier = TaskNotifier::new();
             let session = "invalid-session".to_string();
-            let first = notifier.subscribe("default", &session).unwrap();
-            let second = notifier.subscribe("default", &session).unwrap();
+            let first = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
+            let second = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
             drop(first);
             assert!(lock_ptr!(notifier.channels)
                 .unwrap()
-                .contains_key(&("default".to_string(), session.clone())));
+                .contains_key(&SessionGID::new("default", &session)));
             drop(second);
             assert!(!lock_ptr!(notifier.channels)
                 .unwrap()
-                .contains_key(&("default".to_string(), session.clone())));
+                .contains_key(&SessionGID::new("default", &session)));
         }
 
         #[test]
         fn old_subscription_cannot_remove_recreated_channel() {
             let notifier = TaskNotifier::new();
             let session = "recreated-session".to_string();
-            let old = notifier.subscribe("default", &session).unwrap();
-            notifier.remove("default", &session).unwrap();
-            let current = notifier.subscribe("default", &session).unwrap();
+            let old = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
+            notifier
+                .remove(&SessionGID::new("default", &session))
+                .unwrap();
+            let current = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
             drop(old);
             assert!(lock_ptr!(notifier.channels)
                 .unwrap()
-                .contains_key(&("default".to_string(), session.clone())));
+                .contains_key(&SessionGID::new("default", &session)));
             drop(current);
             assert!(!lock_ptr!(notifier.channels)
                 .unwrap()
-                .contains_key(&("default".to_string(), session.clone())));
+                .contains_key(&SessionGID::new("default", &session)));
         }
 
         #[tokio::test]
         async fn removing_session_closes_its_update_stream() {
             let notifier = TaskNotifier::new();
             let session = "session-1".to_string();
-            let mut updates = notifier.subscribe("default", &session).unwrap();
-            notifier.remove("default", &session).unwrap();
+            let mut updates = notifier
+                .subscribe(&SessionGID::new("default", &session))
+                .unwrap();
+            notifier
+                .remove(&SessionGID::new("default", &session))
+                .unwrap();
             assert!(matches!(
                 updates.recv().await,
                 Err(broadcast::error::RecvError::Closed)
@@ -439,7 +482,10 @@ mod tests {
         fn test_new_creates_empty_notifiers() {
             let manager = NotifyManager::new();
 
-            manager.tasks.subscribe("default", "session-1").unwrap();
+            manager
+                .tasks
+                .subscribe(&SessionGID::new("default", "session-1"))
+                .unwrap();
             manager.executors.subscribe("executor-1").unwrap();
         }
 

@@ -83,17 +83,18 @@ impl FsEventManager {
         })
     }
 
-    fn event_path(&self, workspace: &str, session: &str) -> PathBuf {
+    fn event_path(&self, session: &SessionGID) -> PathBuf {
         self.storage_path
-            .join(workspace)
-            .join(session)
+            .join(&session.workspace)
+            .join(&session.session)
             .join("events.jsonl")
     }
 }
 
 impl EventManager for FsEventManager {
     fn record_event(&self, owner: EventOwner, event: Event) -> Result<(), FlameError> {
-        let path = self.event_path(&owner.workspace, &owner.session);
+        let session = SessionGID::new(&owner.workspace, &owner.session);
+        let path = self.event_path(&session);
         let record = EventRecord {
             task: owner.task.clone(),
             code: event.code,
@@ -134,13 +135,16 @@ impl EventManager for FsEventManager {
             .collect()
     }
 
-    fn remove_events(&self, workspace: &str, session: &str) -> Result<(), FlameError> {
+    fn remove_events(&self, session: &SessionGID) -> Result<(), FlameError> {
         let mut events = lock_ptr!(self.events)?;
-        let path = self.storage_path.join(workspace).join(session);
+        let path = self
+            .storage_path
+            .join(&session.workspace)
+            .join(&session.session);
         if path.exists() {
             fs::remove_dir_all(path)?;
         }
-        events.remove(&SessionGID::new(workspace, session));
+        events.remove(session);
         Ok(())
     }
 
