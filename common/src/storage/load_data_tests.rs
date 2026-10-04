@@ -119,7 +119,16 @@ mod tests {
         tokio_test::block_on(engine.create_executor(&idle_executor))?;
 
         let ctx = create_test_context(&url);
-        let storage = tokio_test::block_on(crate::storage::new_ptr(&ctx))?;
+        let events = tempfile::TempDir::new()?;
+        let event_manager = || -> crate::events::EventManagerPtr {
+            std::sync::Arc::new(
+                crate::events::FsEventManager::new(events.path().to_str().unwrap()).unwrap(),
+            )
+        };
+        let storage = tokio_test::block_on(crate::storage::new_ptr_with_event_manager(
+            &ctx,
+            event_manager(),
+        ))?;
         tokio_test::block_on(storage.load_data())?;
 
         let executors = storage.list_executors(None)?;
@@ -206,7 +215,16 @@ mod tests {
         }
 
         let ctx = create_test_context(&url);
-        let storage = tokio_test::block_on(crate::storage::new_ptr(&ctx))?;
+        let events = tempfile::TempDir::new()?;
+        let event_manager = || -> crate::events::EventManagerPtr {
+            std::sync::Arc::new(
+                crate::events::FsEventManager::new(events.path().to_str().unwrap()).unwrap(),
+            )
+        };
+        let storage = tokio_test::block_on(crate::storage::new_ptr_with_event_manager(
+            &ctx,
+            event_manager(),
+        ))?;
         tokio_test::block_on(storage.load_data())?;
 
         let executors = storage.list_executors(None)?;
@@ -229,7 +247,13 @@ mod tests {
     async fn load_data_restores_pending_task_affinity() -> Result<(), FlameError> {
         let url = crate::temp_sqlite_url("flame_test_load_data_affinity");
         let ctx = create_test_context(&url);
-        let storage = crate::storage::new_ptr(&ctx).await?;
+        let events = tempfile::TempDir::new()?;
+        let event_manager = || -> crate::events::EventManagerPtr {
+            std::sync::Arc::new(
+                crate::events::FsEventManager::new(events.path().to_str().unwrap()).unwrap(),
+            )
+        };
+        let storage = crate::storage::new_ptr_with_event_manager(&ctx, event_manager()).await?;
         storage
             .register_application(
                 "default".to_string(),
@@ -260,7 +284,7 @@ mod tests {
         }
         drop(storage);
 
-        let recovered = crate::storage::new_ptr(&ctx).await?;
+        let recovered = crate::storage::new_ptr_with_event_manager(&ctx, event_manager()).await?;
         recovered.load_data().await?;
         let session = recovered.get_session_ptr("default", "affinity-session")?;
         let session = lock_ptr!(session)?;

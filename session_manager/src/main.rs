@@ -24,7 +24,25 @@ mod model;
 mod notify;
 mod provider;
 mod scheduler;
+#[cfg(not(test))]
 use common::storage;
+
+#[cfg(test)]
+mod storage {
+    pub use common::storage::*;
+
+    // State-machine and scheduler fixtures retain SQLite persistence but each
+    // store owns its events instead of sharing the process working directory.
+    pub async fn new_ptr(
+        config: &common::ctx::FlameClusterContext,
+    ) -> Result<StoragePtr, common::FlameError> {
+        common::storage::new_ptr_with_event_manager(
+            config,
+            std::sync::Arc::new(common::events::MemoryEventManager::new()),
+        )
+        .await
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "flame-session-manager")]

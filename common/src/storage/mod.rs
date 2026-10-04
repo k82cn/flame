@@ -76,6 +76,14 @@ pub async fn new_ptr(config: &FlameClusterContext) -> Result<StoragePtr, FlameEr
         Arc::new(FsEventManager::new(&events_path)?)
     };
 
+    new_ptr_with_event_manager(config, event_manager).await
+}
+
+/// Construct a store with an independently managed event backend.
+pub async fn new_ptr_with_event_manager(
+    config: &FlameClusterContext,
+    event_manager: EventManagerPtr,
+) -> Result<StoragePtr, FlameError> {
     let engine = engine::connect(&config.cluster.storage).await?;
     let workspaces = engine
         .list_workspaces()
