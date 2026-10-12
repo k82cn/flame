@@ -253,8 +253,8 @@ Client                    ConnectionManager              Controller
   │                              │   (timer expires)        │
   │                              │── close() ──────────────>│
   │                              │   (removes connection)   │── on_closed()
-  │                              │                           │── node → NotReady
-  │                              │                           │── cleanup executors
+  │                              │                           │── node stays Unknown
+  │                              │                           │── executors are kept
 ```
 
 ## Configuration
@@ -269,7 +269,13 @@ The connection callbacks integrate with the existing node state machine:
 |-----------------|----------------------|
 | `on_connected`  | → Ready              |
 | `on_draining`   | → Unknown            |
-| `on_closed`     | → NotReady + cleanup |
+| `on_closed`     | stays Unknown; node and executors are kept |
+
+A node whose drain timer expired is not removed and its executors are not
+cleaned up: they may still be running, so the site admin handles them. When the
+node registers again, `register_node` follows the usual reconciliation (the node
+becomes Ready, executors it no longer reports are released, and executors the
+Session Manager does not know are sent a release).
 
 ## Error Handling
 

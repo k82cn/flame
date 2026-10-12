@@ -79,14 +79,13 @@ impl ConnectionCallbacks for NodeCallbacks {
     async fn on_closed(&self, node_name: &str) -> Result<(), FlameError> {
         trace_fn!("NodeCallbacks::on_closed");
 
-        // Shutdown node via state machine (Unknown -> NotReady)
-        // The shutdown() method handles executor cleanup
-        if let Ok(node_ptr) = self.storage.get_node_ptr(node_name) {
-            let state = nodes::from(self.storage.clone(), node_ptr)?;
-            state.shutdown().await?;
-        }
-
-        tracing::info!("Node <{}> connection closed", node_name);
+        // The node stays Unknown and keeps its executors: they may still be
+        // running, so the site admin decides whether to remove them. If the node
+        // registers again, register_node reconciles its executors as usual.
+        tracing::warn!(
+            "Node <{}> connection closed after the drain timeout; keeping the node and its executors for the site admin",
+            node_name
+        );
         Ok(())
     }
 }
@@ -324,7 +323,8 @@ impl Controller {
     /// This handles the full drain lifecycle:
     /// 1. Drains via ConnectionManager (triggers on_draining callback)
     /// 2. Starts drain timer
-    /// 3. When timer expires, on_closed callback shuts down the node
+    /// 3. When timer expires, on_closed closes the connection; the node and its
+    ///    executors are kept (the site admin handles them)
     pub async fn drain_node(&self, node_name: &str) -> Result<(), FlameError> {
         trace_fn!("Controller::drain_node");
 
@@ -2044,6 +2044,38 @@ mod tests {
             // Node should be back to Ready
             let stored_node = storage.get_node("drain-reconnect-node").unwrap().unwrap();
             assert_eq!(stored_node.state, NodeState::Ready);
+        }
+
+        #[tokio::test]
+        async fn test_drain_timeout_keeps_unknown_node_and_executors_until_reregistered() {
+            let controller = new_ptr(create_test_storage().await);
+            let executor_id = create_binding_executor(&controller, "keep-unknown").await;
+            let node = create_test_node("bind-node");
+            let storage = controller.storage().clone();
+            storage
+                .update_node_state("bind-node", NodeState::Unknown)
+                .await
+                .unwrap();
+
+            // The drain timer expired: the connection closes, nothing is removed.
+            NodeCallbacks {
+                storage: storage.clone(),
+            }
+            .on_closed("bind-node")
+            .await
+            .unwrap();
+            let stored = storage.get_node("bind-node").unwrap().unwrap();
+            assert_eq!(stored.state, NodeState::Unknown);
+            let executor = controller.get_executor(executor_id.clone()).unwrap();
+            assert_eq!(executor.state, ExecutorState::Binding);
+
+            // Registering again follows the usual reconciliation: the node is
+            // Ready and the executor it no longer reports is released.
+            controller.register_node(&node, &[]).await.unwrap();
+            let stored = storage.get_node("bind-node").unwrap().unwrap();
+            assert_eq!(stored.state, NodeState::Ready);
+            let executor = controller.get_executor(executor_id).unwrap();
+            assert_eq!(executor.state, ExecutorState::Releasing);
         }
 
         #[tokio::test]

@@ -16,7 +16,8 @@ limitations under the License.
 //! State transitions:
 //! - Unknown -> Ready (on register/reconnect)
 //! - Ready -> Unknown (on drain - cleanup timer starts)
-//! - Unknown -> NotReady (on shutdown after cleanup timeout)
+//! - Unknown -> NotReady (on explicit shutdown; the drain timeout does not shut a
+//!   node down, so its executors are kept for the site admin)
 //! - NotReady -> Ready (on reconnect after shutdown)
 
 use std::sync::Arc;
