@@ -16,6 +16,7 @@
 ```sh
 flame-test e2e tests/test_session.py
 flame-test perf core
+flame-test perf cache
 PROFILE=smoke flame-test stress
 DURATION=8h flame-test longevity
 flame-test bench -s 4 -t 10000 -n 3

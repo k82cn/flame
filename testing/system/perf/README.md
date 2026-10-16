@@ -32,3 +32,24 @@ and every executor to reach `Released`, so a prior suite's retained executors
 do not consume the next suite's capacity. The wait uses `flmctl list -s -o json`
 and `flmctl list -e -o json`, parsed with `jq`. JSON output is available for
 every `flmctl list` and `view` resource.
+
+## Object cache
+
+`cache.py` reproduces the weight-sync pattern of an RL training loop against the
+object cache. Each step publishes a new version of a model as `SHARDS` objects of
+`SHARD_MB` MiB, then `READERS` `flamepy.app` executors each load every shard, and the
+previous version is deleted. Executors check the SHA-256 of every shard, so wrong or
+stale data fails the run. The report gives publish time and throughput, per-reader load
+time (min/p50/max), the fan-out wall time, and aggregate read throughput; it sets no
+threshold.
+
+```sh
+cd testing/system/perf
+python3 cache.py                                          # 4 x 256 MiB, 4 readers, 3 steps
+SHARDS=12 SHARD_MB=512 READERS=4 python3 cache.py         # 6 GiB checkpoint (Search-R1 demo)
+flame-test perf cache
+```
+
+The client needs memory for one full version (`SHARDS x SHARD_MB`); each executor holds
+one shard at a time. It is not part of the CI jobs: use it before and after cache changes
+(see RFE585) on a cluster sized for the checkpoint.

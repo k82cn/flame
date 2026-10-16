@@ -9,7 +9,7 @@ usage() {
 usage: flame-test <suite> [options]
 
   e2e [pytest args]   end-to-end tests (pytest)
-  perf core|app       performance benchmarks
+  perf core|app|cache performance benchmarks (cache: SHARDS, SHARD_MB, READERS, STEPS)
   stress              flmbench stress ladder (PROFILE=smoke|default|heavy)
   stress py [pytest args]     Python stress cases (session API and flamepy.app)
   longevity           flmbench sustained load (DURATION=1h SESSIONS=10 TASKS=3000)
