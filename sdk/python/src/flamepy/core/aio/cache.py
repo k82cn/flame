@@ -17,11 +17,12 @@ namespace. Channels are owned by the event loop that created them.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import tempfile
 import threading
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Awaitable, Iterable, List, Optional
 from urllib.parse import urlparse
 
 import grpc
@@ -50,11 +51,15 @@ if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_reset_clients_after_fork)
 
 
-def _create_client(location: str, tls_config: Optional[FlameClientTls], target: Optional[str]):
+def _create_client(location: str, tls_config: Optional[FlameClientTls], target: Optional[str], *, dedicated: bool = False):
     parsed = urlparse(location)
     if parsed.scheme not in ("grpc", "grpcs", "grpc+tls", "grpcs-proxy") or not parsed.netloc:
         raise ValueError(f"Invalid object cache endpoint: {location}")
     options = list(common.GRPC_OPTIONS)
+    if dedicated:
+        # Without a local subchannel pool, channels to one target share a TCP
+        # connection, which would defeat per-part channels.
+        options.append(("grpc.use_local_subchannel_pool", 1))
     if parsed.scheme in ("grpcs", "grpc+tls", "grpcs-proxy"):
         if tls_config is not None:
             tls_config.validate_identity()
@@ -108,6 +113,29 @@ def _get_client(endpoint: str, tls_config: Optional[FlameClientTls] = None):
         return pool[key][1]
 
 
+@contextlib.asynccontextmanager
+async def _dedicated_client(endpoint: str, tls_config: Optional[FlameClientTls]):
+    """A client on its own channel and connection, closed on exit."""
+    location, target = common._resolve_cache_endpoint(endpoint)
+    channel, stub = _create_client(location, tls_config, target, dedicated=True)
+    try:
+        yield stub
+    finally:
+        await channel.close()
+
+
+async def _gather_or_cancel(coroutines: Iterable[Awaitable[Any]]) -> None:
+    """Run coroutines concurrently; on the first failure cancel and await the rest."""
+    tasks = [asyncio.ensure_future(coroutine) for coroutine in coroutines]
+    try:
+        await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
 async def close() -> None:
     """Close this event loop's cache channels before the loop stops."""
     with _clients_lock:
@@ -131,9 +159,18 @@ def _configured_endpoint():
     return endpoint, tls
 
 
-async def _write_remote(client: Any, key: str, data_type: str, chunks: AsyncIterator[bytes], *, patch: bool = False, timeout: Optional[int] = None) -> ObjectRef:
+async def _write_remote(
+    client: Any,
+    key: str,
+    data_type: str,
+    chunks: AsyncIterator[bytes],
+    *,
+    patch: bool = False,
+    timeout: Optional[int] = None,
+) -> ObjectRef:
     async def requests():
-        yield cache_pb2.CacheWriteRequest(header=cache_pb2.CacheWriteHeader(key=key, data_type=data_type))
+        header = cache_pb2.CacheWriteHeader(key=key, data_type=data_type)
+        yield cache_pb2.CacheWriteRequest(header=header)
         async for chunk in chunks:
             yield cache_pb2.CacheWriteRequest(data=chunk)
 
@@ -142,16 +179,68 @@ async def _write_remote(client: Any, key: str, data_type: str, chunks: AsyncIter
     return ObjectRef(endpoint=metadata.endpoint, key=metadata.key, version=metadata.version)
 
 
-async def _byte_chunks(data: bytes):
-    for start in range(0, len(data), common._UPLOAD_CHUNK_SIZE):
-        yield data[start : start + common._UPLOAD_CHUNK_SIZE]
+async def _byte_chunks(data: Any):
+    view = memoryview(data)
+    for start in range(0, len(view), common._UPLOAD_CHUNK_SIZE):
+        yield view[start : start + common._UPLOAD_CHUNK_SIZE].tobytes()
 
 
-async def put_object(key_prefix: str, obj: Any) -> ObjectRef:
+async def _delete_refs(refs: List[ObjectRef], tls: Optional[FlameClientTls], parallelism: int) -> None:
+    """Delete objects by full key, each on its own owner over its own channel."""
+    semaphore = asyncio.Semaphore(parallelism)
+
+    async def delete(ref: ObjectRef) -> None:
+        async with semaphore:
+            async with _dedicated_client(ref.endpoint, tls) as client:
+                await client.Delete(cache_pb2.CacheDeleteRequest(key=ref.key))
+
+    await _gather_or_cancel(delete(ref) for ref in refs)
+
+
+async def _put_multipart(prefix: str, data_type: str, data: bytes, endpoint: str, tls: Optional[FlameClientTls], part_size: int, parallelism: int) -> ObjectRef:
+    """Write parts concurrently, each on its own channel, then the manifest last."""
+    view = memoryview(data)
+    ranges = common._part_ranges(len(view), part_size)
+    refs: List[Optional[ObjectRef]] = [None] * len(ranges)
+    semaphore = asyncio.Semaphore(parallelism)
+
+    async def write_part(index: int) -> None:
+        start, end = ranges[index]
+        async with semaphore:
+            async with _dedicated_client(endpoint, tls) as client:
+                refs[index] = await _write_remote(client, prefix, common._TYPE_RAW, _byte_chunks(view[start:end]))
+
+    try:
+        await _gather_or_cancel(write_part(index) for index in range(len(ranges)))
+        manifest = common._encode_manifest(data_type, len(view), [(ref, end - start) for ref, (start, end) in zip(refs, ranges)])
+        return await _write_remote(_get_client(endpoint, tls), prefix, common._TYPE_MULTIPART, _byte_chunks(manifest))
+    except BaseException:
+        # Parts without a manifest are unreachable; do not leave them behind.
+        written = [ref for ref in refs if ref is not None]
+        try:
+            await _delete_refs(written, tls, parallelism)
+        except Exception as exc:
+            logger.warning("put_object: failed to clean up %d parts: %s", len(written), exc)
+        raise
+
+
+async def put_object(
+    key_prefix: str,
+    obj: Any,
+    *,
+    part_size: Optional[int] = None,
+    parallelism: int = common._MULTIPART_PARALLELISM,
+) -> ObjectRef:
     object_key = ObjectKey.from_prefix(key_prefix)
+    part_size = common._MULTIPART_PART_SIZE if part_size is None else part_size
+    if part_size <= 0 or parallelism <= 0:
+        raise ValueError("part_size and parallelism must be positive")
     endpoint, tls = _configured_endpoint()
     data_type, data = await asyncio.to_thread(common._encode_object_data, obj)
-    ref = await _write_remote(_get_client(endpoint, tls), object_key.to_prefix(), data_type, _byte_chunks(data))
+    if len(data) > part_size:
+        ref = await _put_multipart(object_key.to_prefix(), data_type, data, endpoint, tls, part_size, parallelism)
+    else:
+        ref = await _write_remote(_get_client(endpoint, tls), object_key.to_prefix(), data_type, _byte_chunks(data))
     logger.debug("put_object: key=%s, version=%s", ref.key, ref.version)
     return ref
 
@@ -213,9 +302,62 @@ def _decode_parts(header: Any, parts: list) -> Optional[FetchResult]:
     return FetchResult(mode=mode, version=header.version, base=base, patches=patches)
 
 
+async def _read_part_into(responses: Any, view: memoryview, expected_version: int) -> None:
+    """Stream one part into `view`, which must be exactly the part's size."""
+    offset = 0
+    header = None
+    async for response in responses:
+        payload = response.WhichOneof("payload")
+        if header is None:
+            if payload != "header":
+                raise ValueError("Cache Get must start with a header")
+            header = response.header
+            if header.mode != cache_pb2.CACHE_GET_MODE_FULL or header.version != expected_version:
+                raise ValueError(f"Multipart part changed: expected full version {expected_version}, got mode {header.mode} version {header.version}")
+            continue
+        if payload != "chunk" or response.chunk.kind != cache_pb2.CACHE_CHUNK_KIND_BASE:
+            raise ValueError("Multipart part must consist of base chunks only")
+        end = offset + len(response.chunk.data)
+        if end > len(view):
+            raise ValueError(f"Multipart part is larger than the {len(view)} bytes in the manifest")
+        view[offset:end] = response.chunk.data
+        offset = end
+    if header is None:
+        raise ValueError("Cache Get returned no header")
+    if offset != len(view):
+        raise ValueError(f"Multipart part is {offset} bytes, manifest says {len(view)}")
+
+
+async def _assemble_multipart(header: Any, parts: list, tls: Optional[FlameClientTls], parallelism: int = common._MULTIPART_PARALLELISM) -> tuple[Any, list]:
+    """Fetch a manifest's parts into one pre-sized buffer and describe it as a plain full object."""
+    if header.mode != cache_pb2.CACHE_GET_MODE_FULL or len(parts) != 1 or parts[0][0] != cache_pb2.CACHE_CHUNK_KIND_BASE:
+        raise ValueError("A multipart manifest must be a full object without patches")
+    data_type, total_size, entries = common._decode_manifest(parts[0][2])
+    buffer = bytearray(total_size)
+    view = memoryview(buffer)
+    semaphore = asyncio.Semaphore(parallelism)
+
+    async def fetch_part(ref: ObjectRef, start: int, size: int) -> None:
+        async with semaphore:
+            async with _dedicated_client(ref.endpoint, tls) as client:
+                await _read_part_into(client.Get(cache_pb2.CacheGetRequest(key=ref.key, client_version=0)), view[start : start + size], ref.version)
+
+    start = 0
+    jobs = []
+    for ref, size in entries:
+        jobs.append(fetch_part(ref, start, size))
+        start += size
+    await _gather_or_cancel(jobs)
+    full = cache_pb2.CacheGetHeader(mode=cache_pb2.CACHE_GET_MODE_FULL, version=header.version, data_type=data_type)
+    return full, [(cache_pb2.CACHE_CHUNK_KIND_BASE, header.version, buffer)]
+
+
 async def _fetch_object_data(ref: ObjectRef, cached_version: int) -> Optional[FetchResult]:
-    client = _get_client(ref.endpoint, common._get_cache_tls_config())
+    tls = common._get_cache_tls_config()
+    client = _get_client(ref.endpoint, tls)
     header, parts = await _read_get_parts(client.Get(cache_pb2.CacheGetRequest(key=ref.key, client_version=cached_version)))
+    if header.data_type == common._TYPE_MULTIPART:
+        header, parts = await _assemble_multipart(header, parts, tls)
     return await asyncio.to_thread(_decode_parts, header, parts)
 
 
@@ -253,16 +395,29 @@ async def get_object(ref: Ref, deserializer: Optional[Deserializer] = None) -> A
 
 async def update_object(ref: ObjectRef, new_obj: Any) -> ObjectRef:
     ObjectKey.from_key(ref.key)
+    client = _get_client(ref.endpoint, common._get_cache_tls_config())
+    try:
+        metadata = await client.GetMetadata(cache_pb2.CacheGetMetadataRequest(key=ref.key))
+        _reject_multipart(metadata.data_type, ref.key, "update")
+    except grpc.aio.AioRpcError as exc:
+        if exc.code() != grpc.StatusCode.NOT_FOUND:
+            raise
     data_type, data = await asyncio.to_thread(common._encode_object_data, new_obj)
-    updated = await _write_remote(_get_client(ref.endpoint, common._get_cache_tls_config()), ref.key, data_type, _byte_chunks(data))
+    updated = await _write_remote(client, ref.key, data_type, _byte_chunks(data))
     common._cache_remove((ref.endpoint, ref.key))
     return updated
+
+
+def _reject_multipart(data_type: str, key: str, operation: str) -> None:
+    if data_type == common._TYPE_MULTIPART:
+        raise ValueError(f"Cannot {operation} multipart object {key}: its parts would be orphaned or corrupted; delete it and put a new object")
 
 
 async def patch_object(ref: ObjectRef, delta: Any) -> ObjectRef:
     ObjectKey.from_key(ref.key)
     client = _get_client(ref.endpoint, common._get_cache_tls_config())
     metadata = await client.GetMetadata(cache_pb2.CacheGetMetadataRequest(key=ref.key))
+    _reject_multipart(metadata.data_type, ref.key, "patch")
     stored_type, compression = common._type_and_compression(metadata.data_type)
     data_type, data = await asyncio.to_thread(common._serialize_object_data, delta)
     if data_type != stored_type:
@@ -273,10 +428,31 @@ async def patch_object(ref: ObjectRef, delta: Any) -> ObjectRef:
     return updated
 
 
+async def _delete_multipart_parts(client: Any, object_key: ObjectKey, tls: Optional[FlameClientTls]) -> None:
+    """Deleting a manifest by key also deletes its parts, which may live on other instances.
+
+    Deleting a prefix needs no such step: the parts share it.
+    """
+    try:
+        metadata = await client.GetMetadata(cache_pb2.CacheGetMetadataRequest(key=str(object_key)))
+    except grpc.aio.AioRpcError as exc:
+        if exc.code() == grpc.StatusCode.NOT_FOUND:
+            return
+        raise
+    if metadata.data_type != common._TYPE_MULTIPART:
+        return
+    _, parts = await _read_get_parts(client.Get(cache_pb2.CacheGetRequest(key=str(object_key), client_version=0)))
+    _, _, entries = common._decode_manifest(parts[0][2])
+    await _delete_refs([ref for ref, _ in entries], tls, common._MULTIPART_PARALLELISM)
+
+
 async def delete_objects(key_prefix: str) -> None:
     object_key = ObjectKey.from_path(key_prefix)
     endpoint, tls = _configured_endpoint()
-    await _get_client(endpoint, tls).Delete(cache_pb2.CacheDeleteRequest(key=str(object_key)))
+    client = _get_client(endpoint, tls)
+    if object_key.object_id is not None:
+        await _delete_multipart_parts(client, object_key, tls)
+    await client.Delete(cache_pb2.CacheDeleteRequest(key=str(object_key)))
     common._cache_remove_matching(object_key)
 
 

@@ -41,6 +41,9 @@ _TYPE_ARROW_BATCH = "arrow.record_batch"
 _TYPE_PANDAS_DATAFRAME = "pandas.dataframe"
 _TYPE_POLARS_DATAFRAME = "polars.dataframe"
 _TYPE_RAW = "raw"
+# A manifest object: the payload is a list of part references, not user data.
+_TYPE_MULTIPART = "flame/multipart"
+_MANIFEST_FORMAT = 1
 _COMPRESSION_NONE = "none"
 _COMPRESSION_ZSTD = "zstd"
 _ZSTD_OBJECT_TYPES = {
@@ -572,6 +575,10 @@ def _validate_proxy_endpoint(endpoint: str) -> None:
 GRPC_OPTIONS = [
     ("grpc.max_send_message_length", -1),
     ("grpc.max_receive_message_length", -1),
+    # Larger flow-control and write buffers keep a single stream from stalling
+    # on window updates; chunks are 4 MiB.
+    ("grpc.http2.lookahead_bytes", 16 * 1024 * 1024),
+    ("grpc.http2.write_buffer_size", 16 * 1024 * 1024),
 ]
 
 
@@ -609,7 +616,43 @@ def _resolve_cache_endpoint(endpoint: str) -> tuple[str, Optional[str]]:
     return endpoint, None
 
 
-_UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
+_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024  # 4 MiB; the server rejects larger write chunks
+
+# Payloads larger than the part size are stored as parts plus a manifest.
+_MULTIPART_PART_SIZE = 64 * 1024 * 1024
+_MULTIPART_PARALLELISM = 8
+
+
+def _part_ranges(total_size: int, part_size: int) -> List[tuple[int, int]]:
+    """Split [0, total_size) into consecutive (start, end) ranges of at most part_size."""
+    return [(start, min(start + part_size, total_size)) for start in range(0, total_size, part_size)]
+
+
+def _encode_manifest(data_type: str, total_size: int, parts: List[tuple[ObjectRef, int]]) -> bytes:
+    """Encode the manifest of a multipart object; `parts` are (reference, size) in order."""
+    return bson.encode(
+        {
+            "format": _MANIFEST_FORMAT,
+            "data_type": data_type,
+            "size": total_size,
+            "parts": [{"endpoint": ref.endpoint, "key": ref.key, "version": ref.version, "size": size} for ref, size in parts],
+        }
+    )
+
+
+def _decode_manifest(data: bytes) -> tuple[str, int, List[tuple[ObjectRef, int]]]:
+    """Decode a manifest into (data_type, total_size, [(part reference, part size)])."""
+    try:
+        manifest = bson.decode(bytes(data))
+        if manifest["format"] != _MANIFEST_FORMAT:
+            raise ValueError(f"unsupported manifest format {manifest['format']}")
+        parts = [(ObjectRef(endpoint=part["endpoint"], key=part["key"], version=part["version"]), int(part["size"])) for part in manifest["parts"]]
+        data_type, total_size = manifest["data_type"], int(manifest["size"])
+    except Exception as exc:  # bson raises its own error types for malformed input
+        raise ValueError(f"Invalid multipart manifest: {exc}") from exc
+    if sum(size for _, size in parts) != total_size:
+        raise ValueError("Invalid multipart manifest: part sizes do not add up to the object size")
+    return data_type, total_size, parts
 
 
 def _get_cache_tls_config() -> Optional[FlameClientTls]:
@@ -682,11 +725,24 @@ def _close_aio_bridge() -> None:
 atexit.register(_close_aio_bridge)
 
 
-def put_object(key_prefix: str, obj: Any) -> ObjectRef:
-    return _call_aio_cache("put_object", key_prefix, obj)
+def put_object(
+    key_prefix: str,
+    obj: Any,
+    *,
+    part_size: Optional[int] = None,
+    parallelism: int = _MULTIPART_PARALLELISM,
+) -> ObjectRef:
+    """Store an object and return its reference.
+
+    A payload larger than part_size (default 64 MiB) is stored as parts, written
+    in parallel over separate channels, plus a manifest; the returned reference
+    is the manifest's.
+    """
+    return _call_aio_cache("put_object", key_prefix, obj, part_size=part_size, parallelism=parallelism)
 
 
 def get_object(ref: Ref, deserializer: Optional[Deserializer] = None) -> Any:
+    """Fetch an object; multipart objects are reassembled transparently."""
     if isinstance(ref, ValueRef):
         return ref.value if deserializer is None else deserializer(ref.value, [])
     if not isinstance(ref, ObjectRef):

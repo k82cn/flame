@@ -11,8 +11,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import hashlib
+import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
@@ -20,7 +23,7 @@ import flamepy.core.cache as cache_module
 import grpc
 import pyarrow as pa
 import pytest
-from flamepy.core import FlameContext, ObjectRef, get_object, patch_object, put_object, update_object
+from flamepy.core import FlameContext, ObjectRef, delete_objects, get_object, patch_object, put_object, update_object
 from flamepy.proto import cache_pb2, cache_pb2_grpc
 
 
@@ -802,3 +805,79 @@ class TestCachePressureDataIntegrity:
         for marker in markers:
             retrieved = get_object(refs[marker])
             assert retrieved["marker"] == marker, f"Object {marker} data mismatch"
+
+
+# ============================================================================
+# Multipart Object Tests
+# ============================================================================
+
+MULTIPART_PART_SIZE = 4 * 1024 * 1024
+
+
+def _multipart_ref(size_mb: int) -> tuple[ObjectRef, bytes]:
+    """Put an incompressible payload several parts long and return its reference."""
+    payload = os.urandom(size_mb * 1024 * 1024)
+    ref = put_object(f"test-app/test-multipart-{uuid.uuid4().hex[:8]}", payload, part_size=MULTIPART_PART_SIZE)
+    return ref, payload
+
+
+def test_large_object_round_trip_above_part_size():
+    """An object above part_size is stored as parts plus a manifest and reads back intact."""
+    ref, payload = _multipart_ref(24)
+    try:
+        assert _remote_metadata(ref).data_type == "flame/multipart"
+
+        result = get_object(ref)
+        assert len(result) == len(payload)
+        assert hashlib.sha256(result).digest() == hashlib.sha256(payload).digest()
+    finally:
+        delete_objects(ref.key)
+
+
+def test_small_object_with_part_size_stays_single_object():
+    """A payload at or below part_size is written as an ordinary object."""
+    ref = put_object(f"test-app/test-multipart-{uuid.uuid4().hex[:8]}", b"small", part_size=MULTIPART_PART_SIZE)
+    try:
+        assert _remote_metadata(ref).data_type != "flame/multipart"
+        assert get_object(ref) == b"small"
+    finally:
+        delete_objects(ref.key)
+
+
+def test_multipart_concurrent_readers():
+    """Several readers assemble the same multipart object at once."""
+    ref, payload = _multipart_ref(24)
+    expected = hashlib.sha256(payload).digest()
+    try:
+        # Version 0 forces every reader to download instead of sharing the SDK cache.
+        fresh = ObjectRef(endpoint=ref.endpoint, key=ref.key, version=0)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            digests = list(pool.map(lambda _: hashlib.sha256(get_object(fresh)).digest(), range(4)))
+        assert digests == [expected] * 4
+    finally:
+        delete_objects(ref.key)
+
+
+def test_multipart_rejects_patch_and_update():
+    """Parts cannot be patched or updated in place."""
+    ref, _ = _multipart_ref(12)
+    try:
+        with pytest.raises(ValueError, match="multipart"):
+            patch_object(ref, b"delta")
+        with pytest.raises(ValueError, match="multipart"):
+            update_object(ref, b"new")
+    finally:
+        delete_objects(ref.key)
+
+
+def test_multipart_delete_by_manifest_key_removes_parts():
+    """Deleting the manifest by its full key also deletes the parts."""
+    ref, _ = _multipart_ref(12)
+    delete_objects(ref.key)
+
+    with pytest.raises(Exception):
+        get_object(ObjectRef(endpoint=ref.endpoint, key=ref.key, version=0))
+    prefix = ref.key.rsplit("/", 1)[0]
+    with _remote_cache_client(ref) as (client, metadata):
+        remaining = [item.key for item in client.List(cache_pb2.CacheListRequest(), metadata=metadata) if item.key.startswith(prefix + "/")]
+    assert remaining == []

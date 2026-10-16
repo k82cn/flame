@@ -287,6 +287,33 @@ next_value = flamepy.get_object(next_ref)
 
 Object references are versioned. `version=0` forces a fresh download. Nonzero versions allow the client to reuse cached state and request newer patches when the cache server can provide them.
 
+### Large objects
+
+`put_object(prefix, obj, *, part_size=None, parallelism=8)` stores a payload
+larger than `part_size` (default 64 MiB) as several parts plus a manifest:
+
+- Parts are ordinary objects under the same prefix, written in parallel
+  (up to `parallelism` at once), each over its own gRPC channel so they do not
+  share one TCP connection.
+- The manifest is written last, with data type `flame/multipart`. It lists each
+  part's endpoint, key, version and size and the total size. The returned
+  `ObjectRef` is the manifest's, so `get_object()` and `delete_objects()` take
+  it like any other reference. If a part or the manifest fails to write, the
+  parts already written are deleted on a best-effort basis.
+- `get_object()` fetches the parts concurrently, each from the endpoint in its
+  part reference, into one pre-sized buffer, and checks every part's size and
+  version. Only the assembled object enters the client cache, never the parts.
+- `patch_object()` and `update_object()` on a multipart reference raise
+  `ValueError`. Delete it and put a new object instead.
+- Deleting a manifest by its full key also deletes its parts, which may live on
+  other cache instances. Deleting by prefix is unchanged.
+- A nonpositive `part_size` or `parallelism` raises `ValueError`. Payloads at or
+  below `part_size` are written as a single object, as before.
+
+Chunks on the wire are at most 4 MiB. Parts help when the cache has several
+instances to spread them over; against a single instance they mostly add
+concurrency. The Rust SDK cannot read a multipart object and returns an error.
+
 Lower-level helpers under `flamepy.core` expose `ObjectKey`,
 `patch_object()`, `upload_object()`, `download_object()`, and
 `delete_objects()`. The `flamepy.cache` namespace provides common object cache

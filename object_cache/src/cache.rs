@@ -32,10 +32,12 @@ use crate::gc::ApplicationGarbageCollector;
 
 mod grpc;
 use grpc::GrpcCacheServer;
-use rpc::flame::v1::object_cache_service_server::ObjectCacheServiceServer;
 
 /// Default batch size for eviction operations
 const EVICTION_BATCH_SIZE: usize = 10;
+
+const GRPC_STREAM_WINDOW: u32 = 16 * 1024 * 1024;
+const GRPC_CONNECTION_WINDOW: u32 = 64 * 1024 * 1024;
 
 /// Wildcard session identifier for matching all sessions of an application
 pub const WILDCARD_SESSION: &str = "*";
@@ -846,7 +848,11 @@ pub async fn run(
         .parse()
         .map_err(|e| FlameError::InvalidConfig(format!("Invalid address: {}", e)))?;
 
-    let mut builder = tonic::transport::Server::builder();
+    // Large windows keep one stream from stalling on window updates over
+    // high-bandwidth or high-latency links.
+    let mut builder = tonic::transport::Server::builder()
+        .initial_stream_window_size(GRPC_STREAM_WINDOW)
+        .initial_connection_window_size(GRPC_CONNECTION_WINDOW);
 
     if cache_config.requires_tls() {
         let tls_config = cache_config.tls.as_ref().ok_or_else(|| {
@@ -864,7 +870,7 @@ pub async fn run(
     }
 
     let result = builder
-        .add_service(ObjectCacheServiceServer::new(grpc_server))
+        .add_service(grpc_server.into_service())
         .serve(addr)
         .await
         .map_err(|e| FlameError::Internal(format!("Server error: {}", e)));

@@ -17,6 +17,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::{stream, Stream};
 use rpc::flame::v1::object_cache_service_server::ObjectCacheService;
+use rpc::flame::v1::object_cache_service_server::ObjectCacheServiceServer;
 use rpc::flame::v1::{
     cache_get_response, cache_write_request, CacheChunkKind, CacheDeleteRequest,
     CacheDeleteResponse, CacheGetChunk, CacheGetHeader, CacheGetMetadataRequest, CacheGetMode,
@@ -27,7 +28,12 @@ use tonic::{Request, Response, Status, Streaming};
 
 use super::{Object, ObjectCache, ObjectKey, ObjectMetadata};
 
-const CHUNK_SIZE: usize = 1024 * 1024;
+/// Largest data chunk exchanged on the wire, in either direction.
+const CHUNK_SIZE: usize = 4 * 1024 * 1024;
+
+/// A message carries one chunk plus a few bytes of framing; tonic's default
+/// 4 MiB message limit would reject a full chunk.
+pub const MAX_MESSAGE_SIZE: usize = CHUNK_SIZE + 64 * 1024;
 
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
 
@@ -38,6 +44,13 @@ pub struct GrpcCacheServer {
 impl GrpcCacheServer {
     pub fn new(cache: Arc<ObjectCache>) -> Self {
         Self { cache }
+    }
+
+    /// The gRPC service with message limits sized for `CHUNK_SIZE` chunks.
+    pub fn into_service(self) -> ObjectCacheServiceServer<Self> {
+        ObjectCacheServiceServer::new(self)
+            .max_decoding_message_size(MAX_MESSAGE_SIZE)
+            .max_encoding_message_size(MAX_MESSAGE_SIZE)
     }
 }
 
@@ -136,7 +149,7 @@ async fn collect_write(
         match message.payload {
             Some(cache_write_request::Payload::Data(chunk)) => {
                 if chunk.len() > CHUNK_SIZE {
-                    return Err(Status::invalid_argument("write chunk exceeds 1 MiB"));
+                    return Err(Status::invalid_argument("write chunk exceeds 4 MiB"));
                 }
                 data.extend_from_slice(&chunk);
             }
@@ -298,7 +311,6 @@ mod tests {
     use super::*;
     use crate::cache::CacheEndpoint;
     use rpc::flame::v1::object_cache_service_client::ObjectCacheServiceClient;
-    use rpc::flame::v1::object_cache_service_server::ObjectCacheServiceServer;
     use rpc::flame::v1::{cache_get_response, cache_write_request, CacheWriteHeader};
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
@@ -320,7 +332,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move {
             tonic::transport::Server::builder()
-                .add_service(ObjectCacheServiceServer::new(GrpcCacheServer::new(cache)))
+                .add_service(GrpcCacheServer::new(cache).into_service())
                 .serve_with_incoming(TcpListenerStream::new(listener))
                 .await
                 .unwrap();
@@ -328,6 +340,7 @@ mod tests {
         ObjectCacheServiceClient::connect(format!("http://{address}"))
             .await
             .unwrap()
+            .max_decoding_message_size(MAX_MESSAGE_SIZE)
     }
 
     fn write_messages(key: &str, data_type: &str, data: &[u8]) -> Vec<CacheWriteRequest> {
@@ -525,5 +538,37 @@ mod tests {
         };
         assert_eq!(header.data_type, "cloudpickle.zstd");
         assert_eq!(chunk.data, stored.as_slice());
+    }
+
+    #[tokio::test]
+    async fn grpc_full_chunk_round_trip_and_oversized_chunk_rejected() {
+        let mut client = client().await;
+        let data: Vec<u8> = (0..CHUNK_SIZE + 100).map(|i| (i % 251) as u8).collect();
+        let put = client
+            .put(stream::iter(write_messages("app/session", "raw", &data)))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(put.size as usize, data.len());
+
+        let responses = get_responses(&mut client, &put.key, 0).await;
+        // header, one full chunk, one remainder
+        assert_eq!(responses.len(), 3);
+        let mut read = Vec::new();
+        for response in &responses[1..] {
+            let Some(cache_get_response::Payload::Chunk(chunk)) = &response.payload else {
+                panic!("expected data chunk")
+            };
+            assert!(chunk.data.len() <= CHUNK_SIZE);
+            read.extend_from_slice(&chunk.data);
+        }
+        assert_eq!(read, data);
+
+        let oversized = vec![0_u8; CHUNK_SIZE + 1];
+        let mut messages = write_messages("app/session", "raw", &[]);
+        messages.push(CacheWriteRequest {
+            payload: Some(cache_write_request::Payload::Data(Bytes::from(oversized))),
+        });
+        assert!(client.put(stream::iter(messages)).await.is_err());
     }
 }

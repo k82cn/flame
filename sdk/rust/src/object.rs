@@ -40,7 +40,9 @@ use crate::message::FlameMessage;
 const WILDCARD_SESSION: &str = "*";
 const DEFAULT_CACHE_PORT: u16 = 9090;
 const CONNECT_TIMEOUT_SECS: u64 = 30;
-const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+const UPLOAD_CHUNK_SIZE: usize = 4 * 1024 * 1024;
+/// One chunk plus framing; tonic's default 4 MiB decode limit would reject it.
+const MAX_MESSAGE_SIZE: usize = UPLOAD_CHUNK_SIZE + 64 * 1024;
 const CACHE_TARGET_HEADER: &str = "x-flame-object-cache";
 
 /// The cache returns bytes and their client-defined type without interpreting either.
@@ -418,8 +420,7 @@ pub async fn delete_objects(key_prefix: impl AsRef<str>) -> Result<(), FlameErro
     let object_key = ObjectKey::from_path(key_prefix.as_ref())?;
     let context = FlameContext::from_file_with_env(None)?;
     let cache = cache_from_context(&context)?;
-    let mut client =
-        ObjectCacheServiceClient::new(connect_cache(&cache.endpoint, cache.tls.as_ref()).await?);
+    let mut client = cache_client(connect_cache(&cache.endpoint, cache.tls.as_ref()).await?);
     client
         .delete(CacheDeleteRequest {
             key: object_key.to_string(),
@@ -494,7 +495,7 @@ pub async fn download_object_with_data_type(
     ObjectKey::from_key(&reference.key)?;
     let endpoint = endpoint_for_reference(&reference.endpoint)?;
     let tls = current_cache_tls()?;
-    let mut client = ObjectCacheServiceClient::new(connect_cache(&endpoint, tls.as_ref()).await?);
+    let mut client = cache_client(connect_cache(&endpoint, tls.as_ref()).await?);
     let mut stream = client
         .get(cache_request(
             &endpoint,
@@ -762,6 +763,12 @@ fn optional_context() -> Result<Option<FlameContext>, FlameError> {
     FlameContext::from_file_with_env(Some(config_path.to_string_lossy().into_owned())).map(Some)
 }
 
+fn cache_client(channel: Channel) -> ObjectCacheServiceClient<Channel> {
+    ObjectCacheServiceClient::new(channel)
+        .max_decoding_message_size(MAX_MESSAGE_SIZE)
+        .max_encoding_message_size(MAX_MESSAGE_SIZE)
+}
+
 async fn connect_cache(
     endpoint: &CacheEndpoint,
     tls: Option<&FlameClientTls>,
@@ -841,7 +848,7 @@ async fn do_put_bytes(
     data_type: &str,
 ) -> Result<ObjectRef, FlameError> {
     let input = write_bytes_stream(key, data, data_type);
-    let mut client = ObjectCacheServiceClient::new(connect_cache(endpoint, tls).await?);
+    let mut client = cache_client(connect_cache(endpoint, tls).await?);
     let metadata = if patch {
         client.patch(cache_request(endpoint, input)?).await
     } else {
@@ -885,7 +892,7 @@ async fn do_put_file(
             }
         }
     });
-    let mut client = ObjectCacheServiceClient::new(connect_cache(endpoint, tls).await?);
+    let mut client = cache_client(connect_cache(endpoint, tls).await?);
     let response = client.put(cache_request(endpoint, input)?).await;
     if let Some(error) = lock_ptr!(read_error)
         .expect("upload error mutex poisoned")
@@ -937,7 +944,7 @@ pub async fn get_object_bytes(reference: &ObjectRef) -> Result<ObjectBytes, Flam
     ObjectKey::from_key(&reference.key)?;
     let endpoint = endpoint_for_reference(&reference.endpoint)?;
     let tls = current_cache_tls()?;
-    let mut client = ObjectCacheServiceClient::new(connect_cache(&endpoint, tls.as_ref()).await?);
+    let mut client = cache_client(connect_cache(&endpoint, tls.as_ref()).await?);
     let mut stream = client
         .get(cache_request(
             &endpoint,
@@ -950,6 +957,12 @@ pub async fn get_object_bytes(reference: &ObjectRef) -> Result<ObjectBytes, Flam
         .map_err(|e| FlameError::Internal(format!("cache get failed: {}", e)))?
         .into_inner();
     let header = read_full_header(&mut stream, &reference.key).await?;
+    if header.data_type == "flame/multipart" {
+        return Err(FlameError::InvalidConfig(format!(
+            "object {} is a multipart manifest, which the Rust SDK cannot read; use the Python SDK",
+            reference.key
+        )));
+    }
     let mut builder = ObjectBytesBuilder::new(header);
     while let Some(message) = stream
         .message()

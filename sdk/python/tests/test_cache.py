@@ -119,12 +119,17 @@ class TestSyncCacheFacade:
     def test_sync_facade_uses_aio(self, monkeypatch):
         from flamepy.core.aio import cache as aio_cache
 
-        async def fake_put(prefix, obj):
+        calls = []
+
+        async def fake_put(prefix, obj, *, part_size=None, parallelism=8):
             await asyncio.sleep(0)
+            calls.append((part_size, parallelism))
             return ObjectRef("grpc://cache:1", prefix + "/key", 1)
 
         monkeypatch.setattr(aio_cache, "put_object", fake_put)
         assert cache_module.put_object("app/session", 42).key == "app/session/key"
+        assert cache_module.put_object("app/session", 42, part_size=1024, parallelism=2).key == "app/session/key"
+        assert calls == [(None, 8), (1024, 2)]
         cache_module._close_aio_bridge()
 
 

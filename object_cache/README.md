@@ -236,7 +236,7 @@ The cache server implements `ObjectCacheService` in `cache.proto`:
 
 **PUT/UPDATE (`Put`)**:
 - Starts with a key or prefix and client-provided data type, followed by
-  byte chunks of at most 1 MiB
+  byte chunks of at most 4 MiB (larger chunks are rejected)
 - New objects are created with `version=1`
 - Existing objects are overwritten (version incremented server-side)
 
@@ -245,6 +245,18 @@ The cache server implements `ObjectCacheService` in `cache.proto`:
   by byte chunks
 - Appends delta to existing object, increments version
 - Returns error if base object doesn't exist
+
+**Transfer tuning**:
+- Data chunks are at most 4 MiB in both directions. The server accepts and
+  sends gRPC messages of up to 4 MiB plus 64 KiB of framing, above tonic's
+  default 4 MiB limit; a client must raise its own limit to match.
+- The server sets HTTP/2 flow-control windows of 16 MiB per stream and 64 MiB
+  per connection so a single stream is not throttled by window updates.
+- The Python SDK sets matching `grpc.http2.lookahead_bytes` and
+  `grpc.http2.write_buffer_size` channel options (16 MiB).
+- Objects larger than the SDK part size are stored as parts plus a
+  `flame/multipart` manifest; the cache treats both as ordinary objects (see
+  [the Python SDK](../docs/sdk/python.md)).
 
 ## Building
 
