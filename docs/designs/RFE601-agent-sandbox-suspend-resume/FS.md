@@ -180,7 +180,7 @@ also depends on the image and the sandbox user, so it is an explicit opt-in per 
 ### 4.3 Scheduler and controller
 
 - `Session::is_closed` stays. Add `is_open`, `is_suspending`, `is_suspended`.
-- MinMax `compute_demand` and `is_overused` use demand 0 for every state except `Open`. `Dispatch`
+- MinMax `session_demand` and `is_overused` use demand 0 for every state except `Open`. `Dispatch`
   and `Allocate` skip sessions that are not `Open`. DRF does not charge a suspended session.
 - `wait_for_task` returns `None` when the session is not `Open`. The executor then unbinds exactly as
   it does for a closed session; suspend adds no executor state and no executor RPC (4.5). Suspending

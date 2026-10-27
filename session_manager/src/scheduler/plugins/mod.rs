@@ -52,21 +52,45 @@ fn batch_size(ssn: &SessionInfo) -> u32 {
     }
 }
 
-/// Bounded executor demand shared by scheduling plugins: task demand, gang size,
-/// minimum warmup and maximum instances. Only an open session demands executors.
-pub(super) fn compute_demand(ssn: &SessionInfo) -> u32 {
+/// Executors the session's pending and running tasks call for. Only an open session demands
+/// executors.
+pub(super) fn task_demand(ssn: &SessionInfo) -> u32 {
     if !ssn.is_open() {
         return 0;
     }
-    let task_count = [TaskState::Pending, TaskState::Running]
+    [TaskState::Pending, TaskState::Running]
         .iter()
         .filter_map(|state| ssn.tasks_status.get(state))
         .fold(0u32, |count, tasks| {
             count.saturating_add((*tasks).max(0) as u32)
-        });
-    let demand = task_count.max(ssn.min_instances).max(batch_size(ssn));
-    ssn.max_instances
-        .map_or(demand, |maximum| demand.min(maximum))
+        })
+}
+
+/// Executors the session keeps warm (`min_instances`), tasks or not. Only an open session demands
+/// executors.
+pub(super) fn min_demand(ssn: &SessionInfo) -> u32 {
+    if ssn.is_open() {
+        ssn.min_instances
+    } else {
+        0
+    }
+}
+
+/// The most executors the session may have (`max_instances`); unbounded when it is not set.
+pub(super) fn max_demand(ssn: &SessionInfo) -> u32 {
+    ssn.max_instances.unwrap_or(u32::MAX)
+}
+
+/// Bounded executor demand shared by scheduling plugins: task demand, gang size,
+/// minimum warmup and maximum instances. Only an open session demands executors.
+pub(super) fn session_demand(ssn: &SessionInfo) -> u32 {
+    if !ssn.is_open() {
+        return 0;
+    }
+    task_demand(ssn)
+        .max(min_demand(ssn))
+        .max(batch_size(ssn))
+        .min(max_demand(ssn))
 }
 
 #[derive(Clone, Debug)]

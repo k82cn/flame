@@ -33,7 +33,9 @@ When the cluster can supply only part of the minimum, the session keeps what it 
    held" and a small `Statement` type. Allocate and Shuffle are unchanged.
 4. A gang member can read the session id, the task id and `batch_size` at run time.
 5. `min_instances` keeps its own meaning: long-lived instances that are warmed up and never
-   trimmed. It is not a gang and does not take part in the all-or-nothing bind.
+   trimmed. It is not a gang and does not take part in the all-or-nothing bind. The two targets
+   are met independently: a gang that cannot be formed binds nothing of its own, and the
+   warm-up executors stay bound.
 
 **Non-goals**
 
@@ -99,9 +101,11 @@ PluginManager::is_satisfied -> bool               // first opinion wins; no opin
 
 MinMax answers `session_executors >= min(gang, session max_executors)`, where the gang is
 `batch_size` while the session is a gang (`batch_size > 1`) with pending tasks and 0 otherwise.
-It counts executors bound or staged in this cycle. The same gang size raises the session's
-executor demand, so Allocate creates executors up to it. The cap keeps a gang larger than the session limit
-from waiting forever.
+It counts executors bound or staged in this cycle. The gang size is not part of the demand that
+`is_underused` compares with: executors are created (Allocate) for the session's tasks and its
+`min_instances` only, and `is_satisfied` decides whether the executors held form the gang. A gang
+therefore needs one pending task per member, as the examples submit (4.4). The cap keeps a gang
+larger than the session limit from waiting forever.
 
 It is not `is_ready`: see section 3.
 
@@ -109,12 +113,18 @@ It is not `is_ready`: see section 3.
 
 For each session popped from the queue that is underused and not `is_ready`:
 
-1. Open a `Statement`.
-2. While there is an eligible Idle executor (`select_executor`): stage a bind, remove the
-   executor from the pool, and stop once `is_satisfied` holds.
-3. If nothing was staged, or `is_satisfied` is false: discard and return the executors to the
-   pool for the next session.
-4. Otherwise commit, and re-queue the session while it is still underused and not ready, so
+1. Warm-up: while the session holds fewer executors than `min_instances` and is still
+   underused (which applies the instance limits), bind an eligible Idle executor
+   (`select_executor`). "Underused" is asked of the session without its tasks, which demands
+   exactly `min_instances`. These binds commit on their own, in a `Statement` that is
+   never discarded, whether or not the gang below can be formed. If the session is no longer
+   underused or is now ready, stop here.
+2. Open a `Statement` for the gang.
+3. While there is an eligible Idle executor: stage a bind, remove the executor from the pool,
+   and stop once `is_satisfied` holds. The executors bound in step 1 count toward the gang.
+4. If nothing was staged, or `is_satisfied` is false: discard the gang's binds and return the
+   executors to the pool for the next session. The warm-up binds stay.
+5. Otherwise commit, and re-queue the session while it is still underused and not ready, so
    executors beyond the minimum are bound one per turn as before.
 
 A session that is not a gang (`batch_size` of 1, or no pending task) is satisfied by its first
@@ -134,6 +144,23 @@ costs remain:
 
 Counting those Idle executors needs Allocate's pipeline and creation staged in the same
 `Statement`; see open questions.
+
+### 4.3.1 Warm-up and the gang are independent
+
+`min_instances` and `batch_size` each have a target, and Dispatch meets each on its own:
+
+| `min_instances` | `batch_size` | Result |
+| --------------- | ------------ | ------ |
+| 3 | 1 | Three executors are bound, one by one; no more without tasks. |
+| 0 | 4, tasks pending | Four executors are bound together, or none. |
+| 2 | 4, tasks pending, only 3 can be had | The two warm-up executors are bound; the third is not, because it belongs to the gang that cannot be formed. |
+| 7 | 7, tasks pending, cluster of 6 | The warm-up holds all 6; the gang is not formed. |
+
+A session that sets both to the same number therefore does not get an all-or-nothing group, and
+a bound executor takes a pending task whether or not the gang is complete: the scheduler does
+not hold a gang's tasks back for it. A service that needs the group sets `batch_size` alone;
+`min_instances` additionally keeps instances alive and can hold executors a gang larger than the
+cluster could never use.
 
 ### 4.4 Context exported to the service
 
@@ -206,7 +233,7 @@ The reserved executor column `batch_index` is not part of this change.
 | `batch_size > max_instances` | The gang size is capped at the limit (4.2). |
 | Gang larger than the session limit | The gang size is capped at the limit (4.2). |
 | Gang session with no pending task | Not a gang: it needs and holds only what `min_instances` and its running tasks need. |
-| Gang larger than the cluster | Never satisfied; Dispatch discards each cycle and logs a debug line. |
+| Gang larger than the cluster | Never satisfied; Dispatch discards each cycle and logs a debug line. The warm-up (`min_instances`), if set, still holds the executors it can. |
 | Executor of a gang session released or interrupted | Count drops below the minimum; Dispatch binds a replacement only when the whole shortfall can be bound. Running tasks are not stopped by the scheduler. |
 | Two gangs competing for Idle executors | Sessions are processed in plugin order. The first stages and commits; the second finds too few Idle executors and discards. |
 | Gang plus a non-gang session | The non-gang session can use executors a blocked gang skipped. A gang that never fits can starve behind a stream of small sessions; see open questions. |
@@ -231,6 +258,9 @@ Unit tests (`session_manager/src/scheduler`):
 - `Statement`: `discard` restores the plugin counters and the snapshot and never touches the
   controller; `is_satisfied` flips when the second bind is staged and back on discard.
 - Allocate: unchanged behavior, covered by the existing tests.
+- Dispatch, warm-up and gang (4.3.1): a gang of 7 with `min_instances` 7 on 6 slots holds 6, and
+  with `min_instances` 0 holds none; a gang of 4 with `min_instances` 2 on 3 slots holds only
+  the 2 warm-up executors, and 4 when it fits; `min_instances` 3 without tasks binds exactly 3.
 
 SDK (`sdk/python/tests`, `sdk/rust`): `batch_size` reaches `SessionContext`;
 `app.context()` returns the session id, task id and `batch_size` inside an invocation and
@@ -244,7 +274,9 @@ End-to-end:
   times.
 - `test_session.py` (`TestGangScheduling`) sizes the cluster from `list_nodes` by picking a cpu
   request that fits 4 to 6 executors, then checks, using `list_executors`:
-  - a minimum above the capacity binds nothing and its task stays pending;
+  - a gang above the capacity binds nothing and its tasks stay pending (the gang is created
+    with `batch_size` only and one long task per executor, because `min_instances` is a separate
+    warm-up);
   - two gangs that fit together both get all their executors, and a task runs;
   - two gangs that each fit but not together: the executor count of every gang is always 0 or
     its minimum, exactly one gang runs, and the other starts once the first is closed;

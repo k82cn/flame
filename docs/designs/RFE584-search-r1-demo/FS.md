@@ -118,7 +118,7 @@ The driver declares the services in one application:
 app.init("sr1-train", dependencies=["vllm==...", "torch", "faiss-cpu", ...], python_version="3.12")
 
 @app.service(resreq="cpu=8,mem=64g,gpu=1", warmup=8)                    class Rollout: ...
-@app.service(resreq="cpu=32,mem=256g,gpu=4", autoscale=False, warmup=1) class Trainer: ...
+@app.service(resreq="cpu=32,mem=256g,gpu=4", batch_size=N)               class Trainer: ...
 
 trainer = Trainer.remote(model)
 rollout = Rollout.remote(model, corpus)
@@ -155,12 +155,14 @@ service's `warmup` and `autoscale` settings; there is no other coordination.
 **Trainer (`Trainer`).** Data-parallel GRPO: every executor holds a full replica (fp32
 weights, Adam state, a frozen reference) on one GPU. Replicas may be on different nodes.
 They form one NCCL group, each trains on a slice of the batch, and gradients are
-all-reduced. The service is declared with `autoscale=False, warmup=N` so exactly N
-instances exist.
+all-reduced. The service is declared with `batch_size=N`, so the gang binds N executors at once
+or none.
 
 *Forming the group without addressing executors:* the driver sends `join` N times at
-once. `warmup=N` makes N the session's `min_instances`, so gang scheduling (RFE591) binds
-all N executors or none, and every one of the N calls gets an executor. Each call registers the executor's id and address in a
+once. `batch_size=N` is the gang size, so gang scheduling (RFE591) binds all N executors or
+none, and every one of the N calls gets an executor. There is no `warmup` on the trainer: it keeps `min_instances` executors alive on its
+own, apart from the gang, and a trainer warmed to fewer than N would hold executors the gang
+cannot use. Each call registers the executor's id and address in a
 shared cache object and blocks until N have registered, so no executor takes two. Rank is
 the position of the executor id in the sorted list, and rank 0 is the rendezvous. No
 executor needs to be addressed. `update` is

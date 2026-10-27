@@ -22,7 +22,10 @@ use common::FlameError;
 use crate::model::{
     ExecutorInfoPtr, NodeInfoPtr, SessionInfoPtr, SnapShot, ALL_APPLICATION, ALL_EXECUTOR,
 };
-use crate::scheduler::plugins::{batch_size, compute_demand, Plugin, PluginPtr, PluginsOptions};
+use crate::scheduler::plugins::{
+    batch_size, max_demand, min_demand, session_demand, task_demand, Plugin, PluginPtr,
+    PluginsOptions,
+};
 
 #[derive(Default)]
 pub struct MinMaxPlugin {
@@ -93,9 +96,10 @@ impl Plugin for MinMaxPlugin {
         {
             return Some(false);
         }
-        // Below demand, including warmup without pending tasks, the session needs
-        // more executors; `is_ready` and the configured policies bound how fast.
-        (instances < compute_demand(ssn) as usize).then_some(true)
+        // Below the demand of its tasks and warmup, the session needs more executors;
+        // `is_ready` and the configured policies bound how fast. The gang is not part of it.
+        (instances < task_demand(ssn).max(min_demand(ssn)).min(max_demand(ssn)) as usize)
+            .then_some(true)
     }
 
     fn is_ready(&self, ssn: &SessionInfoPtr) -> Option<bool> {
@@ -111,7 +115,7 @@ impl Plugin for MinMaxPlugin {
         }
         // Count existing and pipelined reservations before another allocation.
         // Below demand, let the configured policy apply fairness constraints.
-        (instances >= compute_demand(ssn) as usize).then_some(true)
+        (instances >= session_demand(ssn) as usize).then_some(true)
     }
 
     fn is_satisfied(&self, ssn: &SessionInfoPtr) -> Option<bool> {
@@ -128,8 +132,8 @@ impl Plugin for MinMaxPlugin {
         let interrupted = self.session_interrupted.get(&ssn.id).copied().unwrap_or(0);
         let effective = executors.saturating_sub(interrupted);
         let demand = executor_limit(ssn.max_instances, self.limits.session.max_executors)
-            .map_or(compute_demand(ssn), |maximum| {
-                compute_demand(ssn).min(maximum)
+            .map_or(session_demand(ssn), |maximum| {
+                session_demand(ssn).min(maximum)
             });
         (effective > demand as usize).then_some(true)
     }
@@ -294,10 +298,37 @@ mod tests {
         assert_eq!(plugin.is_satisfied(&batch), Some(true));
 
         // ... and demands them, but only while tasks wait.
-        assert_eq!(compute_demand(&gang(0, 4, 1)), 4);
-        assert_eq!(compute_demand(&gang(0, 4, 0)), 0);
-        assert_eq!(compute_demand(&gang(2, 4, 0)), 2);
-        assert_eq!(compute_demand(&gang(0, 1, 3)), 3);
+        assert_eq!(session_demand(&gang(0, 4, 1)), 4);
+        assert_eq!(session_demand(&gang(0, 4, 0)), 0);
+        assert_eq!(session_demand(&gang(2, 4, 0)), 2);
+        assert_eq!(session_demand(&gang(0, 1, 3)), 3);
+    }
+
+    #[test]
+    fn is_underused_counts_tasks_and_warmup_but_not_the_gang() {
+        let snapshot = SnapShot::new();
+        let mut plugin = plugin(&snapshot);
+        let session = |min_instances, batch_size, pending| {
+            Arc::new(SessionInfo {
+                min_instances,
+                batch_size,
+                tasks_status: [(TaskState::Pending, pending)].into_iter().collect(),
+                ..limited_session(None).as_ref().clone()
+            })
+        };
+
+        // A gang of 4 with one task: the tasks call for one executor, the gang is formed by
+        // `is_satisfied`, so one executor is enough for `is_underused`.
+        let gang = session(0, 4, 1);
+        assert_eq!(session_demand(&gang), 4);
+        assert_eq!(plugin.is_underused(&gang), Some(true));
+        plugin.on_session_bind(executor("a", "node", ExecutorState::Bound), gang.clone());
+        assert_eq!(plugin.is_underused(&gang), None);
+        assert_eq!(plugin.is_satisfied(&gang), Some(false));
+
+        // The warm-up is part of it, with or without tasks.
+        let warm = session(3, 4, 0);
+        assert_eq!(plugin.is_underused(&warm), Some(true));
     }
 
     #[test]
@@ -308,7 +339,7 @@ mod tests {
             min_instances: 1,
             ..limited_session(None).as_ref().clone()
         });
-        assert_eq!(compute_demand(&open), 10);
+        assert_eq!(session_demand(&open), 10);
         assert_eq!(plugin.is_underused(&open), Some(true));
 
         for state in [
@@ -320,7 +351,7 @@ mod tests {
                 state,
                 ..open.as_ref().clone()
             });
-            assert_eq!(compute_demand(&ssn), 0, "{state}");
+            assert_eq!(session_demand(&ssn), 0, "{state}");
             assert_eq!(plugin.is_underused(&ssn), None, "{state}");
             plugin.on_session_bind(executor("one", "node", ExecutorState::Bound), ssn.clone());
             assert_eq!(plugin.is_overused(&ssn), Some(true), "{state}");

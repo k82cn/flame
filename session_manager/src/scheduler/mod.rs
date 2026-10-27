@@ -777,7 +777,6 @@ mod tests {
                     id: format!("gang-{}", Uuid::new_v4()),
                     application: "flmtest".to_string(),
                     batch_size: size,
-                    min_instances: size,
                     resreq: Some(ResourceRequirement {
                         cpu: 1,
                         memory: 1024,
@@ -822,6 +821,98 @@ mod tests {
                 held.iter().all(|count| *count == 0 || *count == 4),
                 "{policies:?}: {held:?}"
             );
+        }
+        Ok(())
+    }
+
+    /// A cluster of one node with `slots` executors of cpu 1, and a session of `batch_size` and
+    /// `min_instances` with `tasks` pending tasks (a gang has one per member) that runs `cycles`
+    /// scheduling cycles. Returns the number of executors the session holds.
+    fn executors_held(
+        policies: &[&str],
+        slots: u32,
+        batch_size: u32,
+        min_instances: u32,
+        tasks: u32,
+        cycles: usize,
+    ) -> Result<usize, FlameError> {
+        let env = TestEnv::new()?;
+        let controller = env.controller.clone();
+        tokio_test::block_on(
+            controller.register_application("flmtest".to_string(), new_test_application()),
+        )?;
+        let mut node = new_test_node("node_1".to_string());
+        node.capacity = ResourceRequirement {
+            cpu: slots as u64,
+            memory: slots as u64 * 1024,
+            gpu: 0,
+        };
+        node.allocatable = node.capacity.clone();
+        tokio_test::block_on(controller.storage().register_node(&node))?;
+        let session =
+            tokio_test::block_on(controller.create_session(common::apis::SessionAttributes {
+                id: format!("warm-{}", Uuid::new_v4()),
+                application: "flmtest".to_string(),
+                batch_size,
+                min_instances,
+                resreq: Some(ResourceRequirement {
+                    cpu: 1,
+                    memory: 1024,
+                    gpu: 0,
+                }),
+                ..Default::default()
+            }))?;
+        for _ in 0..tasks {
+            tokio_test::block_on(controller.create_task(session.id.clone(), None, None))?;
+        }
+        let options = PluginsOptions {
+            policies: policies.iter().map(|p| p.to_string()).collect(),
+            ..Default::default()
+        };
+        for _ in 0..cycles {
+            cycle(&controller, &options)?;
+        }
+        Ok(controller
+            .list_executors()?
+            .iter()
+            .filter(|e| e.ssn_id.as_deref() == Some(session.id.as_str()))
+            .count())
+    }
+
+    /// `min_instances` is a warm-up and `batch_size` a gang: each meets its own target. A gang
+    /// that cannot be formed binds nothing of its own, but the warm-up still holds what it can.
+    #[test]
+    fn test_warm_up_is_kept_when_the_gang_cannot_be_formed() -> Result<(), FlameError> {
+        for policies in [["priority", "das"], ["drf", "das"]] {
+            // A gang of 7 with 7 kept warm, on a cluster of 6.
+            let held = executors_held(&policies, 6, 7, 7, 7, 12)?;
+            assert_eq!(held, 6, "{policies:?}: the warm-up holds the whole cluster");
+            // Without a warm-up the same gang binds nothing.
+            let held = executors_held(&policies, 6, 7, 0, 7, 12)?;
+            assert_eq!(held, 0, "{policies:?}: the gang binds nothing");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_gang_does_not_take_back_the_warm_up_when_it_fails() -> Result<(), FlameError> {
+        for policies in [["priority", "das"], ["drf", "das"]] {
+            // A gang of 4 with 2 kept warm, on a cluster of 3: the third executor is only the
+            // gang's, so it is not bound, and the two for the warm-up stay.
+            let held = executors_held(&policies, 3, 4, 2, 4, 12)?;
+            assert_eq!(held, 2, "{policies:?}");
+            // With room for the gang, the warm-up counts toward it.
+            let held = executors_held(&policies, 4, 4, 2, 4, 12)?;
+            assert_eq!(held, 4, "{policies:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_warm_up_binds_no_more_than_min_instances_without_tasks() -> Result<(), FlameError> {
+        for policies in [["priority", "das"], ["drf", "das"]] {
+            let held = executors_held(&policies, 6, 4, 3, 0, 12)?;
+            assert_eq!(held, 3, "{policies:?}");
         }
         Ok(())
     }

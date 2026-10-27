@@ -16,7 +16,7 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{IDLE_EXECUTOR, READY_SESSION};
+use crate::model::{SessionInfo, IDLE_EXECUTOR, READY_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::statement::Statement;
@@ -80,12 +80,34 @@ impl Action for DispatchAction {
                 &ssn.id
             );
 
-            // Every session binds through a Statement:
-            // stage binds until the session holds its gang (`batch_size`, 1 is
-            // met by the first bind), then commit. A session that cannot
-            // reach its gang from the Idle executors is discarded,
-            // so a group that blocks until every member is present never holds
-            // a partial set of running executors.
+            // The warm-up (`min_instances`) is its own target, apart from the gang: bind the
+            // Idle executors that bring the session up to it one by one, and keep them even
+            // when the gang below cannot be formed. Its executors count toward the gang. The
+            // session without its tasks demands exactly `min_instances` (the gang counts only
+            // while a task is pending), so `is_underused` on it means "below the warm-up" and
+            // applies the instance limits.
+            let warm_ssn = Arc::new(SessionInfo {
+                tasks_status: Default::default(),
+                ..ssn.as_ref().clone()
+            });
+            let mut warmup = Statement::new(ctx);
+            while ssn.min_instances > 0 && ctx.is_underused(&warm_ssn)? {
+                let Some(exec) = ctx.select_executor(&ssn, &idle_executors)? else {
+                    break;
+                };
+                warmup.bind(&exec, &ssn)?;
+                idle_executors.remove(&exec.id);
+            }
+            let warmed = !warmup.is_empty();
+            warmup.commit().await?;
+            if warmed && (!ctx.is_underused(&ssn)? || ctx.is_ready(&ssn)?) {
+                continue;
+            }
+
+            // The gang binds through a Statement: stage binds until the session holds its gang
+            // (`batch_size`, 1 is met by the first bind), then commit. A session that cannot
+            // reach its gang from the Idle executors is discarded, so a group that blocks until
+            // every member is present never holds a partial set of running executors.
             let mut statement = Statement::new(ctx);
             while let Some(exec) = ctx.select_executor(&ssn, &idle_executors)? {
                 statement.bind(&exec, &ssn)?;

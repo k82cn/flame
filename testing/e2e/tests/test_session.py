@@ -739,17 +739,24 @@ def _gang_capacity():
     pytest.skip(f"Cannot size a 4-6 executor cluster from node cpus {cpus}")
 
 
+GANG_TASK_MS = 20000
+
+
 def _create_gang(resreq, size):
-    """A gang of `size`: `batch_size` binds its executors all at once while a task waits, and
-    `min_instances` keeps them alive after the task is done."""
+    """A gang of `size`: `batch_size` binds its executors all at once while a task waits, and one
+    long task per executor keeps them bound.
+
+    There is no `min_instances`: it is a warm-up floor, not part of the gang, so a gang that sets it
+    to `size` is given idle executors one by one before its first task exists, and a gang larger
+    than the cluster then holds the whole cluster."""
     session = flamepy.create_session(
         application=FLM_TEST_SVC_APP,
         session_id=f"test-gang-{random_string(8)}",
-        min_instances=size,
         batch_size=size,
         resreq=resreq,
     )
-    session.create_task(serialize_request(TestRequest(input="gang_start")))
+    for index in range(size):
+        session.create_task(serialize_request(TestRequest(input=f"gang_start_{index}", sleep_ms=GANG_TASK_MS)))
     return session
 
 
@@ -787,7 +794,7 @@ class TestGangScheduling:
         try:
             _assert_all_or_nothing([session], [self.capacity + 1], seconds=10)
             assert not _executors_bound_to(session.id)
-            assert flamepy.get_session(session.id).pending == 1, "The task must stay pending"
+            assert flamepy.get_session(session.id).pending == self.capacity + 1, "The tasks must stay pending"
         finally:
             session.close()
 
@@ -800,8 +807,8 @@ class TestGangScheduling:
                 _wait_until(lambda session=session: len(_executors_bound_to(session.id)) == size, f"{session.id} to hold {size} executors")
             _assert_all_or_nothing(sessions, [size, size], seconds=3)
 
-            response = invoke_task(sessions[0], TestRequest(input="gang_task"))
-            assert response.output == "gang_task"
+            for session in sessions:
+                _wait_until(lambda session=session: flamepy.get_session(session.id).running == size, f"{session.id} to run a task on each executor")
         finally:
             for session in sessions:
                 session.close()

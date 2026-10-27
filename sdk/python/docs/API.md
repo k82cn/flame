@@ -233,7 +233,11 @@ Key classes and helpers:
   executor.
 - `warmup` keeps that many instances alive (`min_instances`); it does not make
   them a gang. `batch_size` is the gang size: use `batch_size=N` for work that
-  blocks until N members are present, together with `warmup=N` to keep them.
+  blocks until N members are present. The two are met independently: `warmup`
+  binds its instances even when a gang cannot form, and the executors it holds
+  take pending tasks whether or not the gang is complete. A service with both
+  set to N does not get an all-or-nothing group; use `batch_size=N` alone for
+  that.
 - Public class methods must not collide with `ServiceInstance` API names such
   as `close`; handle construction rejects such definitions.
 - The handle returned by `app.init()` also exposes `service(...)` when direct

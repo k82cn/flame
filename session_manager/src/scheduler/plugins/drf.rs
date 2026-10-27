@@ -18,7 +18,7 @@ use crate::model::{
     ExecutorInfoPtr, NodeInfoPtr, SessionInfo, SessionInfoPtr, SnapShot, ALL_EXECUTOR, ALL_NODE,
     OPEN_SESSION,
 };
-use crate::scheduler::plugins::{compute_demand, Plugin, PluginPtr};
+use crate::scheduler::plugins::{session_demand, Plugin, PluginPtr};
 use common::apis::{ResourceRequirement, SessionID};
 use common::FlameError;
 
@@ -175,7 +175,7 @@ impl Plugin for DRFPlugin {
                 ssn.id.clone(),
                 DRFSessionInfo {
                     unit: self.get_session_resreq(ssn),
-                    demand: compute_demand(ssn),
+                    demand: session_demand(ssn),
                     min_instances: ssn.min_instances,
                     allocated: allocated.remove(&ssn.id).unwrap_or_default(),
                     ..Default::default()
