@@ -113,12 +113,12 @@ It is not `is_ready`: see section 3.
 
 For each session popped from the queue that is underused and not `is_ready`:
 
-1. Warm-up: while the session holds fewer executors than `min_instances` and is still
-   underused (which applies the instance limits), bind an eligible Idle executor
-   (`select_executor`). "Underused" is asked of the session without its tasks, which demands
-   exactly `min_instances`. These binds commit on their own, in a `Statement` that is
-   never discarded, whether or not the gang below can be formed. If the session is no longer
-   underused or is now ready, stop here.
+1. Warm-up: for a session with `min_instances` above 0, while it is underused (its executors are
+   below what its tasks and `min_instances` call for, within the instance limits; the gang size
+   is not part of that), bind an eligible Idle executor (`select_executor`). These binds commit
+   on their own, in a `Statement` that is never discarded, whether or not the gang below can be
+   formed. If the session is no longer underused or is now ready, stop here. Whether the
+   cluster has the resources for all of it is up to the user.
 2. Open a `Statement` for the gang.
 3. While there is an eligible Idle executor: stage a bind, remove the executor from the pool,
    and stop once `is_satisfied` holds. The executors bound in step 1 count toward the gang.
@@ -153,8 +153,8 @@ Counting those Idle executors needs Allocate's pipeline and creation staged in t
 | --------------- | ------------ | ------ |
 | 3 | 1 | Three executors are bound, one by one; no more without tasks. |
 | 0 | 4, tasks pending | Four executors are bound together, or none. |
-| 2 | 4, tasks pending, only 3 can be had | The two warm-up executors are bound; the third is not, because it belongs to the gang that cannot be formed. |
-| 7 | 7, tasks pending, cluster of 6 | The warm-up holds all 6; the gang is not formed. |
+| 2 | 4, one task pending, only 3 can be had | The two executors the task and the warm-up call for are bound; the gang cannot be formed from 3 and takes none back. |
+| 7 | 7, seven tasks pending, cluster of 6 | The warm-up is dispatched executors one by one while the session is underused, so it holds all 6; the gang is not formed. |
 
 A session that sets both to the same number therefore does not get an all-or-nothing group, and
 a bound executor takes a pending task whether or not the gang is complete: the scheduler does
@@ -259,8 +259,8 @@ Unit tests (`session_manager/src/scheduler`):
   controller; `is_satisfied` flips when the second bind is staged and back on discard.
 - Allocate: unchanged behavior, covered by the existing tests.
 - Dispatch, warm-up and gang (4.3.1): a gang of 7 with `min_instances` 7 on 6 slots holds 6, and
-  with `min_instances` 0 holds none; a gang of 4 with `min_instances` 2 on 3 slots holds only
-  the 2 warm-up executors, and 4 when it fits; `min_instances` 3 without tasks binds exactly 3.
+  with `min_instances` 0 holds none; a gang of 4 with `min_instances` 2 and one task on 3 slots holds
+  only 2 executors, and with four tasks 4 on 4 slots; `min_instances` 3 without tasks binds exactly 3.
 
 SDK (`sdk/python/tests`, `sdk/rust`): `batch_size` reaches `SessionContext`;
 `app.context()` returns the session id, task id and `batch_size` inside an invocation and

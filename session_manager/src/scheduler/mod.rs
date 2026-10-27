@@ -897,9 +897,10 @@ mod tests {
     #[test]
     fn test_gang_does_not_take_back_the_warm_up_when_it_fails() -> Result<(), FlameError> {
         for policies in [["priority", "das"], ["drf", "das"]] {
-            // A gang of 4 with 2 kept warm, on a cluster of 3: the third executor is only the
-            // gang's, so it is not bound, and the two for the warm-up stay.
-            let held = executors_held(&policies, 3, 4, 2, 4, 12)?;
+            // A gang of 4 with 2 kept warm and one task, on a cluster of 3: the tasks and the
+            // warm-up call for 2 executors, so those are bound; the gang cannot be formed from
+            // 3 and takes none back.
+            let held = executors_held(&policies, 3, 4, 2, 1, 12)?;
             assert_eq!(held, 2, "{policies:?}");
             // With room for the gang, the warm-up counts toward it.
             let held = executors_held(&policies, 4, 4, 2, 4, 12)?;

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use stdng::collections::{BinaryHeap, Cmp};
 use stdng::{logs::TraceFn, trace_fn};
 
-use crate::model::{SessionInfo, IDLE_EXECUTOR, READY_SESSION};
+use crate::model::{IDLE_EXECUTOR, READY_SESSION};
 use crate::scheduler::actions::{Action, ActionPtr};
 use crate::scheduler::plugins::ssn_order_fn;
 use crate::scheduler::statement::Statement;
@@ -80,18 +80,13 @@ impl Action for DispatchAction {
                 &ssn.id
             );
 
-            // The warm-up (`min_instances`) is its own target, apart from the gang: bind the
-            // Idle executors that bring the session up to it one by one, and keep them even
-            // when the gang below cannot be formed. Its executors count toward the gang. The
-            // session without its tasks demands exactly `min_instances` (the gang counts only
-            // while a task is pending), so `is_underused` on it means "below the warm-up" and
-            // applies the instance limits.
-            let warm_ssn = Arc::new(SessionInfo {
-                tasks_status: Default::default(),
-                ..ssn.as_ref().clone()
-            });
+            // The warm-up (`min_instances`) is its own target, apart from the gang: a session that
+            // keeps instances warm is dispatched Idle executors one by one while it is underused,
+            // and keeps them even when the gang below cannot be formed. Its executors count
+            // toward the gang. Whether the cluster has the resources for all of it is up to the
+            // user.
             let mut warmup = Statement::new(ctx);
-            while ssn.min_instances > 0 && ctx.is_underused(&warm_ssn)? {
+            while ssn.min_instances > 0 && ctx.is_underused(&ssn)? {
                 let Some(exec) = ctx.select_executor(&ssn, &idle_executors)? else {
                     break;
                 };
