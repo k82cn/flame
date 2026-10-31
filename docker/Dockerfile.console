@@ -10,12 +10,11 @@ RUN cargo build --release
 COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /usr/bin/
 
 # Install using flmadm with client profile and all example binaries
-RUN ./target/release/flmadm install \
-    --src-dir /usr/src/flame \
+RUN ./target/release/flmadm package --src-dir /usr/src/flame --output /tmp/flame-package \
+    && /tmp/flame-package/package/sbin/flmadm install \
     --prefix /usr/local/flame \
     --client \
     --with-examples \
-    --skip-build \
     --force
 
 FROM ubuntu:24.04

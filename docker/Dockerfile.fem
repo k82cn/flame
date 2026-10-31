@@ -11,12 +11,11 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /usr/bin/
 
 # Install using flmadm with worker profile
 # This builds wheel and installs flamepy to lib/ via --prefix
-RUN ./target/release/flmadm install \
-    --src-dir /usr/src/flame \
+RUN ./target/release/flmadm package --src-dir /usr/src/flame --output /tmp/flame-package \
+    && /tmp/flame-package/package/sbin/flmadm install \
     --prefix /usr/local/flame \
     --worker \
     --no-systemd \
-    --skip-build \
     --force
 
 FROM ubuntu:24.04

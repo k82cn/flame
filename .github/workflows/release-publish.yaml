@@ -134,6 +134,79 @@ jobs:
         working-directory: source
         run: ../hack/release.sh publish-rust "${CARGO_VERSION}" "${STDNG_VERSION}"
 
+  # The release binaries: one tar.gz per architecture that `./sbin/flmadm install` installs from.
+  # Built on 24.04 runners so the binaries run on the oldest glibc we support.
+  publish-binaries:
+    name: Publish ${{ matrix.arch }} binaries
+    needs: release-metadata
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+
+      - name: Checkout release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-metadata.outputs.source-sha }}
+          path: source
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache-workspaces: source
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.9.26
+
+      - name: Build flmadm
+        working-directory: source
+        run: cargo build --release -p flmadm
+
+      # flmadm package builds everything (it finds uv on PATH and bundles it) and writes, in dist/,
+      # the package, flame-<tag>-linux-<arch>.tar.gz and flmadm-<tag>-linux-<arch>, each with a
+      # .sha256 file.
+      - name: Package binaries
+        working-directory: source
+        run: ./target/release/flmadm package --src-dir . --output "${RUNNER_TEMP}/dist" --tag "${RELEASE_TAG}"
+
+      # Install the way a user does: the standalone flmadm, from the archive's URL.
+      - name: Smoke test the release assets
+        run: |
+          dist="${RUNNER_TEMP}/dist"
+          (cd "${dist}" && sha256sum -c ./*.sha256)
+          (cd "${dist}" && python3 -m http.server 8000 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 2
+          "${dist}/flmadm-${RELEASE_TAG}-linux-${{ matrix.arch }}" install \
+            --package "http://127.0.0.1:8000/flame-${RELEASE_TAG}-linux-${{ matrix.arch }}.tar.gz" \
+            --prefix "${RUNNER_TEMP}/flame" --all --no-systemd --python-version 3.12 --force
+          "${RUNNER_TEMP}/flame/bin/flmctl" --version
+          "${RUNNER_TEMP}/flame/bin/flame-session-manager" --version
+          source "${RUNNER_TEMP}/flame/sbin/flmenv.sh" --python-version 3.12
+          python3 -c "import flamepy"
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${RELEASE_TAG}" "${RUNNER_TEMP}"/dist/flame-*.tar.gz* "${RUNNER_TEMP}"/dist/flmadm-* --repo "${GITHUB_REPOSITORY}" --clobber
+
   publish-images:
     name: Publish native images
     needs: release-metadata

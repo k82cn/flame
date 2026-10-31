@@ -91,8 +91,9 @@ For development and testing, you can install Flame directly on your machine usin
 $ cargo build --release -p flmadm
 $ sudo install -m 755 target/release/flmadm /usr/local/bin/
 
-# Install all components from local source and start services
-$ sudo flmadm install --all --src-dir . --enable
+# Build the release package from local source, install all components from it and start services
+$ flmadm package --src-dir . --output /tmp/flame-package
+$ sudo /tmp/flame-package/package/sbin/flmadm install --all --enable
 
 # Add Flame binaries to PATH
 $ source /usr/local/flame/sbin/flmenv.sh

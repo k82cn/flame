@@ -39,11 +39,9 @@ install_dependencies() {
 }
 
 install_flame() {
-    # The workflow unpacks the release binaries built by the build-binaries job.
-    sudo ./target/release/flmadm install \
+    # The workflow unpacks the package built by the build-binaries job into ./flame-package.
+    sudo ./flame-package/package/sbin/flmadm install \
         --all \
-        --src-dir . \
-        --skip-build \
         --prefix "$INSTALL_PREFIX" \
         --python-version 3.12 \
         --force
@@ -235,7 +233,7 @@ stop_services() {
 }
 
 uninstall_flame() {
-    sudo ./target/release/flmadm uninstall \
+    sudo ./flame-package/package/sbin/flmadm uninstall \
         --prefix "$INSTALL_PREFIX" \
         --no-backup \
         --force || true

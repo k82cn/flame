@@ -9,12 +9,11 @@ RUN cargo build --release
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /usr/bin/
 
-RUN ./target/release/flmadm install \
-    --src-dir /usr/src/flame \
+RUN ./target/release/flmadm package --src-dir /usr/src/flame --output /tmp/flame-package \
+    && /tmp/flame-package/package/sbin/flmadm install \
     --prefix /usr/local/flame \
     --worker \
     --no-systemd \
-    --skip-build \
     --force \
     && rm -f /usr/local/flame/bin/flame-executor-manager
 

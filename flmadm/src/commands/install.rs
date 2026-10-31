@@ -1,7 +1,6 @@
 use crate::managers::{
-    backup::BackupManager, build::BuildManager, config::ConfigGenerator,
-    installation::InstallationManager, source::SourceManager, systemd::SystemdManager,
-    user::UserManager,
+    backup::BackupManager, config::ConfigGenerator, installation::InstallationManager,
+    systemd::SystemdManager, user::UserManager,
 };
 use crate::types::{available_examples, InstallConfig, InstallationPaths};
 use anyhow::Result;
@@ -40,33 +39,17 @@ pub fn run(config: InstallConfig) -> Result<()> {
         handle_clean_install(&paths)?;
     }
 
-    let mut source_manager = SourceManager::new();
-    let src_dir = source_manager.prepare_source(config.src_dir.clone())?;
+    // A release package holds everything an installation needs, so nothing is built here.
+    let resolved = crate::package::resolve(config.package.as_deref())?;
+    let package = resolved.dir();
 
-    // Phase 3: Build (skip if requested)
-    if !config.skip_build {
-        println!("\n═══ Phase 3: Build ═══");
-        let build_manager = BuildManager::new(config.verbose);
-        build_manager.check_prerequisites()?;
-        let artifacts = build_manager.build_all(&src_dir)?;
+    // Phase 3: Installation
+    println!("\n═══ Phase 3: Installation ═══");
+    let artifacts =
+        crate::types::BuildArtifacts::from_package_dir_for_profiles(package, &config.profiles)?;
+    install_components(&artifacts, package, &paths, &config)?;
 
-        // Phase 4: Installation
-        println!("\n═══ Phase 4: Installation ═══");
-        install_components(&artifacts, &src_dir, &paths, &config)?;
-    } else {
-        println!("\n═══ Phase 3: Skipping Build (--skip-build) ═══");
-
-        // Phase 4: Installation
-        println!("\n═══ Phase 4: Installation ═══");
-        let artifacts = crate::types::BuildArtifacts::from_source_dir_for_profiles(
-            &src_dir,
-            "release",
-            &config.profiles,
-        )?;
-        install_components(&artifacts, &src_dir, &paths, &config)?;
-    }
-
-    // Phase 5: Systemd Setup (if requested and needed)
+    // Phase 4: Systemd Setup (if requested and needed)
     let has_control_plane = config
         .profiles
         .contains(&crate::types::InstallProfile::ControlPlane);
@@ -79,15 +62,15 @@ pub fn run(config: InstallConfig) -> Result<()> {
     let needs_systemd = has_control_plane || has_worker || has_cache;
 
     if config.systemd && needs_systemd {
-        println!("\n═══ Phase 5: Systemd Setup ═══");
+        println!("\n═══ Phase 4: Systemd Setup ═══");
         setup_systemd(&paths, &config)?;
     } else if !config.systemd {
-        println!("\n═══ Phase 5: Skipping Systemd (--no-systemd) ═══");
+        println!("\n═══ Phase 4: Skipping Systemd (--no-systemd) ═══");
     } else {
-        println!("\n═══ Phase 5: Skipping Systemd (no services to install) ═══");
+        println!("\n═══ Phase 4: Skipping Systemd (no services to install) ═══");
     }
 
-    // Phase 6: Summary
+    // Phase 5: Summary
     println!("\n═══ Installation Complete ═══");
     print_summary(&paths, &config);
 
@@ -226,7 +209,7 @@ fn handle_clean_install(paths: &InstallationPaths) -> Result<()> {
 
 fn install_components(
     artifacts: &crate::types::BuildArtifacts,
-    src_dir: &std::path::Path,
+    package: &std::path::Path,
     paths: &InstallationPaths,
     config: &InstallConfig,
 ) -> Result<()> {
@@ -236,7 +219,7 @@ fn install_components(
 
     // Install examples first so missing example artifacts fail before core binaries are copied.
     installation_manager.install_examples(
-        src_dir,
+        package,
         paths,
         config.with_examples,
         config.force_overwrite,
@@ -251,10 +234,10 @@ fn install_components(
     )?;
 
     // Install uv (for worker and client profiles)
-    installation_manager.install_uv(paths, &config.profiles)?;
+    installation_manager.install_uv(package, paths, &config.profiles)?;
 
     let installed_python_versions = installation_manager.install_python_sdk(
-        src_dir,
+        package,
         paths,
         &config.profiles,
         config.force_overwrite,
@@ -269,7 +252,7 @@ fn install_components(
     installation_manager.generate_env_script(paths, versions_for_env)?;
 
     // Install database migrations
-    installation_manager.install_migrations(src_dir, paths, &config.profiles)?;
+    installation_manager.install_migrations(package, paths, &config.profiles)?;
 
     // Generate configuration
     let config_generator = ConfigGenerator::new();
@@ -278,7 +261,7 @@ fn install_components(
         .profiles
         .contains(&crate::types::InstallProfile::ControlPlane)
     {
-        config_generator.install_application_manifests(src_dir, &paths.prefix)?;
+        config_generator.install_application_manifests(package, &paths.prefix)?;
     }
 
     Ok(())

@@ -37,13 +37,12 @@ pub const DEFAULT_PYTHON_VERSIONS: &[&str] = &["3.11", "3.12", "3.13", "3.14"];
 /// Configuration for the install command
 #[derive(Debug, Clone)]
 pub struct InstallConfig {
-    pub src_dir: Option<PathBuf>,
+    /// The release package to install; the package holding the running flmadm when `None`.
+    pub package: Option<String>,
     pub prefix: PathBuf,
     pub systemd: bool,
     pub enable: bool,
-    pub skip_build: bool,
     pub clean: bool,
-    pub verbose: bool,
     pub profiles: Vec<InstallProfile>,
     pub force_overwrite: bool,
     pub python_versions: Vec<String>,
@@ -53,13 +52,11 @@ pub struct InstallConfig {
 impl Default for InstallConfig {
     fn default() -> Self {
         Self {
-            src_dir: None,
+            package: None,
             prefix: PathBuf::from("/usr/local/flame"),
             systemd: true,
             enable: false,
-            skip_build: false,
             clean: false,
-            verbose: false,
             profiles: vec![
                 InstallProfile::ControlPlane,
                 InstallProfile::Worker,
@@ -238,26 +235,34 @@ impl BuildArtifacts {
         Ok(artifacts)
     }
 
-    /// Find only the build artifacts required by the selected install profiles.
-    pub fn from_source_dir_for_profiles(
-        src_dir: &Path,
-        profile: &str,
+    /// Find the artifacts the selected install profiles need in a release package.
+    pub fn from_package_dir_for_profiles(
+        package: &Path,
         profiles: &[InstallProfile],
     ) -> anyhow::Result<Self> {
-        let artifacts = Self::build_paths(src_dir, profile);
+        let artifacts = Self::package_paths(package);
         artifacts.validate_profiles(profiles)?;
         Ok(artifacts)
     }
 
     fn build_paths(src_dir: &Path, profile: &str) -> Self {
         let target_dir = src_dir.join("target").join(profile);
+        let flmadm = target_dir.join("flmadm");
+        Self::in_dirs(&target_dir, flmadm)
+    }
 
+    /// A release package carries the binaries in bin/ and flmadm in sbin/.
+    fn package_paths(package: &Path) -> Self {
+        Self::in_dirs(&package.join("bin"), package.join("sbin/flmadm"))
+    }
+
+    fn in_dirs(target_dir: &Path, flmadm: PathBuf) -> Self {
         Self {
             session_manager: target_dir.join("flame-session-manager"),
             executor_manager: target_dir.join("flame-executor-manager"),
             object_cache: target_dir.join("flame-object-cache"),
             flmctl: target_dir.join("flmctl"),
-            flmadm: target_dir.join("flmadm"),
+            flmadm,
             flmping: target_dir.join("flmping"),
             flmping_service: target_dir.join("flmping-service"),
             flmexec: target_dir.join("flmexec"),
@@ -267,7 +272,7 @@ impl BuildArtifacts {
         }
     }
 
-    fn entries(&self) -> [(&'static str, &Path); 11] {
+    pub fn entries(&self) -> [(&'static str, &Path); 11] {
         [
             ("flame-session-manager", &self.session_manager),
             ("flame-executor-manager", &self.executor_manager),
@@ -402,11 +407,9 @@ mod tests {
             let config = InstallConfig::default();
             assert!(config.systemd);
             assert!(!config.enable);
-            assert!(!config.skip_build);
             assert!(!config.clean);
-            assert!(!config.verbose);
             assert!(!config.force_overwrite);
-            assert!(config.src_dir.is_none());
+            assert!(config.package.is_none());
             assert!(!config.with_examples);
         }
 
@@ -534,16 +537,15 @@ mod tests {
         #[test]
         fn validates_only_selected_profile_binaries() {
             let tmp = tempdir().unwrap();
-            let target = tmp.path().join("target/release");
+            let target = tmp.path().join("bin");
             fs::create_dir_all(&target).unwrap();
             touch(&target.join("flmctl"));
             touch(&target.join("flmping"));
             touch(&target.join("flmexec"));
             touch(&target.join("flmbench"));
 
-            let artifacts = BuildArtifacts::from_source_dir_for_profiles(
+            let artifacts = BuildArtifacts::from_package_dir_for_profiles(
                 tmp.path(),
-                "release",
                 &[InstallProfile::Client],
             );
 
@@ -554,17 +556,54 @@ mod tests {
         #[test]
         fn fails_when_selected_profile_binary_is_missing() {
             let tmp = tempdir().unwrap();
-            let target = tmp.path().join("target/release");
+            let target = tmp.path().join("bin");
             fs::create_dir_all(&target).unwrap();
             touch(&target.join("flmctl"));
 
-            let artifacts = BuildArtifacts::from_source_dir_for_profiles(
+            let artifacts = BuildArtifacts::from_package_dir_for_profiles(
                 tmp.path(),
-                "release",
                 &[InstallProfile::Worker],
             );
 
             assert!(artifacts.is_err());
+        }
+
+        #[test]
+        fn finds_a_release_package_binaries_in_bin_and_flmadm_in_sbin() {
+            let tmp = tempdir().unwrap();
+            let package = tmp.path();
+            fs::create_dir_all(package.join("bin")).unwrap();
+            fs::create_dir_all(package.join("sbin")).unwrap();
+            fs::create_dir_all(package.join("wheels")).unwrap();
+            touch(&package.join("sbin/flmadm"));
+            for name in [
+                "flame-session-manager",
+                "flame-executor-manager",
+                "flame-object-cache",
+                "flmctl",
+                "flmping",
+                "flmping-service",
+                "flmexec",
+                "flmexec-service",
+                "flmbench",
+                "flmbox",
+            ] {
+                touch(&package.join("bin").join(name));
+            }
+
+            let artifacts = BuildArtifacts::from_package_dir_for_profiles(
+                package,
+                &[
+                    InstallProfile::ControlPlane,
+                    InstallProfile::Worker,
+                    InstallProfile::Cache,
+                    InstallProfile::Client,
+                ],
+            )
+            .unwrap();
+
+            assert_eq!(artifacts.flmctl, package.join("bin/flmctl"));
+            assert_eq!(artifacts.flmadm, package.join("sbin/flmadm"));
         }
     }
 

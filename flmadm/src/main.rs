@@ -6,6 +6,7 @@
 mod commands;
 #[cfg(unix)]
 mod managers;
+mod package;
 #[cfg(unix)]
 mod types;
 
@@ -34,11 +35,37 @@ struct Cli {
 #[cfg(unix)]
 #[derive(Subcommand)]
 enum Commands {
-    /// Install Flame on this machine
-    Install {
-        /// Source code directory for building Flame
+    /// Build a release package from a source tree
+    Package {
+        /// Source code directory of Flame
+        #[arg(long, default_value = ".", value_name = "PATH")]
+        src_dir: PathBuf,
+
+        /// Directory to write the release assets to: package/, the .tar.gz archive and the standalone
+        /// flmadm, each with a .sha256 file
         #[arg(long, value_name = "PATH")]
-        src_dir: Option<PathBuf>,
+        output: PathBuf,
+
+        /// Version recorded in the package (default: the flmadm version)
+        #[arg(long, value_name = "TAG")]
+        tag: Option<String>,
+
+        /// Replace the output directory if it is not empty
+        #[arg(long)]
+        force: bool,
+
+        /// Show detailed build output
+        #[arg(long)]
+        verbose: bool,
+    },
+
+    /// Install Flame from a release package on this machine
+    Install {
+        /// Release package to install: a package directory (or the directory a package was
+        /// extracted into), a .tar.gz archive, or the http(s) URL of an archive (default: the
+        /// package holding this flmadm)
+        #[arg(long, value_name = "PATH|URL")]
+        package: Option<String>,
 
         /// Target installation directory
         #[arg(long, default_value = "/usr/local/flame", value_name = "PATH")]
@@ -76,10 +103,6 @@ enum Commands {
         #[arg(long)]
         enable: bool,
 
-        /// Skip building from source (use pre-built binaries)
-        #[arg(long)]
-        skip_build: bool,
-
         /// Remove existing installation before installing
         #[arg(long)]
         clean: bool,
@@ -87,10 +110,6 @@ enum Commands {
         /// Force overwrite existing components without prompting
         #[arg(long)]
         force: bool,
-
-        /// Show detailed build output
-        #[arg(long)]
-        verbose: bool,
 
         /// Python versions for SDK installation (can be specified multiple times)
         #[arg(long, action = clap::ArgAction::Append)]
@@ -148,8 +167,21 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Install {
+        Commands::Package {
             src_dir,
+            output,
+            tag,
+            force,
+            verbose,
+        } => commands::package::run(commands::package::PackageConfig {
+            src_dir,
+            output,
+            tag: tag.unwrap_or_else(|| VERSION.to_string()),
+            verbose,
+            force,
+        }),
+        Commands::Install {
+            package,
             prefix,
             control_plane,
             worker,
@@ -159,10 +191,8 @@ fn main() {
             with_examples,
             no_systemd,
             enable,
-            skip_build,
             clean,
             force,
-            verbose,
             python_version,
         } => {
             // Validate profile flags
@@ -217,13 +247,11 @@ fn main() {
             };
 
             let config = types::InstallConfig {
-                src_dir,
+                package,
                 prefix,
                 systemd: !no_systemd,
                 enable,
-                skip_build,
                 clean,
-                verbose,
                 profiles,
                 force_overwrite: force,
                 python_versions: if python_version.is_empty() {

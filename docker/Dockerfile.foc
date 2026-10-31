@@ -7,12 +7,11 @@ RUN apt-get update && apt-get install -y protobuf-compiler pkg-config libssl-dev
 RUN cargo build --release
 
 # Install using flmadm with cache profile
-RUN ./target/release/flmadm install \
-    --src-dir /usr/src/flame \
+RUN ./target/release/flmadm package --src-dir /usr/src/flame --output /tmp/flame-package \
+    && /tmp/flame-package/package/sbin/flmadm install \
     --prefix /usr/local/flame \
     --cache \
     --no-systemd \
-    --skip-build \
     --force
 
 FROM ubuntu:24.04

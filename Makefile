@@ -40,7 +40,7 @@ E2E_SYSTEM_PYTEST_ARGS ?=
 
 # Default target
 .PHONY: help build build-release init update_protos
-.PHONY: install install-dev uninstall uninstall-dev start-services stop-services
+.PHONY: package install install-dev uninstall uninstall-dev start-services stop-services
 .PHONY: sdk-python sdk-python-generate sdk-python-test sdk-python-clean
 .PHONY: format format-rust format-python format-e2e
 .PHONY: e2e e2e-local e2e-py e2e-py-docker e2e-py-local e2e-rs
@@ -68,12 +68,18 @@ build-release: update_protos ## Build the Rust project in release mode
 init: ## Install required tools
 	cargo install cargo-get --force
 
-# Installation targets using flmadm
-install: build-release ## Install Flame to system (requires sudo)
-	sudo ./target/release/flmadm install --all --src-dir . --skip-build --enable
+# Installation targets using flmadm: build the release package, then install from it
+PACKAGE_DIR ?= target/flame-package
 
-install-dev: build-release ## Install Flame to dev location (no sudo required)
-	./target/release/flmadm install --all --src-dir . --skip-build --no-systemd --prefix $(INSTALL_PREFIX)
+package: ## Build the release package, building everything (flmadm installs from it)
+	cargo build --release -p flmadm
+	./target/release/flmadm package --src-dir . --output $(PACKAGE_DIR) --force
+
+install: package ## Install Flame to system (requires sudo)
+	sudo ./$(PACKAGE_DIR)/package/sbin/flmadm install --all --enable
+
+install-dev: package ## Install Flame to dev location (no sudo required)
+	./$(PACKAGE_DIR)/package/sbin/flmadm install --all --no-systemd --prefix $(INSTALL_PREFIX)
 	@echo ""
 	@echo "Flame installed to: $(INSTALL_PREFIX)"
 	@echo "Add to PATH: export PATH=$(INSTALL_PREFIX)/bin:\$$PATH"

@@ -86,20 +86,25 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Build Flame
-        run: cargo build --release
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
 
-      - name: Package binaries
+      # flmadm package builds everything; the jobs below install from the package.
+      - name: Build the Flame package
         run: |
-          find target/release -maxdepth 1 -type f -perm -u+x -printf '%f\n' > binaries.txt
-          tar -C target/release -T binaries.txt -cf - | zstd -T0 -3 -o flame-binaries.tar.zst
-          ls -lh flame-binaries.tar.zst
+          cargo build --release -p flmadm
+          ./target/release/flmadm package --src-dir . --output flame-package
 
-      - name: Upload binaries
+      - name: Archive the package
+        run: |
+          tar -cf - flame-package | zstd -T0 -3 -o flame-package.tar.zst
+          ls -lh flame-package.tar.zst
+
+      - name: Upload the package
         uses: actions/upload-artifact@v7
         with:
-          name: flame-binaries
-          path: flame-binaries.tar.zst
+          name: flame-package
+          path: flame-package.tar.zst
           retention-days: 1
           compression-level: 0
 
@@ -444,15 +449,13 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y protobuf-compiler
       
-      - name: Download binaries
+      - name: Download the package
         uses: actions/download-artifact@v8
         with:
-          name: flame-binaries
+          name: flame-package
 
-      - name: Unpack binaries
-        run: |
-          mkdir -p target/release
-          zstd -dc flame-binaries.tar.zst | tar -C target/release -xf -
+      - name: Unpack the package
+        run: zstd -dc flame-package.tar.zst | tar -xf -
 
       - name: Verify systemd availability
         run: |
@@ -473,7 +476,7 @@ jobs:
       
       - name: Install Flame with flmadm and systemd
         run: |
-          sudo ./target/release/flmadm install --all --src-dir . --skip-build --prefix $INSTALL_PREFIX --enable
+          sudo ./flame-package/package/sbin/flmadm install --all --prefix $INSTALL_PREFIX --enable
           echo "$INSTALL_PREFIX/bin" >> $GITHUB_PATH
       
       - name: Setup local configuration
@@ -590,7 +593,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          sudo ./target/release/flmadm uninstall --prefix $INSTALL_PREFIX --no-backup --force || true
+          sudo ./flame-package/package/sbin/flmadm uninstall --prefix $INSTALL_PREFIX --no-backup --force || true
 
   cri-shim-e2e:
     name: CRI Shim E2E
@@ -616,15 +619,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download binaries
+      - name: Download the package
         uses: actions/download-artifact@v8
         with:
-          name: flame-binaries
+          name: flame-package
 
-      - name: Unpack binaries
-        run: |
-          mkdir -p target/release
-          zstd -dc flame-binaries.tar.zst | tar -C target/release -xf -
+      - name: Unpack the package
+        run: zstd -dc flame-package.tar.zst | tar -xf -
 
       - name: Download runtime image
         uses: actions/download-artifact@v8
@@ -694,15 +695,13 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Download binaries
+      - name: Download the package
         uses: actions/download-artifact@v8
         with:
-          name: flame-binaries
+          name: flame-package
 
-      - name: Unpack binaries
-        run: |
-          mkdir -p target/release
-          zstd -dc flame-binaries.tar.zst | tar -C target/release -xf -
+      - name: Unpack the package
+        run: zstd -dc flame-package.tar.zst | tar -xf -
 
       - name: Download runtime image
         uses: actions/download-artifact@v8

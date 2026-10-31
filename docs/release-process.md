@@ -412,6 +412,28 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY}" IMAGE_TAG="${DOCKER_TAG}" ci/k8s/e2e.sh
 Capture the `helm test`, `flmctl list`, `flmctl list -n`, `flmping`, and Python
 Pi example output when reporting the result.
 
+## Release Binaries
+
+The release workflow's `publish-binaries` job builds, on `ubuntu-24.04` and `ubuntu-24.04-arm`
+runners (so the binaries run on the oldest glibc we support), these assets for `amd64` and `arm64`,
+each with a `.sha256` file, and uploads them to the GitHub release with `gh release upload --clobber`,
+so the release must exist first and a rerun replaces the assets:
+
+- `flame-<tag>-linux-<arch>.tar.gz`: every binary, `uv`, the Python SDK wheel, the migrations, the
+  application manifests and the examples, and
+- `flmadm-<tag>-linux-<arch>`: the installer by itself, which installs the archive from its URL
+  (`flmadm install --package https://…/flame-<tag>-linux-<arch>.tar.gz`; see `flmadm/README.md`).
+
+One command makes them: `flmadm package` builds everything and always writes the archive, the
+standalone `flmadm` and their checksums, and `flmadm install` installs only from a package, so the
+images, `make install`, the e2e jobs and the release all build a package first. The job smoke-tests
+the assets the way a user installs them: the checksums, then the standalone `flmadm` installing from
+the archive's URL (a local HTTP server), then `flmctl`, `flame-session-manager` and `import flamepy`.
+
+To build the same assets locally, build flmadm (`cargo build --release -p flmadm`; the package
+command builds everything else) and run
+`./target/release/flmadm package --src-dir . --output <dir> --tag <tag>`.
+
 ## Git Tag And GitHub Release
 
 Tag only the final verified release commit:
@@ -444,6 +466,7 @@ Before declaring the release complete, record:
 - PyPI `flamepy` version URL and uploaded files.
 - crates.io URLs for `stdng`, `flame-rs-macros`, and `flame-rs`.
 - Docker Hub tag URLs and manifest digests for all five images.
+- The release binaries on the GitHub release: both architectures' `.tar.gz` and `.sha256` files.
 - CI run URLs for the final release commit.
 - Helm/Kubernetes smoke-test output or the reason it was not run locally.
 

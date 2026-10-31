@@ -11,19 +11,18 @@ This guide sets up a single-node Flame cluster from the local source tree withou
 
 ## Install
 
-Build all release artifacts:
+Build `flmadm`; it builds everything else when it packages:
 
 ```bash
-cargo build --release
+cargo build --release -p flmadm
 ```
 
 Install all Flame components into `/tmp/flame-dev`:
 
 ```bash
-./target/release/flmadm install \
+./target/release/flmadm package --src-dir . --output /tmp/flame-package --force
+/tmp/flame-package/package/sbin/flmadm install \
     --all \
-    --src-dir . \
-    --skip-build \
     --no-systemd \
     --prefix /tmp/flame-dev
 ```
@@ -120,11 +119,9 @@ FLAME_ROOT="$PWD" cargo test --workspace --exclude cri-rs -- --nocapture
 After changing Rust components:
 
 ```bash
-cargo build --release
-./target/release/flmadm install \
+./target/release/flmadm package --src-dir . --output /tmp/flame-package --force
+/tmp/flame-package/package/sbin/flmadm install \
     --all \
-    --src-dir . \
-    --skip-build \
     --no-systemd \
     --prefix /tmp/flame-dev \
     --clean

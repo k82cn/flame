@@ -49,10 +49,11 @@ impl InstallationManager {
         Ok(())
     }
 
-    /// Install example binaries and source assets under FLAME_HOME/examples when requested.
+    /// Install the package's example binaries and source assets under FLAME_HOME/examples when
+    /// requested.
     pub fn install_examples(
         &self,
-        src_dir: &Path,
+        package: &Path,
         paths: &InstallationPaths,
         with_examples: bool,
         force_overwrite: bool,
@@ -63,7 +64,6 @@ impl InstallationManager {
         }
 
         println!("🧪 Installing examples...");
-        let target_dir = src_dir.join("target").join("release");
 
         for example in available_examples() {
             let dst_dir = paths.examples.join(example.relative_dir);
@@ -73,14 +73,11 @@ impl InstallationManager {
             ))?;
 
             println!("  • {}", example.name);
+            let package_example_dir = package.join("examples").join(example.relative_dir);
             for binary in example.binaries {
-                let src = target_dir.join(binary);
+                let src = package_example_dir.join(binary);
                 if !src.exists() {
-                    anyhow::bail!(
-                        "Example binary not found: {}. Build package '{}' first or run without --skip-build.",
-                        src.display(),
-                        example.package
-                    );
+                    anyhow::bail!("Example binary not found in the package: {}", src.display());
                 }
 
                 let dst = dst_dir.join(binary);
@@ -103,12 +100,11 @@ impl InstallationManager {
                 );
             }
 
-            let src_example_dir = src_dir.join("examples").join(example.relative_dir);
             for asset in example.assets {
-                let src = src_example_dir.join(asset);
+                let src = package_example_dir.join(asset);
                 if !src.exists() {
                     anyhow::bail!(
-                        "Example asset not found: {} for example '{}'.",
+                        "Example asset not found in the package: {} for example '{}'.",
                         src.display(),
                         example.name
                     );
@@ -249,7 +245,7 @@ impl InstallationManager {
     /// Returns the list of Python versions that were successfully installed
     pub fn install_python_sdk(
         &self,
-        src_dir: &Path,
+        package: &Path,
         paths: &InstallationPaths,
         profiles: &[InstallProfile],
         force_overwrite: bool,
@@ -262,11 +258,6 @@ impl InstallationManager {
         }
 
         println!("🐍 Installing Python SDK...");
-
-        let sdk_src = src_dir.join("sdk/python");
-        if !sdk_src.exists() {
-            anyhow::bail!("Python SDK source not found at: {:?}", sdk_src);
-        }
 
         let lib_exists = paths.lib.exists()
             && fs::read_dir(&paths.lib)
@@ -297,29 +288,17 @@ impl InstallationManager {
 
         fs::create_dir_all(&paths.lib).context("Failed to create lib directory")?;
 
-        println!("  📦 Building Python wheel...");
         // Start from an empty wheels directory: earlier installs left their wheels here, and the
-        // one built now must be the only one.
+        // one installed now must be the only one.
         if paths.wheels.exists() {
             fs::remove_dir_all(&paths.wheels).context("Failed to clear the wheels directory")?;
         }
         fs::create_dir_all(&paths.wheels).context("Failed to create wheels directory")?;
 
-        let build_output = std::process::Command::new(&uv_path)
-            .arg("build")
-            .arg("--wheel")
-            .arg("--out-dir")
-            .arg(&paths.wheels)
-            .arg(&sdk_src)
-            .output()
-            .context("Failed to execute uv build")?;
-
-        if !build_output.status.success() {
-            let stderr = String::from_utf8_lossy(&build_output.stderr);
-            anyhow::bail!("Failed to build wheel: {}", stderr);
-        }
-        let wheel = built_wheel(&paths.wheels)?;
-        println!("  ✓ Built wheel: {}", wheel.display());
+        let packaged = crate::package::wheel(package)?;
+        let wheel = paths.wheels.join(packaged.file_name().unwrap());
+        fs::copy(&packaged, &wheel).context("Failed to copy the packaged wheel")?;
+        println!("  ✓ Using packaged wheel: {}", wheel.display());
 
         let uv_cache_dir = paths.cache.join("uv");
         fs::create_dir_all(&uv_cache_dir).context("Failed to create cache directory")?;
@@ -335,9 +314,9 @@ impl InstallationManager {
                 .arg(format!("python{}", python_version))
                 .arg("--prefix")
                 .arg(&paths.prefix)
-                // Install the wheel that was just built, not "flamepy" by name: a pre-release
-                // version (a release candidate) would be skipped in favor of the latest stable
-                // release on PyPI, which lacks the modules of this source tree.
+                // Install the packaged wheel, not "flamepy" by name: a pre-release version (a
+                // release candidate) would be skipped in favor of the latest stable release on
+                // PyPI, which lacks the modules of this package.
                 .arg(&wheel)
                 .env("UV_CACHE_DIR", &uv_cache_dir)
                 .output()
@@ -552,7 +531,7 @@ fi
     /// Install database migrations
     pub fn install_migrations(
         &self,
-        src_dir: &Path,
+        package: &Path,
         paths: &InstallationPaths,
         profiles: &[InstallProfile],
     ) -> Result<()> {
@@ -564,7 +543,7 @@ fi
 
         println!("🗄️  Installing database migrations...");
 
-        let migrations_src = src_dir.join("common/migrations/sqlite");
+        let migrations_src = package.join("common/migrations/sqlite");
         if !migrations_src.exists() {
             anyhow::bail!("Migrations source not found at: {:?}", migrations_src);
         }
@@ -587,7 +566,12 @@ fi
     }
 
     /// Install uv tool
-    pub fn install_uv(&self, paths: &InstallationPaths, profiles: &[InstallProfile]) -> Result<()> {
+    pub fn install_uv(
+        &self,
+        package: &Path,
+        paths: &InstallationPaths,
+        profiles: &[InstallProfile],
+    ) -> Result<()> {
         // UV is only needed for worker and client profiles
         let needs_uv = profiles.contains(&InstallProfile::Worker)
             || profiles.contains(&InstallProfile::Client);
@@ -599,12 +583,11 @@ fi
 
         println!("🔧 Installing uv...");
 
-        // Find uv in the system
-        let uv_src = self.find_uv_executable().context(
-            "uv not found in system. Please install uv first:\n\
-             1. curl -LsSf https://astral.sh/uv/install.sh | sh\n\
-             2. Or install via your package manager",
-        )?;
+        // The package bundles the uv it was built and tested with.
+        let uv_src = package.join("bin/uv");
+        if !uv_src.is_file() {
+            anyhow::bail!("uv not found in the package at {}", uv_src.display());
+        }
 
         let uv_dst = paths.bin.join("uv");
 
@@ -617,44 +600,6 @@ fi
 
         println!("  ✓ Installed uv from {}", uv_src.display());
         Ok(())
-    }
-
-    /// Find uv executable in the system
-    fn find_uv_executable(&self) -> Result<std::path::PathBuf> {
-        use std::process::Command;
-
-        // Try to find uv using 'which' command
-        if let Ok(output) = Command::new("which").arg("uv").output() {
-            if output.status.success() {
-                let path_str = String::from_utf8_lossy(&output.stdout);
-                let path = path_str.trim();
-                if !path.is_empty() {
-                    return Ok(std::path::PathBuf::from(path));
-                }
-            }
-        }
-
-        // Fallback: check common locations
-        for common_path in [
-            "/usr/bin/uv",
-            "/usr/local/bin/uv",
-            "/opt/homebrew/bin/uv", // macOS Homebrew
-        ] {
-            let path = std::path::Path::new(common_path);
-            if path.exists() {
-                return Ok(path.to_path_buf());
-            }
-        }
-
-        // Try to find in $HOME/.local/bin (common user install location)
-        if let Ok(home) = std::env::var("HOME") {
-            let user_uv = std::path::PathBuf::from(home).join(".local/bin/uv");
-            if user_uv.exists() {
-                return Ok(user_uv);
-            }
-        }
-
-        anyhow::bail!("uv executable not found in system")
     }
 
     /// Remove the installation directory
@@ -748,7 +693,7 @@ fi
 }
 
 /// The wheel `uv build` wrote to `dir`, which was empty before the build.
-fn built_wheel(dir: &Path) -> Result<PathBuf> {
+pub(crate) fn built_wheel(dir: &Path) -> Result<PathBuf> {
     let mut wheels = Vec::new();
     for entry in fs::read_dir(dir).with_context(|| format!("Failed to read {}", dir.display()))? {
         let path = entry?.path();
@@ -1034,12 +979,15 @@ mod tests {
             let temp = tempdir().unwrap();
             let src_dir = temp.path().join("src");
             create_example_fixtures(&src_dir);
+            // The package holds the examples as `flmadm package` lays them out.
+            let package = temp.path().join("package");
+            crate::managers::packager::copy_examples(&src_dir, &package).unwrap();
 
             let paths = InstallationPaths::new(temp.path().join("flame"));
             let manager = InstallationManager::new();
             manager.create_directories(&paths).unwrap();
             manager
-                .install_examples(&src_dir, &paths, true, true)
+                .install_examples(&package, &paths, true, true)
                 .unwrap();
 
             assert!(paths.examples.join("pi/rust/pi").exists());
@@ -1112,12 +1060,14 @@ mod tests {
             let temp = tempdir().unwrap();
             let src_dir = temp.path().join("src");
             create_example_fixtures(&src_dir);
+            let package = temp.path().join("package");
+            crate::managers::packager::copy_examples(&src_dir, &package).unwrap();
 
             let paths = InstallationPaths::new(temp.path().join("flame"));
             let manager = InstallationManager::new();
             manager.create_directories(&paths).unwrap();
             manager
-                .install_examples(&src_dir, &paths, false, true)
+                .install_examples(&package, &paths, false, true)
                 .unwrap();
 
             assert!(!paths.examples.join("pi/rust/pi").exists());

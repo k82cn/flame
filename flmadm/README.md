@@ -11,7 +11,7 @@ Flame provides two separate CLI tools:
 ## Features
 
 - **Automated Installation**: One-command installation of all Flame components
-- **Source Building**: Builds Flame binaries from source (Rust)
+- **Release Packages**: Installs only from a release package (`flmadm package` builds one from source, and every GitHub release publishes one)
 - **Python SDK Installation**: Automatically installs the Flame Python SDK
 - **Systemd Integration**: Generates and manages systemd service files
 - **Configuration Generation**: Creates default configuration files
@@ -21,19 +21,56 @@ Flame provides two separate CLI tools:
 
 ## Installation
 
-To install `flmadm` itself, build it from source:
+### From a release package
+
+Each GitHub release has, for `linux-amd64` and `linux-arm64`, a `flame-<tag>-linux-<arch>.tar.gz`
+with every Flame binary, `uv`, the Python SDK wheel, the database migrations, the application
+manifests and the examples, and `flmadm-<tag>-linux-<arch>`, the installer by itself. Each has a
+`.sha256` file. Download the installer and point it at the archive's URL; it downloads the archive,
+verifies it against the `.sha256` published next to it, and installs it. Nothing is built:
+
+```bash
+base=https://github.com/xflops/flame/releases/download/v0.7.0
+curl -fLO $base/flmadm-v0.7.0-linux-amd64
+chmod +x flmadm-v0.7.0-linux-amd64
+sudo ./flmadm-v0.7.0-linux-amd64 install --all \
+    --package $base/flame-v0.7.0-linux-amd64.tar.gz
+```
+
+`--package` also takes a downloaded archive (a `.sha256` next to it is checked) or a directory: an
+extracted package, or the directory it was extracted into (it holds the one package directory).
+Without it `flmadm` installs the package that holds it:
+
+```bash
+tar -xzf flame-v0.7.0-linux-amd64.tar.gz
+sudo ./flame-v0.7.0-linux-amd64/sbin/flmadm install --all
+```
+
+The options of [Install Options](#install-options) apply. The Python SDK is installed from the wheel
+in the package, so the install needs network access to PyPI for its dependencies, and downloading
+needs `curl`.
+
+### From source
+
+`flmadm` always installs from a package, so build one first. `flmadm package` builds everything: the
+whole workspace (examples included), the Python SDK wheel, and the bundled `uv`. It writes these
+release assets to `--output`, each archive and installer with a `.sha256` file:
+
+- `package/`, the package directory;
+- `flame-<tag>-<os>-<arch>.tar.gz`, that package as one archive (always written), and
+- `flmadm-<tag>-<os>-<arch>`, the installer by itself.
+
+`--tag` sets the version recorded in the package and used in the names. Build `flmadm` itself to run
+it:
 
 ```bash
 cd /path/to/flame
 cargo build --release -p flmadm
-sudo cp target/release/flmadm /usr/local/bin/
+./target/release/flmadm package --src-dir . --output /tmp/flame-package
+sudo /tmp/flame-package/package/sbin/flmadm install --all
 ```
 
-Or use an existing installation:
-
-```bash
-sudo flmadm install --all
-```
+`flmadm package` needs the Rust toolchain and `uv` on this machine.
 
 ## Usage
 
@@ -44,9 +81,10 @@ sudo flmadm install --all
 sudo flmadm install --all
 ```
 
-**Install from local source:**
+**Install from a package built from local source:**
 ```bash
-sudo flmadm install --all --src-dir /path/to/flame
+/path/to/flame/target/release/flmadm package --src-dir /path/to/flame --output /tmp/flame-package
+sudo /tmp/flame-package/package/sbin/flmadm install --all
 ```
 
 **Custom installation directory:**
@@ -67,11 +105,6 @@ flmadm install --all --no-systemd --prefix ~/flame
 **Clean install (backup and reinstall):**
 ```bash
 sudo flmadm install --all --clean --enable
-```
-
-**Verbose build output:**
-```bash
-sudo flmadm install --all --verbose
 ```
 
 **Install specific profiles:**
@@ -136,20 +169,18 @@ sudo flmadm uninstall --backup-dir /backups/flame-backup-2026-01-28
 
 ## Install Options
 
-- `--src-dir <PATH>`: Source code directory for building Flame (default: clone from GitHub)
+- `--package <PATH|URL>`: Release package to install: a package directory (or the directory a package was extracted into), a `.tar.gz` archive, or the `http(s)` URL of an archive, which must be published with its `.sha256` (default: the package holding the running `flmadm`)
 - `--prefix <PATH>`: Target installation directory (default: `/usr/local/flame`)
 - `--all`: Explicitly install all components (control plane + worker + cache + client)
 - `--control-plane`: Install control plane components only (flame-session-manager, flmctl, flmadm)
 - `--worker`: Install worker components only (flame-executor-manager, flmping-service, flmexec-service, flmbox, flamepy)
 - `--cache`: Install cache component only (flame-object-cache)
 - `--client`: Install client components only (flmping, flmexec, flamepy)
-- `--with-examples`: Install all supported example binaries and Python sources under `${PREFIX}/examples`, including vLLM
+- `--with-examples`: Install all supported example binaries and Python sources under `${PREFIX}/examples`, including vLLM (the package carries them)
 - `--no-systemd`: Skip systemd service generation (for user-local installs)
 - `--enable`: Enable and start systemd services after installation
-- `--skip-build`: Skip building from source (use pre-built binaries)
 - `--clean`: Remove existing installation before installing (creates backup)
 - `--force`: Force overwrite existing components without prompting
-- `--verbose`: Show detailed build output (useful for debugging build issues)
 
 **Note:** 
 - You **must** specify at least one profile flag (`--all`, `--control-plane`, `--worker`, `--cache`, or `--client`)
@@ -300,10 +331,10 @@ tail -f /usr/local/flame/logs/fsm.log
 
 ## Prerequisites
 
-- **Rust toolchain**: Required for building from source (unless `--skip-build`)
+- **Rust toolchain**: Required only by `flmadm package` to build from source (not by `install`)
   - Install: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Git**: Required for cloning from GitHub (unless `--src-dir` provided)
-- **uv**: Required for installing the Python SDK
+- **uv**: Required by `flmadm package`, which bundles it into the package; installing from a package needs none
+- **Network access to PyPI**: The Python SDK's dependencies are installed from PyPI
 - **systemd**: Required for service management (unless `--no-systemd`)
 - **Root privileges**: Required for system-wide installation with systemd
 
@@ -314,13 +345,13 @@ tail -f /usr/local/flame/logs/fsm.log
 ```bash
 # Developer working on Flame source
 cd ~/projects/flame
-flmadm install --all --src-dir . --prefix ~/flame --no-systemd
+cargo build --release -p flmadm
+./target/release/flmadm package --src-dir . --output /tmp/flame-package --force
+/tmp/flame-package/package/sbin/flmadm install --all --prefix ~/flame --no-systemd
 
-# Make changes, rebuild
-cargo build --release
-
-# Reinstall with updated binaries
-flmadm install --all --src-dir . --prefix ~/flame --skip-build --no-systemd --clean
+# Make changes, repackage (this rebuilds what changed) and reinstall
+./target/release/flmadm package --src-dir . --output /tmp/flame-package --force
+/tmp/flame-package/package/sbin/flmadm install --all --prefix ~/flame --no-systemd --clean
 ```
 
 ### Production Deployment
@@ -361,7 +392,7 @@ sudo flmadm install --worker --enable
 flmadm install --client --prefix ~/flame --no-systemd
 
 # Update only worker nodes
-sudo flmadm install --worker --force --skip-build
+sudo flmadm install --worker --force
 ```
 
 ### Testing and Cleanup
@@ -381,13 +412,12 @@ flmadm uninstall --prefix /tmp/flame-test --no-backup --force
 
 ### Build Failures
 
-If the build fails, use `--verbose` to see full cargo output:
+`flmadm install` builds nothing. If `flmadm package` fails to build, use `--verbose` to see the full
+cargo output:
 
 ```bash
-sudo flmadm install --all --verbose
+flmadm package --src-dir . --output /tmp/flame-package --verbose
 ```
-
-Build logs are also saved to `/tmp/flame-install-build.log` for offline debugging.
 
 ### Permission Errors
 
